@@ -53,6 +53,7 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
   explorerUrl: text("explorer_url"),
   processorUsername: text("processor_username"),
   processorRole: text("processor_role"),
+  processingAttemptId: text("processing_attempt_id"),
   verificationErrorCode: text("verification_error_code"),
   verificationErrorMessage: text("verification_error_message"),
   requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
@@ -122,10 +123,19 @@ export const groupBuyRefundAttemptsTable = pgTable("group_buy_refund_attempts", 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("group_buy_refund_attempts_refund_started_idx").on(t.refundId, t.startedAt),
-  uniqueIndex("group_buy_refund_attempts_txid_unique").on(t.submittedTxid),
+]);
+
+export const groupBuyRefundTxClaimsTable = pgTable("group_buy_refund_tx_claims", {
+  txid: text("txid").primaryKey(),
+  refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("group_buy_refund_tx_claims_refund_idx").on(t.refundId),
 ]);
 
 export type GroupBuyRefund = typeof groupBuyRefundsTable.$inferSelect;
 export type NewGroupBuyRefund = typeof groupBuyRefundsTable.$inferInsert;
 export type GroupBuyRefundAttempt = typeof groupBuyRefundAttemptsTable.$inferSelect;
 export type NewGroupBuyRefundAttempt = typeof groupBuyRefundAttemptsTable.$inferInsert;
+export type GroupBuyRefundTxClaim = typeof groupBuyRefundTxClaimsTable.$inferSelect;
+export type NewGroupBuyRefundTxClaim = typeof groupBuyRefundTxClaimsTable.$inferInsert;

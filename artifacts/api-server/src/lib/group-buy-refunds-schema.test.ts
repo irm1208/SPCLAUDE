@@ -9,6 +9,7 @@ import {
   accountsTable,
   creditTransactionsTable,
   groupBuyRefundAttemptsTable,
+  groupBuyRefundTxClaimsTable,
   groupBuyRefundsTable,
   groupBuysTable,
   ordersTable,
@@ -110,6 +111,7 @@ describe("group buy refund schema contract", () => {
       "completed_at",
       "created_at",
       "updated_at",
+      "processing_attempt_id",
     ]));
     expect(attemptColumns.map(column => column.name)).toEqual(expect.arrayContaining([
       "id",
@@ -123,6 +125,9 @@ describe("group buy refund schema contract", () => {
       "failure_reason",
       "created_at",
     ]));
+    expect(getTableConfig(groupBuyRefundTxClaimsTable).columns.map(column => column.name)).toEqual(
+      expect.arrayContaining(["txid", "refund_id", "created_at"]),
+    );
     expect(refundColumns.map(column => column.name)).not.toContain("verification_error");
     expect(attemptColumns.map(column => column.name)).not.toContain("completed_at");
   });
@@ -136,7 +141,7 @@ describe("group buy refund schema contract", () => {
       "group_buy_refunds_outgoing_txid_unique",
     ]));
     expect(getTableConfig(groupBuyRefundAttemptsTable).indexes.map(index => index.config.name))
-      .toContain("group_buy_refund_attempts_txid_unique");
+      .not.toContain("group_buy_refund_attempts_txid_unique");
     expect(creditIndexes.map(index => index.config.name)).toContain(
       "credit_transactions_account_refund_unique",
     );

@@ -51,7 +51,7 @@ export type RefundCryptoVerificationResult =
 
 export function normalizeEthereumTxid(txid: unknown): string | null {
   if (typeof txid !== "string" || !/^(?:0x)?[0-9a-fA-F]{64}$/.test(txid)) return null;
-  return txid.startsWith("0x") ? txid : `0x${txid}`;
+  return (txid.startsWith("0x") ? txid : `0x${txid}`).toLowerCase();
 }
 
 type NormalizedInput = {
@@ -160,6 +160,12 @@ export async function verifyRefundCryptoTransfer(
   }
   if (typeof transaction !== "object") {
     return failure("provider_unavailable", "Ethereum returned malformed transaction data.");
+  }
+  if (typeof transaction.to !== "string") {
+    return failure("transaction_not_found", "Ethereum returned no token contract target for this transaction.");
+  }
+  if (transaction.to.toLowerCase() !== normalized.contract) {
+    return failure("wrong_token", "The transaction target is not the selected refund token contract.");
   }
 
   let receipt: any;

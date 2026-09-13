@@ -4,6 +4,7 @@ import {
   auditLogsTable,
   creditTransactionsTable,
   groupBuyRefundAttemptsTable,
+  groupBuyRefundTxClaimsTable,
   groupBuyRefundsTable,
   groupBuysTable,
   gbReshippersTable,
@@ -63,6 +64,9 @@ export type CryptoRefundProcessor = {
   groupBuyId?: string;
 };
 
+const REFUND_VERIFY_LEASE_DEFAULT_SECONDS = 15 * 60;
+const PROCESSING_FAILURE_MESSAGE = "Refund verification processing failed; please retry.";
+
 export type CompleteCreditRefundArgs = {
   refundId: string;
   username: string;
@@ -100,6 +104,16 @@ function asRefundResult(refund: Record<string, any>): RefundRequestResult {
 
 function normalizeUsername(value: string): string {
   return value.trim().replace(/^@/, "").toLowerCase();
+}
+
+function refundVerifyLeaseMs(): number | null {
+  const configured = process.env.GROUP_BUY_REFUND_VERIFY_LEASE_SECONDS;
+  if (configured === undefined || configured.trim() === "") {
+    return REFUND_VERIFY_LEASE_DEFAULT_SECONDS * 1000;
+  }
+  if (!/^\d+$/.test(configured)) return null;
+  const seconds = Number(configured);
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds * 1000 : null;
 }
 
 function refundOrder(row: Record<string, any>): RefundEligibilityOrder {
@@ -746,6 +760,70 @@ async function lockCryptoRows(
   return { account, order, groupBuy, refund: lockedRefund, attempts };
 }
 
+async function compensateCryptoProcessingFailure(
+  database: DatabaseLike,
+  refundSnapshot: Record<string, any>,
+  attemptId: string,
+  txid: string,
+  actor: { username: string; role: string },
+): Promise<void> {
+  try {
+    await database.transaction(async (tx: DatabaseLike) => {
+      const locked = await lockCryptoRows(tx, refundSnapshot);
+      if (!locked.account || !locked.order || !locked.groupBuy || !locked.refund) return;
+      const attempt = locked.attempts.find(candidate => candidate.id === attemptId);
+      if (
+        !attempt
+        || attempt.submittedTxid !== txid
+        || locked.refund.status !== "verifying"
+        || locked.refund.processingAttemptId !== attemptId
+        || normalizeUsername(locked.refund.processorUsername ?? "") !== normalizeUsername(actor.username)
+      ) return;
+      const now = new Date();
+      await tx.update(groupBuyRefundAttemptsTable).set({
+        endedAt: now,
+        resultCode: "processing_failure",
+        failureReason: PROCESSING_FAILURE_MESSAGE,
+      }).where(and(
+        eq(groupBuyRefundAttemptsTable.id, attemptId),
+        eq(groupBuyRefundAttemptsTable.submittedTxid, txid),
+      ));
+      await tx.update(groupBuyRefundsTable).set({
+        status: "verification_failed",
+        failedAt: now,
+        verificationErrorCode: "processing_failure",
+        verificationErrorMessage: PROCESSING_FAILURE_MESSAGE,
+      }).where(and(
+        eq(groupBuyRefundsTable.id, refundSnapshot.id),
+        eq(groupBuyRefundsTable.status, "verifying"),
+        eq(groupBuyRefundsTable.processingAttemptId, attemptId),
+      ));
+      // Recovery must not leave a refund stranded merely because an audit sink
+      // is unavailable. The state transition remains safe and retryable.
+      try {
+        await insertAudit(tx, {
+          action: "group_buy_refund_processing_failed",
+          message: `Group-buy crypto refund ${refundSnapshot.id} processing failed`,
+          metadata: {
+            identity: actor.username,
+            role: actor.role,
+            source: "refund_processor",
+            transition: "verifying_to_verification_failed",
+            resultCode: "processing_failure",
+            refundId: refundSnapshot.id,
+            orderId: locked.order.id,
+            groupBuyId: locked.groupBuy.id,
+          },
+        });
+      } catch {
+        // Preserve retryability even when the audit provider is unavailable.
+      }
+    });
+  } catch {
+    // The original finalization error is the stable error exposed to callers.
+  }
+}
+
 /**
  * Claims and independently verifies an outgoing crypto refund. Network I/O is
  * deliberately between two transactions: the claim transaction never holds
@@ -760,7 +838,7 @@ export async function submitCryptoRefund(
   const canonicalTxid = typeof normalizeEthereumTxid === "function"
     ? normalizeEthereumTxid(txid)
     : typeof txid === "string" && /^(?:0x)?[0-9a-fA-F]{64}$/.test(txid)
-      ? (txid.startsWith("0x") ? txid : `0x${txid}`)
+      ? (txid.startsWith("0x") ? txid : `0x${txid}`).toLowerCase()
       : null;
   if (!canonicalTxid) {
     throw new GroupBuyRefundError("invalid_txid");
@@ -783,18 +861,15 @@ export async function submitCryptoRefund(
   if (!unlockedOrder || !unlockedAccount || !unlockedGroupBuy) throw new GroupBuyRefundError("not_found");
   validateCryptoProcessorScope(unlockedAccount, unlockedOrder, unlockedGroupBuy, unlockedRefund, processor);
   if (unlockedRefund.status === "completed") return completedCryptoResult(unlockedRefund, canonicalTxid);
+  if (refundVerifyLeaseMs() === null) {
+    throw new GroupBuyRefundError("provider_unavailable", "Refund verification lease configuration is invalid.");
+  }
   const [replayedRefund] = await loadRows(
     database,
     groupBuyRefundsTable,
     eq(groupBuyRefundsTable.outgoingTxid, canonicalTxid),
   );
   if (replayedRefund && replayedRefund.id !== refundId) throw new GroupBuyRefundError("txid_replay");
-  const [replayedAttempt] = await loadRows(
-    database,
-    groupBuyRefundAttemptsTable,
-    eq(groupBuyRefundAttemptsTable.submittedTxid, canonicalTxid),
-  );
-  if (replayedAttempt) throw new GroupBuyRefundError("txid_replay");
 
   let attemptId: string | undefined;
   let completedDuringClaim: RefundRequestResult | undefined;
@@ -809,11 +884,59 @@ export async function submitCryptoRefund(
       return;
     }
     if (locked.refund.status === "verifying") {
-      throw new GroupBuyRefundError(
-        normalizeUsername(locked.refund.processorUsername ?? "") === normalizeUsername(actor.username)
-          ? "owned"
-          : "in_progress",
-      );
+      const leaseMs = refundVerifyLeaseMs();
+      if (leaseMs === null) throw new GroupBuyRefundError("provider_unavailable", "Refund verification lease configuration is invalid.");
+      const currentAttempt = locked.attempts.find(candidate =>
+        candidate.id === locked.refund!.processingAttemptId);
+      const startedAt = currentAttempt?.startedAt ?? locked.refund.verifyingAt;
+      const startedAtMs = startedAt instanceof Date
+        ? startedAt.getTime()
+        : typeof startedAt === "string"
+          ? Date.parse(startedAt)
+          : Number.NaN;
+      if (!Number.isFinite(startedAtMs) || Date.now() - startedAtMs <= leaseMs) {
+        throw new GroupBuyRefundError(
+          normalizeUsername(locked.refund.processorUsername ?? "") === normalizeUsername(actor.username)
+            ? "owned"
+            : "in_progress",
+        );
+      }
+      const staleAt = new Date();
+      if (currentAttempt) {
+        await tx.update(groupBuyRefundAttemptsTable).set({
+          endedAt: staleAt,
+          resultCode: "processing_failure",
+          failureReason: PROCESSING_FAILURE_MESSAGE,
+        }).where(and(
+          eq(groupBuyRefundAttemptsTable.id, currentAttempt.id),
+          eq(groupBuyRefundAttemptsTable.submittedTxid, currentAttempt.submittedTxid),
+        ));
+      }
+      await tx.update(groupBuyRefundsTable).set({
+        status: "verification_failed",
+        failedAt: staleAt,
+        verificationErrorCode: "processing_failure",
+        verificationErrorMessage: PROCESSING_FAILURE_MESSAGE,
+      }).where(and(
+        eq(groupBuyRefundsTable.id, refundId),
+        eq(groupBuyRefundsTable.status, "verifying"),
+        eq(groupBuyRefundsTable.processingAttemptId, locked.refund.processingAttemptId),
+      ));
+      await insertAudit(tx, {
+        action: "group_buy_refund_processing_failed",
+        message: `Group-buy crypto refund ${refundId} processing lease expired`,
+        metadata: {
+          identity: actor.username,
+          role: actor.role,
+          source: "refund_processor",
+          transition: "verifying_to_verification_failed",
+          resultCode: "processing_failure",
+          refundId,
+          orderId: locked.order.id,
+          groupBuyId: locked.groupBuy.id,
+        },
+      });
+      locked.refund.status = "verification_failed";
     }
     if (locked.refund.status !== "requested" && locked.refund.status !== "verification_failed") {
       throw new GroupBuyRefundError("invalid_refund_transition");
@@ -821,12 +944,26 @@ export async function submitCryptoRefund(
 
     attemptId = randomUUID();
     const [claimed] = await tx
+      .insert(groupBuyRefundTxClaimsTable)
+      .values({ txid: canonicalTxid, refundId, createdAt: new Date() })
+      .onConflictDoNothing()
+      .returning();
+    if (!claimed) {
+      const [existingClaim] = await lockRows(
+        tx,
+        groupBuyRefundTxClaimsTable,
+        eq(groupBuyRefundTxClaimsTable.txid, canonicalTxid),
+      );
+      if (existingClaim?.refundId !== refundId) throw new GroupBuyRefundError("txid_replay");
+    }
+    const [claimedRefund] = await tx
       .update(groupBuyRefundsTable)
       .set({
         status: "verifying",
         verifyingAt: new Date(),
         processorUsername: actor.username,
         processorRole: actor.role,
+        processingAttemptId: attemptId,
         verificationErrorCode: null,
         verificationErrorMessage: null,
         failedAt: null,
@@ -836,19 +973,19 @@ export async function submitCryptoRefund(
         inArray(groupBuyRefundsTable.status, ["requested", "verification_failed"]),
       ))
       .returning();
-    if (!claimed) throw new GroupBuyRefundError("in_progress");
-    const [attempt] = await tx.insert(groupBuyRefundAttemptsTable).values({
+    if (!claimedRefund) throw new GroupBuyRefundError("in_progress");
+    await tx.insert(groupBuyRefundAttemptsTable).values({
       id: attemptId,
       refundId,
       submittedTxid: canonicalTxid,
       processorUsername: actor.username,
       processorRole: actor.role,
       startedAt: new Date(),
-    }).onConflictDoNothing({ target: groupBuyRefundAttemptsTable.submittedTxid }).returning();
-    if (!attempt) throw new GroupBuyRefundError("txid_replay");
+    });
   });
   if (completedDuringClaim) return completedDuringClaim;
   if (!attemptId) throw new GroupBuyRefundError("in_progress");
+  const processingAttemptId = attemptId;
 
   let verification: RefundCryptoVerificationResult;
   try {
@@ -866,13 +1003,15 @@ export async function submitCryptoRefund(
     };
   }
 
-  const completion = await database.transaction(async (tx: DatabaseLike) => {
+  let completion: RefundRequestResult | { failureCode: string; failureMessage: string };
+  try {
+    completion = await database.transaction(async (tx: DatabaseLike) => {
     const locked = await lockCryptoRows(tx, unlockedRefund);
     if (!locked.account || !locked.order || !locked.groupBuy || !locked.refund) {
       throw new GroupBuyRefundError("not_found");
     }
     validateCryptoProcessorScope(locked.account, locked.order, locked.groupBuy, locked.refund, processor);
-    const attempt = locked.attempts.find(candidate => candidate.id === attemptId);
+    const attempt = locked.attempts.find(candidate => candidate.id === processingAttemptId);
     if (
       !attempt
       || attempt.submittedTxid !== canonicalTxid
@@ -891,7 +1030,7 @@ export async function submitCryptoRefund(
       resultCode: verification.verified ? "verified" : verification.code,
       failureReason: failureMessage,
     }).where(and(
-      eq(groupBuyRefundAttemptsTable.id, attemptId),
+      eq(groupBuyRefundAttemptsTable.id, processingAttemptId),
       eq(groupBuyRefundAttemptsTable.submittedTxid, canonicalTxid),
     ));
 
@@ -958,6 +1097,7 @@ export async function submitCryptoRefund(
         groupBuyId: locked.groupBuy.id,
         asset: locked.refund.asset,
         confirmationCount: verification.confirmationCount,
+        outgoingTxid: canonicalTxid,
       },
     });
     return asRefundResult({
@@ -968,7 +1108,11 @@ export async function submitCryptoRefund(
       explorerUrl,
       completedAt: now,
     });
-  });
+    });
+  } catch {
+    await compensateCryptoProcessingFailure(database, unlockedRefund, processingAttemptId, canonicalTxid, actor);
+    throw new GroupBuyRefundError("processing_failure", PROCESSING_FAILURE_MESSAGE);
+  }
   if ("failureCode" in completion) {
     throw new GroupBuyRefundError(completion.failureCode, completion.failureMessage);
   }

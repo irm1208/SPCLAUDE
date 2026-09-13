@@ -13,7 +13,7 @@ const amount = 123_450_000n;
 function rpcSuccess(latestBlock = 112n) {
   return async (method: string) => ({
     eth_chainId: "0x1",
-    eth_getTransactionByHash: { hash: txid },
+    eth_getTransactionByHash: { hash: txid, to: ETH_USDC_CONTRACT },
     eth_getTransactionReceipt: {
       status: "0x1",
       blockNumber: "0x64",
@@ -57,5 +57,57 @@ describe("exact Ethereum refund transfer verification", () => {
     });
 
     expect(result).toMatchObject({ verified: false, code: "wrong_amount" });
+  });
+
+  it.each([
+    ["wrong network", { eth_chainId: "0x5" }, "wrong_network"],
+    ["wrong token target", { eth_getTransactionByHash: { hash: txid, to: `0x${"d".repeat(40)}` } }, "wrong_token"],
+    ["missing target", { eth_getTransactionByHash: { hash: txid } }, "transaction_not_found"],
+    ["failed receipt", { eth_getTransactionReceipt: { status: "0x0" } }, "failed_transaction"],
+    ["missing transaction", { eth_getTransactionByHash: null }, "transaction_not_found"],
+    ["pending receipt", { eth_getTransactionReceipt: null }, "transaction_not_found"],
+    ["insufficient confirmations", { eth_blockNumber: "0x6b" }, "insufficient_confirmations"],
+  ] as const)("returns %s without tolerant fallback", async (_name, overrides, code) => {
+    const base = rpcSuccess(112n);
+    const result = await verifyRefundCryptoTransfer({
+      txid,
+      asset: "USDC",
+      destinationWallet: destination,
+      amountBaseUnits: amount.toString(),
+      minConfirmations: 12,
+      rpcCall: async (method, params) => {
+        if (method in overrides) return overrides[method as keyof typeof overrides];
+        return base(method, params);
+      },
+    });
+    expect(result).toMatchObject({ verified: false, code });
+  });
+
+  it("distinguishes wrong recipient and provider failure", async () => {
+    const base = rpcSuccess();
+    const wrongRecipient = await verifyRefundCryptoTransfer({
+      txid,
+      asset: "USDC",
+      destinationWallet: destination,
+      amountBaseUnits: amount.toString(),
+      minConfirmations: 1,
+      rpcCall: async (method, params) => {
+        const result = await base(method, params) as any;
+        if (method === "eth_getTransactionReceipt") {
+          result.logs[0].topics[2] = topicAddress(`0x${"e".repeat(40)}`);
+        }
+        return result;
+      },
+    });
+    expect(wrongRecipient).toMatchObject({ verified: false, code: "wrong_recipient" });
+
+    const providerFailure = await verifyRefundCryptoTransfer({
+      txid,
+      asset: "USDC",
+      destinationWallet: destination,
+      amountBaseUnits: amount.toString(),
+      rpcCall: async () => { throw new Error("offline"); },
+    });
+    expect(providerFailure).toMatchObject({ verified: false, code: "provider_unavailable" });
   });
 });
