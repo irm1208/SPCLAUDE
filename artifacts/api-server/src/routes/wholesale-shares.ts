@@ -1,6 +1,7 @@
 import {
   assertNoActiveRefunds,
   RefundMutationBlockedError,
+  refundMutationErrorOrderId,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
@@ -3463,6 +3464,11 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
   } catch (error) {
     if (error === ADMIN_ADJUSTMENT_CONFLICT) {
       res.status(409).json({ error: "This shared order must be open or locked before it can be adjusted." }); return;
+    }
+    const refundOrderId = refundMutationErrorOrderId(error);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
     }
     res.status(400).json({ error: error instanceof Error ? error.message : "Unable to apply the shared-order adjustment." }); return;
   }

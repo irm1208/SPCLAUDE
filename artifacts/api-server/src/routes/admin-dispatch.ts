@@ -1,5 +1,6 @@
 import {
   RefundMutationBlockedError,
+  refundMutationErrorOrderId,
   refundMutableOrderWhere,
   withRefundMutationGuard,
 } from "../lib/refund-mutation-guard";
@@ -442,8 +443,9 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
 
     res.json({ ok: true, confirmed: scopedOrderIds.length });
   } catch (e) {
-    if (e instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     console.error("[dispatch confirm]", e);
@@ -515,8 +517,9 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
 
     res.json({ ok: true, undispatched: scopedOrderIds.length });
   } catch (e) {
-    if (e instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     console.error("[dispatch undispatch]", e);
@@ -541,8 +544,9 @@ router.post(`${cfg.prefix}/:gbId/reattribute`, async (req, res) => {
     });
     res.json({ ok: true, updated: orderIds.length });
   } catch (e) {
-    if (e instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     console.error("[dispatch reattribute]", e);
@@ -637,8 +641,9 @@ router.post(`${cfg.prefix}/:gbId/mark-shipped-by-reshipper`, async (req, res) =>
 
     res.json({ ok: true, marked: toMark.length });
   } catch (e) {
-    if (e instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     console.error("[dispatch mark-shipped-by-reshipper]", e);
@@ -678,8 +683,9 @@ router.post("/admin/dispatch/:gbId/mark-orders-shipped", async (req, res) => {
 
     res.json({ ok: true, marked: toMark.length });
   } catch (e) {
-    if (e instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     console.error("[dispatch mark-orders-shipped]", e);
@@ -1435,8 +1441,9 @@ router.post(`${cfg.prefix}/:gbId/archive-orders`, async (req, res): Promise<void
     });
     res.json({ ok: true, updated: orderIds.length, archived: archive });
   } catch (e) {
-    if (e instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: e.orderId });
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     console.error("[dispatch archive-orders]", e);

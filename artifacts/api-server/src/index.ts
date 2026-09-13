@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "./lib/refund-mutation-guard";
+import { refundMutationErrorOrderId, refundMutableOrderWhere } from "./lib/refund-mutation-guard";
 import app, { markApplicationReady } from "./app";
 import { seedIfEmpty } from "./seed";
 import { setWebhook, getTelegramStatus, buildWebhookUrl } from "./lib/telegram";
@@ -1031,6 +1031,11 @@ async function purgeExpiredDeletedOrders(): Promise<void> {
     const count = Array.isArray(result) ? result.length : 0;
     if (count > 0) console.log(`[cleanup] Purged ${count} expired soft-deleted order(s)`);
   } catch (err) {
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      console.warn(`[cleanup] Skipped purging order ${refundOrderId}: refund_active`);
+      return;
+    }
     console.error("[cleanup] Error purging expired deleted orders:", err);
   }
 }

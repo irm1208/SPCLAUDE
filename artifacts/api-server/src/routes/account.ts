@@ -1,7 +1,7 @@
 import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
-  RefundMutationBlockedError,
+  refundMutationErrorOrderId,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
@@ -870,10 +870,20 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
   try {
     result = await runCreditSpend();
   } catch (error) {
+    const refundOrderId = refundMutationErrorOrderId(error);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     const dbError = error as { code?: string; constraint?: string };
     if (dbError.code === "23505" && dbError.constraint?.includes("credit_transactions_account_operation_unique")) {
       try { result = await runCreditSpend(); }
       catch (retryError) {
+        const retryRefundOrderId = refundMutationErrorOrderId(retryError);
+        if (retryRefundOrderId) {
+          res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: retryRefundOrderId });
+          return;
+        }
         console.error("[account] Credit spend retry recovery failed", retryError);
         res.status(500).json({ error: "Unable to apply credits; no credits were deducted" }); return;
       }
@@ -3840,8 +3850,9 @@ router.delete("/account", requireAccount, async (req: any, res: any): Promise<vo
 
     res.json({ ok: true });
   } catch (err: any) {
-    if (err instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     console.error("[account DELETE /account]", err);

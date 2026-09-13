@@ -1,4 +1,4 @@
-import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import { refundMutationErrorOrderId, refundMutableOrderWhere } from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -449,7 +449,12 @@ router.post("/admin/orders/bulk-reassign-reshipper", async (req, res): Promise<v
         })
         .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
       results.push({ orderId, ok: true });
-    } catch {
+    } catch (error) {
+      const refundOrderId = refundMutationErrorOrderId(error);
+      if (refundOrderId) {
+        res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+        return;
+      }
       results.push({ orderId, ok: false, error: "Internal error" });
     }
   }

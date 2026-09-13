@@ -9,7 +9,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import { globalLimiter } from "./middleware/rate-limits";
 import router from "./routes";
 import { buildAllowedOrigins, isAllowedOrigin } from "./lib/cors-origin";
-import { RefundMutationBlockedError, refundMutationDatabaseErrorOrderId } from "./lib/refund-mutation-guard";
+import { refundMutationConflictResponse, refundMutationHttpStatus } from "./lib/refund-mutation-guard";
 
 const app: Express = express();
 
@@ -259,24 +259,12 @@ if (process.env["NODE_ENV"] === "production") {
 // ── Global error handler ───────────────────────────────────────
 // Never leak internal stack traces or error details to the client.
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  if (err instanceof RefundMutationBlockedError) {
-    res.status(409).json({
-      error: "Order mutation is blocked while a refund is active.",
-      code: "refund_active",
-      orderId: err.orderId,
-    });
+  const refundConflict = refundMutationConflictResponse(err);
+  if (refundConflict) {
+    res.status(refundConflict.status).json(refundConflict.body);
     return;
   }
-  const databaseOrderId = refundMutationDatabaseErrorOrderId(err);
-  if (databaseOrderId) {
-    res.status(409).json({
-      error: "Order mutation is blocked while a refund is active.",
-      code: "refund_active",
-      orderId: databaseOrderId,
-    });
-    return;
-  }
-  const status = (err as any).status ?? 500;
+  const status = refundMutationHttpStatus(err) ?? (err as any).status ?? 500;
   if (status >= 500) {
     console.error("[ERROR]", err.message, err.stack);
     res.status(status).json({ error: "Internal server error" });

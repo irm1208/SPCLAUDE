@@ -44,8 +44,47 @@ export class RefundMutationBlockedError extends Error {
 export function refundMutationDatabaseErrorOrderId(error: unknown): string | null {
   const candidate = error as { code?: unknown; message?: unknown } | null;
   if (candidate?.code !== "22P02" || typeof candidate.message !== "string") return null;
-  const match = candidate.message.match(/refund_active:([^"'\s]+)/);
+  // This is deliberately stricter than "any 22P02 containing the token":
+  // only the exact invalid-integer shape emitted by refundMutationPredicate
+  // is an authorization conflict.  Other PostgreSQL input errors retain their
+  // existing route/global status.
+  const match = candidate.message.match(
+    /invalid input syntax for type integer:\s*"refund_active:([^"]+)"/,
+  );
   return match?.[1] ?? null;
+}
+
+/**
+ * Normalize both the explicit assertion error and the fail-closed database
+ * error. Route-local catches must use this rather than only checking the
+ * assertion class, otherwise a guarded no-RETURNING mutation can be exposed
+ * as a generic 400/500 response instead of the refund 409.
+ */
+export function refundMutationErrorOrderId(error: unknown): string | null {
+  if (error instanceof RefundMutationBlockedError) return error.orderId;
+  return refundMutationDatabaseErrorOrderId(error);
+}
+
+export function refundMutationConflictResponse(error: unknown): {
+  status: 409;
+  body: { error: string; code: typeof REFUND_MUTATION_BLOCKED_CODE; orderId: string };
+} | null {
+  const orderId = refundMutationErrorOrderId(error);
+  if (!orderId) return null;
+  return {
+    status: 409,
+    body: {
+      error: "Order mutation is blocked while a refund is active.",
+      code: REFUND_MUTATION_BLOCKED_CODE,
+      orderId,
+    },
+  };
+}
+
+export function refundMutationHttpStatus(error: unknown): number | null {
+  if (refundMutationErrorOrderId(error)) return 409;
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status === "number" ? status : null;
 }
 
 /**

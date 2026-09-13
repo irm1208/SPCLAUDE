@@ -1,4 +1,4 @@
-import { assertNoActiveRefunds, refundMutableOrderWhere } from "./refund-mutation-guard";
+import { assertNoActiveRefunds, refundMutationErrorOrderId, refundMutableOrderWhere } from "./refund-mutation-guard";
 /**
  * Auto-refresh tracking for all active GB parcels and tracking-link packages.
  * Runs on a schedule and updates stale (non-delivered) tracking entries.
@@ -530,8 +530,13 @@ async function refreshIndividualOrders(): Promise<number> {
            inline_keyboard: [[{ text: "Track package", url: trackUrl }]],
          }, { suppressPreferenceDisabledLog: isDirectWholesale }).catch(() => {});
        }
-    } catch (err) {
-      console.error(`[tracking-auto-refresh] Error refreshing order ${order.id}:`, err);
+   } catch (err) {
+     const refundOrderId = refundMutationErrorOrderId(err);
+     if (refundOrderId) {
+       console.warn(`[tracking-auto-refresh] Skipped order ${refundOrderId}: refund_active`);
+     } else {
+       console.error(`[tracking-auto-refresh] Error refreshing order ${order.id}:`, err);
+     }
     }
     await sleep(API_CALL_DELAY_MS);
   }

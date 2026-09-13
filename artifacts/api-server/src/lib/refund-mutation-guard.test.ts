@@ -7,6 +7,9 @@ import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
   refundMutationDatabaseErrorOrderId,
+  refundMutationConflictResponse,
+  refundMutationHttpStatus,
+  refundMutationErrorOrderId,
   refundMutationPredicate,
   withRefundMutationGuard,
 } from "./refund-mutation-guard";
@@ -55,6 +58,47 @@ describe("refund mutation guard", () => {
     expect(refundMutationDatabaseErrorOrderId({
       code: "22P02",
       message: "invalid input syntax for type integer: unrelated",
+    })).toBeNull();
+  });
+
+  it("normalizes explicit and fail-closed errors for route-local catches", () => {
+    expect(refundMutationErrorOrderId(new RefundMutationBlockedError("order-1"))).toBe("order-1");
+    expect(refundMutationErrorOrderId({
+      code: "22P02",
+      message: 'invalid input syntax for type integer: "refund_active:order-2"',
+    })).toBe("order-2");
+    expect(refundMutationErrorOrderId({
+      code: "22P02",
+      message: 'invalid input syntax for type integer: "not-a-refund-conflict"',
+    })).toBeNull();
+    expect(refundMutationErrorOrderId({
+      code: "22P02",
+      message: "refund_active:order-3",
+    })).toBeNull();
+    expect(refundMutationConflictResponse({
+      code: "22P02",
+      message: 'invalid input syntax for type integer: "refund_active:order-4"',
+    })).toEqual({
+      status: 409,
+      body: {
+        error: "Order mutation is blocked while a refund is active.",
+        code: "refund_active",
+        orderId: "order-4",
+      },
+    });
+    expect(refundMutationHttpStatus(new RefundMutationBlockedError("order-6"))).toBe(409);
+    expect(refundMutationConflictResponse({
+      code: "22P02",
+      message: 'invalid input syntax for type integer: "bad-input"',
+    })).toBeNull();
+    expect(refundMutationHttpStatus({
+      code: "22P02",
+      status: 400,
+      message: 'invalid input syntax for type integer: "bad-input"',
+    })).toBe(400);
+    expect(refundMutationHttpStatus({
+      code: "22P02",
+      message: 'invalid input syntax for type integer: "refund_active:order-5"',
     })).toBeNull();
   });
 

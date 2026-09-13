@@ -2,6 +2,7 @@ import {
   assertNoActiveRefunds,
   activeRefundStatusesSql,
   RefundMutationBlockedError,
+  refundMutationErrorOrderId,
   refundMutableOrderWhere,
   withRefundMutationGuard,
 } from "../lib/refund-mutation-guard";
@@ -1860,8 +1861,9 @@ router.delete("/admin/orders/:id", async (req, res): Promise<void> => {
       .set({ deletedAt: new Date(), deletedBy: "admin" })
       .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
   } catch (err: unknown) {
-    if (err instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     const msg = err instanceof Error ? err.message : "Database error";
@@ -1999,8 +2001,9 @@ router.delete("/admin/orders", async (req, res): Promise<void> => {
         .where(refundMutableOrderWhere(inArray(ordersTable.id, safeIds)));
     });
   } catch (err: unknown) {
-    if (err instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     const msg = err instanceof Error ? err.message : "Database error";
@@ -3437,6 +3440,11 @@ router.patch("/admin/orders/:id/routing", async (req, res): Promise<void> => {
     const lineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, req.params.id));
     res.json(fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]));
   } catch (err) {
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     console.error("[admin] PATCH routing error:", err);
     res.status(500).json({ error: "Failed to update routing" });
   }
@@ -3458,6 +3466,11 @@ router.patch("/admin/orders/:id/line-items-draft", async (req, res): Promise<voi
     await db.update(ordersTable).set({ draftLineItems: lineItems, draftLineItemsSavedAt: new Date() }).where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
     res.json({ ok: true, savedAt: new Date().toISOString() });
   } catch (err) {
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     console.error("[admin] PATCH line-items-draft error:", err);
     res.status(500).json({ error: "Failed to save draft" });
   }
@@ -3503,6 +3516,11 @@ router.post("/admin/orders/:id/balance-resolution", async (req, res): Promise<vo
       res.json({ ok: true, action: "requested" });
     }
   } catch (err) {
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     console.error("[admin] POST balance-resolution error:", err);
     res.status(500).json({ error: "Failed to resolve balance" });
   }
@@ -3600,6 +3618,8 @@ router.post("/admin/orders/bulk-routing", async (req, res): Promise<void> => {
 
         updated.push(orderId);
       } catch (err) {
+        const refundOrderId = refundMutationErrorOrderId(err);
+        if (refundOrderId) throw new RefundMutationBlockedError(refundOrderId);
         if (err instanceof RefundMutationBlockedError) throw err;
         errors.push(orderId);
         console.error(`[admin] bulk-routing error for order ${orderId}:`, err);
@@ -3609,8 +3629,9 @@ router.post("/admin/orders/bulk-routing", async (req, res): Promise<void> => {
 
     res.json({ updated, skipped, errors, totalRequested: orderIds.length });
   } catch (err) {
-    if (err instanceof RefundMutationBlockedError) {
-      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: err.orderId });
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     handleRoutingError(err, res, { action: "bulk_routing" });
@@ -5029,6 +5050,11 @@ router.put("/admin/customers/:username/rename", async (req: any, res: any): Prom
 
     res.json({ ok: true, newUsername: tg });
   } catch (err) {
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     console.error("[admin/customers/:username/rename]", err);
     res.status(500).json({ error: "Failed to rename customer" });
   }
@@ -6621,6 +6647,8 @@ async function bulkTrackingHandler(req: any, res: any): Promise<void> {
 
       results.push({ code: safeCode, trackingNumber: finalPrimary, ok: true });
     } catch (err: any) {
+      const refundOrderId = refundMutationErrorOrderId(err);
+      if (refundOrderId) throw new RefundMutationBlockedError(refundOrderId);
       results.push({ code: safeCode, trackingNumber: primaryTracking, ok: false, error: err?.message ?? "Unknown error" });
     }
   }
@@ -8112,6 +8140,11 @@ router.post("/admin/accounts/:username/rename", async (req: any, res: any): Prom
 
     res.json({ ok: true, oldUsername: oldBare, newUsername: newBare });
   } catch (err: any) {
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     console.error("[admin/accounts/rename]", err);
     res.status(500).json({ error: "Rename failed", detail: err?.message });
   }
@@ -10480,6 +10513,11 @@ router.post("/admin/group-buys/:gbId/routing-undo", async (req, res): Promise<vo
 
     res.json({ ok: true, undoneHistoryId: latest.id, orderId: latest.orderId });
   } catch (err) {
+    const refundOrderId = refundMutationErrorOrderId(err);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     console.error("[admin] POST routing-undo error:", err);
     res.status(500).json({ error: "Failed to undo routing" });
   }
