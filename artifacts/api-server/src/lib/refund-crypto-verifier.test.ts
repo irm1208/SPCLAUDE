@@ -11,7 +11,7 @@ const topicAddress = (address: string) => `0x${address.slice(2).padStart(64, "0"
 const amount = 123_450_000n;
 
 function rpcSuccess(latestBlock = 112n) {
-  return async (method: string) => ({
+  return async (method: string, _params?: unknown[]) => ({
     eth_chainId: "0x1",
     eth_getTransactionByHash: { hash: txid, to: ETH_USDC_CONTRACT },
     eth_getTransactionReceipt: {

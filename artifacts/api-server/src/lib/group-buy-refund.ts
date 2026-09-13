@@ -767,6 +767,7 @@ async function compensateCryptoProcessingFailure(
   txid: string,
   actor: { username: string; role: string },
 ): Promise<void> {
+  let auditPayload: { orderId: string; groupBuyId: string } | undefined;
   try {
     await database.transaction(async (tx: DatabaseLike) => {
       const locked = await lockCryptoRows(tx, refundSnapshot);
@@ -798,29 +799,31 @@ async function compensateCryptoProcessingFailure(
         eq(groupBuyRefundsTable.status, "verifying"),
         eq(groupBuyRefundsTable.processingAttemptId, attemptId),
       ));
-      // Recovery must not leave a refund stranded merely because an audit sink
-      // is unavailable. The state transition remains safe and retryable.
-      try {
-        await insertAudit(tx, {
-          action: "group_buy_refund_processing_failed",
-          message: `Group-buy crypto refund ${refundSnapshot.id} processing failed`,
-          metadata: {
-            identity: actor.username,
-            role: actor.role,
-            source: "refund_processor",
-            transition: "verifying_to_verification_failed",
-            resultCode: "processing_failure",
-            refundId: refundSnapshot.id,
-            orderId: locked.order.id,
-            groupBuyId: locked.groupBuy.id,
-          },
-        });
-      } catch {
-        // Preserve retryability even when the audit provider is unavailable.
-      }
+      auditPayload = { orderId: locked.order.id, groupBuyId: locked.groupBuy.id };
     });
   } catch {
     // The original finalization error is the stable error exposed to callers.
+  }
+  if (!auditPayload) return;
+  try {
+    await database.transaction(async (tx: DatabaseLike) => {
+      await insertAudit(tx, {
+        action: "group_buy_refund_processing_failed",
+        message: `Group-buy crypto refund ${refundSnapshot.id} processing failed`,
+        metadata: {
+          identity: actor.username,
+          role: actor.role,
+          source: "refund_processor",
+          transition: "verifying_to_verification_failed",
+          resultCode: "processing_failure",
+          refundId: refundSnapshot.id,
+          orderId: auditPayload!.orderId,
+          groupBuyId: auditPayload!.groupBuyId,
+        },
+      });
+    });
+  } catch {
+    // Audit is best effort after recovery has committed.
   }
 }
 
@@ -922,20 +925,6 @@ export async function submitCryptoRefund(
         eq(groupBuyRefundsTable.status, "verifying"),
         eq(groupBuyRefundsTable.processingAttemptId, locked.refund.processingAttemptId),
       ));
-      await insertAudit(tx, {
-        action: "group_buy_refund_processing_failed",
-        message: `Group-buy crypto refund ${refundId} processing lease expired`,
-        metadata: {
-          identity: actor.username,
-          role: actor.role,
-          source: "refund_processor",
-          transition: "verifying_to_verification_failed",
-          resultCode: "processing_failure",
-          refundId,
-          orderId: locked.order.id,
-          groupBuyId: locked.groupBuy.id,
-        },
-      });
       locked.refund.status = "verification_failed";
     }
     if (locked.refund.status !== "requested" && locked.refund.status !== "verification_failed") {
