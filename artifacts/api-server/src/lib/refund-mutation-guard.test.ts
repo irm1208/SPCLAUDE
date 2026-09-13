@@ -7,6 +7,7 @@ import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
   refundMutationPredicate,
+  withRefundMutationGuard,
 } from "./refund-mutation-guard";
 
 describe("refund mutation guard", () => {
@@ -56,12 +57,22 @@ describe("refund mutation guard", () => {
     expect(database.lockedOrderIds).toEqual(["order-a", "order-b"]);
     expect(database.checkedOrderIds).toEqual(["order-a", "order-b"]);
   });
+
+  it("runs a bulk mutation only after the complete guard succeeds", async () => {
+    const database = fakeDatabase([]);
+    database.transaction = vi.fn(async (callback: (tx: typeof database) => Promise<unknown>) => callback(database));
+    const mutate = vi.fn(async () => "mutated");
+
+    await expect(withRefundMutationGuard(database, ["order-a"], mutate)).resolves.toBe("mutated");
+    expect(mutate).toHaveBeenCalledOnce();
+  });
 });
 
 function fakeDatabase(refunds: Array<{ orderId: string; id: string; status: string }>) {
   const database = {
     lockedOrderIds: [] as string[],
     checkedOrderIds: [] as string[],
+    transaction: undefined as unknown,
     select: vi.fn(() => ({
       from: vi.fn((table: unknown) => ({
         where: vi.fn(() => ({

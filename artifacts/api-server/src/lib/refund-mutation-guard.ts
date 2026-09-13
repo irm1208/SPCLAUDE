@@ -131,6 +131,24 @@ export async function assertNoActiveRefunds(
   if (blockedOrderId) throw new RefundMutationBlockedError(blockedOrderId);
 }
 
+/**
+ * Transaction boundary for bulk order mutations.  The lock/check is inside
+ * the same transaction as the callback, so a blocked order cannot leave a
+ * partially updated subset behind.
+ */
+export async function withRefundMutationGuard<T>(
+  database: GuardDatabase & {
+    transaction: <R>(callback: (tx: GuardDatabase) => Promise<R>) => Promise<R>;
+  },
+  orderIds: readonly string[],
+  mutate: (tx: GuardDatabase) => Promise<T>,
+): Promise<T> {
+  return database.transaction(async tx => {
+    await assertNoActiveRefunds(tx, orderIds);
+    return mutate(tx);
+  });
+}
+
 /** Convenient singular/plural spelling for route and service call sites. */
 export const assertNoActiveRefundForOrder = assertNoActiveRefund;
 export const assertNoActiveRefundForOrders = assertNoActiveRefunds;
