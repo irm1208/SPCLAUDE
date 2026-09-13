@@ -187,7 +187,7 @@ export async function notifyUserFromTemplateFull(
   const { template, enabled } = await getTemplate(eventKey);
   if (!enabled) return { ok: false, skipped: true };
   const text = renderTemplate(template, vars);
-  return notifyUserFull(telegramUsername, prefKey, text);
+  return notifyUserFull(telegramUsername, prefKey, text, undefined, { eventKey });
 }
 
 /**
@@ -210,6 +210,8 @@ export async function sendAdminFromTemplate(
 interface TgLogCtx {
   recipientType: "user" | "admin";
   recipientUsername?: string;
+  /** Stable logical event key for local/provider-side deduplication. */
+  eventKey?: string;
 }
 
 function logTgMessage(chatId: string, messageText: string, delivered: boolean, errorMessage: string | undefined, ctx: TgLogCtx): void {
@@ -217,6 +219,7 @@ function logTgMessage(chatId: string, messageText: string, delivered: boolean, e
     recipientType: ctx.recipientType,
     recipientUsername: ctx.recipientUsername ?? null,
     recipientChatId: chatId,
+    eventKey: ctx.eventKey ?? null,
     messageText,
     delivered,
     errorMessage: errorMessage ?? null,
@@ -449,6 +452,8 @@ export interface NotifyResult {
 export interface NotifyOptions {
   /** Do not create an in-app log if this final preference check is disabled. */
   suppressPreferenceDisabledLog?: boolean;
+  /** Stable logical event key; Telegram itself may not support idempotency. */
+  eventKey?: string;
 }
 
 export function shouldLogPreferenceDisabledNotification(options?: NotifyOptions): boolean {
@@ -486,7 +491,7 @@ export async function notifyUserFull(
       console.debug(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — preference disabled`);
       if (shouldLogPreferenceDisabledNotification(options)) {
         // Conventional events remain visible in the in-app feed when disabled.
-        logTgMessage(account.telegramChatId ?? "", text, false, "skipped: Telegram preference off (in-app only)", { recipientType: "user", recipientUsername: bare });
+        logTgMessage(account.telegramChatId ?? "", text, false, "skipped: Telegram preference off (in-app only)", { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey });
       }
       return { ok: false, skipped: true, chatId: account.telegramChatId ?? undefined };
     }
@@ -495,19 +500,19 @@ export async function notifyUserFull(
     if (!token) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — bot token not configured`);
       // Still record the notification so it appears in the customer's in-app feed.
-      logTgMessage(account.telegramChatId ?? "", text, false, "skipped: bot token not configured (in-app only)", { recipientType: "user", recipientUsername: bare });
+      logTgMessage(account.telegramChatId ?? "", text, false, "skipped: bot token not configured (in-app only)", { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey });
       return { ok: false, skipped: true };
     }
     if (!account.telegramChatId) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — Telegram not linked (no chatId)`);
       // Still record the notification so it appears in the customer's in-app feed.
-      logTgMessage("", text, false, "skipped: Telegram not linked (in-app only)", { recipientType: "user", recipientUsername: bare });
+      logTgMessage("", text, false, "skipped: Telegram not linked (in-app only)", { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey });
       return { ok: false, skipped: true };
     }
 
     const result = await sendTelegramMessageFull(
       account.telegramChatId, text, "HTML",
-      { recipientType: "user", recipientUsername: bare },
+      { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey },
       replyMarkup ? { reply_markup: replyMarkup } : undefined,
     );
     if (result.ok) {

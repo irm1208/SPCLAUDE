@@ -22,7 +22,8 @@ import { startDbBackupSchedule } from "./lib/db-backup";
 import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
-import { startRefundNotificationDrain } from "./lib/refund-notifications";
+import { registerRefundNotificationScheduler } from "./lib/refund-notifications";
+import { stopAllSchedulers } from "./lib/scheduler-registry";
 import { db, ordersTable } from "@workspace/db";
 import { sql, and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 
@@ -1104,7 +1105,7 @@ function startBackgroundServices(): void {
   startEmailScheduler();
   startDbBackupSchedule();
   startDbBackupVerificationSchedule();
-  startRefundNotificationDrain(db);
+  registerRefundNotificationScheduler(db);
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
 }
 
@@ -1112,6 +1113,13 @@ function startBackgroundServices(): void {
 // gated with 503 until bootstrap succeeds, while the deployment health probe
 // can confirm that the process opened its configured port.
 const server = startServer();
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    stopAllSchedulers();
+    server.close(() => process.exit(0));
+  });
+}
 
 runStartupMigrations()
   .then(() => seedIfEmpty())

@@ -357,6 +357,28 @@ describe("refund notification contract", () => {
     expect(db.notifications[0].claimedAt).toBeNull();
   });
 
+  it("retries after a provider-accepted crash window because Telegram has no idempotency key", async () => {
+    const db = new PersistedFakeDb();
+    await enqueueRefundNotification(db, {
+      refundId: "crash-window",
+      accountId: "buyer",
+      status: "requested",
+      amountUsd: "1.00",
+    });
+    let transportCalls = 0;
+    const sender = async () => {
+      transportCalls += 1;
+      if (transportCalls === 1) throw new Error("crashed after provider acceptance");
+      return { ok: true };
+    };
+    expect(await drainRefundNotifications(db, { limit: 1, sender })).toBe(0);
+    expect(db.notifications[0].sentAt).toBeNull();
+    expect(db.notifications[0].lastError).toContain("crashed");
+    expect(await drainRefundNotifications(db, { limit: 1, sender })).toBe(1);
+    expect(transportCalls).toBe(2);
+    expect(db.notifications[0].sentAt).toBeDefined();
+  });
+
   it("fences a late failure from an expired-lease worker", async () => {
     const db = new PersistedFakeDb();
     await enqueueRefundNotification(db, {

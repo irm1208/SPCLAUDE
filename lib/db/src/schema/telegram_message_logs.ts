@@ -5,6 +5,7 @@ export const telegramMessageLogsTable = pgTable("telegram_message_logs", {
   recipientType: text("recipient_type").notNull(),
   recipientUsername: text("recipient_username"),
   recipientChatId: text("recipient_chat_id").notNull(),
+  eventKey: text("event_key"),
   messageText: text("message_text").notNull(),
   sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   delivered: boolean("delivered").notNull(),

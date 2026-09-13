@@ -10,6 +10,7 @@ import {
   creditTransactionsTable,
   groupBuyRefundAttemptsTable,
   groupBuyRefundTransitionOutboxTable,
+  groupBuyRefundNotificationsTable,
   groupBuyRefundTxClaimsTable,
   groupBuyRefundsTable,
   groupBuysTable,
@@ -133,6 +134,7 @@ describe("group buy refund schema contract", () => {
       expect.arrayContaining([
         "refund_id", "attempt_id", "transition", "processor_username",
         "processor_role", "submitted_txid", "result_code", "delivered_at",
+      "attempt_count", "last_attempt_at", "last_error",
       ]),
     );
     expect(refundColumns.map(column => column.name)).not.toContain("verification_error");
@@ -150,7 +152,18 @@ describe("group buy refund schema contract", () => {
     expect(getTableConfig(groupBuyRefundAttemptsTable).indexes.map(index => index.config.name))
       .not.toContain("group_buy_refund_attempts_txid_unique");
     expect(getTableConfig(groupBuyRefundTransitionOutboxTable).indexes.map(index => index.config.name))
-      .toContain("group_buy_refund_transition_outbox_unique");
+      .toEqual(expect.arrayContaining([
+        "group_buy_refund_transition_outbox_unique",
+        "group_buy_refund_transition_outbox_pending_idx",
+      ]));
+    expect(getTableConfig(groupBuyRefundNotificationsTable).indexes.map(index => index.config.name))
+      .toContain("group_buy_refund_notifications_pending_idx");
+    const auditPending = getTableConfig(groupBuyRefundTransitionOutboxTable).indexes
+      .find(index => index.config.name === "group_buy_refund_transition_outbox_pending_idx");
+    const notificationPending = getTableConfig(groupBuyRefundNotificationsTable).indexes
+      .find(index => index.config.name === "group_buy_refund_notifications_pending_idx");
+    expect(sqlText(auditPending!.config.where!)).toBe("delivered_at is null");
+    expect(sqlText(notificationPending!.config.where!)).toBe("sent_at is null");
     expect(getTableConfig(groupBuyRefundTransitionOutboxTable).checks.map(checkConstraint => checkConstraint.name))
       .toContain("group_buy_refund_transition_outbox_txid_nonempty");
     expect(creditIndexes.map(index => index.config.name)).toContain(
@@ -255,6 +268,8 @@ describe("group buy refund schema contract", () => {
     expect(indexColumns(refundConfig, "group_buy_refunds_group_buy_status_idx")).toEqual([
       "group_buy_id",
       "status",
+      "requested_at",
+      "id",
     ]);
     expect(indexColumns(attemptConfig, "group_buy_refund_attempts_refund_started_idx")).toEqual([
       "refund_id",

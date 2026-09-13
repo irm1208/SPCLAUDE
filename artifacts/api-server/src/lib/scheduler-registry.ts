@@ -10,6 +10,7 @@ export interface SchedulerDescriptor {
   maxIntervalMs: number;
   initialDelayMs: number;
   run: () => Promise<void>;
+  backlogCount?: () => Promise<number>;
 }
 
 export interface SchedulerStatus {
@@ -26,6 +27,7 @@ export interface SchedulerStatus {
   lastDurationMs: number | null;
   lastError: string | null;
   nextRunAt: string | null;
+  backlogCount: number | null;
 }
 
 interface RuntimeState {
@@ -38,6 +40,7 @@ interface RuntimeState {
   lastError: string | null;
   nextRunAt: number | null;
   timer: NodeJS.Timeout | null;
+  backlogCount: number | null;
 }
 
 const registry = new Map<string, RuntimeState>();
@@ -80,6 +83,7 @@ async function tick(state: RuntimeState): Promise<void> {
   try {
     await state.desc.run();
     state.lastError = null;
+    if (state.desc.backlogCount) state.backlogCount = await state.desc.backlogCount();
   } catch (err: any) {
     state.lastError = err?.message ? String(err.message) : String(err);
     console.error(`[scheduler:${state.desc.name}] Error:`, err);
@@ -120,6 +124,7 @@ export function registerScheduler(desc: SchedulerDescriptor): void {
     lastError: null,
     nextRunAt: null,
     timer: null,
+    backlogCount: null,
   };
   registry.set(desc.name, state);
 
@@ -149,6 +154,7 @@ export function listSchedulers(): SchedulerStatus[] {
     lastDurationMs: s.lastDurationMs,
     lastError: s.lastError,
     nextRunAt: s.nextRunAt ? new Date(s.nextRunAt).toISOString() : null,
+    backlogCount: s.backlogCount,
   }));
 }
 
@@ -166,6 +172,7 @@ export async function runSchedulerNow(name: string): Promise<{ ok: boolean; erro
   try {
     await state.desc.run();
     state.lastError = null;
+    if (state.desc.backlogCount) state.backlogCount = await state.desc.backlogCount();
   } catch (err: unknown) {
     state.lastError = err instanceof Error ? err.message : String(err);
     console.error(`[scheduler:${name}] Manual run failed:`, err);
@@ -196,4 +203,13 @@ export async function setSchedulerEnabled(name: string, enabled: boolean): Promi
   await writeConfig(enabledKey(name), enabled ? "true" : "false");
   schedule(state);
   return { ok: true };
+}
+
+/** Stop every registry timer during process shutdown. */
+export function stopAllSchedulers(): void {
+  for (const state of registry.values()) {
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = null;
+    state.nextRunAt = null;
+  }
 }

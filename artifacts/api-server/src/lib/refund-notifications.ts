@@ -5,8 +5,9 @@ import {
   groupBuyRefundTransitionOutboxTable,
   type GroupBuyRefundStatus,
 } from "@workspace/db";
-import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { notifyUserFromTemplateFull, type NotifyResult } from "./telegram";
+import { registerScheduler } from "./scheduler-registry";
 
 export const REFUND_NOTIFICATION_EVENT_KEYS: Record<GroupBuyRefundStatus, string> = {
   requested: "group_buy_refund_requested",
@@ -191,7 +192,13 @@ export async function enqueueRefundAudit(
   return Boolean(inserted);
 }
 
-/** Drain audits with row locking; audit insertion and acknowledgement commit together. */
+/**
+ * Drain audits with row locking; audit insertion and acknowledgement commit
+ * together. The persisted transition/outbox tuple is exactly-once/idempotent.
+ * Telegram delivery below is intentionally different: the provider has no
+ * idempotency key, so a crash after provider acceptance and before our
+ * acknowledgement can cause an at-least-once retry.
+ */
 export async function drainRefundAudits(
   database: DatabaseLike,
   options: { limit?: number } = {},
@@ -238,8 +245,28 @@ export async function drainRefundAudits(
         )).returning();
         return Boolean(updated);
       });
-    } catch {
+    } catch (error) {
       // The transaction rolls back, retaining the marker for retry.
+      try {
+        const [pending] = await database
+          .select({ id: groupBuyRefundTransitionOutboxTable.id })
+          .from(groupBuyRefundTransitionOutboxTable)
+          .where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt))
+          .orderBy(asc(groupBuyRefundTransitionOutboxTable.createdAt), asc(groupBuyRefundTransitionOutboxTable.id))
+          .limit(1);
+        if (pending) {
+          await database.update(groupBuyRefundTransitionOutboxTable).set({
+            attemptCount: sql`${groupBuyRefundTransitionOutboxTable.attemptCount} + 1`,
+            lastAttemptAt: new Date(),
+            lastError: error instanceof Error ? error.message.slice(0, 500) : "audit delivery failed",
+          }).where(and(
+            eq(groupBuyRefundTransitionOutboxTable.id, pending.id),
+            isNull(groupBuyRefundTransitionOutboxTable.deliveredAt),
+          ));
+        }
+      } catch {
+        // Preserve the original failure; the pending marker remains durable.
+      }
       break;
     }
     if (!didDeliver) break;
@@ -311,16 +338,12 @@ export async function drainRefundNotifications(
     if (!marker) break;
 
     let result: NotificationDelivery;
+    let deliveryError = "notification delivery failed";
     try {
       result = await sender(marker, buildRefundNotificationVars(marker));
     } catch (error) {
       result = { ok: false, skipped: false };
-      await clearClaim(
-        database,
-        marker.id,
-        marker.claimToken ?? "",
-        error instanceof Error ? error.message : "notification delivery failed",
-      );
+      deliveryError = error instanceof Error ? error.message : deliveryError;
     }
     if (result.ok || result.skipped) {
       const [sent] = await database
@@ -339,7 +362,7 @@ export async function drainRefundNotifications(
         .returning();
       if (sent) delivered += 1;
     } else {
-      await clearClaim(database, marker.id, marker.claimToken ?? "", "notification delivery failed");
+      await clearClaim(database, marker.id, marker.claimToken ?? "", deliveryError);
     }
   }
   return delivered;
@@ -408,6 +431,38 @@ export function startRefundNotificationDrain(
   const timer = setIntervalFn(run, Math.max(5_000, intervalMs));
   void run();
   return () => clearIntervalFn(timer);
+}
+
+/** Register the refund outbox in the shared admin-visible scheduler registry. */
+export function registerRefundNotificationScheduler(database: DatabaseLike): void {
+  registerScheduler({
+    name: "refund-notifications",
+    label: "Refund notifications and audit outbox",
+    description: "Drains durable refund transition audits and Telegram notification markers.",
+    defaultIntervalMs: 60_000,
+    minIntervalMs: 5_000,
+    maxIntervalMs: 86_400_000,
+    initialDelayMs: 5_000,
+    run: async () => {
+      try {
+        await drainRefundAudits(database, { limit: 25 });
+      } catch {
+        // Keep notification delivery independent from audit outages.
+      }
+      try {
+        await drainRefundNotifications(database, { limit: 25 });
+      } catch {
+        // Keep audit delivery independent from Telegram outages.
+      }
+    },
+    backlogCount: async () => {
+      const [audits, notifications] = await Promise.all([
+        database.select().from(groupBuyRefundTransitionOutboxTable).where(isNull(groupBuyRefundTransitionOutboxTable.deliveredAt)),
+        database.select().from(groupBuyRefundNotificationsTable).where(isNull(groupBuyRefundNotificationsTable.sentAt)),
+      ]);
+      return audits.length + notifications.length;
+    },
+  });
 }
 
 export type RefundAuditInput = {

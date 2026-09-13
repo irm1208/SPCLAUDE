@@ -107,7 +107,9 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
     .on(t.outgoingTxid)
     .where(sql`${t.outgoingTxid} is not null`),
   index("group_buy_refunds_order_id_idx").on(t.orderId),
-  index("group_buy_refunds_group_buy_status_idx").on(t.groupBuyId, t.status),
+  index("group_buy_refunds_group_buy_status_idx").on(t.groupBuyId, t.status, t.requestedAt, t.id),
+  index("group_buy_refunds_requested_queue_idx").on(t.requestedAt.desc(), t.id.desc()),
+  index("group_buy_refunds_status_queue_idx").on(t.status, t.requestedAt.desc(), t.id.desc()),
 ]);
 
 export const groupBuyRefundAttemptsTable = pgTable("group_buy_refund_attempts", {
@@ -149,11 +151,17 @@ export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_tra
   submittedTxid: text("submitted_txid"),
   resultCode: text("result_code").notNull(),
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  lastError: text("last_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   check("group_buy_refund_transition_outbox_txid_nonempty", sql`${t.submittedTxid} IS NULL OR length(trim(${t.submittedTxid})) > 0`),
   uniqueIndex("group_buy_refund_transition_outbox_unique")
     .on(t.refundId, t.attemptId, t.transition),
+  index("group_buy_refund_transition_outbox_pending_idx")
+    .on(t.createdAt, t.id)
+    .where(sql`${t.deliveredAt} is null`),
 ]);
 
 /**
@@ -185,7 +193,8 @@ export const groupBuyRefundNotificationsTable = pgTable("group_buy_refund_notifi
   uniqueIndex("group_buy_refund_notifications_transition_unique")
     .on(t.refundId, t.status, t.accountId, t.transitionKey),
   index("group_buy_refund_notifications_pending_idx")
-    .on(t.sentAt, t.claimedAt, t.createdAt),
+    .on(t.createdAt, t.id)
+    .where(sql`${t.sentAt} is null`),
   check("group_buy_refund_notifications_status_check", sql`${t.status} in ('requested', 'verifying', 'verification_failed', 'completed')`),
 ]);
 

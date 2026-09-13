@@ -180,6 +180,15 @@ Notifications use deterministic refund/status idempotency keys or a persisted no
 
 Audit records include refund/order/group-buy identity, method, processor role, source, transition, stable result code, and TXID when applicable. They never include credentials or private keys.
 
+The persisted logical transition event and audit delivery are exactly-once/idempotent
+by their database uniqueness keys and transactional acknowledgement. Telegram
+transport is deliberately only at-least-once: Telegram does not provide an
+idempotency key, so a process crash after provider acceptance and before the
+marker acknowledgement can cause a retry. The drainer never marks a marker sent
+before transport returns. Each notification exposes its deterministic event key
+to the local Telegram message log where supported, allowing downstream/local
+deduplication without changing normal transition-only customer messaging.
+
 ## Error handling
 
 API errors use stable codes for:
