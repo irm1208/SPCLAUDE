@@ -42,7 +42,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
 import { CURRENCY_SYMBOLS, currSym, fmtC } from "@/lib/currency";
-import { centsToMoneyNumber, moneyToCents } from "@/lib/exact-money";
+import { centsToMoneyNumber, moneyToCents, sumMoneyCents } from "@/lib/exact-money";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
@@ -14845,8 +14845,12 @@ function CreditLogTab({ secret }: { secret: string }) {
     return e.reason;
   };
 
-  const totalCredits  = entries.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
-  const totalDebits   = entries.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0);
+  const totalCreditsCents = sumMoneyCents(entries.filter(e => e.amount > 0).map(e => e.amount));
+  const totalDebitsCents = sumMoneyCents(entries.filter(e => e.amount < 0).map(e => e.amount));
+  const totalNetCents = totalCreditsCents + totalDebitsCents;
+  const totalCredits = centsToMoneyNumber(totalCreditsCents);
+  const totalDebits = centsToMoneyNumber(totalDebitsCents);
+  const totalNet = centsToMoneyNumber(totalNetCents);
 
   return (
     <div className="p-4 space-y-4 max-w-5xl mx-auto">
@@ -14889,8 +14893,8 @@ function CreditLogTab({ secret }: { secret: string }) {
           </div>
           <div className="rounded-xl border border-border bg-muted/50 p-3">
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5">Net (page)</p>
-            <p className={cn("text-lg font-bold", totalCredits + totalDebits >= 0 ? "text-green-700" : "text-red-600")}>
-              {totalCredits + totalDebits >= 0 ? "+" : ""}${(totalCredits + totalDebits).toLocaleString()}
+            <p className={cn("text-lg font-bold", totalNetCents >= 0n ? "text-green-700" : "text-red-600")}>
+              {totalNetCents >= 0n ? "+" : ""}${totalNet.toLocaleString()}
             </p>
           </div>
         </div>

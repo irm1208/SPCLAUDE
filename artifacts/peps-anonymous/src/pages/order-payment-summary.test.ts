@@ -56,3 +56,15 @@ test("a settled balance restores the normal fully-paid presentation", () => {
     },
   );
 });
+
+test("derives a fractional paid amount without float subtraction drift", () => {
+  assert.equal(
+    getOrderPaymentSummary!({
+      grandTotal: 0.3,
+      amountDue: 0.2,
+      paymentStatus: "confirmed",
+      balancePaymentStatus: "unpaid",
+    }).paidAmount,
+    0.1,
+  );
+});

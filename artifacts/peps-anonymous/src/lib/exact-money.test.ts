@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   centsToMoneyNumber,
   moneyToCents,
+  sumMoneyCents,
   subtractMoneyClamped,
 } from "./exact-money";
 
@@ -15,4 +16,9 @@ test("keeps fractional credit values exact", () => {
 test("does not round fractional credit adjustments to whole dollars", () => {
   assert.equal(centsToMoneyNumber(moneyToCents("12.35")), 12.35);
   assert.equal(subtractMoneyClamped("1.00", "0.35"), 0.65);
+});
+
+test("sums decimal entries in cents before converting for display", () => {
+  assert.equal(sumMoneyCents(["0.10", "0.20"]), 30n);
+  assert.equal(centsToMoneyNumber(sumMoneyCents(["0.10", "0.20"])), 0.3);
 });

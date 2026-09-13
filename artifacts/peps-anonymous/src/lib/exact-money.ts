@@ -41,6 +41,10 @@ export function addMoney(left: string | number, right: string | number): number 
   return centsToMoneyNumber(moneyToCents(left) + moneyToCents(right));
 }
 
+export function sumMoneyCents(values: Array<string | number>): bigint {
+  return values.reduce((total, value) => total + moneyToCents(value), 0n);
+}
+
 export function minMoney(left: string | number, right: string | number): number {
   const leftCents = moneyToCents(left);
   const rightCents = moneyToCents(right);

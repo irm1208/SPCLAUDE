@@ -11,6 +11,7 @@ test("credit application sites use exact money helpers", () => {
   const payment = source("components/PaymentPanel.tsx");
   const lookup = source("pages/Lookup.tsx");
   const admin = source("pages/Admin.tsx");
+  const paymentSummary = source("pages/order-payment-summary.ts");
 
   assert.match(review, /minMoney\(account\.credits, grandTotal\)/);
   assert.doesNotMatch(review, /Math\.floor\(grandTotal\)/);
@@ -20,4 +21,11 @@ test("credit application sites use exact money helpers", () => {
   assert.match(lookup, /subtractMoneyClamped\(foundOrder\.grandTotal/);
   assert.doesNotMatch(admin, /Math\.round\(parseFloat\(creditAmount/);
   assert.doesNotMatch(admin, /Math\.round\(parseFloat\(creditAmount\[/);
+  assert.match(admin, /sumMoneyCents\(entries\.filter\(e => e\.amount > 0\)/);
+  assert.match(admin, /sumMoneyCents\(entries\.filter\(e => e\.amount < 0\)/);
+  assert.match(admin, /const totalNetCents = totalCreditsCents \+ totalDebitsCents/);
+  assert.doesNotMatch(admin, /reduce\(\(s, e\) => s \+ e\.amount/);
+  assert.doesNotMatch(admin, /totalCredits \+ totalDebits/);
+  assert.match(paymentSummary, /subtractMoneyClamped\(grandTotal/);
+  assert.doesNotMatch(paymentSummary, /grandTotal - \(hasOutstandingAddOn/);
 });

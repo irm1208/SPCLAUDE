@@ -1,3 +1,5 @@
+import { subtractMoneyClamped } from "@/lib/exact-money";
+
 export interface OrderPaymentSummaryInput {
   grandTotal: number;
   amountDue: number;
@@ -24,7 +26,7 @@ export function getOrderPaymentSummary({
 
   return {
     hasOutstandingAddOn,
-    paidAmount: Math.max(0, Number((grandTotal - (hasOutstandingAddOn ? amountDue : 0)).toFixed(2))),
+    paidAmount: subtractMoneyClamped(grandTotal, hasOutstandingAddOn ? amountDue : 0),
     showFullyPaidPanel: originalPaymentConfirmed && !hasOutstandingAddOn,
     statusLabel: hasOutstandingAddOn ? "Original payment confirmed" : "Payment confirmed",
   };
