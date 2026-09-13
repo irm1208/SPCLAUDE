@@ -22,6 +22,7 @@ import { startDbBackupSchedule } from "./lib/db-backup";
 import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
+import { startRefundNotificationDrain } from "./lib/refund-notifications";
 import { db, ordersTable } from "@workspace/db";
 import { sql, and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 
@@ -1103,6 +1104,7 @@ function startBackgroundServices(): void {
   startEmailScheduler();
   startDbBackupSchedule();
   startDbBackupVerificationSchedule();
+  startRefundNotificationDrain(db);
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
 }
 

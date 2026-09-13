@@ -137,6 +137,11 @@ export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_tra
   id: text("id").primaryKey(),
   refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
   attemptId: text("attempt_id").notNull(),
+  orderId: text("order_id"),
+  groupBuyId: text("group_buy_id"),
+  accountId: text("account_id"),
+  method: text("method"),
+  source: text("source").notNull().default("background"),
   transition: text("transition").notNull(),
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
@@ -150,6 +155,38 @@ export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_tra
     .on(t.refundId, t.attemptId, t.transition),
 ]);
 
+/**
+ * Durable customer notification outbox.  `transitionKey` is deliberately part
+ * of the identity: requested/completed have one occurrence, while each crypto
+ * verification attempt gets its own verifying/failed occurrence.  This keeps a
+ * retry of one attempt idempotent without suppressing a later
+ * verification_failed -> verifying -> verification_failed cycle.
+ */
+export const groupBuyRefundNotificationsTable = pgTable("group_buy_refund_notifications", {
+  id: text("id").primaryKey(),
+  refundId: text("refund_id").notNull().references(() => groupBuyRefundsTable.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull().references(() => accountsTable.telegramUsername, { onDelete: "cascade", onUpdate: "cascade" }),
+  status: text("status").notNull(),
+  eventKey: text("event_key").notNull(),
+  transitionKey: text("transition_key").notNull(),
+  attemptId: text("attempt_id"),
+  orderCode: text("order_code"),
+  amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }),
+  explorerUrl: text("explorer_url"),
+  txid: text("txid"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("group_buy_refund_notifications_transition_unique")
+    .on(t.refundId, t.status, t.accountId, t.transitionKey),
+  index("group_buy_refund_notifications_pending_idx")
+    .on(t.sentAt, t.claimedAt, t.createdAt),
+  check("group_buy_refund_notifications_status_check", sql`${t.status} in ('requested', 'verifying', 'verification_failed', 'completed')`),
+]);
+
 export type GroupBuyRefund = typeof groupBuyRefundsTable.$inferSelect;
 export type NewGroupBuyRefund = typeof groupBuyRefundsTable.$inferInsert;
 export type GroupBuyRefundAttempt = typeof groupBuyRefundAttemptsTable.$inferSelect;
@@ -158,3 +195,5 @@ export type GroupBuyRefundTxClaim = typeof groupBuyRefundTxClaimsTable.$inferSel
 export type NewGroupBuyRefundTxClaim = typeof groupBuyRefundTxClaimsTable.$inferInsert;
 export type GroupBuyRefundTransitionOutbox = typeof groupBuyRefundTransitionOutboxTable.$inferSelect;
 export type NewGroupBuyRefundTransitionOutbox = typeof groupBuyRefundTransitionOutboxTable.$inferInsert;
+export type GroupBuyRefundNotification = typeof groupBuyRefundNotificationsTable.$inferSelect;
+export type NewGroupBuyRefundNotification = typeof groupBuyRefundNotificationsTable.$inferInsert;

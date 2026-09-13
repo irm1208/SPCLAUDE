@@ -730,6 +730,53 @@ export const TEMPLATE_REGISTRY: TemplateEventMeta[] = [
       `📦 <b>Order Assigned to You</b>\n\nYou have been manually assigned order <code>#{{code}}</code>.\n\nCustomer: @{{customer_username}}\nShipping Country: {{shipping_country}}\n\n⚠️ <i>Note: this is a manual override by an admin or organiser.</i>`,
     editableInAdmin: true,
   },
+  // ── Group-buy refund lifecycle notifications ───────────────────────────────
+  // Keep this allow-list intentionally small. Refund customer messages may
+  // contain only order/payment outcome data, never processor or wallet data.
+  {
+    eventKey: "group_buy_refund_requested",
+    label: "Group-buy Refund Requested (Customer)",
+    audience: "customer",
+    prefKey: "payment",
+    description: "Sent when a group-buy refund request is submitted.",
+    placeholders: ["order_code", "amount_usd", "status"],
+    defaultTemplate:
+      `💳 <b>Refund requested</b>\n\nYour refund for order <code>#{{order_code}}</code> has been requested.\nAmount: <b>\${{amount_usd}}</b>\nStatus: {{status}}`,
+    editableInAdmin: false,
+  },
+  {
+    eventKey: "group_buy_refund_verifying",
+    label: "Group-buy Refund Verifying (Customer)",
+    audience: "customer",
+    prefKey: "payment",
+    description: "Sent when a group-buy crypto refund enters verification.",
+    placeholders: ["order_code", "amount_usd", "status"],
+    defaultTemplate:
+      `🔎 <b>Refund being verified</b>\n\nYour refund for order <code>#{{order_code}}</code> is being verified.\nAmount: <b>\${{amount_usd}}</b>\nStatus: {{status}}`,
+    editableInAdmin: false,
+  },
+  {
+    eventKey: "group_buy_refund_failed",
+    label: "Group-buy Refund Verification Failed (Customer)",
+    audience: "customer",
+    prefKey: "payment",
+    description: "Sent when a group-buy crypto refund verification attempt fails.",
+    placeholders: ["order_code", "amount_usd", "status"],
+    defaultTemplate:
+      `⚠️ <b>Refund verification needs attention</b>\n\nWe could not verify the refund for order <code>#{{order_code}}</code> yet.\nAmount: <b>\${{amount_usd}}</b>\nStatus: {{status}}\nPlease try again or contact support.`,
+    editableInAdmin: false,
+  },
+  {
+    eventKey: "group_buy_refund_completed",
+    label: "Group-buy Refund Completed (Customer)",
+    audience: "customer",
+    prefKey: "payment",
+    description: "Sent when a group-buy refund is completed.",
+    placeholders: ["order_code", "amount_usd", "status", "explorer_url", "txid"],
+    defaultTemplate:
+      `✅ <b>Refund completed</b>\n\nYour refund for order <code>#{{order_code}}</code> is complete.\nAmount: <b>\${{amount_usd}}</b>\nStatus: {{status}}{{txid}}{{explorer_url}}`,
+    editableInAdmin: false,
+  },
 ];
 
 /** Fast lookup by eventKey */

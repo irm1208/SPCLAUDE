@@ -39,6 +39,7 @@ import {
   usdToSixDecimalBaseUnits,
   type RefundRequestInput,
 } from "./refund-money";
+import { drainRefundNotifications, enqueueRefundNotification } from "./refund-notifications";
 
 // Kept structural at runtime so callers can provide either the normal Drizzle
 // database or a transaction-compatible adapter in integration tests.
@@ -54,6 +55,7 @@ async function opportunisticRefundAuditDrain(database: DatabaseLike): Promise<vo
   if (!groupBuyRefundTransitionOutboxTable) return;
   try {
     await drainRefundTransitionOutbox(database, { limit: 10 });
+    await drainRefundNotifications(database, { limit: 10 });
   } catch {
     // Audit delivery is retryable and must never block a refund operation.
   }
@@ -83,6 +85,10 @@ async function queueRecoveryAudit(
   args: {
     refundId: string;
     attemptId: string;
+    orderId?: string;
+    groupBuyId?: string;
+    accountId?: string;
+    method?: string;
     processorUsername: string;
     processorRole: string;
     submittedTxid: string | null;
@@ -94,6 +100,11 @@ async function queueRecoveryAudit(
     id,
     refundId: args.refundId,
     attemptId: args.attemptId,
+    orderId: args.orderId,
+    groupBuyId: args.groupBuyId,
+    accountId: args.accountId,
+    method: args.method,
+    source: "background",
     transition: "verifying_to_verification_failed",
     processorUsername: args.processorUsername,
     processorRole: args.processorRole,
@@ -134,12 +145,16 @@ export async function drainRefundTransitionOutbox(
           metadata: {
             identity: marker.processorUsername,
             role: marker.processorRole,
-            source: "refund_processor",
+            source: "background",
             transition: marker.transition,
             resultCode: marker.resultCode,
             refundId: marker.refundId,
             attemptId: marker.attemptId,
-            ...(marker.submittedTxid ? { outgoingTxid: marker.submittedTxid } : {}),
+            ...(marker.orderId ? { orderId: marker.orderId } : {}),
+            ...(marker.groupBuyId ? { groupBuyId: marker.groupBuyId } : {}),
+            ...(marker.accountId ? { accountId: marker.accountId } : {}),
+            ...(marker.method ? { method: marker.method } : {}),
+            ...(marker.submittedTxid ? { txid: marker.submittedTxid } : {}),
           },
         });
         const [updated] = await tx.update(groupBuyRefundTransitionOutboxTable).set({
@@ -620,6 +635,13 @@ export async function createRefundRequest(
         amountUsd: values.amountUsd,
       },
     });
+    await enqueueRefundNotification(tx, {
+      refundId: id,
+      accountId: account.telegramUsername,
+      status: "requested",
+      orderCode: order.code,
+      amountUsd: String(values.amountUsd),
+    });
     return asRefundResult(values);
   });
   await opportunisticRefundAuditDrain(database);
@@ -776,14 +798,22 @@ export async function completeCreditRefund(
       metadata: {
         identity: args.username,
         role: args.role,
-        source: "refund_processor",
+        source: args.role,
         transition: "requested_or_verification_failed_to_completed",
         resultCode: "credit_refund_completed",
         refundId: refund.id,
         orderId: order.id,
         groupBuyId: groupBuy.id,
+        method: refund.method,
         amountUsd,
       },
+    });
+    await enqueueRefundNotification(tx, {
+      refundId: refund.id,
+      accountId: account.telegramUsername,
+      status: "completed",
+      orderCode: order.code,
+      amountUsd,
     });
 
     return asRefundResult({
@@ -920,10 +950,22 @@ async function compensateCryptoProcessingFailure(
       const outboxId = await queueRecoveryAudit(tx, {
         refundId: refundSnapshot.id,
         attemptId,
+        orderId: locked.order.id,
+        groupBuyId: locked.groupBuy.id,
+        accountId: locked.account.telegramUsername,
+        method: locked.refund.method,
         processorUsername: actor.username,
         processorRole: actor.role,
         submittedTxid: txid,
         resultCode: "processing_failure",
+      });
+      await enqueueRefundNotification(tx, {
+        refundId: refundSnapshot.id,
+        accountId: locked.account.telegramUsername,
+        status: "verification_failed",
+        attemptId,
+        orderCode: locked.order.code,
+        amountUsd: String(locked.refund.amountUsd),
       });
       auditPayload = { orderId: locked.order.id, groupBuyId: locked.groupBuy.id, outboxId };
     });
@@ -932,6 +974,7 @@ async function compensateCryptoProcessingFailure(
   }
   if (!auditPayload) return;
   await drainRefundTransitionOutbox(database, { limit: 1 });
+  await drainRefundNotifications(database, { limit: 1 }).catch(() => {});
 }
 
 async function recoverStaleCryptoAttempt(
@@ -1008,10 +1051,22 @@ async function recoverStaleCryptoAttempt(
       const outboxId = await queueRecoveryAudit(tx, {
         refundId: refundSnapshot.id,
         attemptId: attempt?.id ?? expectedAttemptId ?? "legacy",
+        orderId: locked.order.id,
+        groupBuyId: locked.groupBuy.id,
+        accountId: locked.account.telegramUsername,
+        method: locked.refund.method,
         processorUsername: ownerUsername ?? "unknown",
         processorRole: ownerRole,
         submittedTxid,
         resultCode: "stale_processing_state",
+      });
+      await enqueueRefundNotification(tx, {
+        refundId: refundSnapshot.id,
+        accountId: locked.account.telegramUsername,
+        status: "verification_failed",
+        attemptId: attempt?.id ?? expectedAttemptId,
+        orderCode: locked.order.code,
+        amountUsd: String(locked.refund.amountUsd),
       });
       auditPayload = {
         orderId: locked.order.id,
@@ -1027,6 +1082,7 @@ async function recoverStaleCryptoAttempt(
   }
   if (!auditPayload) return false;
   await drainRefundTransitionOutbox(database, { limit: 1 });
+  await drainRefundNotifications(database, { limit: 1 }).catch(() => {});
   return true;
 }
 
@@ -1164,10 +1220,36 @@ export async function submitCryptoRefund(
       processorRole: actor.role,
       startedAt: new Date(),
     });
+    await insertAudit(tx, {
+      action: "group_buy_refund_verifying",
+      message: `Group-buy crypto refund ${refundId} verification started`,
+      metadata: {
+        identity: actor.username,
+        role: actor.role,
+        source: actor.role,
+        transition: "requested_or_verification_failed_to_verifying",
+        resultCode: "verification_started",
+        refundId,
+        orderId: locked.order.id,
+        groupBuyId: locked.groupBuy.id,
+        method: locked.refund.method,
+      },
+    });
+    await enqueueRefundNotification(tx, {
+      refundId,
+      accountId: locked.account.telegramUsername,
+      status: "verifying",
+      attemptId,
+      orderCode: locked.order.code,
+      amountUsd: String(locked.refund.amountUsd),
+    });
   });
   if (completedDuringClaim) return completedDuringClaim;
   if (!attemptId) throw new GroupBuyRefundError("in_progress");
   const processingAttemptId = attemptId;
+  // The claim is committed before provider I/O; deliver the verifying event
+  // opportunistically now rather than waiting for a slow RPC response.
+  await opportunisticRefundAuditDrain(database);
 
   let verification: RefundCryptoVerificationResult;
   try {
@@ -1245,13 +1327,23 @@ export async function submitCryptoRefund(
         metadata: {
           identity: actor.username,
           role: actor.role,
-          source: "refund_processor",
+          source: actor.role,
           transition: "verifying_to_verification_failed",
           resultCode: verification.code,
           refundId,
           orderId: locked.order.id,
           groupBuyId: locked.groupBuy.id,
+          method: locked.refund.method,
+          txid: canonicalTxid,
         },
+      });
+      await enqueueRefundNotification(tx, {
+        refundId,
+        accountId: locked.account.telegramUsername,
+        status: "verification_failed",
+        attemptId: processingAttemptId,
+        orderCode: locked.order.code,
+        amountUsd: String(locked.refund.amountUsd),
       });
       return { failureCode: verification.code, failureMessage: verification.message };
     }
@@ -1291,17 +1383,27 @@ export async function submitCryptoRefund(
       metadata: {
         identity: actor.username,
         role: actor.role,
-        source: "refund_processor",
+        source: actor.role,
         transition: "verifying_to_completed",
         resultCode: "crypto_refund_completed",
         refundId,
         orderId: locked.order.id,
         groupBuyId: locked.groupBuy.id,
+        method: locked.refund.method,
         asset: locked.refund.asset,
         confirmationCount: verification.confirmationCount,
-        outgoingTxid: canonicalTxid,
+        txid: canonicalTxid,
       },
     });
+      await enqueueRefundNotification(tx, {
+        refundId,
+        accountId: locked.account.telegramUsername,
+        status: "completed",
+        orderCode: locked.order.code,
+        amountUsd: String(locked.refund.amountUsd),
+        explorerUrl,
+        txid: canonicalTxid,
+      });
     return asRefundResult({
       ...locked.refund,
       status: "completed",
@@ -1319,6 +1421,7 @@ export async function submitCryptoRefund(
     throw new GroupBuyRefundError("processing_failure", PROCESSING_FAILURE_MESSAGE);
   }
   if ("failureCode" in completion) {
+    await drainRefundNotifications(database, { limit: 10 }).catch(() => {});
     throw new GroupBuyRefundError(completion.failureCode, completion.failureMessage);
   }
   await opportunisticRefundAuditDrain(database);
