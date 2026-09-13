@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   accountsTable,
   groupBuyRefundAttemptsTable,
@@ -22,6 +22,8 @@ import type { RefundRequestInput } from "../lib/refund-money";
 const router: IRouter = Router();
 const REFUND_STATUSES = ["requested", "verifying", "verification_failed", "completed"] as const;
 const MAX_PAGE_SIZE = 100;
+const MAX_PAGE_NUMBER = 10_000;
+const MAX_OFFSET = 1_000_000;
 
 type RefundStatus = typeof REFUND_STATUSES[number];
 
@@ -30,8 +32,13 @@ function errorResponse(res: Response, error: unknown): void {
   const status =
     ["not_found", "not_group_buy_order", "group_buy_scope", "refund_linkage_mismatch"].includes(code) ? 404
       : ["forbidden", "not_owner", "refunds_disabled"].includes(code) ? 403
-        : ["active_refund_exists", "active_refund_race", "in_progress", "owned", "txid_replay", "concurrent_state_change"].includes(code) ? 409
-          : code === "internal_error" ? 500 : 400;
+        : [
+          "active_refund_exists", "active_refund_race", "in_progress", "owned", "txid_replay",
+          "concurrent_state_change", "completed_txid_immutable", "invalid_refund_transition",
+          "refund_claim_lost", "attempt_ownership_lost", "order_state_changed", "payment_state_changed",
+        ].includes(code) ? 409
+          : ["provider_unavailable", "processing_failure", "audit_failure", "storage_failure", "transient_failure"].includes(code) ? 503
+            : code === "internal_error" ? 500 : 400;
   res.status(status).json({ code, error: code });
 }
 
@@ -40,16 +47,27 @@ function oneQueryValue(value: unknown): string | undefined {
 }
 
 function parseQueueQuery(req: Request): { groupBuyId?: string; status?: RefundStatus; page: number; limit: number } | null {
-  const groupBuyId = oneQueryValue(req.query["groupBuyId"]);
-  const status = oneQueryValue(req.query["status"]);
-  const pageRaw = oneQueryValue(req.query["page"]) ?? "1";
-  const limitRaw = oneQueryValue(req.query["limit"]) ?? "50";
+  const groupBuyIdValue = req.query["groupBuyId"];
+  const statusValue = req.query["status"];
+  const pageValue = req.query["page"];
+  const limitValue = req.query["limit"];
+  if (
+    (groupBuyIdValue !== undefined && typeof groupBuyIdValue !== "string")
+    || (statusValue !== undefined && typeof statusValue !== "string")
+    || (pageValue !== undefined && typeof pageValue !== "string")
+    || (limitValue !== undefined && typeof limitValue !== "string")
+  ) return null;
+  const groupBuyId = oneQueryValue(groupBuyIdValue);
+  const status = oneQueryValue(statusValue);
+  const pageRaw = oneQueryValue(pageValue) ?? "1";
+  const limitRaw = oneQueryValue(limitValue) ?? "50";
   const page = Number(pageRaw);
   const limit = Number(limitRaw);
   if (req.query["groupBuyId"] !== undefined && !groupBuyId) return null;
   if (req.query["status"] !== undefined && (!status || !(REFUND_STATUSES as readonly string[]).includes(status))) return null;
-  if (!/^[1-9]\d*$/.test(pageRaw) || !Number.isSafeInteger(page) || page < 1) return null;
+  if (!/^[1-9]\d*$/.test(pageRaw) || !Number.isSafeInteger(page) || page < 1 || page > MAX_PAGE_NUMBER) return null;
   if (!/^[1-9]\d*$/.test(limitRaw) || !Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) return null;
+  if (!Number.isSafeInteger((page - 1) * limit) || (page - 1) * limit > MAX_OFFSET) return null;
   return { groupBuyId: groupBuyId || undefined, status: status as RefundStatus | undefined, page, limit };
 }
 
@@ -132,8 +150,32 @@ async function attemptsFor(refundId: string): Promise<ReturnType<typeof safeAtte
   return attempts.map(attempt => safeAttempt(attempt as unknown as Record<string, unknown>));
 }
 
-async function detailFor(refund: Record<string, unknown>, customerUsername?: string, groupBuyName?: string, orderCode?: string) {
-  return { ...safeRefund(refund, customerUsername, groupBuyName, orderCode), attempts: await attemptsFor(String(refund.id)) };
+async function attemptsForMany(refundIds: string[]): Promise<Map<string, ReturnType<typeof safeAttempt>[]>> {
+  const grouped = new Map<string, ReturnType<typeof safeAttempt>[]>();
+  if (refundIds.length === 0) return grouped;
+  const attempts = await db.select().from(groupBuyRefundAttemptsTable)
+    .where(inArray(groupBuyRefundAttemptsTable.refundId, refundIds))
+    .orderBy(asc(groupBuyRefundAttemptsTable.refundId), asc(groupBuyRefundAttemptsTable.startedAt), asc(groupBuyRefundAttemptsTable.id));
+  for (const attempt of attempts) {
+    const id = String(attempt.refundId);
+    const list = grouped.get(id) ?? [];
+    list.push(safeAttempt(attempt as unknown as Record<string, unknown>));
+    grouped.set(id, list);
+  }
+  return grouped;
+}
+
+async function detailFor(
+  refund: Record<string, unknown>,
+  customerUsername?: string,
+  groupBuyName?: string,
+  orderCode?: string,
+  attempts?: ReturnType<typeof safeAttempt>[],
+) {
+  return {
+    ...safeRefund(refund, customerUsername, groupBuyName, orderCode),
+    attempts: attempts ?? await attemptsFor(String(refund.id)),
+  };
 }
 
 function adminUsername(res: Response): string {
@@ -203,11 +245,13 @@ async function listRefunds(role: "admin" | "organiser", req: Request, username?:
     .orderBy(desc(groupBuyRefundsTable.requestedAt), desc(groupBuyRefundsTable.id))
     .limit(parsed.limit)
     .offset((parsed.page - 1) * parsed.limit);
+  const attempts = await attemptsForMany(rows.map(row => String(row.refund.id)));
   return Promise.all(rows.map(row => detailFor(
     row.refund as unknown as Record<string, unknown>,
     row.customerUsername ?? undefined,
     row.groupBuyName ?? undefined,
     row.orderCode ?? undefined,
+    attempts.get(String(row.refund.id)) ?? [],
   )));
 }
 

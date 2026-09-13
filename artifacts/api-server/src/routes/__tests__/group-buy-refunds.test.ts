@@ -12,6 +12,14 @@ import { getTableName } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
+function sqlParams(value: unknown): unknown[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  if (record.constructor?.name === "Param" && "value" in record) return [record.value];
+  if (Array.isArray(record.queryChunks)) return record.queryChunks.flatMap(sqlParams);
+  return [];
+}
+
 const mocks = vi.hoisted(() => {
   type Query = { table: string; where?: unknown; joins: string[]; limit?: number; offset?: number };
   const state = {
@@ -23,7 +31,8 @@ const mocks = vi.hoisted(() => {
     createRefundRequest: vi.fn(),
     completeCreditRefund: vi.fn(),
     submitCryptoRefund: vi.fn(),
-    outsideScope: false,
+    failAudit: false,
+    groupBuyCryptoRefundsEnabled: false,
   };
   const tableName = (value: unknown): string => {
     try { return getTableName(value as never); } catch { return "unknown"; }
@@ -38,6 +47,7 @@ const mocks = vi.hoisted(() => {
       orderBy() { return builder; },
       limit(value: number) { query.limit = value; return builder; },
       offset(value: number) { query.offset = value; return builder; },
+      for() { return builder; },
       groupBy() { return builder; },
       then(resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) {
         if (!mocks.state.queries.includes(query)) mocks.state.queries.push(query);
@@ -57,6 +67,7 @@ const mocks = vi.hoisted(() => {
       const name = tableName(table);
       return {
         values(values: unknown) {
+          if (name === "audit_logs" && mocks.state.failAudit) throw new Error("audit failed");
           mocks.state.inserts.push({ table: name, values });
           const result = {
             returning: () => Promise.resolve([values]),
@@ -80,18 +91,41 @@ const mocks = vi.hoisted(() => {
             where(where: unknown) {
               write.where = where;
               return {
-                returning: () => Promise.resolve([values]),
+                returning: () => {
+                  const record = values as Record<string, unknown>;
+                  if (name === "group_buys" && typeof record.cryptoRefundsEnabled === "boolean") {
+                    mocks.state.groupBuyCryptoRefundsEnabled = record.cryptoRefundsEnabled;
+                  }
+                  return Promise.resolve([values]);
+                },
                 then: (resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) =>
                   Promise.resolve([]).then(resolve, reject),
               };
             },
-            returning: () => Promise.resolve([values]),
+            returning: () => {
+              const record = values as Record<string, unknown>;
+              if (name === "group_buys" && typeof record.cryptoRefundsEnabled === "boolean") {
+                mocks.state.groupBuyCryptoRefundsEnabled = record.cryptoRefundsEnabled;
+              }
+              return Promise.resolve([values]);
+            },
           };
           return result;
         },
       };
     },
     delete() { return { where: () => Promise.resolve([]) }; },
+    transaction(callback: (tx: Record<string, unknown>) => Promise<unknown>) {
+      const insertCount = mocks.state.inserts.length;
+      const updateCount = mocks.state.updates.length;
+      const settingBefore = mocks.state.groupBuyCryptoRefundsEnabled;
+      return callback(fakeDb as unknown as Record<string, unknown>).catch((error: unknown) => {
+        mocks.state.inserts.splice(insertCount);
+        mocks.state.updates.splice(updateCount);
+        mocks.state.groupBuyCryptoRefundsEnabled = settingBefore;
+        throw error;
+      });
+    },
   };
   return { state, fakeDb };
 });
@@ -233,24 +267,26 @@ beforeEach(() => {
   mocks.state.audits.length = 0;
   mocks.state.selectRows = query => {
     if (query.table === "group_buy_refund_attempts") return [attempt];
-    if (query.table === "group_buy_refunds" && query.joins.length > 0 && mocks.state.outsideScope) return [];
+    const params = sqlParams(query.where);
+    if (query.table === "group_buy_refunds" && query.joins.length > 0 && params.includes("outside")) return [];
     if (query.table === "group_buy_refunds" && query.joins.length > 0) return [{
       refund,
       customerUsername: "buyer",
       groupBuyName: "Owned GB",
       orderCode: "GB-001",
     }];
-    if (query.table === "group_buys" && mocks.state.outsideScope) return [];
-    if (query.table === "group_buys") return [{
+    if (query.table === "group_buys" && params.includes("not-owned")) return [];
+    if (query.table === "group_buys" && (params.includes("owned-gb") || params.includes("organiser"))) return [{
       id: "owned-gb", name: "Owned GB", organiserId: "organiser",
-      approvalStatus: "approved", status: "draft", cryptoRefundsEnabled: false,
+      approvalStatus: "approved", status: "draft", cryptoRefundsEnabled: mocks.state.groupBuyCryptoRefundsEnabled,
     }];
     return [];
   };
   mocks.state.createRefundRequest.mockReset();
   mocks.state.completeCreditRefund.mockReset();
   mocks.state.submitCryptoRefund.mockReset();
-  mocks.state.outsideScope = false;
+  mocks.state.failAudit = false;
+  mocks.state.groupBuyCryptoRefundsEnabled = false;
   mocks.state.createRefundRequest.mockResolvedValue({
     id: "refund-1", status: "requested", method: "crypto", amountUsd: "123.45",
     asset: "USDC", network: "Ethereum ERC-20",
@@ -385,7 +421,8 @@ describe("group-buy refund route contracts", () => {
     const app = buildApp(groupBuyRefundsRouter);
     for (const query of [
       "?status=unknown", "?status=requested&status=completed", "?groupBuyId=",
-      "?page=0", "?page=abc", "?limit=0", "?limit=101", "?limit=1.2",
+      "?page=0", "?page=abc", "?page=10001", "?page=1&page=2",
+      "?limit=0", "?limit=101", "?limit=1.2", "?limit=1&limit=2",
     ]) {
       const response = await request(app, `/admin/group-buy-refunds${query}`, {
         headers: { "x-test-admin": "admin" },
@@ -402,9 +439,17 @@ describe("group-buy refund route contracts", () => {
     expect(query?.offset).toBe(10);
   });
 
+  it("loads queue attempts in one batch query after the scoped refund query", async () => {
+    const app = buildApp(groupBuyRefundsRouter);
+    const response = await request(app, "/admin/group-buy-refunds?limit=10", {
+      headers: { "x-test-admin": "admin" },
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.state.queries.filter(query => query.table === "group_buy_refund_attempts")).toHaveLength(1);
+  });
+
   it("scopes organiser SQL queries and mutations, with outside scope returning 404", async () => {
     const app = buildApp(groupBuyRefundsRouter);
-    mocks.state.outsideScope = true;
     const outside = await request(app, "/organiser/group-buy-refunds?groupBuyId=not-owned", {
       headers: { "x-test-organiser": "organiser" },
     });
@@ -413,7 +458,6 @@ describe("group-buy refund route contracts", () => {
       method: "POST", headers: { "x-test-organiser": "organiser" },
     });
     expect(outsideMutation.status).toBe(404);
-    mocks.state.outsideScope = false;
     const list = await request(app, "/organiser/group-buy-refunds?groupBuyId=owned-gb", {
       headers: { "x-test-organiser": "organiser" },
     });
@@ -484,13 +528,71 @@ describe("admin-only refund setting", () => {
       method: "PATCH", headers: json({ cryptoRefundsEnabled: true }, { "x-test-admin": "admin" }),
     });
     expect(toggled.status).toBe(200);
-    expect(mocks.state.audits.some(args => String((args as unknown[])[2]).includes("crypto_refunds_setting_changed"))).toBe(true);
+    expect(mocks.state.inserts.some(item =>
+      item.table === "audit_logs"
+      && String((item.values as Record<string, unknown>).action).includes("crypto_refunds_setting_changed"),
+    )).toBe(true);
+    const auditCount = mocks.state.inserts.filter(item => item.table === "audit_logs").length;
+    const unchanged = await request(app, "/admin/group-buys/owned-gb", {
+      method: "PATCH", headers: json({ cryptoRefundsEnabled: true }, { "x-test-admin": "admin" }),
+    });
+    expect(unchanged.status).toBe(200);
+    expect(mocks.state.inserts.filter(item => item.table === "audit_logs")).toHaveLength(auditCount);
 
     const disabled = await request(app, "/admin/group-buys/owned-gb", {
       method: "PATCH", headers: json({ cryptoRefundsEnabled: false }, { "x-test-admin": "admin" }),
     });
     expect(disabled.status).toBe(200);
     expect((await (await request(app, "/admin/group-buy-refunds/refund-1", { headers: { "x-test-admin": "admin" } })).json() as Record<string, unknown>).id).toBe("refund-1");
+  });
+
+  it("rolls back group-buy setting writes when the in-transaction audit fails", async () => {
+    const app = buildApp(groupBuysAdminRouter);
+    mocks.state.failAudit = true;
+    const created = await request(app, "/admin/group-buys", {
+      method: "POST",
+      headers: json({ name: "Atomic GB", cryptoRefundsEnabled: true }, { "x-test-admin": "admin" }),
+    });
+    expect(created.status).toBe(503);
+    expect(await created.json()).toMatchObject({ code: "audit_failure", error: "audit_failure" });
+    expect(mocks.state.inserts.some(item => item.table === "group_buys")).toBe(false);
+
+    mocks.state.failAudit = false;
+    const updatesBefore = mocks.state.updates.length;
+    mocks.state.failAudit = true;
+    const updated = await request(app, "/admin/group-buys/owned-gb", {
+      method: "PATCH",
+      headers: json({ cryptoRefundsEnabled: true }, { "x-test-admin": "admin" }),
+    });
+    expect(updated.status).toBe(503);
+    expect(await updated.json()).toMatchObject({ code: "audit_failure", error: "audit_failure" });
+    expect(mocks.state.updates.length).toBe(updatesBefore);
+    expect(mocks.state.groupBuyCryptoRefundsEnabled).toBe(false);
+  });
+
+  it("maps refund state and provider failures to stable statuses", async () => {
+    const app = buildApp(groupBuyRefundsRouter);
+    for (const code of [
+      "completed_txid_immutable", "invalid_refund_transition", "refund_claim_lost",
+      "attempt_ownership_lost", "order_state_changed", "payment_state_changed", "txid_replay", "in_progress",
+    ]) {
+      mocks.state.submitCryptoRefund.mockRejectedValueOnce(new GroupBuyRefundError(code));
+      const response = await request(app, "/admin/group-buy-refunds/refund-1/verify", {
+        method: "POST",
+        headers: json({ txid: attempt.submittedTxid }, { "x-test-admin": "admin" }),
+      });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code, error: code });
+    }
+    for (const code of ["provider_unavailable", "processing_failure"]) {
+      mocks.state.submitCryptoRefund.mockRejectedValueOnce(new GroupBuyRefundError(code));
+      const response = await request(app, "/admin/group-buy-refunds/refund-1/verify", {
+        method: "POST",
+        headers: json({ txid: attempt.submittedTxid }, { "x-test-admin": "admin" }),
+      });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code, error: code });
+    }
   });
 
   it("rejects setting presence on organiser create and update with no persistence", async () => {

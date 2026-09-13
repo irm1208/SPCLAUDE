@@ -1,8 +1,9 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
 import {
   groupBuysTable,
+  auditLogsTable,
   groupBuyProductsTable,
   groupBuyDeliveryMethodsTable,
   accountsTable,
@@ -53,6 +54,17 @@ async function uniqueGroupBuyId(): Promise<string> {
 
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 12;
+
+class GroupBuySettingTransactionError extends Error {
+  constructor(readonly code: "audit_failure" | "storage_failure") {
+    super(code);
+  }
+}
+
+function settingTransactionError(res: Response, error: unknown): void {
+  const code = error instanceof GroupBuySettingTransactionError ? error.code : "storage_failure";
+  res.status(503).json({ code, error: code });
+}
 
 function parseInfoCards(raw: string | null): unknown[] {
   if (!raw) return [];
@@ -211,7 +223,7 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
 
   const id = await uniqueGroupBuyId();
 
-  const [gb] = await db.insert(groupBuysTable).values({
+  const insertGroupBuy = (database: typeof db) => database.insert(groupBuysTable).values({
     id,
     name: name.trim(),
     description: description ? String(description).trim() : undefined,
@@ -248,6 +260,36 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
     entryFeeLabel: entryFeeLabel ? String(entryFeeLabel).trim() : undefined,
     cryptoRefundsEnabled: cryptoRefundsEnabled ?? false,
   }).returning();
+  let gb: Awaited<ReturnType<typeof insertGroupBuy>>[number];
+  try {
+    [gb] = await db.transaction(async (tx) => {
+      const [created] = await insertGroupBuy(tx as unknown as typeof db);
+      if (cryptoRefundsEnabled === true) {
+        try {
+          await tx.insert(auditLogsTable).values({
+            type: "change",
+            level: "info",
+            action: "admin_gb_crypto_refunds_setting_changed",
+            message: `Admin enabled group-buy refunds for "${created.name}"`,
+            metadata: {
+              gbId: created.id,
+              groupBuyId: created.id,
+              previousEnabled: false,
+              enabled: true,
+              actor: res.locals["adminUsername"] ?? "admin",
+            },
+            ip: null,
+          });
+        } catch {
+          throw new GroupBuySettingTransactionError("audit_failure");
+        }
+      }
+      return [created] as const;
+    });
+  } catch (error) {
+    settingTransactionError(res, error);
+    return;
+  }
 
   createAlert("system", "medium", "New Group Buy Created",
     `Group buy "${gb.name}" (${gb.id}) was created. Status: ${gb.status ?? "draft"}.`,
@@ -257,19 +299,6 @@ router.post("/admin/group-buys", async (req, res): Promise<void> => {
   sendAdminFromTemplate("admin_organiser_update",
     { organiser_username: "admin", update_type: "New Group Buy Created", details: `${gb.name} — Status: ${gb.status ?? "draft"}` },
   ).catch(() => {});
-
-  if (cryptoRefundsEnabled === true) {
-    writeLog("change", "info", "admin_gb_crypto_refunds_setting_changed",
-      `Admin enabled group-buy refunds for "${gb.name}"`,
-      {
-        gbId: gb.id,
-        groupBuyId: gb.id,
-        previousEnabled: false,
-        enabled: true,
-        actor: res.locals["adminUsername"] ?? "admin",
-      },
-    ).catch(() => {});
-  }
 
   res.status(201).json({ ...gb, infoCards: parseInfoCards(gb.infoCards), shippingOptions: parseShippingOptions(gb.shippingOptions), adminFeeCountries: parseAdminFeeCountries(gb.adminFeeCountries) });
 });
@@ -436,11 +465,53 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [updated] = await db
-    .update(groupBuysTable)
-    .set(updates)
-    .where(eq(groupBuysTable.id, id))
-    .returning();
+  let updated: GroupBuy;
+  try {
+    [updated] = cryptoRefundsEnabled !== undefined
+      ? await db.transaction(async (tx) => {
+      const [locked] = await tx.select({
+        id: groupBuysTable.id,
+        name: groupBuysTable.name,
+        status: groupBuysTable.status,
+        cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled,
+      }).from(groupBuysTable).where(eq(groupBuysTable.id, id)).for("update");
+      if (!locked) throw new Error("group_buy_not_found");
+      const transition = locked.cryptoRefundsEnabled !== cryptoRefundsEnabled;
+      const [saved] = await tx.update(groupBuysTable)
+        .set(updates)
+        .where(eq(groupBuysTable.id, id))
+        .returning();
+      if (transition) {
+        try {
+          await tx.insert(auditLogsTable).values({
+            type: "change",
+            level: "info",
+            action: "admin_gb_crypto_refunds_setting_changed",
+            message: `Admin ${cryptoRefundsEnabled ? "enabled" : "disabled"} group-buy refunds for "${locked.name ?? id}"`,
+            metadata: {
+              gbId: id,
+              groupBuyId: id,
+              previousEnabled: locked.cryptoRefundsEnabled,
+              enabled: cryptoRefundsEnabled,
+              actor: res.locals["adminUsername"] ?? "admin",
+            },
+            ip: null,
+          });
+        } catch {
+          throw new GroupBuySettingTransactionError("audit_failure");
+        }
+      }
+      return [saved] as const;
+      })
+      : await db
+        .update(groupBuysTable)
+        .set(updates)
+        .where(eq(groupBuysTable.id, id))
+        .returning();
+  } catch (error) {
+    settingTransactionError(res, error);
+    return;
+  }
 
   if (status !== undefined && status !== existing.status) {
     const gbLabel = existing.name ?? id;
@@ -483,19 +554,6 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
     `Admin updated GB "${existing.name ?? id}" settings`,
     { gbId: id, gbName: existing.name, changedFields: Object.keys(updates) },
   ).catch(() => {});
-
-  if (cryptoRefundsEnabled !== undefined && cryptoRefundsEnabled !== existing.cryptoRefundsEnabled) {
-    writeLog("change", "info", "admin_gb_crypto_refunds_setting_changed",
-      `Admin ${cryptoRefundsEnabled ? "enabled" : "disabled"} group-buy refunds for "${existing.name ?? id}"`,
-      {
-        gbId: id,
-        groupBuyId: id,
-        previousEnabled: existing.cryptoRefundsEnabled,
-        enabled: cryptoRefundsEnabled,
-        actor: res.locals["adminUsername"] ?? "admin",
-      },
-    ).catch(() => {});
-  }
 
   res.json({ ...updated, infoCards: parseInfoCards(updated.infoCards), shippingOptions: parseShippingOptions(updated.shippingOptions), adminFeeCountries: parseAdminFeeCountries((updated as Record<string, unknown>).adminFeeCountries as string), sharedShippingCountries: parseSharedShippingCountries((updated as Record<string, unknown>).sharedShippingCountries as string) });
 });
