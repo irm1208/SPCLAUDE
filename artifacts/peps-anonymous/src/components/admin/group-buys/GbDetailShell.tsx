@@ -40,9 +40,10 @@ import { SummarySubTab } from "./panels/SummaryPanel";
 import { BroadcastSubTab } from "./panels/BroadcastPanel";
 import { LegShippingCalcSubTab } from "./panels/LegCalcPanel";
 import ShippingSplitTab from "@/pages/ShippingSplitTab";
+import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "./shared/core";
-export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes";
+export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "refunds" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes";
 
 export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
   secret: string;
@@ -94,6 +95,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
         { id: "members", label: "Members", icon: Users },
         { id: "waitlist", label: "Waitlist", icon: Clock },
         { id: "payment", label: "Payment Status", icon: CreditCard },
+        { id: "refunds", label: "Refunds", icon: Wallet },
         { id: "testing", label: "Testing", icon: TestTube },
       ],
     },
@@ -237,6 +239,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
           {activeTab === "members" && <MembersSubTab secret={secret} gb={currentGb} onUpdate={handleUpdate} />}
           {activeTab === "waitlist" && <WaitlistSubTab secret={secret} gb={currentGb} />}
           {activeTab === "payment" && <PaymentStatusSubTab secret={secret} gb={currentGb} />}
+          {activeTab === "refunds" && <GroupBuyRefundQueue role="admin" adminSecret={secret} groupBuyId={currentGb.id} />}
           {activeTab === "parcels" && <ParcelsSubTab secret={secret} gb={currentGb} />}
           {activeTab === "orders" && <OrdersSubTab secret={secret} gb={currentGb} />}
           {activeTab === "testing" && <TestingSubTab secret={secret} gb={currentGb} />}

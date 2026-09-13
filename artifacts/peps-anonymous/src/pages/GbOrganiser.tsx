@@ -28,6 +28,7 @@ import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { cn } from "@/lib/utils";
 import { GroupBuyOrderBreakdown } from "@/components/GroupBuyOrderBreakdown";
+import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 
 const _codeToName: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.code.toLowerCase(), c.name]));
 const _nameToCode: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.name.toLowerCase(), c.code]));
@@ -12978,7 +12979,7 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
+type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
 
 const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired: boolean; externalPath?: (gbId: string) => string }[] = [
   { id: "overview", label: "My GBs", icon: LayoutDashboard, gbRequired: false },
@@ -12987,6 +12988,7 @@ const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired
   { id: "shipping", label: "Ship & Pay", icon: CreditCard, gbRequired: true },
   { id: "shippingsplit", label: "Shipping Split", icon: Calculator, gbRequired: true },
   { id: "orders", label: "Orders", icon: ShoppingBag, gbRequired: true },
+  { id: "refunds", label: "Refunds", icon: Wallet, gbRequired: true },
   { id: "summary", label: "Summary", icon: ClipboardList, gbRequired: true },
   { id: "parcels", label: "Parcels", icon: Truck, gbRequired: true },
   { id: "dispatch", label: "Dispatch & Packaging Slips", icon: FileText, gbRequired: true },
@@ -13010,7 +13012,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
   archived: { color: "#6B7280", bg: "rgba(107,114,128,0.12)", label: "Archived" },
 };
 
-const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "shippingsplit", "orders", "qrcodes"];
+const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "shippingsplit", "orders", "refunds", "qrcodes"];
 const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "dispatch", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
 
 function getTabVisibility(username: string, gbId: string | null): Record<string, boolean> {
@@ -13293,6 +13295,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
+        {activeTab === "refunds" && selectedGb && <GroupBuyRefundQueue role="organiser" groupBuyId={selectedGb.id} />}
         {activeTab === "summary" && selectedGb && <SummaryTab gb={selectedGb} />}
         {activeTab === "parcels" && selectedGb && <ParcelsTab gb={selectedGb} />}
         {activeTab === "dispatch" && selectedGb && <DispatchManager cfg={dispatchCfg} />}

@@ -42,6 +42,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
   // Accept Payments toggle
   const [togglingPayments, setTogglingPayments] = useState(false);
   const [togglingDirectPay, setTogglingDirectPay] = useState(false);
+  const [togglingCryptoRefunds, setTogglingCryptoRefunds] = useState(false);
 
   // Payment Instructions
   const [togglingPaymentMsg, setTogglingPaymentMsg] = useState(false);
@@ -339,6 +340,18 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
       });
       if (res.ok) onUpdate(await res.json());
     } finally { setTogglingDirectPay(false); }
+  };
+
+  const toggleCryptoRefunds = async () => {
+    setTogglingCryptoRefunds(true);
+    try {
+      const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ cryptoRefundsEnabled: !(gb.cryptoRefundsEnabled ?? false) }),
+      });
+      if (res.ok) onUpdate(await res.json());
+    } finally { setTogglingCryptoRefunds(false); }
   };
 
   const savePaymentMsg = async () => {
@@ -755,6 +768,17 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
             </div>
           </>
         )}
+
+        <div className="border-t border-border" />
+
+        {/* Refunds are deliberately disabled by default and can only be enabled by admins. */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-foreground">Crypto refunds</p>
+            <Switch checked={!!gb.cryptoRefundsEnabled} onChange={toggleCryptoRefunds} busy={togglingCryptoRefunds} />
+          </div>
+          <p className="text-xs text-muted-foreground">Refunds are disabled by default. Enable this to let buyers request a manual crypto refund for this group buy.</p>
+        </div>
 
         <div className="border-t border-border" />
 

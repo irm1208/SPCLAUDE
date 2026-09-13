@@ -100,6 +100,7 @@ export type GroupBuy = Record<string, unknown> & {
   allowExtraOrders?: boolean;
   directShippingEnabled?: boolean;
   directShippingVendorId?: string | null;
+  cryptoRefundsEnabled?: boolean;
 };
 
 export type InfoCard = { id: string; title: string; body: string; icon?: string; type?: string; postedAt?: string };
