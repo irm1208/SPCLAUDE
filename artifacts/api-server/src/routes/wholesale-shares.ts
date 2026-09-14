@@ -61,6 +61,7 @@ import {
   normalizeOrganiserWallets,
   OrganiserWalletValidationError,
 } from "../lib/wholesale-organiser-wallets";
+import { orphanedSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -103,6 +104,26 @@ function sanitizeOnwardEventsForParticipant(events: OnwardEvent[]): OnwardEvent[
 const router: IRouter = Router();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function cancelRemovedSharedOrder(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  orderId: string | null,
+  deletedBy: string,
+): Promise<void> {
+  if (!orderId) return;
+  const cancelled = await tx.update(ordersTable).set({
+    status: "Cancelled",
+    deletedAt: new Date(),
+    deletedBy,
+    paymentUsdAmount: null,
+  }).where(refundMutableOrderWhere(and(
+    eq(ordersTable.id, orderId),
+    eq(ordersTable.orderType, "wholesale_shared"),
+    eq(ordersTable.paymentStatus, "unpaid"),
+    isNull(ordersTable.deletedAt),
+  ))).returning({ id: ordersTable.id });
+  if (cancelled.length === 0) throw new Error("MEMBER_ORDER_PAYMENT_STARTED");
+}
 
 const SHARE_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
 
@@ -1958,6 +1979,7 @@ router.post("/wholesale-shares/:id/remove-member", requireWholesaleOrAdmin, asyn
       if (!lockedMember) throw new Error("MEMBER_NOT_FOUND");
       if (lockedMember.isCreator) throw new Error("CREATOR_MEMBER");
       if (lockedMember.confirmedAt) throw MEMBER_ALREADY_CONFIRMED;
+      await cancelRemovedSharedOrder(tx, lockedMember.orderId, me);
 
       const wasDelivery = !!lockedShare.deliveryUsername
         && lockedShare.deliveryUsername.toLowerCase() === lockedMember.username.toLowerCase();
@@ -1992,6 +2014,15 @@ router.post("/wholesale-shares/:id/remove-member", requireWholesaleOrAdmin, asyn
     }
     if (e instanceof Error && e.message === "CREATOR_MEMBER") {
       res.status(400).json({ error: "The organiser can't be removed. Use Cancel to end the order." });
+      return;
+    }
+    if (e instanceof Error && e.message === "MEMBER_ORDER_PAYMENT_STARTED") {
+      res.status(409).json({ error: "This member's order has payment activity and must be reviewed by an admin before removal." });
+      return;
+    }
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
     res.status(409).json({ error: "This shared order is no longer open." });
@@ -3115,14 +3146,87 @@ router.get("/admin/wholesale-shares/:id", async (req, res): Promise<void> => {
     .from(productsTable)
     .where(and(eq(productsTable.active, true), eq(productsTable.wholesaleEnabled, true), isNull(productsTable.sourceGroupBuyId)))
     .orderBy(productsTable.name);
+  const orphanOrders = await db
+    .select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.sharedOrderId, share.id),
+      isNull(ordersTable.deletedAt),
+      orphanedSharedOrderMembershipWhere(),
+    ));
   res.json({
     ...await buildShareResponse(share, ""),
+    orphanOrderCount: orphanOrders.length,
     availableProducts: products.map(product => ({
       id: product.id,
       name: product.name,
       unitPrice: Number(product.wholesalePrice ?? product.price),
     })),
   });
+});
+
+router.post("/admin/wholesale-shares/:id/repair-orphan-orders", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const shareId = String(req.params.id);
+  const share = await loadShare(shareId);
+  if (!share) {
+    res.status(404).json({ error: "Shared order not found" });
+    return;
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const orders = await tx
+        .select({
+          id: ordersTable.id,
+          paymentStatus: ordersTable.paymentStatus,
+        })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.sharedOrderId, shareId),
+          isNull(ordersTable.deletedAt),
+          orphanedSharedOrderMembershipWhere(),
+        ))
+        .for("update");
+
+      const repairedOrderIds: string[] = [];
+      const reviewRequiredOrderIds: string[] = [];
+      const now = new Date();
+      for (const order of orders) {
+        if (order.paymentStatus !== "unpaid") {
+          reviewRequiredOrderIds.push(order.id);
+          continue;
+        }
+        const updated = await tx.update(ordersTable).set({
+          status: "Cancelled",
+          deletedAt: now,
+          deletedBy: "admin",
+          paymentUsdAmount: null,
+        }).where(refundMutableOrderWhere(and(
+          eq(ordersTable.id, order.id),
+          eq(ordersTable.sharedOrderId, shareId),
+          eq(ordersTable.orderType, "wholesale_shared"),
+          eq(ordersTable.paymentStatus, "unpaid"),
+          isNull(ordersTable.deletedAt),
+          orphanedSharedOrderMembershipWhere(),
+        ))).returning({ id: ordersTable.id });
+        if (updated.length > 0) repairedOrderIds.push(order.id);
+      }
+      return { repairedOrderIds, reviewRequiredOrderIds };
+    });
+
+    await writeLog("order", "warn", "wholesale_share_orphan_orders_repaired",
+      `Admin repaired ${result.repairedOrderIds.length} orphaned order(s) for wholesale share ${shareId}`,
+      { shareId, ...result }, req.ip);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    const orderId = refundMutationErrorOrderId(error);
+    if (orderId) {
+      res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId });
+      return;
+    }
+    throw error;
+  }
 });
 
 router.put("/admin/wholesale-shares/:id/organiser-wallets", async (req, res): Promise<void> => {

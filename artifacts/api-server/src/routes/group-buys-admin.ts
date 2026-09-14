@@ -39,6 +39,7 @@ import {
   reconcileShippingAdjustment,
   ShippingAdjustmentError,
 } from "../lib/group-buy-shipping-adjustment";
+import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 
 function shortId(len = 5): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -2910,7 +2911,11 @@ router.get("/admin/group-buys/:gbId/routing-warnings", async (req, res): Promise
       reshipperUsername: ordersTable.reshipperUsername,
       countryLegId: ordersTable.countryLegId,
       shippingCountry: ordersTable.shippingCountry,
-    }).from(ordersTable).where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt))),
+    }).from(ordersTable).where(and(
+      eq(ordersTable.groupBuyId, gbId),
+      isNull(ordersTable.deletedAt),
+      activeSharedOrderMembershipWhere(),
+    )),
     db.select().from(gbCountryLegsTable).where(eq(gbCountryLegsTable.gbId, gbId)),
     db.select().from(gbReshippersTable).where(eq(gbReshippersTable.gbId, gbId)),
   ]);
@@ -3155,7 +3160,11 @@ router.get("/admin/group-buys/:gbId/fs3-batch", async (req, res): Promise<void> 
       directShippingRequested: ordersTable.directShippingRequested,
       deliveryMethod: ordersTable.deliveryMethod,
       createdAt: ordersTable.createdAt,
-    }).from(ordersTable).where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt))),
+    }).from(ordersTable).where(and(
+      eq(ordersTable.groupBuyId, gbId),
+      isNull(ordersTable.deletedAt),
+      activeSharedOrderMembershipWhere(),
+    )),
     db.select().from(gbCountryLegsTable).where(eq(gbCountryLegsTable.gbId, gbId)),
     db.select().from(gbReshippersTable).where(eq(gbReshippersTable.gbId, gbId)),
   ]);
@@ -3265,7 +3274,11 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req, res): Promise<vo
     routingType: ordersTable.routingType, reshipperUsername: ordersTable.reshipperUsername,
     directShippingRequested: ordersTable.directShippingRequested, deliveryMethod: ordersTable.deliveryMethod,
     countryLegId: ordersTable.countryLegId,
-  }).from(ordersTable).where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+  }).from(ordersTable).where(and(
+    eq(ordersTable.groupBuyId, gbId),
+    isNull(ordersTable.deletedAt),
+    activeSharedOrderMembershipWhere(),
+  ));
 
   const orderIds = orders.map(o => o.id);
   const lineItems = orderIds.length > 0
@@ -3352,7 +3365,11 @@ router.post("/admin/group-buys/:gbId/fs3-submit", async (req, res): Promise<void
         paymentStatus: sql<string>`coalesce(${ordersTable.paymentStatus},'unpaid')`,
         routingType: ordersTable.routingType, reshipperUsername: ordersTable.reshipperUsername,
         directShippingRequested: ordersTable.directShippingRequested,
-      }).from(ordersTable).where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+      }).from(ordersTable).where(and(
+        eq(ordersTable.groupBuyId, gbId),
+        isNull(ordersTable.deletedAt),
+        activeSharedOrderMembershipWhere(),
+      ));
       const eligible = orders.filter(o => includeUnconfirmed || o.paymentStatus === "confirmed");
       if (eligible.length === 0) throw new Error("NO_ELIGIBLE_ORDERS");
       const now = new Date();

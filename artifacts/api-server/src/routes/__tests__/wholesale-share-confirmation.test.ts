@@ -14,6 +14,12 @@ const adminSource = fs.readFileSync(
   path.resolve(here, "../../../../peps-anonymous/src/pages/Admin.tsx"),
   "utf8",
 );
+const adminRouteSource = fs.readFileSync(path.resolve(here, "../admin.ts"), "utf8");
+const groupBuyAdminRouteSource = fs.readFileSync(path.resolve(here, "../group-buys-admin.ts"), "utf8");
+const activeMembershipSource = fs.readFileSync(
+  path.resolve(here, "../../lib/shared-order-active-membership.ts"),
+  "utf8",
+);
 
 describe("shared wholesale order confirmations", () => {
   it("persists a per-member confirmation timestamp and exposes it to the shared-order UI", () => {
@@ -76,6 +82,43 @@ describe("shared wholesale order confirmations", () => {
     expect(removalHandler).toContain("const [lockedMember] = await tx.select()");
     expect(removalHandler).toContain("lockedShare.deliveryUsername");
     expect(deliveryHandler).toContain("EXISTS (SELECT 1 FROM ${wholesaleShareMembersTable}");
+  });
+
+  it("cancels and soft-deletes a linked unpaid order before removing an open-share member", () => {
+    const removalHandler = routeSource.slice(
+      routeSource.indexOf('router.post("/wholesale-shares/:id/remove-member"'),
+      routeSource.indexOf('router.post("/admin/wholesale-shares/:id/remove-members"'),
+    );
+    const cancelIndex = removalHandler.indexOf("cancelRemovedSharedOrder");
+    const deleteMemberIndex = removalHandler.indexOf("tx.delete(wholesaleShareMembersTable)");
+
+    expect(cancelIndex).toBeGreaterThanOrEqual(0);
+    expect(deleteMemberIndex).toBeGreaterThan(cancelIndex);
+    expect(removalHandler).toContain("lockedMember.orderId");
+  });
+
+  it("filters orphaned shared orders from Admin and every FS3 operational query", () => {
+    expect(activeMembershipSource).toContain("IS DISTINCT FROM 'wholesale_shared'");
+    expect(adminRouteSource).toContain("activeSharedOrderMembershipWhere");
+    expect(adminRouteSource.match(/activeSharedOrderMembershipWhere\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(6);
+    const fs3Handlers = groupBuyAdminRouteSource.slice(
+      groupBuyAdminRouteSource.indexOf('router.get("/admin/group-buys/:gbId/fs3-batch"'),
+      groupBuyAdminRouteSource.indexOf('router.get("/admin/group-buys/:gbId/fs3-submissions"'),
+    );
+    expect(fs3Handlers.match(/activeSharedOrderMembershipWhere\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+  });
+
+  it("offers an admin repair action for historical orphaned shared orders", () => {
+    expect(routeSource).toContain('router.post("/admin/wholesale-shares/:id/repair-orphan-orders"');
+    expect(routeSource).toContain("orphanedSharedOrderMembershipWhere");
+    const repairHandler = routeSource.slice(
+      routeSource.indexOf('router.post("/admin/wholesale-shares/:id/repair-orphan-orders"'),
+      routeSource.indexOf('router.put("/admin/wholesale-shares/:id/organiser-wallets"'),
+    );
+    expect(repairHandler.match(/orphanedSharedOrderMembershipWhere\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(adminSource).toContain(`/admin/wholesale-shares/\${detail.id}/repair-orphan-orders`);
+    expect(adminSource).toContain("Repair orphaned orders");
+    expect(adminSource).toContain("const repairOrphanOrders = async");
   });
 
   it("routes automatic verification through the confirmation service and notifies only confirmed results", () => {

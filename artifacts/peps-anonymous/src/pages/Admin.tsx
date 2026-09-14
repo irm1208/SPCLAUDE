@@ -20097,6 +20097,7 @@ type AdminShareDetail = {
   };
   publicGroup: { isPublic: boolean; country: string | null };
   availableProducts: { id: string; name: string; unitPrice: number }[];
+  orphanOrderCount: number;
 };
 type AdminOrganiserWalletDraft = { currency: string; network: string; walletAddress: string };
 type AdminShareAdjustmentDraft = {
@@ -21167,6 +21168,40 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     }
   };
 
+  const repairOrphanOrders = async (detail: AdminShareDetail) => {
+    if (!window.confirm(
+      `Repair ${detail.orphanOrderCount} orphaned order${detail.orphanOrderCount === 1 ? "" : "s"} for shared order ${detail.id}?\n\nUnpaid orders will be cancelled and soft-deleted. Orders with payment activity will remain unchanged for manual review.`,
+    )) return;
+    setAdminAction(`${detail.id}:repair-orphans`);
+    let mutationConfirmed = false;
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${detail.id}/repair-orphan-orders`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      const result = await response.json().catch(() => ({})) as {
+        error?: string;
+        repairedOrderIds?: string[];
+        reviewRequiredOrderIds?: string[];
+      };
+      if (!response.ok) {
+        alert(result.error ?? "Could not repair orphaned orders.");
+        return;
+      }
+      mutationConfirmed = true;
+      await Promise.all([refreshDetail(detail.id), loadRows()]);
+      const repaired = result.repairedOrderIds?.length ?? 0;
+      const review = result.reviewRequiredOrderIds?.length ?? 0;
+      alert(`Repaired ${repaired} orphaned order${repaired === 1 ? "" : "s"}.${review > 0 ? ` ${review} order${review === 1 ? "" : "s"} still require payment review.` : ""}`);
+    } catch (error) {
+      alert(mutationConfirmed
+        ? `Orders were repaired, but refreshing the shared order failed. ${error instanceof Error ? error.message : "refresh error"}`
+        : `Could not confirm orphan repair; the outcome is unknown. ${error instanceof Error ? error.message : "network error"}`);
+    } finally {
+      setAdminAction(null);
+    }
+  };
+
   const toggleLockedMemberRemoval = (shareId: string, username: string) => {
     setRemovalSelections(current => {
       const selected = current[shareId] ?? [];
@@ -21749,6 +21784,23 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                           <span>Subtotal {money(detail.combinedSubtotal)}</span>
                           {detail.totalVendorShipping != null && <span>Vendor shipping {money(detail.totalVendorShipping)}</span>}
                         </div>
+
+                        {detail.orphanOrderCount > 0 && (
+                          <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: "rgba(220,38,38,0.05)", border: "1px solid rgba(220,38,38,0.35)" }}>
+                            <div className="font-semibold" style={{ color: "#b91c1c" }}>Historical orphaned orders detected</div>
+                            <p style={{ color: "var(--adm-muted)" }}>
+                              {detail.orphanOrderCount} active member order{detail.orphanOrderCount === 1 ? "" : "s"} no longer has a matching roster member. Unpaid orders can be cancelled and removed from Admin and FS3 safely; orders with payment activity remain for manual review.
+                            </p>
+                            <button
+                              onClick={() => void repairOrphanOrders(detail)}
+                              disabled={!!adminAction}
+                              className="px-3 py-1.5 rounded-md font-semibold text-white disabled:opacity-40"
+                              style={{ background: "#b91c1c" }}
+                            >
+                              Repair orphaned orders
+                            </button>
+                          </div>
+                        )}
 
                         {/* Organiser → platform payment */}
                         {detail.organiserPayment && (() => {

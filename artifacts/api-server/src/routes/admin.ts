@@ -87,6 +87,7 @@ import {
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { formatTrackingNumbersForNotification } from "../lib/tracking-notification";
 import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
+import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 
 function exactGrandTotal(
   grossAmounts: number[],
@@ -388,7 +389,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
   const pageSize = (wholesaleMode || hasReshipperMode) ? 999999 : Math.min(500, Math.max(1, parseInt(pageSizeQ ?? "100") || 100));
   const offset = (wholesaleMode || hasReshipperMode) ? 0 : (page - 1) * pageSize;
 
-  const conditions: any[] = [isNull(ordersTable.deletedAt)];
+  const conditions: any[] = [isNull(ordersTable.deletedAt), activeSharedOrderMembershipWhere()];
   if (groupBuyId) conditions.push(eq(ordersTable.groupBuyId, groupBuyId));
 
   // Status filter
@@ -773,7 +774,7 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
       vendor: vendorQ,
     } = req.query as Record<string, string | undefined>;
 
-    const conditions: any[] = [isNull(ordersTable.deletedAt)];
+    const conditions: any[] = [isNull(ordersTable.deletedAt), activeSharedOrderMembershipWhere()];
     if (groupBuyId) conditions.push(eq(ordersTable.groupBuyId, groupBuyId));
     if (statusQ && statusQ !== "all") conditions.push(eq(ordersTable.status, statusQ));
     if (payStatusQ && payStatusQ !== "all") {
@@ -3967,7 +3968,11 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   let allOrders = await db
     .select()
     .from(ordersTable)
-    .where(and(inArray(ordersTable.status, ["Submitted", "Processing", "Shipped", "Completed"]), isNull(ordersTable.deletedAt)));
+    .where(and(
+      inArray(ordersTable.status, ["Submitted", "Processing", "Shipped", "Completed"]),
+      isNull(ordersTable.deletedAt),
+      activeSharedOrderMembershipWhere(),
+    ));
 
   // Filter by date range if requested
   if (dateFromParam) {
@@ -4222,7 +4227,8 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
     .from(ordersTable)
     .where(and(
       inArray(ordersTable.status, ["Submitted", "Processing", "Shipped", "Completed"]),
-      isNull(ordersTable.deletedAt)
+      isNull(ordersTable.deletedAt),
+      activeSharedOrderMembershipWhere(),
     ));
 
   const orderIds = allOrders.map(o => o.id);
@@ -4313,6 +4319,7 @@ router.post("/admin/fs3-ping-address", async (req: any, res: any) => {
     .where(and(
       eq(ordersTable.groupBuyId, gbId),
       isNull(ordersTable.deletedAt),
+      activeSharedOrderMembershipWhere(),
       inArray(ordersTable.status, ["Submitted", "Processing"]),
       or(
         isNull(ordersTable.shippingAddress),
@@ -4414,6 +4421,7 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
         and(
           eq(ordersTable.groupBuyId, gbId),
           isNull(ordersTable.deletedAt),
+          activeSharedOrderMembershipWhere(),
           notInArray(ordersTable.status, ["Cancelled"]),
         )
       );
