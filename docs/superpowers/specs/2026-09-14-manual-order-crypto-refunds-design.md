@@ -2,13 +2,11 @@
 
 ## Goal
 
-Show the customer refund option on confirmed manual group-buy orders and confirmed group-buy orders whose payment evidence is no longer automatically verifiable after an Admin edit.
+Show the normal customer refund option on every confirmed paid group-buy order, including manual orders such as order 4687 and orders whose quantities or totals were edited by Admin after the group buy closed.
 
 ## Eligibility
 
-The existing automatically verified path remains unchanged for orders with valid stored crypto payment evidence.
-
-A second, manual-review path is available when all of the following are true:
+Refund eligibility is available when all of the following are true:
 
 - The order belongs to a group buy with crypto refunds enabled.
 - The customer owns the order.
@@ -16,37 +14,31 @@ A second, manual-review path is available when all of the following are true:
 - Payment status is confirmed and a confirmation timestamp exists.
 - The current order total is positive.
 - No active refund request already exists.
-- Automatic payment evidence is unavailable or no longer matches because the order was created manually or edited by an Admin.
 
 Test-confirmed orders remain ineligible.
 
 ## Customer Experience
 
-The existing refund panel and wallet-destination form appear on eligible manual-review orders. The panel explains that the payment cannot be automatically verified and that the request requires Admin review.
-
-Submitting the form creates a refund request with a server-owned review mode. The customer cannot choose or alter this mode.
+The existing refund panel and wallet-destination form appear on all eligible paid orders. Manual and Admin-edited orders use the same customer flow as other paid orders.
 
 ## Admin and Payment Safety
 
-Manual-review requests must not be treated as automatically verified payments. They remain pending until an Admin reviews the order and payment history.
+Creating a request snapshots the order's current `grandTotal` as the refund amount. This is the amount shown to the customer and processed later, including quantity increases applied by Admin after payment.
 
-The request records the current refundable amount and the reason automatic verification was unavailable. Existing duplicate-request, cancellation, ownership, amount, and refund-state safeguards continue to apply.
-
-Orders with valid crypto evidence continue through the current verification flow without additional Admin review.
+Original transaction evidence does not control visibility, request creation, or Admin/organiser completion. Existing duplicate-request, cancellation, ownership, positive-total, payment-state, and refund-state safeguards continue to apply.
 
 ## Data Flow
 
-1. The customer order API evaluates strict crypto eligibility first.
-2. If strict evidence is missing, it evaluates the controlled manual-review criteria.
-3. The API returns whether a request is allowed and whether Admin review is required.
-4. The customer panel displays the appropriate explanation.
-5. Refund submission repeats the eligibility decision server-side and stores the review mode.
-6. Automatic processing skips manual-review requests until Admin approval.
+1. The customer order API evaluates confirmed-paid eligibility from server-owned order state.
+2. The API returns whether a request is allowed and the current `grandTotal`.
+3. The customer panel displays that amount.
+4. Refund submission repeats eligibility under row locks and snapshots the current `grandTotal`.
+5. Admin or the owning organiser processes the request through the existing flow.
 
 ## Testing
 
-- A confirmed manual group-buy order shows the refund option and creates an Admin-review request.
-- A confirmed Admin-edited group-buy order with missing or mismatched crypto evidence does the same.
-- A normal crypto-paid order continues using automatic verification.
+- A confirmed manual group-buy order with no transaction hash shows the refund option and creates a request.
+- A confirmed Admin-edited group-buy order uses its current increased `grandTotal`.
+- Credit and crypto refund processing can complete without original incoming-payment proof.
 - Test-confirmed, cancelled, deleted, wholesale, zero-total, disabled-group, already-refunded, and active-request orders remain blocked.
-- The customer cannot forge the review mode or bypass Admin review.
+- The customer cannot supply or override the refund amount.

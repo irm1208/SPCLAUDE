@@ -2,22 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateRefundEligibility,
   evaluateRefundRequestAvailability,
-  type ServerPaymentEvidenceProof,
 } from "./refund-eligibility";
-import type { RefundRequestInput } from "./refund-money";
 
 const base = {
   accountId: "buyer",
-  paymentEvidenceProof: {
-    verified: true as const,
-    source: "server-payment-verifier" as const,
-    txHash: "0x" + "a".repeat(64),
-    currency: "USDT",
-    network: "ERC-20",
-    recipientWallet: "0x" + "b".repeat(40),
-    expectedAmountUsd: "9.99",
-    verifiedAmountUsd: "9.99",
-  },
   order: {
     id: "order-1",
     telegramUsername: "@buyer",
@@ -40,13 +28,6 @@ const base = {
 };
 
 describe("refund eligibility", () => {
-  it("requires verifier proof that refund request input cannot provide", () => {
-    const request: RefundRequestInput = { method: "credit" };
-    // @ts-expect-error RefundRequestInput intentionally has no verifier proof.
-    const proof: ServerPaymentEvidenceProof = request;
-    expect(proof).toBeDefined();
-  });
-
   it("uses the persisted order grandTotal, not paymentUsdAmount or a client amount", () => {
     const result = evaluateRefundEligibility(base);
     expect(result).toEqual({
@@ -65,7 +46,6 @@ describe("refund eligibility", () => {
     ["not_owner", { accountId: "another" }],
     ["not_group_buy_order", { order: { ...base.order, groupBuyId: null } }],
     ["deleted_order", { order: { ...base.order, deletedAt: new Date() } }],
-    ["ineligible_payment_evidence", { order: { ...base.order, paymentTxHash: null } }],
     ["ineligible_payment_evidence", { order: { ...base.order, paymentStatus: "test_confirmed" } }],
     ["ineligible_payment_evidence", { order: { ...base.order, paymentConfirmedAt: null } }],
     ["already_cancelled", { order: { ...base.order, status: "Cancelled" } }],
@@ -77,7 +57,7 @@ describe("refund eligibility", () => {
     expect(result).toMatchObject({ eligible: false, reasonCode, amountUsd: null });
   });
 
-  it("requires authoritative stored transaction hashes rather than screenshot evidence", () => {
+  it("does not gate confirmed-paid eligibility on transaction metadata", () => {
     const result = evaluateRefundEligibility({
       ...base,
       order: {
@@ -86,7 +66,6 @@ describe("refund eligibility", () => {
         paymentTxHashes: ["0x" + "b".repeat(64)],
         paymentScreenshot: "data:image/png;base64,client-proof",
       },
-      paymentEvidenceProof: { ...base.paymentEvidenceProof, txHash: "0x" + "b".repeat(64) },
     });
     expect(result.eligible).toBe(true);
 
@@ -98,7 +77,11 @@ describe("refund eligibility", () => {
         paymentTxHashes: null,
         paymentScreenshot: "data:image/png;base64,client-proof",
       },
-    }).reasonCode).toBe("ineligible_payment_evidence");
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "10.25",
+    });
   });
 
   it.each([
@@ -108,8 +91,8 @@ describe("refund eligibility", () => {
     ["arbitrary fake string", "not-a-real-transaction", "USDT", "ERC-20"],
     ["missing currency", "0x" + "c".repeat(64), null, "ERC-20"],
     ["unsupported rail", "0x" + "c".repeat(64), "DOGE", "Dogecoin"],
-  ])("rejects %s as non-authoritative evidence", (_label, hash, currency, network) => {
-    const result = evaluateRefundEligibility({
+  ])("accepts confirmed payment despite %s transaction reference", (_label, hash, currency, network) => {
+    expect(evaluateRefundEligibility({
       ...base,
       order: {
         ...base.order,
@@ -117,53 +100,41 @@ describe("refund eligibility", () => {
         paymentCryptoCurrency: currency,
         paymentCryptoNetwork: network,
       },
-    });
-    expect(result).toMatchObject({
-      eligible: false,
-      reasonCode: "ineligible_payment_evidence",
-      amountUsd: null,
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "10.25",
     });
   });
 
-  it("accepts a valid stored Ethereum transaction hash", () => {
+  it("accepts confirmed payment regardless of Ethereum transaction metadata", () => {
     expect(evaluateRefundEligibility({
-      ...base,
-      order: { ...base.order, paymentCryptoNetwork: "Ethereum Mainnet" },
-      paymentEvidenceProof: { ...base.paymentEvidenceProof, network: "Ethereum Mainnet" },
-    }).eligible).toBe(true);
-  });
-
-  it("accepts a valid stored Solana transaction signature for the matching rail", () => {
-    const result = evaluateRefundEligibility({
       ...base,
       order: {
         ...base.order,
-        paymentTxHash: "A".repeat(86),
+        paymentTxHash: "not-a-valid-ethereum-transaction",
+        paymentCryptoNetwork: "Ethereum Mainnet",
+      },
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "10.25",
+    });
+  });
+
+  it("accepts confirmed payment regardless of Solana transaction metadata", () => {
+    expect(evaluateRefundEligibility({
+      ...base,
+      order: {
+        ...base.order,
+        paymentTxHash: "not-a-valid-solana-signature",
         paymentCryptoCurrency: "USDC",
         paymentCryptoNetwork: "Solana",
       },
-      paymentEvidenceProof: {
-        verified: true,
-        source: "server-payment-verifier",
-        txHash: "A".repeat(86),
-        currency: "USDC",
-        network: "Solana",
-        recipientWallet: "solana-recipient",
-        expectedAmountUsd: "9.99",
-        verifiedAmountUsd: "9.99",
-      },
-    });
-    expect(result.eligible).toBe(true);
-  });
-
-  it("rejects a syntactically valid hash without server payment proof", () => {
-    expect(evaluateRefundEligibility({
-      ...base,
-      paymentEvidenceProof: null,
-    })).toMatchObject({
-      eligible: false,
-      reasonCode: "ineligible_payment_evidence",
-      amountUsd: null,
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "10.25",
     });
   });
 
@@ -190,25 +161,95 @@ describe("refund eligibility", () => {
         paymentCryptoCurrency: "USDC",
         paymentCryptoNetwork: "ERC-20 (Ethereum)",
       },
-      paymentEvidenceProof: null,
-    }).reasonCode).toBe("ineligible_payment_evidence");
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "10.25",
+    });
   });
 
-it.each(["9.98", "10.00"])("rejects verifier amount %s even when it is near the expected amount", (verifiedAmountUsd) => {
-  expect(evaluateRefundEligibility({
-    ...base,
-    paymentEvidenceProof: { ...base.paymentEvidenceProof, verifiedAmountUsd },
-  })).toMatchObject({
-    eligible: false,
-    reasonCode: "ineligible_payment_evidence",
+  it("shows the request action after an admin edit when a confirmed order has no original transaction evidence", () => {
+    expect(evaluateRefundRequestAvailability({
+      accountId: base.accountId,
+      order: {
+        ...base.order,
+        paymentTxHash: null,
+        paymentTxHashes: null,
+        paymentUsdAmount: "9.99",
+        grandTotal: "12.34",
+      },
+      groupBuy: base.groupBuy,
+      activeRefund: null,
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "12.34",
+    });
   });
-});
+
+  it("accepts pure server eligibility after an admin edit without original transaction evidence", () => {
+    expect(evaluateRefundEligibility({
+      ...base,
+      order: {
+        ...base.order,
+        paymentTxHash: null,
+        paymentTxHashes: null,
+        paymentUsdAmount: "9.99",
+        grandTotal: "12.34",
+      },
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "12.34",
+    });
+  });
+
+  it("uses the current grandTotal after an admin edit despite stale transaction fields", () => {
+    const editedOrder = {
+      ...base.order,
+      grandTotal: "12.34",
+      paymentUsdAmount: "9.99",
+      paymentTxHash: "0x" + "a".repeat(64),
+      paymentTxHashes: ["stale-payment-reference"],
+    };
+
+    expect(evaluateRefundRequestAvailability({
+      accountId: base.accountId,
+      order: editedOrder,
+      groupBuy: base.groupBuy,
+      activeRefund: null,
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "12.34",
+    });
+
+    expect(evaluateRefundEligibility({
+      ...base,
+      order: editedOrder,
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "12.34",
+    });
+  });
+
+  it.each(["9.98", "10.00"])("uses persisted grandTotal despite stale payment amount %s", (paymentUsdAmount) => {
+    expect(evaluateRefundEligibility({
+      ...base,
+      order: { ...base.order, paymentUsdAmount, grandTotal: "12.34" },
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "12.34",
+    });
+  });
 
   it.each([
     ["BTC", "Ethereum Mainnet", "a".repeat(64)],
     ["USDC", "Bitcoin Mainnet", "b".repeat(64)],
     ["BTC", "Solana", "A".repeat(86)],
-  ])("rejects cross-rail pairing %s on %s", (currency, network, txHash) => {
+  ])("accepts confirmed payment despite cross-rail transaction metadata %s on %s", (currency, network, txHash) => {
     expect(evaluateRefundEligibility({
       ...base,
       order: {
@@ -217,16 +258,10 @@ it.each(["9.98", "10.00"])("rejects verifier amount %s even when it is near the 
         paymentCryptoCurrency: currency,
         paymentCryptoNetwork: network,
       },
-       paymentEvidenceProof: {
-         verified: true,
-         source: "server-payment-verifier",
-         txHash,
-         currency,
-         network,
-         recipientWallet: "recipient",
-         expectedAmountUsd: "9.99",
-         verifiedAmountUsd: "9.99",
-       },
-    }).reasonCode).toBe("ineligible_payment_evidence");
+    })).toEqual({
+      eligible: true,
+      reasonCode: null,
+      amountUsd: "10.25",
+    });
   });
 });

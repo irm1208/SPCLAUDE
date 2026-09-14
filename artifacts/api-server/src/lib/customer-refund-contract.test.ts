@@ -24,6 +24,6 @@ test("preferred asset uses audited proof with a stored-payment fallback", () => 
   assert.match(view, /proof\?\.currency \?\? order\.paymentCryptoCurrency/);
   assert.match(view, /isSupportedRefundPaymentRail/);
 });
-test("customer visibility uses stored-payment availability while submission keeps live verification", () => {
+test("customer visibility uses stored-payment availability", () => {
   assert.match(view, /evaluateRefundRequestAvailability/);
 });

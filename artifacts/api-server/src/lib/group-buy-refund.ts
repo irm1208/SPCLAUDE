@@ -7,18 +7,12 @@ import {
   groupBuyRefundTxClaimsTable,
   groupBuyRefundsTable,
   groupBuysTable,
-  gbReshippersTable,
-  siteConfigTable,
-  wholesaleSharesTable,
   ordersTable,
   type GroupBuyRefund,
 } from "@workspace/db";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { resolveEffectiveOrderCrypto } from "../routes/payments";
 import {
   isValidEthAddress,
-  verifyTransaction,
-  type VerifyResult,
 } from "./payment-verify";
 import {
   normalizeEthereumTxid,
@@ -28,7 +22,6 @@ import {
 import {
   evaluateRefundEligibility,
   type RefundEligibilityOrder,
-  type ServerPaymentEvidenceProof,
 } from "./refund-eligibility";
 import { ACTIVE_REFUND_STATUSES } from "./refund-mutation-guard";
 import {
@@ -105,11 +98,19 @@ export class GroupBuyRefundError extends Error {
 
 
 function asRefundResult(refund: Record<string, any>): RefundRequestResult {
+  let amountUsd: string;
+  try {
+    const amountCents = usdToCents(String(refund.amountUsd));
+    if (amountCents <= 0n) throw new Error("amount_usd_positive");
+    amountUsd = centsToUsdString(amountCents);
+  } catch {
+    throw new GroupBuyRefundError("invalid_refund_amount");
+  }
   return {
     id: refund.id,
     status: refund.status,
     method: refund.method,
-    amountUsd: String(refund.amountUsd),
+    amountUsd,
     asset: refund.asset ?? null,
     network: refund.network ?? null,
     destinationWallet: refund.destinationWallet ?? null,
@@ -138,19 +139,6 @@ function refundOrder(row: Record<string, any>): RefundEligibilityOrder {
   return row as RefundEligibilityOrder;
 }
 
-function assertRefundAmountAuthority(order: Record<string, any>): void {
-  try {
-    const grandTotal = usdToCents(String(order.grandTotal));
-    if (order.paymentUsdAmount != null && usdToCents(String(order.paymentUsdAmount)) !== grandTotal) {
-      throw new GroupBuyRefundError("ineligible_payment_evidence", "The payment amount does not match the locked order total.");
-    }
-    if (grandTotal <= 0n) throw new Error();
-  } catch (error) {
-    if (error instanceof GroupBuyRefundError) throw error;
-    throw new GroupBuyRefundError("ineligible_payment_evidence");
-  }
-}
-
 function validateRefundInputShape(input: RefundRequestInput): void {
   if (input?.method === "credit") return;
   if (input?.method !== "crypto") throw new GroupBuyRefundError("invalid_method");
@@ -162,161 +150,6 @@ function validateRefundInputShape(input: RefundRequestInput): void {
   }
   if (typeof input.destinationWallet !== "string" || !isValidEthAddress(input.destinationWallet)) {
     throw new GroupBuyRefundError("invalid_destination_wallet");
-  }
-}
-
-async function loadOriginalPaymentProof(
-  order: Record<string, any>,
-): Promise<ServerPaymentEvidenceProof> {
-  assertRefundAmountAuthority(order);
-  const txHash = typeof order.paymentTxHash === "string" && order.paymentTxHash.trim()
-    ? order.paymentTxHash.trim()
-    : Array.isArray(order.paymentTxHashes)
-      ? order.paymentTxHashes.find((hash: unknown) => typeof hash === "string" && hash.trim())
-      : null;
-  if (!txHash || !order.paymentCryptoCurrency || !order.paymentCryptoNetwork) {
-    throw new GroupBuyRefundError("ineligible_payment_evidence");
-  }
-
-  let amount: number;
-  try {
-    // Payment verification uses the server's payment lock when present. The
-    // refund amount itself is still derived exclusively from grandTotal below.
-      amount = Number(usdToCents(String(order.grandTotal))) / 100;
-  } catch {
-    throw new GroupBuyRefundError("non_positive_total");
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new GroupBuyRefundError("non_positive_total");
-  }
-
-  // This resolver is the same server-owned wallet/currency/network boundary
-  // used by the payment routes. It is deliberately called before opening the
-  // refund transaction so RPC latency can never hold row locks.
-  const payment = await resolveEffectiveOrderCrypto(order as {
-    groupBuyId: string | null;
-    orderType?: string | null;
-    shippingCountry?: string | null;
-    sharedOrderId?: string | null;
-    paymentCryptoCurrency?: string | null;
-    paymentCryptoNetwork?: string | null;
-  });
-  if (!payment.walletAddress) {
-    throw new GroupBuyRefundError("ineligible_payment_evidence");
-  }
-
-  let result: VerifyResult;
-  try {
-    result = await verifyTransaction(
-      txHash,
-      payment.walletAddress,
-      amount,
-      payment.currency,
-      payment.network,
-      0.01,
-    );
-  } catch {
-    throw new GroupBuyRefundError("payment_verification_failed");
-  }
-  if (!result.verified) {
-    throw new GroupBuyRefundError("ineligible_payment_evidence", result.reason);
-  }
-  if (!result.recipientAddress || result.amountUsdt == null) {
-    throw new GroupBuyRefundError("ineligible_payment_evidence");
-  }
-
-  // Only this successful verifier branch can construct the proof. No request
-  // field is consulted for any of these identities.
-  try {
-    return Object.freeze({
-      verified: true as const,
-      source: "server-payment-verifier" as const,
-      txHash,
-      currency: payment.currency,
-      network: payment.network,
-      recipientWallet: result.recipientAddress,
-      expectedAmountUsd: centsToUsdString(usdToCents(String(order.grandTotal))),
-      verifiedAmountUsd: centsToUsdString(usdToCents(String(result.amountUsdt))),
-    });
-  } catch {
-    throw new GroupBuyRefundError("ineligible_payment_evidence");
-  }
-}
-
-async function lockPaymentRoutingSources(database: DatabaseLike, order: Record<string, any>): Promise<void> {
-  const configKeys = [
-    "paymentRoutingEnabled",
-    "walletAddress",
-    "wholesale_usdt_wallet",
-    "wholesale_usdc_erc20_wallet",
-    "wallet_arb",
-    "wallet_polygon",
-    "wallet_solana",
-    "wallet_tron",
-    "wallet_btc",
-    "wallet_eth",
-  ];
-  await lockRows(database, siteConfigTable, inArray(siteConfigTable.key, configKeys));
-  if (order.groupBuyId && order.shippingCountry) {
-    await lockRows(database, gbReshippersTable, and(
-      eq(gbReshippersTable.gbId, order.groupBuyId),
-      eq(gbReshippersTable.country, order.shippingCountry),
-    ));
-  }
-  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
-    await lockRows(database, wholesaleSharesTable, eq(wholesaleSharesTable.id, order.sharedOrderId));
-  }
-}
-
-async function resolveLockedPayment(database: DatabaseLike, order: Record<string, any>) {
-  await lockPaymentRoutingSources(database, order);
-  return resolveEffectiveOrderCrypto(order as {
-    groupBuyId: string | null;
-    orderType?: string | null;
-    shippingCountry?: string | null;
-    sharedOrderId?: string | null;
-    paymentCryptoCurrency?: string | null;
-    paymentCryptoNetwork?: string | null;
-  }, database);
-}
-
-function requireLockedPaymentProof(
-  order: Record<string, any>,
-  proof: ServerPaymentEvidenceProof,
-  payment: { walletAddress: string | null; currency: string; network: string },
-): void {
-  let expected: string;
-  try {
-    assertRefundAmountAuthority(order);
-    expected = centsToUsdString(usdToCents(String(order.grandTotal)));
-  } catch (error) {
-    if (error instanceof GroupBuyRefundError && error.code !== "ineligible_payment_evidence") throw error;
-    throw new GroupBuyRefundError("payment_evidence_changed");
-  }
-  if (proof.expectedAmountUsd !== expected) {
-    throw new GroupBuyRefundError("payment_evidence_changed");
-  }
-  try {
-    if (usdToCents(proof.verifiedAmountUsd) !== usdToCents(expected)) {
-      throw new GroupBuyRefundError("ineligible_payment_evidence");
-    }
-  } catch (error) {
-    if (error instanceof GroupBuyRefundError) throw error;
-    throw new GroupBuyRefundError("ineligible_payment_evidence");
-  }
-  if (
-    !payment.walletAddress
-    || proof.recipientWallet.toLowerCase() !== payment.walletAddress.toLowerCase()
-    || proof.currency.toUpperCase().trim() !== payment.currency.toUpperCase().trim()
-    || proof.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "") !== payment.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "")
-    || ![
-      order.paymentTxHash,
-      ...(Array.isArray(order.paymentTxHashes) ? order.paymentTxHashes : []),
-    ].some(hash => typeof hash === "string" && hash.trim() === proof.txHash.trim())
-    || proof.currency.toUpperCase().trim() !== String(order.paymentCryptoCurrency ?? "").toUpperCase().trim()
-    || proof.network.toUpperCase().trim().replace(/[^A-Z0-9]/g, "") !== String(order.paymentCryptoNetwork ?? "").toUpperCase().trim().replace(/[^A-Z0-9]/g, "")
-  ) {
-    throw new GroupBuyRefundError("payment_evidence_changed");
   }
 }
 
@@ -417,11 +250,6 @@ export async function createRefundRequest(
     throw new GroupBuyRefundError("not_owner");
   }
 
-  // Verify before opening the transaction. The transaction re-locks and
-  // re-evaluates all values so this proof cannot survive a payment identity
-  // change made while the verifier was doing network I/O.
-  const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
-
   const result = await database.transaction(async (tx: DatabaseLike) => {
     const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, accountId));
     if (!account) throw new GroupBuyRefundError("account_not_found");
@@ -441,12 +269,8 @@ export async function createRefundRequest(
     );
     const activeRefund = activeRows[0];
     if (activeRefund) return asRefundResult(activeRefund);
-    const lockedPayment = await resolveLockedPayment(tx, order);
-    requireLockedPaymentProof(order, paymentEvidenceProof, lockedPayment);
-
     const eligibility = evaluateRefundEligibility({
       accountId,
-      paymentEvidenceProof,
       order: refundOrder(order),
       groupBuy: { id: groupBuy.id, cryptoRefundsEnabled: groupBuy.cryptoRefundsEnabled },
       activeRefund: null,
@@ -573,18 +397,6 @@ export async function completeCreditRefund(
   const alreadyCompleted = await returnCompletedIfValid(database, unlockedRefund, args);
   if (alreadyCompleted) return alreadyCompleted;
 
-  // Completion also independently verifies the original incoming payment
-  // before any row lock. This is deliberately repeated on retries: evidence
-  // is not persisted as a caller-controlled field on a refund row.
-  let paymentEvidenceProof: ServerPaymentEvidenceProof;
-  try {
-    paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
-  } catch (error) {
-    const completedDuringVerification = await returnCompletedIfValid(database, unlockedRefund, args, true);
-    if (completedDuringVerification) return completedDuringVerification;
-    throw error;
-  }
-
   const result = await database.transaction(async (tx: DatabaseLike) => {
     // Every refund mutation uses account -> order -> group buy -> refund.
     // The initial read only discovers immutable foreign-key identities; no
@@ -615,19 +427,26 @@ export async function completeCreditRefund(
       throw new GroupBuyRefundError("payment_state_changed");
     }
 
-    const lockedPayment = await resolveLockedPayment(tx, order);
-    requireLockedPaymentProof(order, paymentEvidenceProof, lockedPayment);
-    // Revalidate the original evidence against locked authoritative values.
-    // The completion path intentionally treats the GB feature flag as
+    let amountUsd: string;
+    try {
+      const amountCents = usdToCents(String(refund.amountUsd));
+      if (amountCents <= 0n) throw new Error("amount_usd_positive");
+      amountUsd = centsToUsdString(amountCents);
+    } catch {
+      throw new GroupBuyRefundError("invalid_refund_amount");
+    }
+
+    // Revalidate the locked order state. The completion path intentionally treats the
+    // GB feature flag as
     // irrelevant: disabling new requests must not strand active history.
     const evidenceCheck = evaluateRefundEligibility({
       accountId: account.telegramUsername,
-      paymentEvidenceProof,
       order: {
         ...refundOrder(order),
         status: "Submitted",
         refundStatus: null,
         paymentStatus: "confirmed",
+        grandTotal: amountUsd,
       },
       groupBuy: { id: groupBuy.id, cryptoRefundsEnabled: true },
       activeRefund: null,
@@ -656,13 +475,6 @@ export async function completeCreditRefund(
       .returning();
     if (!claimed) throw new GroupBuyRefundError("refund_claim_lost");
 
-    let amountUsd: string;
-    try {
-      amountUsd = String(refund.amountUsd);
-      usdToCents(amountUsd);
-    } catch {
-      throw new GroupBuyRefundError("invalid_refund_amount");
-    }
     const credits = addMoney(String(account.credits ?? "0"), amountUsd);
     await tx
       .update(accountsTable)
@@ -775,6 +587,26 @@ function validateCryptoProcessorScope(
 function completedCryptoResult(refund: Record<string, any>, txid: string): RefundRequestResult {
   if (refund.outgoingTxid !== txid) throw new GroupBuyRefundError("completed_txid_immutable");
   return asRefundResult(refund);
+}
+
+function validateCryptoRefundAmount(refund: Record<string, any>): void {
+  let amountUsd: string;
+  try {
+    const amountCents = usdToCents(String(refund.amountUsd));
+    if (amountCents <= 0n) throw new Error("amount_usd_positive");
+    amountUsd = centsToUsdString(amountCents);
+    if (
+      typeof refund.amountBaseUnits !== "string"
+      && typeof refund.amountBaseUnits !== "number"
+    ) {
+      throw new Error("amount_base_units_missing");
+    }
+    if (String(refund.amountBaseUnits) !== usdToSixDecimalBaseUnits(amountUsd)) {
+      throw new Error("amount_base_units_mismatch");
+    }
+  } catch {
+    throw new GroupBuyRefundError("invalid_refund_amount");
+  }
 }
 
 async function lockCryptoRows(
@@ -1023,7 +855,12 @@ export async function submitCryptoRefund(
   );
   if (!unlockedOrder || !unlockedAccount || !unlockedGroupBuy) throw new GroupBuyRefundError("not_found");
   validateCryptoProcessorScope(unlockedAccount, unlockedOrder, unlockedGroupBuy, unlockedRefund, processor);
-  if (unlockedRefund.status === "completed") return completedCryptoResult(unlockedRefund, canonicalTxid);
+  if (unlockedRefund.status === "completed") {
+    validateCompletedTerminal(unlockedOrder);
+    validateCryptoRefundAmount(unlockedRefund);
+    return completedCryptoResult(unlockedRefund, canonicalTxid);
+  }
+  validateCryptoRefundAmount(unlockedRefund);
   if (refundVerifyLeaseMs() === null) {
     throw new GroupBuyRefundError("provider_unavailable", "Refund verification lease configuration is invalid.");
   }
@@ -1049,7 +886,6 @@ export async function submitCryptoRefund(
       await recoverStaleCryptoAttempt(database, unlockedRefund, currentAttempt);
     }
   }
-  const paymentEvidenceProof = await loadOriginalPaymentProof(unlockedOrder);
   const [replayedRefund] = await loadRows(
     database,
     groupBuyRefundsTable,
@@ -1065,7 +901,9 @@ export async function submitCryptoRefund(
       throw new GroupBuyRefundError("not_found");
     }
     validateCryptoProcessorScope(locked.account, locked.order, locked.groupBuy, locked.refund, processor);
+    validateCryptoRefundAmount(locked.refund);
     if (locked.refund.status === "completed") {
+      validateCompletedTerminal(locked.order);
       completedDuringClaim = completedCryptoResult(locked.refund, canonicalTxid);
       return;
     }
@@ -1194,10 +1032,7 @@ export async function submitCryptoRefund(
     ) {
       throw new GroupBuyRefundError("order_state_changed");
     }
-    assertRefundAmountAuthority(locked.order);
-    const lockedPayment = await resolveLockedPayment(tx, locked.order);
-    requireLockedPaymentProof(locked.order, paymentEvidenceProof, lockedPayment);
-
+    validateCryptoRefundAmount(locked.refund);
     const now = new Date();
     const failureCode = verification.verified ? null : verification.code;
     const failureMessage = verification.verified ? null : verification.message;

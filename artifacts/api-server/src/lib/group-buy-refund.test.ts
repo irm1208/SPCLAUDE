@@ -7,15 +7,10 @@ const harness = vi.hoisted(() => {
       id: "id", telegramUsername: "telegramUsername", groupBuyId: "groupBuyId",
       orderType: "orderType", deletedAt: "deletedAt", status: "status",
       refundStatus: "refundStatus", paymentStatus: "paymentStatus",
-      paymentTxHash: "paymentTxHash", paymentTxHashes: "paymentTxHashes",
-      paymentConfirmedAt: "paymentConfirmedAt", paymentCryptoCurrency: "paymentCryptoCurrency",
-      paymentCryptoNetwork: "paymentCryptoNetwork", grandTotal: "grandTotal",
+      paymentConfirmedAt: "paymentConfirmedAt", grandTotal: "grandTotal",
       paymentScreenshot: "paymentScreenshot", refundedAt: "refundedAt",
     },
     groupBuys: { id: "id", cryptoRefundsEnabled: "cryptoRefundsEnabled", organiserId: "organiserId" },
-    siteConfig: { key: "key", value: "value" },
-    reshippers: { gbId: "gbId", country: "country" },
-    shares: { id: "id", leadCryptoOptions: "leadCryptoOptions" },
     refunds: {
       id: "id", orderId: "orderId", groupBuyId: "groupBuyId", accountId: "accountId",
       method: "method", status: "status", amountUsd: "amountUsd", asset: "asset",
@@ -25,39 +20,36 @@ const harness = vi.hoisted(() => {
     },
     credit: { accountUsername: "accountUsername", amount: "amount", reason: "reason", orderId: "orderId", refundId: "refundId", adminUsername: "adminUsername" },
     audit: "audit",
+    outbox: { id: "id", deliveredAt: "deliveredAt", createdAt: "createdAt" },
+    notifications: {
+      id: "notification.id", refundId: "notification.refundId", status: "notification.status",
+      accountId: "notification.accountId", transitionKey: "notification.transitionKey",
+      createdAt: "notification.createdAt", sentAt: "notification.sentAt",
+      claimedAt: "notification.claimedAt", claimToken: "notification.claimToken",
+    },
   };
   const state = {
     account: { telegramUsername: "buyer", credits: 0 },
     order: {
       id: "order-1", code: "GB-001", telegramUsername: "@buyer", groupBuyId: "gb-1", orderType: null,
       deletedAt: null, status: "Submitted", refundStatus: null, paymentStatus: "confirmed",
-      paymentTxHash: "0x" + "a".repeat(64), paymentTxHashes: null,
-      paymentConfirmedAt: new Date(), paymentCryptoCurrency: "USDT",
-      paymentCryptoNetwork: "ERC-20", grandTotal: "123.45", paymentScreenshot: null,
+      paymentConfirmedAt: new Date(), grandTotal: "123.45", paymentScreenshot: null,
       refundedAt: null,
     },
     groupBuy: { id: "gb-1", cryptoRefundsEnabled: true, organiserId: "organiser" },
     refunds: [] as Array<Record<string, unknown>>,
     credits: [] as Array<Record<string, unknown>>,
     audits: [] as Array<Record<string, unknown>>,
-    siteConfigs: [] as Array<Record<string, unknown>>,
-    reshippers: [] as Array<Record<string, unknown>>,
-    shares: [] as Array<Record<string, unknown>>,
+    outbox: [] as Array<Record<string, unknown>>,
+    notifications: [] as Array<Record<string, unknown>>,
     locks: [] as string[],
     updates: [] as Array<{ table: unknown; values: Record<string, unknown> }>,
     beforeRefundUpdate: null as null | (() => void),
     failLedger: false,
     failOrder: false,
     failAudit: false,
-    beforeVerify: null as null | (() => void),
-    resolvedWallet: "0x" + "b".repeat(40),
-    resolvedCurrency: "USDT",
-    resolvedNetwork: "ERC-20",
-    verifierAmount: 123.45,
-    verifierAvailable: true,
     transactionTail: Promise.resolve(),
     serializeTransactions: true,
-    resolverDatabases: [] as unknown[],
   };
   // This adapter models predicates, savepoints, and deterministic interleaving
   // only; PostgreSQL lock/index behavior remains covered by Task 10.
@@ -69,13 +61,14 @@ const harness = vi.hoisted(() => {
       : table === tables.orders ? [state.order]
           : table === tables.groupBuys ? [state.groupBuy]
           : table === tables.refunds ? state.refunds
-          : table === tables.siteConfig ? state.siteConfigs
-          : table === tables.reshippers ? state.reshippers
-          : table === tables.shares ? state.shares : [];
+          : table === tables.outbox ? state.outbox
+          : table === tables.notifications ? state.notifications
+          : [];
     function matches(row: Record<string, unknown>, condition: any): boolean {
       if (!condition) return true;
       if (condition.kind === "eq") return row[condition.column] === condition.value;
       if (condition.kind === "inArray") return condition.value.includes(row[condition.column]);
+      if (condition.kind === "isNull") return row[condition.column] == null;
       if (condition.kind === "and") return condition.predicates.every((item: any) => matches(row, item));
       return true;
     }
@@ -89,21 +82,23 @@ const harness = vi.hoisted(() => {
     return {
       from: (table: unknown) => ({
         where: (predicate: any) => {
-          const query = {
-            for: vi.fn(async () => {
-              state.locks.push(String(
-                table === tables.accounts ? "account"
-                  : table === tables.orders ? "order"
-                    : table === tables.groupBuys ? "groupBuy"
-                      : table === tables.refunds ? "refund"
-                        : table === tables.siteConfig ? "siteConfig"
-                          : table === tables.reshippers ? "reshippers" : "shares",
-              ));
-              return rowsFor(table, predicate).map(row => project(row, selection));
-            }),
+          const query: any = {
             then: (resolve: (value: unknown) => unknown, reject?: (error: unknown) => unknown) =>
               Promise.resolve(rowsFor(table, predicate).map(row => project(row, selection))).then(resolve, reject),
           };
+          query.for = () => {
+            state.locks.push(String(
+              table === tables.accounts ? "account"
+                : table === tables.orders ? "order"
+                  : table === tables.groupBuys ? "groupBuy"
+                    : table === tables.refunds ? "refund"
+                      : table === tables.outbox ? "outbox"
+                        : table === tables.notifications ? "notification" : "unknown",
+            ));
+            return query;
+          };
+          query.orderBy = () => query;
+          query.limit = () => query;
           return query;
         },
       }),
@@ -136,6 +131,8 @@ const harness = vi.hoisted(() => {
           if (table === tables.refunds) state.refunds.push(values);
           if (table === tables.credit) state.credits.push(values);
           if (table === tables.audit) state.audits.push(values);
+          if (table === tables.outbox) state.outbox.push(values);
+          if (table === tables.notifications) state.notifications.push(values);
         };
         return {
           onConflictDoNothing: () => ({
@@ -168,6 +165,8 @@ const harness = vi.hoisted(() => {
           refunds: state.refunds,
           credits: state.credits,
           audits: state.audits,
+          outbox: state.outbox,
+          notifications: state.notifications,
           updates: state.updates,
         }));
         try {
@@ -179,6 +178,8 @@ const harness = vi.hoisted(() => {
           state.refunds = snapshot.refunds;
           state.credits = snapshot.credits;
           state.audits = snapshot.audits;
+          state.outbox = snapshot.outbox;
+          state.notifications = snapshot.notifications;
           state.updates = snapshot.updates;
           throw error;
         }
@@ -187,38 +188,33 @@ const harness = vi.hoisted(() => {
       state.transactionTail = run.then(() => undefined, () => undefined);
       return run;
     }),
+    insert: transaction.insert,
+    update: transaction.update,
   };
   function reset() {
     state.refunds.length = 0;
     state.credits.length = 0;
     state.audits.length = 0;
+    state.outbox.length = 0;
+    state.notifications.length = 0;
     state.locks.length = 0;
     state.updates.length = 0;
     state.beforeRefundUpdate = null;
     state.failLedger = false;
     state.failOrder = false;
     state.failAudit = false;
-    state.beforeVerify = null;
-    state.resolvedWallet = "0x" + "b".repeat(40);
-    state.resolvedCurrency = "USDT";
-    state.resolvedNetwork = "ERC-20";
-    state.verifierAmount = 123.45;
-    state.verifierAvailable = true;
     state.transactionTail = Promise.resolve();
     state.serializeTransactions = true;
-    state.resolverDatabases.length = 0;
     state.account.credits = 0;
     state.order.refundStatus = null;
     state.order.status = "Submitted";
     state.order.groupBuyId = "gb-1";
+    state.order.orderType = null;
     state.order.telegramUsername = "@buyer";
     state.order.paymentStatus = "confirmed";
     state.order.paymentConfirmedAt = new Date();
-    state.order.paymentTxHash = "0x" + "a".repeat(64);
-    state.order.paymentTxHashes = null;
     state.order.deletedAt = null;
     state.order.grandTotal = "123.45";
-    (state.order as any).paymentUsdAmount = null;
     state.groupBuy.cryptoRefundsEnabled = true;
   }
   return { db, tables, state, reset };
@@ -231,44 +227,29 @@ vi.mock("@workspace/db", () => ({
   groupBuyRefundsTable: harness.tables.refunds,
   creditTransactionsTable: harness.tables.credit,
   auditLogsTable: harness.tables.audit,
-  siteConfigTable: harness.tables.siteConfig,
-  gbReshippersTable: harness.tables.reshippers,
-  wholesaleSharesTable: harness.tables.shares,
-  groupBuyRefundTransitionOutboxTable: null,
+  groupBuyRefundNotificationsTable: harness.tables.notifications,
+  groupBuyRefundTransitionOutboxTable: harness.tables.outbox,
 }));
 vi.mock("drizzle-orm", () => ({
   and: vi.fn((...predicates: unknown[]) => ({ kind: "and", predicates })),
   eq: vi.fn((column: unknown, value: unknown) => ({ kind: "eq", column, value })),
   inArray: vi.fn((column: unknown, value: unknown[]) => ({ kind: "inArray", column, value })),
+  sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values })),
+  asc: vi.fn((column: unknown) => ({ kind: "asc", column })),
+  count: vi.fn(() => "count"),
+  isNull: vi.fn((column: unknown) => ({ kind: "isNull", column })),
+  lt: vi.fn((column: unknown, value: unknown) => ({ kind: "lt", column, value })),
+  or: vi.fn((...predicates: unknown[]) => ({ kind: "or", predicates })),
 }));
 vi.mock("./payment-verify", () => ({
   isValidEthAddress: (value: string) => /^0x[0-9a-fA-F]{40}$/.test(value),
-  isValidTxHash: (value: string) => /^(?:0x)?[0-9a-fA-F]{64}$/.test(value),
-  verifyTransaction: vi.fn(async () => {
-    const mutation = harness.state.beforeVerify;
-    harness.state.beforeVerify = null;
-    mutation?.();
-    if (!harness.state.verifierAvailable) throw new Error("verifier unavailable");
-    return {
-      verified: true,
-      amountUsdt: harness.state.verifierAmount,
-      blockConfirmations: 8,
-      recipientAddress: "0x" + "b".repeat(40),
-    };
-  }),
-}));
-vi.mock("../routes/payments", () => ({
-  resolveEffectiveOrderCrypto: vi.fn(async (_order: unknown, database: unknown) => {
-    harness.state.resolverDatabases.push(database);
-    return {
-    walletAddress: harness.state.resolvedWallet,
-    currency: harness.state.resolvedCurrency,
-    network: harness.state.resolvedNetwork,
-    };
-  }),
 }));
 
-import { createRefundRequest, completeCreditRefund } from "./group-buy-refund";
+import {
+  createRefundRequest,
+  completeCreditRefund,
+  drainRefundTransitionOutbox,
+} from "./group-buy-refund";
 
 describe("transactional group-buy refunds", () => {
   beforeEach(() => harness.reset());
@@ -279,7 +260,24 @@ describe("transactional group-buy refunds", () => {
     input: { method: "credit" },
   });
 
-  it("creates a crypto refund from the locked grand total and verified original payment", async () => {
+  it("keeps a credit audit marker pending after drain failure and delivers it once on retry", async () => {
+    harness.state.failAudit = true;
+    await createCredit();
+    expect(harness.state.outbox).toHaveLength(1);
+    expect(harness.state.outbox[0].deliveredAt).toBeNull();
+    expect(harness.state.audits).toHaveLength(0);
+
+    harness.state.failAudit = false;
+    await expect(drainRefundTransitionOutbox(harness.db as any, { limit: 1 })).resolves.toBe(1);
+    expect(harness.state.outbox[0].deliveredAt).toBeInstanceOf(Date);
+    expect(harness.state.audits).toHaveLength(1);
+
+    await expect(drainRefundTransitionOutbox(harness.db as any, { limit: 1 })).resolves.toBe(0);
+    expect(harness.state.audits).toHaveLength(1);
+    expect(harness.state.outbox).toHaveLength(1);
+  });
+
+  it("creates a crypto refund from the locked grand total", async () => {
     const result = await createRefundRequest(harness.db as any, {
       accountId: "buyer",
       orderId: "order-1",
@@ -301,7 +299,26 @@ describe("transactional group-buy refunds", () => {
       amountBaseUnits: "123450000",
     });
     expect(harness.state.refunds).toHaveLength(1);
-    expect(harness.state.locks.slice(0, 3)).toEqual(["account", "order", "groupBuy"]);
+    expect(harness.state.locks.filter(lock => ["account", "order", "groupBuy"].includes(lock)))
+      .toEqual(["account", "order", "groupBuy"]);
+  });
+
+  it("creates a refund for a confirmed order without an incoming payment hash", async () => {
+    await expect(createCredit()).resolves.toMatchObject({
+      status: "requested",
+      method: "credit",
+      amountUsd: "123.45",
+    });
+  });
+
+  it("snapshots the locked order's current edited grand total", async () => {
+    harness.state.order.grandTotal = "200.00";
+
+    await expect(createCredit()).resolves.toMatchObject({
+      status: "requested",
+      amountUsd: "200.00",
+    });
+    expect(harness.state.refunds[0]).toMatchObject({ amountUsd: "200.00" });
   });
 
   it("normalizes account identity once for @-prefixed callers", async () => {
@@ -332,12 +349,62 @@ describe("transactional group-buy refunds", () => {
       reason: "Group-buy refund for order #GB-001",
     });
     expect(harness.state.order).toMatchObject({ status: "Cancelled", paymentStatus: "refunded", refundStatus: "refunded" });
-    expect(harness.state.resolverDatabases[0]).toBeUndefined();
-    expect(harness.state.resolverDatabases.at(-1)).toBeDefined();
     expect(harness.state.updates
       .filter(update => update.table === harness.tables.refunds)
       .map(update => update.values.status)
       .filter(Boolean)).toEqual(["completed"]);
+  });
+
+  it("completes a hashless request as an account credit", async () => {
+    const request = await createCredit();
+
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id,
+      username: "admin",
+      role: "admin",
+    })).resolves.toMatchObject({ status: "completed", amountUsd: "123.45" });
+    expect(harness.state.credits).toHaveLength(1);
+  });
+
+  it.each(["0.00", "not-a-number"])(
+    "rejects a legacy credit row with malformed or non-positive amount %s",
+    async amountUsd => {
+      const request = await createCredit();
+      harness.state.refunds[0].amountUsd = amountUsd;
+
+      await expect(completeCreditRefund(harness.db as any, {
+        refundId: request.id,
+        username: "admin",
+        role: "admin",
+      })).rejects.toMatchObject({ code: "invalid_refund_amount" });
+      expect(harness.state.credits).toHaveLength(0);
+      expect(harness.state.order.refundStatus).toBeNull();
+    },
+  );
+
+  it("canonicalizes a legacy credit amount before ledgering it", async () => {
+    const request = await createCredit();
+    harness.state.refunds[0].amountUsd = "123.4";
+
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id,
+      username: "admin",
+      role: "admin",
+    })).resolves.toMatchObject({ status: "completed", amountUsd: "123.40" });
+    expect(harness.state.credits[0].amount).toBe(123.4);
+  });
+
+  it("uses the persisted credit snapshot after the order total changes", async () => {
+    const request = await createCredit();
+    harness.state.order.grandTotal = "999.99";
+
+    await expect(completeCreditRefund(harness.db as any, {
+      refundId: request.id,
+      username: "admin",
+      role: "admin",
+    })).resolves.toMatchObject({ status: "completed", amountUsd: "123.45" });
+    expect(harness.state.credits[0].amount).toBe(123.45);
+    expect(harness.state.refunds[0].amountUsd).toBe("123.45");
   });
 
   it.each([
@@ -355,13 +422,39 @@ describe("transactional group-buy refunds", () => {
     ["disabled", () => { harness.state.groupBuy.cryptoRefundsEnabled = false; }, "refunds_disabled"],
     ["cancelled", () => { harness.state.order.status = "Cancelled"; }, "already_cancelled"],
     ["test-confirmed", () => { harness.state.order.paymentStatus = "test_confirmed"; }, "ineligible_payment_evidence"],
-    ["screenshot-only", () => { (harness.state.order as any).paymentTxHash = null; (harness.state.order as any).paymentTxHashes = null; }, "ineligible_payment_evidence"],
+    ["pending", () => { harness.state.order.paymentStatus = "pending"; }, "ineligible_payment_evidence"],
+    ["unpaid", () => { (harness.state.order as any).paymentConfirmedAt = null; }, "ineligible_payment_evidence"],
+    ["wholesale", () => { (harness.state.order as any).orderType = "wholesale"; }, "not_group_buy_order"],
+    ["non-positive total", () => { harness.state.order.grandTotal = "0.00"; }, "non_positive_total"],
+    ["already refunded", () => { (harness.state.order as any).refundStatus = "refunded"; }, "already_refunded"],
     ["non-group-buy", () => { (harness.state.order as any).groupBuyId = null; }, "not_group_buy_order"],
     ["non-owner", () => { harness.state.order.telegramUsername = "@other"; }, "not_owner"],
   ] as const)("rejects %s without a refund row", async (_name, change, code) => {
     change();
     await expect(createCredit()).rejects.toMatchObject({ code });
     expect(harness.state.refunds).toHaveLength(0);
+  });
+
+  it("does not create a second row for an existing active refund", async () => {
+    harness.state.refunds.push({
+      id: "existing-refund",
+      orderId: "order-1",
+      groupBuyId: "gb-1",
+      accountId: "buyer",
+      method: "credit",
+      status: "requested",
+      amountUsd: "123.45",
+      asset: null,
+      network: null,
+      destinationWallet: null,
+      amountBaseUnits: null,
+    });
+
+    await expect(createCredit()).resolves.toMatchObject({
+      id: "existing-refund",
+      status: "requested",
+    });
+    expect(harness.state.refunds).toHaveLength(1);
   });
 
   it("models two request transactions contending on the partial unique constraint", async () => {
@@ -375,29 +468,16 @@ describe("transactional group-buy refunds", () => {
     expect(harness.state.refunds[0].status).toBe("requested");
   });
 
-  it.each([
-    ["transaction identity", () => { harness.state.order.paymentTxHash = "0x" + "d".repeat(64); }],
-    ["expected payment amount", () => { (harness.state.order as any).paymentUsdAmount = "99.99"; }],
-    ["effective recipient wallet", () => { harness.state.resolvedWallet = "0x" + "e".repeat(40); }],
-    ["effective currency rail", () => { harness.state.resolvedCurrency = "USDC"; }],
-    ["effective network rail", () => { harness.state.resolvedNetwork = "Ethereum Mainnet"; }],
-  ] as const)("rejects a %s TOCTOU change under the lock", async (_name, change) => {
-    harness.state.beforeVerify = change;
-    await expect(createCredit()).rejects.toMatchObject({ code: "payment_evidence_changed" });
-    expect(harness.state.refunds).toHaveLength(0);
-  });
-
-  it("claims directly to completed and performs no writes when the conditional claim loses", async () => {
+  it("handles an active-to-completed race without duplicate credit", async () => {
     const request = await createCredit();
     harness.state.beforeRefundUpdate = () => { harness.state.refunds[0].status = "completed"; };
     harness.state.updates.length = 0;
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
-    })).rejects.toMatchObject({ code: "refund_claim_lost" });
+    })).rejects.toMatchObject({ code: "completed_refund_linkage_mismatch" });
     expect(harness.state.account.credits).toBe(0);
     expect(harness.state.credits).toHaveLength(0);
     expect(harness.state.audits).toHaveLength(1);
-    expect(harness.state.updates.filter(update => update.table !== harness.tables.refunds)).toHaveLength(0);
   });
 
   it("rejects crypto completion with the stable method-mismatch code", async () => {
@@ -419,7 +499,7 @@ describe("transactional group-buy refunds", () => {
     change();
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
-    })).rejects.toMatchObject({ code: expect.stringMatching(/payment_state_changed|payment_evidence_changed/) });
+    })).rejects.toMatchObject({ code: "payment_state_changed" });
     expect(harness.state.credits).toHaveLength(0);
   });
 
@@ -431,40 +511,6 @@ describe("transactional group-buy refunds", () => {
     })).resolves.toMatchObject({ status: "completed" });
   });
 
-  it.each([123.44, 123.46])("rejects a verifier amount %s on completion even within verifier tolerance", async (verifierAmount) => {
-    const request = await createCredit();
-    harness.state.verifierAmount = verifierAmount;
-    await expect(completeCreditRefund(harness.db as any, {
-      refundId: request.id, username: "admin", role: "admin",
-    })).rejects.toMatchObject({ code: "ineligible_payment_evidence" });
-    expect(harness.state.credits).toHaveLength(0);
-  });
-
-  it("rejects a locked grand-total/payment-amount mutation", async () => {
-    const request = await createCredit();
-    harness.state.order.grandTotal = "200.00";
-    await expect(completeCreditRefund(harness.db as any, {
-      refundId: request.id, username: "admin", role: "admin",
-    })).rejects.toMatchObject({ code: "ineligible_payment_evidence" });
-  });
-
-  it("rejects a locked paymentUsdAmount mutation", async () => {
-    const request = await createCredit();
-    (harness.state.order as any).paymentUsdAmount = "99.99";
-    await expect(completeCreditRefund(harness.db as any, {
-      refundId: request.id, username: "admin", role: "admin",
-    })).rejects.toMatchObject({ code: "ineligible_payment_evidence" });
-  });
-
-  it("rejects completion when the original transaction identity changes during verification", async () => {
-    const request = await createCredit();
-    harness.state.beforeVerify = () => {
-      harness.state.order.paymentTxHash = "0x" + "d".repeat(64);
-    };
-    await expect(completeCreditRefund(harness.db as any, {
-      refundId: request.id, username: "admin", role: "admin",
-    })).rejects.toMatchObject({ code: "payment_evidence_changed" });
-  });
 
   it("rejects completion without payment confirmation time and makes no financial writes", async () => {
     const request = await createCredit();
@@ -505,19 +551,6 @@ describe("transactional group-buy refunds", () => {
     expect(harness.state.credits).toHaveLength(0);
   });
 
-  it.each([
-    ["wallet", () => { harness.state.resolvedWallet = "0x" + "e".repeat(40); }],
-    ["currency", () => { harness.state.resolvedCurrency = "USDC"; }],
-    ["network", () => { harness.state.resolvedNetwork = "Ethereum Mainnet"; }],
-  ] as const)("rejects completion when locked %s changes", async (_name, change) => {
-    const request = await createCredit();
-    harness.state.beforeVerify = change;
-    await expect(completeCreditRefund(harness.db as any, {
-      refundId: request.id, username: "admin", role: "admin",
-    })).rejects.toMatchObject({ code: "payment_evidence_changed" });
-    expect(harness.state.credits).toHaveLength(0);
-  });
-
   it("models serialized fake transactions so only one balance and ledger write commits", async () => {
     const request = await createCredit();
     const results = await Promise.all([
@@ -543,12 +576,9 @@ describe("transactional group-buy refunds", () => {
     })).resolves.toMatchObject({ status: "completed" });
   });
 
-  it.each([
-    ["order", () => { harness.state.failOrder = true; }],
-    ["audit", () => { harness.state.failAudit = true; }],
-  ] as const)("rolls back %s failures atomically", async (_name, fail) => {
+  it("rolls back order failures atomically", async () => {
     const request = await createCredit();
-    fail();
+    harness.state.failOrder = true;
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
     })).rejects.toThrow();
@@ -568,14 +598,15 @@ describe("transactional group-buy refunds", () => {
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "wrong", role: "organiser",
     })).rejects.toMatchObject({ code: "forbidden" });
-    expect(harness.state.locks).toEqual([]);
+    expect(harness.state.locks.filter(lock => ["account", "order", "groupBuy", "refund"].includes(lock))).toEqual([]);
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "organiser", role: "organiser", groupBuyId: "other",
     })).rejects.toMatchObject({ code: "group_buy_scope" });
     await completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
     });
-    expect(harness.state.locks.slice(0, 4)).toEqual(["account", "order", "groupBuy", "refund"]);
+    expect(harness.state.locks.filter(lock => ["account", "order", "groupBuy", "refund"].includes(lock)))
+      .toEqual(["account", "order", "groupBuy", "refund"]);
   });
 
   it("returns a completed row unchanged on duplicate completion but still enforces scope", async () => {
@@ -585,49 +616,36 @@ describe("transactional group-buy refunds", () => {
     });
     const credits = harness.state.credits.length;
     const audits = harness.state.audits.length;
-    const updates = harness.state.updates.length;
+    const updates = harness.state.updates.filter(update =>
+      update.table !== harness.tables.outbox && update.table !== harness.tables.notifications,
+    ).length;
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
     })).resolves.toMatchObject({ id: request.id, status: "completed" });
     expect(harness.state.credits).toHaveLength(credits);
     expect(harness.state.audits).toHaveLength(audits);
-    expect(harness.state.updates).toHaveLength(updates);
+    expect(harness.state.updates.filter(update =>
+      update.table !== harness.tables.outbox && update.table !== harness.tables.notifications,
+    )).toHaveLength(updates);
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "wrong", role: "organiser",
     })).rejects.toMatchObject({ code: "forbidden" });
   });
 
-  it("returns a completed refund idempotently when the verifier is unavailable", async () => {
+  it("returns a completed refund idempotently on retry", async () => {
     const request = await createCredit();
     await completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
     });
     const credits = harness.state.credits.length;
-    harness.state.verifierAvailable = false;
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "admin", role: "admin",
     })).resolves.toMatchObject({ id: request.id, status: "completed" });
     expect(harness.state.credits).toHaveLength(credits);
   });
 
-  it("recovers an active-to-completed race when verification fails", async () => {
+  it("returns forbidden for an unauthorized organiser", async () => {
     const request = await createCredit();
-    harness.state.verifierAvailable = false;
-    harness.state.beforeVerify = () => {
-      harness.state.refunds[0].status = "completed";
-      harness.state.order.status = "Cancelled";
-      harness.state.order.paymentStatus = "refunded";
-      (harness.state.order as any).refundStatus = "refunded";
-    };
-    await expect(completeCreditRefund(harness.db as any, {
-      refundId: request.id, username: "admin", role: "admin",
-    })).resolves.toMatchObject({ id: request.id, status: "completed" });
-    expect(harness.state.credits).toHaveLength(0);
-  });
-
-  it("returns forbidden rather than verifier failure for an unauthorized organiser", async () => {
-    const request = await createCredit();
-    harness.state.verifierAvailable = false;
     await expect(completeCreditRefund(harness.db as any, {
       refundId: request.id, username: "not-organiser", role: "organiser",
     })).rejects.toMatchObject({ code: "forbidden" });

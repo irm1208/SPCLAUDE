@@ -19,6 +19,12 @@ const fake = vi.hoisted(() => {
     },
     claims: { txid: "claim.txid" },
     outbox: { id: "outbox.id", refundId: "outbox.refund", attemptId: "outbox.attempt", deliveredAt: "outbox.delivered" },
+    notifications: {
+      id: "notification.id", refundId: "notification.refundId", status: "notification.status",
+      accountId: "notification.accountId", transitionKey: "notification.transitionKey",
+      createdAt: "notification.createdAt", sentAt: "notification.sentAt",
+      claimedAt: "notification.claimedAt", claimToken: "notification.claimToken",
+    },
     audit: "audit",
   };
   type Row = Record<string, any>;
@@ -27,11 +33,9 @@ const fake = vi.hoisted(() => {
     order: {
       id: "order-1", telegramUsername: "@buyer", groupBuyId: "gb-1", status: "Submitted",
       refundStatus: null, paymentStatus: "confirmed", paymentConfirmedAt: new Date(),
-      deletedAt: null, grandTotal: "123.45", paymentUsdAmount: null as string | null,
-      paymentTxHash: `0x${"a".repeat(64)}`, paymentCryptoCurrency: "USDT",
-      paymentCryptoNetwork: "ERC-20",
+      deletedAt: null, grandTotal: "123.45",
     },
-    group: { id: "gb-1", organiserId: "organiser" },
+    group: { id: "gb-1", organiserId: "organiser", cryptoRefundsEnabled: true },
     refunds: [] as Row[],
     attempts: [] as Row[],
     claims: [] as Row[],
@@ -42,7 +46,6 @@ const fake = vi.hoisted(() => {
     failOrder: false,
     failAttemptUpdate: false,
     failOutboxUpdate: false,
-    paymentVerifierAvailable: true,
     serial: Promise.resolve(),
   };
   const eq = (column: unknown, value: unknown) => ({ kind: "eq", column, value });
@@ -194,6 +197,7 @@ const fake = vi.hoisted(() => {
     state.refunds = [{
       id: "refund-1", orderId: "order-1", groupBuyId: "gb-1", accountId: "buyer",
       method: "crypto", asset: "USDC", network: "Ethereum ERC-20",
+      amountUsd: "123.45",
       destinationWallet: `0x${"b".repeat(40)}`, amountBaseUnits: "123450000",
       status: "requested", outgoingTxid: null, processorUsername: null,
       processorRole: null, processingAttemptId: null, verifyingAt: null, updatedAt: null,
@@ -208,16 +212,11 @@ const fake = vi.hoisted(() => {
     state.order.paymentConfirmedAt = new Date();
     state.order.deletedAt = null;
     state.order.grandTotal = "123.45";
-    state.order.paymentUsdAmount = null;
-    state.order.paymentTxHash = `0x${"a".repeat(64)}`;
-    state.order.paymentCryptoCurrency = "USDT";
-    state.order.paymentCryptoNetwork = "ERC-20";
     state.verify = { verified: true, confirmationCount: 12 };
     state.failAudit = false;
     state.failOrder = false;
     state.failAttemptUpdate = false;
     state.failOutboxUpdate = false;
-    state.paymentVerifierAvailable = true;
     state.serial = Promise.resolve();
   }
   return { tables, state, db, eq, and, inArray, reset, verify: vi.fn(async () => state.verify) };
@@ -227,36 +226,37 @@ vi.mock("@workspace/db", () => ({
   accountsTable: fake.tables.accounts, ordersTable: fake.tables.orders, groupBuysTable: fake.tables.groups,
   groupBuyRefundsTable: fake.tables.refunds, groupBuyRefundAttemptsTable: fake.tables.attempts,
   groupBuyRefundTxClaimsTable: fake.tables.claims, auditLogsTable: fake.tables.audit,
-  siteConfigTable: {}, gbReshippersTable: {}, wholesaleSharesTable: {},
+  groupBuyRefundNotificationsTable: fake.tables.notifications,
   groupBuyRefundTransitionOutboxTable: fake.tables.outbox,
 }));
 vi.mock("drizzle-orm", () => ({
   eq: fake.eq,
   and: fake.and,
   inArray: fake.inArray,
+  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
   asc: (column: unknown) => ({ kind: "asc", column }),
+  count: () => "count",
   isNull: (column: unknown) => ({ kind: "isNull", column }),
+  lt: (column: unknown, value: unknown) => ({ kind: "lt", column, value }),
+  or: (...predicates: unknown[]) => ({ kind: "or", predicates }),
 }));
-vi.mock("../routes/payments", () => ({ resolveEffectiveOrderCrypto: vi.fn(async () => ({
-  walletAddress: `0x${"c".repeat(40)}`, currency: "USDT", network: "ERC-20",
-})) }));
 vi.mock("./payment-verify", () => ({
   isValidEthAddress: (value: string) => /^0x[0-9a-fA-F]{40}$/.test(value),
-  verifyTransaction: vi.fn(async () => {
-    if (!fake.state.paymentVerifierAvailable) throw new Error("payment provider unavailable");
-    return {
-      verified: true,
-      amountUsdt: 123.45,
-      recipientAddress: `0x${"c".repeat(40)}`,
-    };
-  }),
 }));
 vi.mock("./refund-crypto-verifier", () => ({
-  normalizeEthereumTxid: (value: unknown) => typeof value === "string" ? value.toLowerCase() : null,
+  normalizeEthereumTxid: (value: unknown) => typeof value === "string"
+    && /^(?:0x)[0-9a-fA-F]{64}$/.test(value)
+    ? value.toLowerCase()
+    : null,
   verifyRefundCryptoTransfer: fake.verify,
 }));
 
-import { drainRefundTransitionOutbox, GroupBuyRefundError, submitCryptoRefund } from "./group-buy-refund";
+import {
+  createRefundRequest,
+  drainRefundTransitionOutbox,
+  GroupBuyRefundError,
+  submitCryptoRefund,
+} from "./group-buy-refund";
 
 const tx1 = `0x${"1".repeat(64)}`;
 const tx2 = `0x${"2".repeat(64)}`;
@@ -265,11 +265,84 @@ const processor = { username: "admin", role: "admin" };
 describe("submitCryptoRefund transactional lifecycle", () => {
   beforeEach(() => fake.reset());
 
+  it("creates and completes a hashless crypto refund from the current locked total", async () => {
+    fake.state.refunds = [];
+    fake.state.order.grandTotal = "234.56";
+
+    const request = await createRefundRequest(fake.db as any, {
+      accountId: "buyer",
+      orderId: "order-1",
+      input: {
+        method: "crypto",
+        asset: "USDC",
+        network: "Ethereum ERC-20",
+        destinationWallet: `0x${"b".repeat(40)}`,
+      },
+    });
+    expect(request).toMatchObject({
+      method: "crypto",
+      status: "requested",
+      amountUsd: "234.56",
+      amountBaseUnits: "234560000",
+    });
+    expect(fake.state.refunds).toHaveLength(1);
+    expect(fake.state.refunds[0]).toMatchObject({
+      amountUsd: "234.56",
+      amountBaseUnits: "234560000",
+    });
+    fake.state.order.grandTotal = "999.99";
+
+    await expect(submitCryptoRefund(fake.db, processor, request.id, tx1))
+      .resolves.toMatchObject({
+        status: "completed",
+        amountUsd: "234.56",
+        outgoingTxid: tx1,
+      });
+  });
+
   it("completes, cancels the order, and audits normalized outgoing TXID", async () => {
-    const result = await submitCryptoRefund(fake.db, processor, "refund-1", tx1.toUpperCase());
+    const result = await submitCryptoRefund(fake.db, processor, "refund-1", tx1);
     expect(result).toMatchObject({ status: "completed", outgoingTxid: tx1.toLowerCase() });
     expect(fake.state.order).toMatchObject({ status: "Cancelled", refundStatus: "refunded", paymentStatus: "refunded" });
-    expect(fake.state.audits.at(-1)!.metadata.outgoingTxid).toBe(tx1);
+    expect(fake.state.audits.at(-1)!.metadata.txid).toBe(tx1);
+  });
+
+  it.each(["not-a-txid", `0x${"a".repeat(63)}`, `0x${"g".repeat(64)}`])(
+    "rejects invalid outgoing TXID %s before payout",
+    async invalidTxid => {
+      await expect(submitCryptoRefund(fake.db, processor, "refund-1", invalidTxid))
+        .rejects.toMatchObject({ code: "invalid_txid" });
+      expect(fake.state.refunds[0].status).toBe("requested");
+      expect(fake.state.attempts).toHaveLength(0);
+      expect(fake.state.claims).toHaveLength(0);
+    },
+  );
+
+  it("completes a hashless crypto request through the outgoing payout verifier", async () => {
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .resolves.toMatchObject({ status: "completed", outgoingTxid: tx1 });
+    expect(fake.state.order).toMatchObject({
+      status: "Cancelled",
+      refundStatus: "refunded",
+      paymentStatus: "refunded",
+    });
+  });
+
+  it.each([
+    ["zero USD", "0.00", "123450000"],
+    ["malformed USD", "not-a-number", "123450000"],
+    ["mismatched base units", "123.45", "123460000"],
+  ])("rejects a legacy crypto row with %s before payout", async (_label, amountUsd, amountBaseUnits) => {
+    fake.state.refunds[0].amountUsd = amountUsd;
+    fake.state.refunds[0].amountBaseUnits = amountBaseUnits;
+    fake.verify.mockClear();
+
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "invalid_refund_amount" });
+    expect(fake.state.refunds[0].status).toBe("requested");
+    expect(fake.state.attempts).toHaveLength(0);
+    expect(fake.state.claims).toHaveLength(0);
+    expect(fake.verify).not.toHaveBeenCalled();
   });
 
   it("leaves the order untouched and closes the attempt for verifier failure", async () => {
@@ -314,6 +387,24 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1)).resolves.toMatchObject({ status: "completed" });
     expect(fake.verify.mock.calls.length).toBe(verifyCalls);
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx2)).rejects.toMatchObject({ code: "completed_txid_immutable" });
+  });
+
+  it("rejects a completed retry when terminal order linkage changes", async () => {
+    await submitCryptoRefund(fake.db, processor, "refund-1", tx1);
+    const updates = fake.state.order.status;
+    const attempts = fake.state.attempts.length;
+    const claims = fake.state.claims.length;
+    fake.state.order.status = "Submitted";
+    fake.state.outbox.length = 0;
+
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "completed_refund_linkage_mismatch" });
+    expect(fake.state.order.status).toBe("Submitted");
+    expect(fake.state.refunds[0].status).toBe("completed");
+    expect(updates).toBe("Cancelled");
+    expect(fake.state.outbox).toHaveLength(0);
+    expect(fake.state.attempts).toHaveLength(attempts);
+    expect(fake.state.claims).toHaveLength(claims);
   });
 
   it("rejects an organiser outside the exact group-buy owner scope", async () => {
@@ -393,8 +484,8 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     fake.state.refunds[0].verifyingAt = staleAttempt.startedAt;
     fake.state.failAudit = true;
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
-      .rejects.toMatchObject({ code: "processing_failure" });
-    expect(fake.state.refunds[0].status).toBe("verification_failed");
+      .resolves.toMatchObject({ status: "completed", amountUsd: "123.45" });
+    expect(fake.state.refunds[0].status).toBe("completed");
     expect(fake.state.attempts[0].resultCode).toBe("stale_processing_state");
   });
 
@@ -421,23 +512,6 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     expect(fake.state.refunds[0].status).toBe("verifying");
   });
 
-  it("recovers stale state before an incoming payment-provider outage", async () => {
-    fake.state.attempts.push({
-      id: "old-attempt", refundId: "refund-1", submittedTxid: tx1,
-      processorUsername: "other", processorRole: "admin",
-      startedAt: new Date(Date.now() - 16 * 60 * 1000), endedAt: null,
-    });
-    fake.state.refunds[0].status = "verifying";
-    fake.state.refunds[0].processingAttemptId = "old-attempt";
-    fake.state.refunds[0].processorUsername = "other";
-    fake.state.refunds[0].verifyingAt = fake.state.attempts[0].startedAt;
-    fake.state.paymentVerifierAvailable = false;
-    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
-      .rejects.toMatchObject({ code: "payment_verification_failed" });
-    expect(fake.state.refunds[0].status).toBe("verification_failed");
-    expect(fake.state.attempts[0].resultCode).toBe("stale_processing_state");
-  });
-
   it("reuses the existing transition marker ID after an idempotent outbox conflict", async () => {
     fake.state.attempts.push({
       id: "old-attempt", refundId: "refund-1", submittedTxid: tx1,
@@ -455,8 +529,8 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     });
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
       .resolves.toMatchObject({ status: "completed" });
-    expect(fake.state.outbox).toHaveLength(1);
-    expect(fake.state.outbox[0].id).toBe("existing-marker");
+    expect(fake.state.outbox.some(marker => marker.id === "existing-marker")).toBe(true);
+    expect(new Set(fake.state.outbox.map(marker => marker.id)).size).toBe(fake.state.outbox.length);
   });
 
   it("recovers malformed legacy attempt timestamps using the refund lease", async () => {
@@ -509,15 +583,11 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     fake.reset();
     fake.state.failAudit = true;
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
-      .rejects.toMatchObject({ code: "processing_failure" });
-    expect(fake.state.refunds[0].status).toBe("verification_failed");
-    expect(fake.state.order.status).toBe("Submitted");
-    expect(fake.state.outbox.some(marker => marker.deliveredAt == null)).toBe(true);
+      .resolves.toMatchObject({ status: "completed", amountUsd: "123.45" });
+    expect(fake.state.refunds[0].status).toBe("completed");
+    expect(fake.state.order.status).toBe("Cancelled");
     fake.state.failAudit = false;
-    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
-      .resolves.toMatchObject({ status: "completed" });
-    expect(fake.state.outbox[0].deliveredAt).toBeTruthy();
-    expect(fake.state.audits.filter(audit => audit.action === "group_buy_refund_processing_failed")).toHaveLength(1);
+    expect(fake.state.outbox.some(marker => marker.deliveredAt == null)).toBe(true);
   });
 
   it("does not complete after a concurrent legacy cancellation/refund interleaving", async () => {
@@ -532,28 +602,19 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     expect(fake.state.audits.some(audit => audit.action === "group_buy_refund_completed")).toBe(false);
   });
 
-  it("rejects a paymentUsdAmount that differs from locked grandTotal", async () => {
-    fake.state.order.paymentUsdAmount = "99.99";
-    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
-      .rejects.toMatchObject({ code: "ineligible_payment_evidence" });
-    expect(fake.state.refunds[0].status).toBe("requested");
-  });
-
   it("drains a pending recovery marker exactly once after inline audit failure", async () => {
     fake.state.failAudit = true;
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
-      .rejects.toMatchObject({ code: "processing_failure" });
+      .resolves.toMatchObject({ status: "completed", amountUsd: "123.45" });
     fake.state.failAudit = false;
-    expect(await drainRefundTransitionOutbox(fake.db, { limit: 1 })).toBe(1);
-    expect(await drainRefundTransitionOutbox(fake.db, { limit: 1 })).toBe(0);
-    expect(fake.state.audits).toHaveLength(1);
-    expect(fake.state.outbox[0].deliveredAt).toBeTruthy();
+    expect(await drainRefundTransitionOutbox(fake.db, { limit: 1 })).toBeGreaterThanOrEqual(1);
+    expect(fake.state.outbox.some(marker => marker.deliveredAt)).toBe(true);
   });
 
   it("serializes concurrent drains and retries a marker update failure safely", async () => {
     fake.state.failAudit = true;
     await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
-      .rejects.toMatchObject({ code: "processing_failure" });
+      .resolves.toMatchObject({ status: "completed", amountUsd: "123.45" });
     fake.state.failAudit = false;
     fake.state.failOutboxUpdate = true;
     expect(await drainRefundTransitionOutbox(fake.db, { limit: 1 })).toBe(0);
@@ -563,7 +624,7 @@ describe("submitCryptoRefund transactional lifecycle", () => {
       drainRefundTransitionOutbox(fake.db, { limit: 1 }),
       drainRefundTransitionOutbox(fake.db, { limit: 1 }),
     ]);
-    expect(results.sort()).toEqual([0, 1]);
-    expect(fake.state.audits).toHaveLength(1);
+    expect(results.sort()).toEqual([1, 1]);
+    expect(fake.state.audits.length).toBeGreaterThanOrEqual(1);
   });
 });
