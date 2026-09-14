@@ -109,7 +109,7 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
     .on(t.outgoingTxid)
     .where(sql`${t.outgoingTxid} is not null`),
   uniqueIndex("group_buy_refunds_outgoing_txid_2_unique")
-    .using("btree", sql`lower(regexp_replace(${t.outgoingTxid2}, '^0x', '', 'i'))`)
+    .on(t.outgoingTxid2)
     .where(sql`${t.outgoingTxid2} is not null`),
   index("group_buy_refunds_order_id_idx").on(t.orderId),
   index("group_buy_refunds_group_buy_status_idx").on(t.groupBuyId, t.status, t.requestedAt, t.id),

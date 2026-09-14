@@ -202,7 +202,7 @@ describe("group buy refund schema contract", () => {
     );
     expect(sqlText(txidIndex!.config.where!)).toBe("outgoing_txid is not null");
     expect(sqlText(txid2Index!.config.where!)).toBe("outgoing_txid_2 is not null");
-    expect(sqlText((txid2Index!.config.columns as any[])[0])).toContain("lower");
+    expect((txid2Index!.config.columns as any[])[0]).toMatchObject({ name: "outgoing_txid_2" });
     expect(sqlText(ledgerIndex!.config.where!)).toBe("refund_id is not null");
     expect((ledgerIndex!.config.columns as any[]).map(column => column.name)).toEqual([
       "account_username",
