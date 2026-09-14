@@ -146,7 +146,13 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
 const SESSION_DAYS = 7; // Reduced from 30d to 7d
 
 export function getAccountCookieOptions() {
-  const isReplitPreview = process.env["REPL_ID"] !== undefined;
+  // REPL_ID is also present in published deployments. Partitioned cookies are
+  // required only for the cross-site development preview iframe; applying them
+  // to the first-party production domain can prevent a newly opened account tab
+  // from sending the session cookie.
+  const isReplitPreview =
+    process.env["NODE_ENV"] !== "production" &&
+    process.env["REPL_ID"] !== undefined;
   return {
     httpOnly: true,
     secure: process.env["NODE_ENV"] === "production" || isReplitPreview,

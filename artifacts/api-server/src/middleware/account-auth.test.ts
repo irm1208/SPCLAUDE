@@ -12,7 +12,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
   return { ...actual, db };
 });
 
-import { issueAccountCookie, requireAccount, requireAccountIdentity } from "./account-auth";
+import { getAccountCookieOptions, issueAccountCookie, requireAccount, requireAccountIdentity } from "./account-auth";
 
 function response() {
   const res = {
@@ -37,6 +37,26 @@ describe("account session authorization", () => {
         sameSite: "none",
       });
     } finally {
+      if (previousReplId === undefined) delete process.env.REPL_ID;
+      else process.env.REPL_ID = previousReplId;
+    }
+  });
+
+  it("uses a first-party cookie in production even when REPL_ID is present", () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousReplId = process.env.REPL_ID;
+    process.env.NODE_ENV = "production";
+    process.env.REPL_ID = "published-repl";
+    try {
+      expect(getAccountCookieOptions()).toEqual({
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+      });
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
       if (previousReplId === undefined) delete process.env.REPL_ID;
       else process.env.REPL_ID = previousReplId;
     }
