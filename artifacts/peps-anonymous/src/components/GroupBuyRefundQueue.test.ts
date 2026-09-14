@@ -290,6 +290,28 @@ describe("GroupBuyRefundQueue", () => {
     expect(organiserMarkup).not.toContain("Second TXID");
   });
 
+  it("keeps manual completion disabled until both the first TXID and reason are entered", () => {
+    const row = refundRow("admin-required-fields", "crypto", "admin-customer");
+    const card = GroupBuyRefundCardList({
+      role: "admin",
+      rows: [row],
+      workingId: null,
+      pollingId: null,
+      txids: {},
+      reasons: { [row.id]: "Blockchain provider rejected verification" },
+      onTxidChange: () => undefined,
+      onReasonChange: () => undefined,
+      onVerify: () => undefined,
+      onManualComplete: () => undefined,
+      onCompleteCredit: () => undefined,
+    });
+
+    expect(findButton(card, "Mark complete manually")?.props.disabled).toBe(true);
+    const markup = renderToStaticMarkup(card);
+    expect(markup).toContain("Manual completion uses the outgoing refund TXID");
+    expect(markup).toContain("Required manual completion reason");
+  });
+
   it("wires the Admin card's entered second TXID into the exact manual POST body", async () => {
     const row = refundRow("admin-integrated", "crypto", "admin-integrated-customer");
     const txid = "0x" + "a".repeat(64);

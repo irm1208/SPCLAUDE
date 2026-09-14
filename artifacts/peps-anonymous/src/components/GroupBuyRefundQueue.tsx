@@ -357,26 +357,38 @@ export function GroupBuyRefundCardList({
               <div className="mt-3 space-y-2">
                 <p className="flex items-start gap-1.5 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Irreversible warning: confirm the destination wallet, asset, network, and amount before sending crypto externally.</p>
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <input aria-label={`TXID for ${row.orderCode || row.orderId}`} value={txids[row.id] ?? ""} onChange={event => onTxidChange(row.id, event.target.value)} placeholder="Enter outgoing transfer TXID" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs" disabled={busy || verifying} />
-                  {role === "admin" && <input aria-label={`Second TXID for ${row.orderCode || row.orderId}`} value={txid2s[row.id] ?? ""} onChange={event => onTxid2Change?.(row.id, event.target.value)} placeholder="Optional second transfer TXID" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs" disabled={busy || verifying} />}
+                  <label className="min-w-0 flex-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Outgoing refund TXID
+                    <input aria-label={`TXID for ${row.orderCode || row.orderId}`} value={txids[row.id] ?? ""} onChange={event => onTxidChange(row.id, event.target.value)} placeholder="Required first transfer TXID" className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs font-normal normal-case tracking-normal text-foreground" disabled={busy || verifying} />
+                  </label>
+                  {role === "admin" && (
+                    <label className="min-w-0 flex-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Second outgoing refund TXID
+                      <input aria-label={`Second TXID for ${row.orderCode || row.orderId}`} value={txid2s[row.id] ?? ""} onChange={event => onTxid2Change?.(row.id, event.target.value)} placeholder="Optional top-up transfer TXID" className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs font-normal normal-case tracking-normal text-foreground" disabled={busy || verifying} />
+                    </label>
+                  )}
                   <button type="button" onClick={() => void onVerify(row)} disabled={busy || verifying} className="rounded-lg bg-[#1B3A7A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{verifying ? "Verifying…" : "Verify outgoing transfer"}</button>
                 </div>
                 {role === "admin" && (
                   <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
                     <p className="text-xs font-semibold text-amber-800">Admin override: this bypasses blockchain verification. Confirm the transfer was sent before completing.</p>
-                    <input
-                      aria-label={`Manual completion reason for ${row.orderCode || row.orderId}`}
-                      value={reasons[row.id] ?? ""}
-                      onChange={event => onReasonChange?.(row.id, event.target.value)}
-                      placeholder="Required reason for bypassing verification"
-                      maxLength={MANUAL_REFUND_REASON_MAX_LENGTH}
-                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs"
-                      disabled={busy || verifying}
-                    />
+                    <p className="text-xs text-amber-800">Manual completion uses the outgoing refund TXID entered above.</p>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                      Required manual completion reason
+                      <input
+                        aria-label={`Manual completion reason for ${row.orderCode || row.orderId}`}
+                        value={reasons[row.id] ?? ""}
+                        onChange={event => onReasonChange?.(row.id, event.target.value)}
+                        placeholder="Why blockchain verification is being bypassed"
+                        maxLength={MANUAL_REFUND_REASON_MAX_LENGTH}
+                        className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-normal normal-case tracking-normal text-foreground"
+                        disabled={busy || verifying}
+                      />
+                    </label>
                     <button
                       type="button"
                       onClick={() => void onManualComplete?.(row)}
-                      disabled={busy || verifying || !(reasons[row.id] ?? "").trim()}
+                      disabled={busy || verifying || !(txids[row.id] ?? "").trim() || !(reasons[row.id] ?? "").trim()}
                       className="rounded-lg border border-amber-700 px-3 py-2 text-xs font-bold text-amber-800 disabled:opacity-50"
                     >
                       {busy ? "Completing…" : "Mark complete manually"}
