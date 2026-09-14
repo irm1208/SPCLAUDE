@@ -149,6 +149,7 @@ export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_tra
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
   submittedTxid: text("submitted_txid"),
+  reason: text("reason"),
   resultCode: text("result_code").notNull(),
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   attemptCount: integer("attempt_count").notNull().default(0),

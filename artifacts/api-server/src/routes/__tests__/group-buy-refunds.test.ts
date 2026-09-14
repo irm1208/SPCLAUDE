@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
     audits: [] as unknown[],
     createRefundRequest: vi.fn(),
     completeCreditRefund: vi.fn(),
+    completeManualCryptoRefund: vi.fn(),
     submitCryptoRefund: vi.fn(),
     failAudit: false,
     groupBuyCryptoRefundsEnabled: false,
@@ -187,6 +188,7 @@ vi.mock("../../lib/group-buy-refund", async () => {
     ...actual,
     createRefundRequest: mocks.state.createRefundRequest,
     completeCreditRefund: mocks.state.completeCreditRefund,
+    completeManualCryptoRefund: mocks.state.completeManualCryptoRefund,
     submitCryptoRefund: mocks.state.submitCryptoRefund,
   };
 });
@@ -339,6 +341,7 @@ beforeEach(() => {
   };
   mocks.state.createRefundRequest.mockReset();
   mocks.state.completeCreditRefund.mockReset();
+  mocks.state.completeManualCryptoRefund.mockReset();
   mocks.state.submitCryptoRefund.mockReset();
   mocks.state.failAudit = false;
   mocks.state.groupBuyCryptoRefundsEnabled = false;
@@ -348,6 +351,11 @@ beforeEach(() => {
     destinationWallet: refund.destinationWallet, amountBaseUnits: "123450000",
   });
   mocks.state.completeCreditRefund.mockResolvedValue({ ...refund, status: "completed" });
+  mocks.state.completeManualCryptoRefund.mockResolvedValue({
+    ...refund,
+    status: "completed",
+    outgoingTxid: attempt.submittedTxid,
+  });
   mocks.state.submitCryptoRefund.mockResolvedValue({ ...refund, status: "completed", outgoingTxid: attempt.submittedTxid });
 });
 
@@ -434,6 +442,43 @@ describe("group-buy refund route contracts", () => {
     expect(mocks.state.completeCreditRefund).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       refundId: "refund-1", username: "admin", role: "admin",
     }));
+  });
+
+  it("accepts exactly TXID and reason for the Admin manual completion route", async () => {
+    const app = buildApp(groupBuyRefundsRouter);
+    const valid = await request(app, "/admin/group-buy-refunds/refund-1/manual-complete", {
+      method: "POST",
+      headers: json({ txid: attempt.submittedTxid, reason: "Provider unavailable" }, { "x-test-admin": "admin" }),
+    });
+    expect(valid.status).toBe(200);
+    expect(mocks.state.completeManualCryptoRefund).toHaveBeenCalledWith(expect.anything(), {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: attempt.submittedTxid,
+      reason: "Provider unavailable",
+    });
+
+    for (const body of [
+      {},
+      { txid: attempt.submittedTxid },
+      { txid: attempt.submittedTxid, reason: " " },
+      { txid: attempt.submittedTxid, reason: "ok", extra: "nope" },
+      { txid: "not-a-txid", reason: "ok" },
+      { txid: attempt.submittedTxid, reason: "x".repeat(1001) },
+    ]) {
+      const response = await request(app, "/admin/group-buy-refunds/refund-1/manual-complete", {
+        method: "POST",
+        headers: json(body, { "x-test-admin": "admin" }),
+      });
+      expect(response.status).toBe(400);
+    }
+
+    const organiser = await request(app, "/organiser/group-buy-refunds/refund-1/manual-complete", {
+      method: "POST",
+      headers: json({ txid: attempt.submittedTxid, reason: "not allowed" }, { "x-test-organiser": "organiser" }),
+    });
+    expect(organiser.status).toBe(404);
   });
 
   it("maps disabled, unsupported and ownership failures to stable HTTP codes", async () => {
@@ -638,6 +683,10 @@ describe("group-buy refund route contracts", () => {
     const app = buildApp(groupBuyRefundsRouter);
     expect((await request(app, "/account/orders/order-1/refund", { method: "POST" })).status).toBe(401);
     expect((await request(app, "/admin/group-buy-refunds")).status).toBe(401);
+    expect((await request(app, "/admin/group-buy-refunds/refund-1/manual-complete", {
+      method: "POST",
+      headers: json({ txid: attempt.submittedTxid, reason: "no auth" }),
+    })).status).toBe(401);
     expect((await request(app, "/organiser/group-buy-refunds")).status).toBe(401);
   });
 });

@@ -14,7 +14,12 @@ import {
   filterRefundQueueRows,
   fetchRefundQueueJson,
   normalizeRefundQueueItem,
+  completeManualRefundRequest,
+  MANUAL_REFUND_REASON_MAX_LENGTH,
+  postManualRefundCompletion,
   refundQueueEmptyLabel,
+  validateManualCompletionInput,
+  withManualRefundCompletionGuard,
 } from "./GroupBuyRefundQueue";
 
 describe("GroupBuyRefundQueue", () => {
@@ -234,6 +239,103 @@ describe("GroupBuyRefundQueue", () => {
     expect(markup).toContain("Unsupported");
     expect(markup).not.toContain("Verify outgoing transfer");
     expect(markup).not.toContain("Complete credit refund");
+  });
+
+  it("renders manual completion only for Admin crypto cards with a required reason warning", () => {
+    const row = refundRow("admin-crypto", "crypto", "admin-customer");
+    const adminMarkup = renderToStaticMarkup(createElement(GroupBuyRefundCardList, {
+      role: "admin",
+      rows: [row],
+      workingId: null,
+      pollingId: null,
+      txids: { [row.id]: "0x" + "a".repeat(64) },
+      reasons: { [row.id]: "Provider unavailable" },
+      onTxidChange: () => undefined,
+      onReasonChange: () => undefined,
+      onVerify: () => undefined,
+      onManualComplete: () => undefined,
+      onCompleteCredit: () => undefined,
+    }));
+    expect(adminMarkup).toContain("Mark complete manually");
+    expect(adminMarkup).toContain("verification. Confirm the transfer was sent");
+    expect(adminMarkup).toContain("Manual completion reason");
+
+    const organiserMarkup = renderToStaticMarkup(createElement(GroupBuyRefundCardList, {
+      role: "organiser",
+      rows: [row],
+      workingId: null,
+      pollingId: null,
+      txids: {},
+      onTxidChange: () => undefined,
+      onVerify: () => undefined,
+      onCompleteCredit: () => undefined,
+    }));
+    expect(organiserMarkup).not.toContain("Mark complete manually");
+    expect(organiserMarkup).not.toContain("Manual completion reason");
+  });
+
+  it("validates missing manual TXID and reason before making a request", () => {
+    expect(validateManualCompletionInput("", "reason")).toContain("TXID");
+    expect(validateManualCompletionInput("0x" + "a".repeat(64), " ")).toContain("reason");
+    expect(MANUAL_REFUND_REASON_MAX_LENGTH).toBe(1000);
+    expect(validateManualCompletionInput("0x" + "a".repeat(64), "x".repeat(MANUAL_REFUND_REASON_MAX_LENGTH + 1))).toContain("too long");
+    expect(validateManualCompletionInput("0x" + "a".repeat(64), "reason")).toBeNull();
+  });
+
+  it("posts the exact manual completion URL/body and refreshes only after success", async () => {
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toBe("/api/admin/group-buy-refunds/refund-1/manual-complete");
+      expect(init.method).toBe("POST");
+      expect(init.body).toBe(JSON.stringify({ txid: "0x" + "a".repeat(64), reason: "because" }));
+      return response({ status: "completed" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const refreshed: string[] = [];
+    await completeManualRefundRequest({
+      basePath: "/api/admin/group-buy-refunds",
+      refundId: "refund-1",
+      txid: "  0x" + "a".repeat(64) + " ",
+      reason: " because ",
+      headers: { "x-admin-secret": "secret" },
+      credentials: "omit",
+    }, async () => { refreshed.push("yes"); });
+    expect(refreshed).toEqual(["yes"]);
+  });
+
+  it("surfaces server errors and does not refresh after a failed manual request", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ code: "txid_replay" }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    })));
+    await expect(postManualRefundCompletion({
+      basePath: "/api/admin/group-buy-refunds",
+      refundId: "refund-1",
+      txid: "0x" + "a".repeat(64),
+      reason: "because",
+      headers: {},
+      credentials: "omit",
+    })).rejects.toThrow("txid_replay");
+  });
+
+  it("coalesces rapid duplicate manual completion invocations per refund", async () => {
+    const inFlight = new Set<string>();
+    let requests = 0;
+    const operation = () => withManualRefundCompletionGuard(inFlight, "refund-1", async () => {
+      requests += 1;
+      await new Promise(resolve => setTimeout(resolve, 5));
+      return "completed";
+    });
+    const results = await Promise.all([operation(), operation()]);
+    expect(requests).toBe(1);
+    expect(results).toEqual(["completed", undefined]);
+    expect(inFlight).toEqual(new Set());
+  });
+
+  it("keeps the normal verify request path and payload unchanged", async () => {
+    const source = await import("node:fs/promises").then(fs => fs.readFile(new URL("./GroupBuyRefundQueue.tsx", import.meta.url), "utf8"));
+    expect(source).toContain('/verify');
+    expect(source).toContain('body: JSON.stringify({ txid })');
+    expect(source).toContain('Verify outgoing transfer');
   });
 });
 

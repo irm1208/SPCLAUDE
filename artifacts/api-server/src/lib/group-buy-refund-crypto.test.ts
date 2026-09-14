@@ -31,24 +31,32 @@ const fake = vi.hoisted(() => {
   const state = {
     account: { telegramUsername: "buyer" },
     order: {
-      id: "order-1", telegramUsername: "@buyer", groupBuyId: "gb-1", status: "Submitted",
+      id: "order-1", code: "GB-001", telegramUsername: "@buyer", groupBuyId: "gb-1", status: "Submitted",
       refundStatus: null, paymentStatus: "confirmed", paymentConfirmedAt: new Date(),
-      deletedAt: null, grandTotal: "123.45",
+      deletedAt: null, grandTotal: "123.45", refundedAt: null,
     },
     group: { id: "gb-1", organiserId: "organiser", cryptoRefundsEnabled: true },
     refunds: [] as Row[],
     attempts: [] as Row[],
     claims: [] as Row[],
     outbox: [] as Row[],
+    notifications: [] as Row[],
     audits: [] as Row[],
     verify: { verified: true, confirmationCount: 12 } as any,
     failAudit: false,
     failOrder: false,
     failAttemptUpdate: false,
+    failOutboxInsert: false,
+    failNotificationInsert: false,
+    failClaimUnique: false,
+    failOutgoingUnique: false,
     failOutboxUpdate: false,
+    orderUpdateReturnsEmpty: false,
     serial: Promise.resolve(),
   };
   const eq = (column: unknown, value: unknown) => ({ kind: "eq", column, value });
+  const ne = (column: unknown, value: unknown) => ({ kind: "ne", column, value });
+  const isNotNull = (column: unknown) => ({ kind: "isNotNull", column });
   const and = (...predicates: unknown[]) => ({ kind: "and", predicates });
   const inArray = (column: unknown, value: unknown[]) => ({ kind: "inArray", column, value });
   function rowsFor(table: unknown, predicate: any): Row[] {
@@ -59,6 +67,7 @@ const fake = vi.hoisted(() => {
             : table === tables.attempts ? state.attempts
               : table === tables.claims ? state.claims
                 : table === tables.outbox ? state.outbox
+                    : table === tables.notifications ? state.notifications
                 : [];
     const matches = (row: Row, condition: any): boolean => {
       if (!condition) return true;
@@ -84,12 +93,22 @@ const fake = vi.hoisted(() => {
           (condition.column === tables.outbox.id && row.id === condition.value)
           || (condition.column === tables.outbox.refundId && row.refundId === condition.value)
           || (condition.column === tables.outbox.attemptId && row.attemptId === condition.value)
+        ))
+        || (table === tables.notifications && (
+          (condition.column === tables.notifications.id && row.id === condition.value)
+          || (condition.column === tables.notifications.refundId && row.refundId === condition.value)
+          || (condition.column === tables.notifications.status && row.status === condition.value)
+          || (condition.column === tables.notifications.accountId && row.accountId === condition.value)
+          || (condition.column === tables.notifications.transitionKey && row.transitionKey === condition.value)
+          || (condition.column === tables.notifications.claimToken && row.claimToken === condition.value)
         ));
       if (condition.kind === "inArray") return condition.value.includes(
         table === tables.refunds ? row.status : row.value,
       );
       if (condition.kind === "isNull") {
-        return condition.column === tables.outbox.deliveredAt ? row.deliveredAt == null : row.endedAt == null;
+        if (condition.column === tables.outbox.deliveredAt) return row.deliveredAt == null;
+        if (condition.column === tables.notifications.sentAt) return row.sentAt == null;
+        return row.endedAt == null;
       }
       if (condition.kind === "and") return condition.predicates.every((item: any) => matches(row, item));
       return true;
@@ -118,11 +137,14 @@ const fake = vi.hoisted(() => {
     if (table === tables.audit && state.failAudit) throw new Error("audit failed");
     if (table === tables.orders && state.failOrder) throw new Error("order failed");
     if (table === tables.attempts && state.failAttemptUpdate) throw new Error("attempt failed");
+    if (table === tables.outbox && state.failOutboxInsert) throw new Error("audit enqueue failed");
+    if (table === tables.notifications && state.failNotificationInsert) throw new Error("notification enqueue failed");
     const rows = rowsFor(table, null);
     const inserted = table === tables.refunds ? state.refunds.push(values)
       : table === tables.attempts ? state.attempts.push(values)
         : table === tables.claims ? state.claims.push(values)
           : table === tables.outbox ? state.outbox.push(values)
+          : table === tables.notifications ? state.notifications.push(values)
           : table === tables.audit ? state.audits.push(values)
             : 0;
     return inserted;
@@ -135,7 +157,20 @@ const fake = vi.hoisted(() => {
           if (table === tables.orders && state.failOrder) throw new Error("order failed");
           if (table === tables.attempts && state.failAttemptUpdate) throw new Error("attempt failed");
           if (table === tables.outbox && state.failOutboxUpdate) throw new Error("outbox update failed");
+          if (table === tables.refunds && state.failOutgoingUnique) {
+            const error = Object.assign(new Error("duplicate outgoing_txid"), {
+              code: "23505",
+              constraint: "group_buy_refunds_outgoing_txid_unique",
+            });
+            throw error;
+          }
           const rows = rowsFor(table, predicate);
+          if (table === tables.orders && state.orderUpdateReturnsEmpty) {
+            return {
+              returning: async () => [],
+              then: (resolve: any) => Promise.resolve([]).then(resolve),
+            };
+          }
           rows.forEach(row => Object.assign(row, values));
           const result = rows.map(row => ({ ...row }));
           return {
@@ -149,11 +184,24 @@ const fake = vi.hoisted(() => {
       values: (values: Row) => ({
         onConflictDoNothing: () => ({
           returning: async () => {
+            if (table === tables.claims && state.failClaimUnique) {
+              const error = Object.assign(new Error("duplicate tx claim"), {
+                code: "23505",
+                constraint: "group_buy_refund_tx_claims_pkey",
+              });
+              throw error;
+            }
             if (table === tables.claims && state.claims.some(row => row.txid === values.txid)) return [];
             if (table === tables.outbox && state.outbox.some(row =>
               row.refundId === values.refundId
               && row.attemptId === values.attemptId
               && row.transition === values.transition
+            )) return [];
+            if (table === tables.notifications && state.notifications.some(row =>
+              row.refundId === values.refundId
+              && row.status === values.status
+              && row.accountId === values.accountId
+              && row.transitionKey === values.transitionKey
             )) return [];
             mutation(table, values);
             return [values];
@@ -170,11 +218,11 @@ const fake = vi.hoisted(() => {
     select: vi.fn((selection?: any) => builder(selection)),
     transaction: vi.fn((callback: (database: any) => unknown) => {
       const run = async () => {
-        const snapshot = JSON.parse(JSON.stringify({
+        const snapshot = structuredClone({
           account: state.account, order: state.order, refunds: state.refunds,
           attempts: state.attempts, claims: state.claims, audits: state.audits,
-          outbox: state.outbox,
-        }));
+          outbox: state.outbox, notifications: state.notifications,
+        });
         try {
           return await callback(tx);
         } catch (error) {
@@ -185,6 +233,7 @@ const fake = vi.hoisted(() => {
           state.claims = snapshot.claims;
           state.audits = snapshot.audits;
           state.outbox = snapshot.outbox;
+          state.notifications = snapshot.notifications;
           throw error;
         }
       };
@@ -205,21 +254,30 @@ const fake = vi.hoisted(() => {
     state.attempts = [];
     state.claims = [];
     state.outbox = [];
+    state.notifications = [];
     state.audits = [];
     state.order.status = "Submitted";
+    state.order.groupBuyId = "gb-1";
+    state.order.telegramUsername = "@buyer";
     state.order.refundStatus = null;
     state.order.paymentStatus = "confirmed";
     state.order.paymentConfirmedAt = new Date();
     state.order.deletedAt = null;
     state.order.grandTotal = "123.45";
+    state.order.refundedAt = null;
+    state.failClaimUnique = false;
+    state.failOutgoingUnique = false;
     state.verify = { verified: true, confirmationCount: 12 };
     state.failAudit = false;
     state.failOrder = false;
     state.failAttemptUpdate = false;
+    state.failOutboxInsert = false;
+    state.failNotificationInsert = false;
     state.failOutboxUpdate = false;
+    state.orderUpdateReturnsEmpty = false;
     state.serial = Promise.resolve();
   }
-  return { tables, state, db, eq, and, inArray, reset, verify: vi.fn(async () => state.verify) };
+  return { tables, state, db, eq, ne, isNotNull, and, inArray, reset, verify: vi.fn(async () => state.verify) };
 });
 
 vi.mock("@workspace/db", () => ({
@@ -231,6 +289,8 @@ vi.mock("@workspace/db", () => ({
 }));
 vi.mock("drizzle-orm", () => ({
   eq: fake.eq,
+  ne: fake.ne,
+  isNotNull: fake.isNotNull,
   and: fake.and,
   inArray: fake.inArray,
   sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
@@ -245,14 +305,18 @@ vi.mock("./payment-verify", () => ({
 }));
 vi.mock("./refund-crypto-verifier", () => ({
   normalizeEthereumTxid: (value: unknown) => typeof value === "string"
-    && /^(?:0x)[0-9a-fA-F]{64}$/.test(value)
-    ? value.toLowerCase()
+    && /^(?:0x)?[0-9a-fA-F]{64}$/.test(value)
+    ? (value.startsWith("0x") ? value : `0x${value}`).toLowerCase()
     : null,
   verifyRefundCryptoTransfer: fake.verify,
+}));
+vi.mock("./telegram", () => ({
+  notifyUserFromTemplateFull: vi.fn(async () => ({ ok: true })),
 }));
 
 import {
   createRefundRequest,
+  completeManualCryptoRefund,
   drainRefundTransitionOutbox,
   GroupBuyRefundError,
   submitCryptoRefund,
@@ -626,5 +690,317 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     ]);
     expect(results.sort()).toEqual([1, 1]);
     expect(fake.state.audits.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("completeManualCryptoRefund transactional lifecycle", () => {
+  beforeEach(() => fake.reset());
+
+  it("completes without invoking the blockchain verifier and records admin reason", async () => {
+    fake.verify.mockClear();
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      reason: "Provider outage; independently confirmed payout.",
+    })).resolves.toMatchObject({
+      status: "completed",
+      outgoingTxid: tx1,
+      explorerUrl: `https://etherscan.io/tx/${tx1}`,
+    });
+    expect(fake.verify).not.toHaveBeenCalled();
+    expect(fake.state.order).toMatchObject({
+      status: "Cancelled",
+      refundStatus: "refunded",
+      paymentStatus: "refunded",
+    });
+    expect(fake.state.audits.at(-1)!.metadata).toMatchObject({
+      source: "admin",
+      reason: "Provider outage; independently confirmed payout.",
+      txid: tx1,
+    });
+  });
+
+  it("accepts requested, failed, and verifying states while superseding an active attempt", async () => {
+    for (const status of ["requested", "verification_failed", "verifying"] as const) {
+      fake.reset();
+      fake.state.refunds[0].status = status;
+      if (status === "verifying") {
+        fake.state.refunds[0].processingAttemptId = "attempt-1";
+        fake.state.refunds[0].processorUsername = "other";
+        fake.state.attempts.push({
+          id: "attempt-1",
+          refundId: "refund-1",
+          submittedTxid: tx2,
+          processorUsername: "other",
+          processorRole: "admin",
+          endedAt: null,
+        });
+      }
+      await expect(completeManualCryptoRefund(fake.db, {
+        refundId: "refund-1",
+        username: "admin",
+        role: "admin",
+        txid: tx1,
+        reason: "Manual reconciliation",
+      })).resolves.toMatchObject({ status: "completed" });
+      if (status === "verifying") {
+        expect(fake.state.attempts[0]).toMatchObject({
+          endedAt: expect.anything(),
+          resultCode: "manual_completed",
+          failureReason: "Manual reconciliation",
+        });
+      }
+    }
+  });
+
+  it("preserves canonical replay claims and completed idempotency", async () => {
+    const mixedCaseTxid = `0x${"A".repeat(64)}`;
+    await completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: mixedCaseTxid,
+      reason: "Confirmed by treasury",
+    });
+    const claims = fake.state.claims.length;
+    const audits = fake.state.audits.length;
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: mixedCaseTxid.toLowerCase(),
+      reason: "Retry after timeout",
+    })).resolves.toMatchObject({ status: "completed", outgoingTxid: mixedCaseTxid.toLowerCase() });
+    expect(fake.state.claims).toHaveLength(claims);
+    expect(fake.state.audits.length).toBe(audits);
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx2,
+      reason: "Wrong transfer",
+    })).rejects.toMatchObject({ code: "completed_txid_immutable" });
+  });
+
+  it.each([
+    { role: "organiser", reason: "reason", code: "forbidden" },
+    { role: "admin", reason: " ", code: "invalid_reason" },
+    { role: "admin", reason: "x".repeat(1001), code: "invalid_reason" },
+  ])("rejects unsafe manual completion input", async ({ role, reason, code }) => {
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "actor",
+      role,
+      txid: tx1,
+      reason,
+    })).rejects.toMatchObject({ code });
+    expect(fake.state.refunds[0].status).toBe("requested");
+    expect(fake.verify).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["attempt supersession", "failAttemptUpdate"],
+    ["order update", "failOrder"],
+    ["audit enqueue", "failOutboxInsert"],
+    ["notification enqueue", "failNotificationInsert"],
+  ] as const)("rolls back all manual completion state after %s failure", async (_label, failure) => {
+    fake.state.refunds[0].status = failure === "failAttemptUpdate" ? "verifying" : "requested";
+    if (failure === "failAttemptUpdate") {
+      fake.state.refunds[0].processingAttemptId = "attempt-1";
+      fake.state.attempts.push({
+        id: "attempt-1",
+        refundId: "refund-1",
+        submittedTxid: tx1,
+        processorUsername: "other",
+        processorRole: "admin",
+        endedAt: null,
+      });
+    }
+    const before = structuredClone({
+      refund: fake.state.refunds,
+      order: fake.state.order,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    });
+    fake.state[failure] = true;
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      reason: "Manual reconciliation",
+    })).rejects.toThrow();
+    expect({
+      refund: fake.state.refunds,
+      order: fake.state.order,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    }).toEqual(before);
+  });
+
+  it("enqueues the completed customer notification with canonical transfer evidence", async () => {
+    const mixedCaseTxid = `0x${"B".repeat(64)}`;
+    await completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: mixedCaseTxid,
+      reason: "Confirmed by treasury",
+    });
+    expect(fake.state.notifications).toContainEqual(expect.objectContaining({
+      refundId: "refund-1",
+      accountId: "buyer",
+      status: "completed",
+      amountUsd: "123.45",
+      orderCode: "GB-001",
+      txid: mixedCaseTxid.toLowerCase(),
+      explorerUrl: `https://etherscan.io/tx/${mixedCaseTxid.toLowerCase()}`,
+    }));
+  });
+
+  it("cannot be overwritten by a delayed automatic verifier finalization", async () => {
+    let releaseVerifier!: () => void;
+    fake.verify.mockImplementationOnce(async () => {
+      await new Promise<void>(resolveRelease => { releaseVerifier = resolveRelease; });
+      return { verified: true, confirmationCount: 12 };
+    });
+    const automatic = submitCryptoRefund(fake.db, processor, "refund-1", tx1);
+    await vi.waitFor(() => expect(fake.verify).toHaveBeenCalled());
+    await completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx2,
+      reason: "Provider unavailable",
+    });
+    releaseVerifier();
+    await expect(automatic).rejects.toMatchObject({ code: "attempt_ownership_lost" });
+    expect(fake.state.refunds[0]).toMatchObject({ status: "completed", outgoingTxid: tx2 });
+    expect(fake.state.order).toMatchObject({ status: "Cancelled", paymentStatus: "refunded" });
+    expect(fake.state.audits.some(audit => audit.action === "group_buy_refund_completed")).toBe(false);
+    expect(fake.state.notifications.filter(marker => marker.status === "completed")).toHaveLength(1);
+  });
+
+  it("rejects a TXID already claimed by another refund without writes", async () => {
+    fake.state.claims.push({ txid: tx1, refundId: "other-refund" });
+    const before = structuredClone({
+      refund: fake.state.refunds,
+      order: fake.state.order,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      reason: "Replay check",
+    })).rejects.toMatchObject({ code: "txid_replay" });
+    expect({
+      refund: fake.state.refunds,
+      order: fake.state.order,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    }).toEqual(before);
+  });
+
+  it("rejects a legacy outgoing TXID claim using case and prefix-insensitive comparison", async () => {
+    const legacyTxid = tx1.slice(2).toUpperCase();
+    fake.state.refunds.push({
+      id: "legacy-refund",
+      orderId: "legacy-order",
+      groupBuyId: "gb-1",
+      accountId: "legacy-buyer",
+      method: "crypto",
+      outgoingTxid: legacyTxid,
+      status: "completed",
+    });
+    const before = structuredClone({
+      refund: fake.state.refunds[0],
+      claims: fake.state.claims,
+      order: fake.state.order,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: `0x${tx1.slice(2).toLowerCase()}`,
+      reason: "Legacy replay check",
+    })).rejects.toMatchObject({ code: "txid_replay" });
+    expect(fake.state.refunds[0]).toEqual(before.refund);
+    expect(fake.state.claims).toEqual(before.claims);
+    expect(fake.state.order).toEqual(before.order);
+    expect(fake.state.outbox).toEqual(before.outbox);
+    expect(fake.state.notifications).toEqual(before.notifications);
+  });
+
+  it("maps concurrent claim and outgoing-TXID unique violations to txid_replay", async () => {
+    fake.state.failClaimUnique = true;
+    const claimResults = await Promise.allSettled([
+      completeManualCryptoRefund(fake.db, {
+        refundId: "refund-1", username: "admin", role: "admin", txid: tx1, reason: "Concurrent claim",
+      }),
+      completeManualCryptoRefund(fake.db, {
+        refundId: "refund-1", username: "admin", role: "admin", txid: tx1, reason: "Concurrent claim",
+      }),
+    ]);
+    expect(claimResults.every(result =>
+      result.status === "rejected" && (result.reason as GroupBuyRefundError).code === "txid_replay"
+    )).toBe(true);
+    fake.state.failClaimUnique = false;
+    fake.state.failOutgoingUnique = true;
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      reason: "Outgoing uniqueness",
+    })).rejects.toMatchObject({ code: "txid_replay" });
+  });
+
+  it.each([
+    ["terminal order", () => { fake.state.order.status = "Cancelled"; }, "payment_state_changed"],
+    ["payment state", () => { fake.state.order.paymentStatus = "pending"; }, "payment_state_changed"],
+    ["asset", () => { fake.state.refunds[0].asset = "DAI"; }, "invalid_refund_configuration"],
+    ["base units", () => { fake.state.refunds[0].amountBaseUnits = "123450001"; }, "invalid_refund_amount"],
+    ["linkage", () => { fake.state.order.groupBuyId = "other-group"; }, "refund_linkage_mismatch"],
+    ["conditional order race", () => { fake.state.orderUpdateReturnsEmpty = true; }, "order_state_changed"],
+  ] as const)("fails closed for manual completion %s", async (_label, mutate, code) => {
+    mutate();
+    const before = structuredClone({
+      refund: fake.state.refunds,
+      order: fake.state.order,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      reason: "Invariant check",
+    })).rejects.toMatchObject({ code });
+    expect({
+      refund: fake.state.refunds,
+      order: fake.state.order,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    }).toEqual(before);
   });
 });

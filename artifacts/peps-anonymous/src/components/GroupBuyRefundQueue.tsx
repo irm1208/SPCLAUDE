@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Wallet } from "lucide-react";
 
 export type GroupBuyRefundQueueRole = "admin" | "organiser";
@@ -132,6 +132,7 @@ export interface GroupBuyRefundQueueProps {
 }
 
 const REFUND_QUEUE_TIMEOUT_MS = 15_000;
+export const MANUAL_REFUND_REASON_MAX_LENGTH = 1000;
 
 export async function fetchRefundQueueJson(
   url: string,
@@ -151,6 +152,62 @@ export async function fetchRefundQueueJson(
     throw cause;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export function validateManualCompletionInput(txid: string, reason: string): string | null {
+  if (!txid.trim()) return "Enter a TXID before manually completing the refund.";
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) return "Enter a reason before manually completing the refund.";
+  if (trimmedReason.length > MANUAL_REFUND_REASON_MAX_LENGTH) return "Manual completion reason is too long.";
+  return null;
+}
+
+export interface ManualRefundCompletionRequest {
+  basePath: string;
+  refundId: string;
+  txid: string;
+  reason: string;
+  headers: Record<string, string>;
+  credentials: RequestCredentials;
+}
+
+export async function postManualRefundCompletion(
+  request: ManualRefundCompletionRequest,
+): Promise<unknown> {
+  const { response, body } = await fetchRefundQueueJson(
+    `${request.basePath}/${encodeURIComponent(request.refundId)}/manual-complete`,
+    {
+      method: "POST",
+      credentials: request.credentials,
+      headers: { ...request.headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ txid: request.txid.trim(), reason: request.reason.trim() }),
+    },
+  );
+  if (!response.ok) throw new Error(errorText(response, body));
+  return body;
+}
+
+export async function completeManualRefundRequest(
+  request: ManualRefundCompletionRequest,
+  refresh: () => void | Promise<void>,
+): Promise<unknown> {
+  const body = await postManualRefundCompletion(request);
+  await refresh();
+  return body;
+}
+
+export async function withManualRefundCompletionGuard<T>(
+  inFlight: Set<string>,
+  refundId: string,
+  operation: () => Promise<T>,
+): Promise<T | undefined> {
+  if (inFlight.has(refundId)) return undefined;
+  inFlight.add(refundId);
+  try {
+    return await operation();
+  } finally {
+    inFlight.delete(refundId);
   }
 }
 
@@ -229,22 +286,30 @@ export function GroupBuyRefundCardMetadata({
 }
 
 export interface GroupBuyRefundCardListProps {
+  role?: GroupBuyRefundQueueRole;
   rows: GroupBuyRefundQueueItem[];
   workingId: string | null;
   pollingId: string | null;
   txids: Record<string, string>;
   onTxidChange: (id: string, value: string) => void;
   onVerify: (row: GroupBuyRefundQueueItem) => void | Promise<void>;
+  reasons?: Record<string, string>;
+  onReasonChange?: (id: string, value: string) => void;
+  onManualComplete?: (row: GroupBuyRefundQueueItem) => void | Promise<void>;
   onCompleteCredit: (row: GroupBuyRefundQueueItem) => void | Promise<void>;
 }
 
 export function GroupBuyRefundCardList({
+  role = "organiser",
   rows,
   workingId,
   pollingId,
   txids,
   onTxidChange,
   onVerify,
+  reasons = {},
+  onReasonChange,
+  onManualComplete,
   onCompleteCredit,
 }: GroupBuyRefundCardListProps) {
   return (
@@ -281,6 +346,28 @@ export function GroupBuyRefundCardList({
                   <input aria-label={`TXID for ${row.orderCode || row.orderId}`} value={txids[row.id] ?? ""} onChange={event => onTxidChange(row.id, event.target.value)} placeholder="Enter outgoing transfer TXID" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs" disabled={busy || verifying} />
                   <button type="button" onClick={() => void onVerify(row)} disabled={busy || verifying} className="rounded-lg bg-[#1B3A7A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{verifying ? "Verifying…" : "Verify outgoing transfer"}</button>
                 </div>
+                {role === "admin" && (
+                  <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                    <p className="text-xs font-semibold text-amber-800">Admin override: this bypasses blockchain verification. Confirm the transfer was sent before completing.</p>
+                    <input
+                      aria-label={`Manual completion reason for ${row.orderCode || row.orderId}`}
+                      value={reasons[row.id] ?? ""}
+                      onChange={event => onReasonChange?.(row.id, event.target.value)}
+                      placeholder="Required reason for bypassing verification"
+                      maxLength={MANUAL_REFUND_REASON_MAX_LENGTH}
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs"
+                      disabled={busy || verifying}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void onManualComplete?.(row)}
+                      disabled={busy || verifying || !(reasons[row.id] ?? "").trim()}
+                      className="rounded-lg border border-amber-700 px-3 py-2 text-xs font-bold text-amber-800 disabled:opacity-50"
+                    >
+                      {busy ? "Completing…" : "Mark complete manually"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             {isCredit && row.status !== "completed" && (
@@ -330,6 +417,8 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [txids, setTxids] = useState<Record<string, string>>({});
+  const [manualReasons, setManualReasons] = useState<Record<string, string>>({});
+  const manualCompletionInFlight = useRef(new Set<string>());
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [pollingId, setPollingId] = useState<string | null>(null);
   const [methodFilter, setMethodFilter] = useState<GroupBuyRefundMethodFilterValue>("all");
@@ -452,6 +541,34 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
     }
   };
 
+  const manuallyComplete = async (row: GroupBuyRefundQueueItem) => {
+    const txid = (txids[row.id] ?? "").trim();
+    const reason = (manualReasons[row.id] ?? "").trim();
+    const inputError = validateManualCompletionInput(txid, reason);
+    if (inputError) {
+      setActionError(inputError);
+      return;
+    }
+    await withManualRefundCompletionGuard(manualCompletionInFlight.current, row.id, async () => {
+      setWorkingId(row.id);
+      setActionError(null);
+      try {
+        await completeManualRefundRequest({
+          basePath,
+          refundId: row.id,
+          txid,
+          reason,
+          credentials: role === "organiser" ? "include" : "omit",
+          headers,
+        }, refreshAfterMutation);
+      } catch (cause) {
+        setActionError(cause instanceof Error ? cause.message : "Unable to manually complete refund.");
+      } finally {
+        setWorkingId(null);
+      }
+    });
+  };
+
   return (
     <section className="space-y-4" aria-label="Group-buy refund queue">
       <div className="flex items-start justify-between gap-3">
@@ -485,14 +602,18 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
       {loading && rows.length === 0 && <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
       <GroupBuyRefundFilteredResults
         rows={rows}
+        role={role}
         methodFilter={methodFilter}
         completionFilter={completionFilter}
         showEmptyState={!loading && !error}
         workingId={workingId}
         pollingId={pollingId}
         txids={txids}
+        reasons={manualReasons}
         onTxidChange={(id, value) => setTxids(previous => ({ ...previous, [id]: value }))}
+        onReasonChange={(id, value) => setManualReasons(previous => ({ ...previous, [id]: value }))}
         onVerify={verifyTransfer}
+        onManualComplete={manuallyComplete}
         onCompleteCredit={completeCredit}
       />
     </section>

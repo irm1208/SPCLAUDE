@@ -13,13 +13,16 @@ import { requireAdmin } from "../middleware/require-admin";
 import { requireOrganiser } from "../middleware/require-organiser";
 import {
   completeCreditRefund,
+  completeManualCryptoRefund,
   createRefundRequest,
   GroupBuyRefundError,
+  MAX_MANUAL_REFUND_REASON_LENGTH,
   submitCryptoRefund,
 } from "../lib/group-buy-refund";
 import type { RefundRequestInput } from "../lib/refund-money";
 import { getCustomerRefundView } from "../lib/customer-refund-view";
 import { isValidTxHash } from "../lib/payment-verify";
+import { normalizeEthereumTxid } from "../lib/refund-crypto-verifier";
 
 const router: IRouter = Router();
 const REFUND_STATUSES = ["requested", "verifying", "verification_failed", "completed"] as const;
@@ -104,6 +107,23 @@ function parseTxidBody(body: unknown): string | null {
   return Object.keys(record).length === 1 && typeof record.txid === "string" && record.txid.trim().length > 0
     ? record.txid
     : null;
+}
+
+function parseManualCompleteBody(body: unknown): { txid: string; reason: string } | { code: "invalid_txid" } | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const record = body as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== 2
+    || !keys.every(key => key === "txid" || key === "reason")
+    || typeof record.txid !== "string"
+    || typeof record.reason !== "string"
+  ) return null;
+  const txid = record.txid.trim();
+  const reason = record.reason.trim();
+  if (!normalizeEthereumTxid(txid)) return { code: "invalid_txid" };
+  if (!reason || reason.length > MAX_MANUAL_REFUND_REASON_LENGTH) return null;
+  return { txid, reason };
 }
 
 function safeAttempt(attempt: Record<string, unknown>) {
@@ -374,6 +394,29 @@ router.post("/admin/group-buy-refunds/:refundId/verify", async (req, res): Promi
   if (!txid) { res.status(400).json({ code: "invalid_txid", error: "invalid_txid" }); return; }
   try {
     const result = await submitCryptoRefund(db, { username: adminUsername(res), role: "admin" }, String(req.params["refundId"]), txid);
+    res.json(result);
+  } catch (error) { errorResponse(res, error); }
+});
+
+router.post("/admin/group-buy-refunds/:refundId/manual-complete", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const input = parseManualCompleteBody(req.body);
+  if (input && "code" in input) {
+    res.status(400).json({ code: input.code, error: input.code });
+    return;
+  }
+  if (!input) {
+    res.status(400).json({ code: "invalid_manual_completion_request", error: "invalid_manual_completion_request" });
+    return;
+  }
+  try {
+    const result = await completeManualCryptoRefund(db, {
+      refundId: String(req.params["refundId"]),
+      username: adminUsername(res),
+      role: "admin",
+      txid: input.txid,
+      reason: input.reason,
+    });
     res.json(result);
   } catch (error) { errorResponse(res, error); }
 });

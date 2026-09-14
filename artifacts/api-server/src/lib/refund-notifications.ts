@@ -93,6 +93,7 @@ export type RefundAuditOutboxInput = {
   action: string;
   resultCode: string;
   txid?: string | null;
+  reason?: string | null;
 };
 
 export function transitionKeyFor(
@@ -188,6 +189,7 @@ export async function enqueueRefundAudit(
       processorUsername: input.processorUsername,
       processorRole: input.processorRole,
       submittedTxid: input.txid ?? null,
+      reason: input.reason ?? null,
       resultCode: input.resultCode,
       deliveredAt: null,
       createdAt: new Date(),
@@ -241,6 +243,7 @@ export async function drainRefundAudits(
             transition: marker.transition,
             resultCode: marker.resultCode,
             txid: marker.submittedTxid,
+            reason: (marker as RefundNotificationMarker & { reason?: string | null }).reason,
           }),
           ip: null,
         });
@@ -505,6 +508,7 @@ export type RefundAuditInput = {
   transition: string;
   resultCode: string;
   txid?: string | null;
+  reason?: string | null;
   attemptId?: string | null;
   action?: string;
 };
@@ -524,6 +528,7 @@ function safeAuditMetadata(input: RefundAuditInput): Record<string, unknown> {
     transition: input.transition,
     resultCode: input.resultCode,
     ...(input.txid ? { txid: input.txid } : {}),
+    ...(input.reason ? { reason: input.reason } : {}),
   };
   for (const key of Object.keys(metadata)) {
     if (SENSITIVE_AUDIT_KEYS.test(key)) delete metadata[key];
@@ -550,5 +555,6 @@ export async function auditRefundTransition(
     action: input.action ?? `group_buy_refund_${input.transition}`,
     resultCode: input.resultCode,
     txid: input.txid,
+    reason: input.reason,
   });
 }

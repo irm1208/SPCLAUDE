@@ -10,7 +10,7 @@ import {
   ordersTable,
   type GroupBuyRefund,
 } from "@workspace/db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import {
   isValidEthAddress,
 } from "./payment-verify";
@@ -72,6 +72,16 @@ export type CryptoRefundProcessor = {
   username: string;
   role: string;
   groupBuyId?: string;
+};
+
+export const MAX_MANUAL_REFUND_REASON_LENGTH = 1000;
+
+export type ManualCryptoRefundArgs = {
+  refundId: string;
+  username: string;
+  role: string;
+  txid: string;
+  reason: string;
 };
 
 const REFUND_VERIFY_LEASE_DEFAULT_SECONDS = 15 * 60;
@@ -585,7 +595,9 @@ function validateCryptoProcessorScope(
 }
 
 function completedCryptoResult(refund: Record<string, any>, txid: string): RefundRequestResult {
-  if (refund.outgoingTxid !== txid) throw new GroupBuyRefundError("completed_txid_immutable");
+  if (normalizeEthereumTxid(refund.outgoingTxid) !== txid) {
+    throw new GroupBuyRefundError("completed_txid_immutable");
+  }
   return asRefundResult(refund);
 }
 
@@ -608,6 +620,249 @@ function validateCryptoRefundAmount(refund: Record<string, any>): void {
     throw new GroupBuyRefundError("invalid_refund_amount");
   }
 }
+
+function validateManualRefundReason(reason: unknown): string {
+  if (typeof reason !== "string") throw new GroupBuyRefundError("invalid_reason");
+  const trimmed = reason.trim();
+  if (!trimmed || trimmed.length > MAX_MANUAL_REFUND_REASON_LENGTH) {
+    throw new GroupBuyRefundError("invalid_reason");
+  }
+  return trimmed;
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  const candidate = error as { code?: unknown; constraint?: unknown; detail?: unknown } | null;
+  if (candidate?.code !== "23505") return false;
+  const context = `${String(candidate.constraint ?? "")} ${String(candidate.detail ?? "")}`.toLowerCase();
+  return context.includes("group_buy_refund_tx_claim")
+    || context.includes("group_buy_refunds_outgoing_txid")
+    || context.includes("outgoing_txid");
+}
+
+/**
+ * Completes a crypto refund after an administrator has independently sent the
+ * transfer. This intentionally shares the locked evidence and terminal writes
+ * with provider completion, but never invokes the blockchain verifier.
+ */
+export async function completeManualCryptoRefund(
+  database: DatabaseLike,
+  args: ManualCryptoRefundArgs,
+): Promise<RefundRequestResult> {
+  const canonicalTxid = normalizeEthereumTxid(args.txid);
+  if (!canonicalTxid) throw new GroupBuyRefundError("invalid_txid");
+  if (args.role !== "admin" || typeof args.username !== "string" || !args.username.trim()) {
+    throw new GroupBuyRefundError("forbidden");
+  }
+  const reason = validateManualRefundReason(args.reason);
+  await opportunisticRefundAuditDrain(database);
+
+  const [unlockedRefund] = await loadRows(
+    database,
+    groupBuyRefundsTable,
+    eq(groupBuyRefundsTable.id, args.refundId),
+  );
+  if (!unlockedRefund) throw new GroupBuyRefundError("not_found");
+  const [unlockedOrder] = await loadRows(database, ordersTable, eq(ordersTable.id, unlockedRefund.orderId));
+  const [unlockedAccount] = await loadRows(
+    database,
+    accountsTable,
+    eq(accountsTable.telegramUsername, unlockedRefund.accountId),
+  );
+  const [unlockedGroupBuy] = await loadRows(
+    database,
+    groupBuysTable,
+    eq(groupBuysTable.id, unlockedRefund.groupBuyId),
+  );
+  if (!unlockedOrder || !unlockedAccount || !unlockedGroupBuy) throw new GroupBuyRefundError("not_found");
+  const processor: CryptoRefundProcessor = { username: args.username, role: "admin" };
+  validateCryptoProcessorScope(unlockedAccount, unlockedOrder, unlockedGroupBuy, unlockedRefund, processor);
+
+  const result = await database.transaction(async (tx: DatabaseLike) => {
+    const locked = await lockCryptoRows(tx, unlockedRefund);
+    if (!locked.account || !locked.order || !locked.groupBuy || !locked.refund) {
+      throw new GroupBuyRefundError("not_found");
+    }
+    const lockedRefund = locked.refund;
+    validateCryptoProcessorScope(locked.account, locked.order, locked.groupBuy, locked.refund, processor);
+    validateCryptoRefundAmount(locked.refund);
+
+    if (lockedRefund.status === "completed") {
+      validateCompletedTerminal(locked.order);
+      return completedCryptoResult(locked.refund, canonicalTxid);
+    }
+    if (!["requested", "verification_failed", "verifying"].includes(String(lockedRefund.status))) {
+      throw new GroupBuyRefundError("invalid_refund_transition");
+    }
+    if (
+      lockedRefund.outgoingTxid != null
+      && normalizeEthereumTxid(lockedRefund.outgoingTxid) !== canonicalTxid
+    ) {
+      throw new GroupBuyRefundError("completed_txid_immutable");
+    }
+    // Legacy rows may predate the global claim table. Lock and compare their
+    // outgoing TXIDs canonically before claiming, so those rows remain replay
+    // protected without any startup backfill or mutation.
+    const legacyOutgoingRows = await lockRows(
+      tx,
+      groupBuyRefundsTable,
+      and(
+        ne(groupBuyRefundsTable.id, args.refundId),
+        isNotNull(groupBuyRefundsTable.outgoingTxid),
+        sql`lower(regexp_replace(${groupBuyRefundsTable.outgoingTxid}, '^0x', '')) = ${canonicalTxid.slice(2)}`,
+      ),
+    );
+    if (legacyOutgoingRows.some(row =>
+      row.id !== args.refundId && normalizeEthereumTxid(row.outgoingTxid) === canonicalTxid
+    )) {
+      throw new GroupBuyRefundError("txid_replay");
+    }
+    if (
+      locked.order.deletedAt != null
+      || locked.order.status === "Cancelled"
+      || locked.order.refundStatus === "refunded"
+      || locked.order.paymentStatus !== "confirmed"
+      || locked.order.paymentConfirmedAt == null
+    ) {
+      throw new GroupBuyRefundError("payment_state_changed");
+    }
+
+    const amountUsd = centsToUsdString(usdToCents(String(lockedRefund.amountUsd)));
+    const evidenceCheck = evaluateRefundEligibility({
+      accountId: locked.account.telegramUsername,
+      order: {
+        ...refundOrder(locked.order),
+        status: "Submitted",
+        refundStatus: null,
+        paymentStatus: "confirmed",
+        grandTotal: amountUsd,
+      },
+      groupBuy: { id: locked.groupBuy.id, cryptoRefundsEnabled: true },
+      activeRefund: null,
+    });
+    if (!evidenceCheck.eligible) throw new GroupBuyRefundError("payment_evidence_changed");
+
+    // The claim table is the global, canonical replay guard. Insert it before
+    // any terminal writes so a concurrent refund cannot reuse this transfer.
+    let claimedTxid: Record<string, any> | undefined;
+    try {
+      [claimedTxid] = await tx
+        .insert(groupBuyRefundTxClaimsTable)
+        .values({ txid: canonicalTxid, refundId: args.refundId, createdAt: new Date() })
+        .onConflictDoNothing()
+        .returning();
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new GroupBuyRefundError("txid_replay");
+      throw error;
+    }
+    if (!claimedTxid) {
+      const [existingClaim] = await lockRows(
+        tx,
+        groupBuyRefundTxClaimsTable,
+        eq(groupBuyRefundTxClaimsTable.txid, canonicalTxid),
+      );
+      if (existingClaim?.refundId !== args.refundId) throw new GroupBuyRefundError("txid_replay");
+    }
+
+    const now = new Date();
+    const activeAttempt = lockedRefund.processingAttemptId
+      ? locked.attempts.find(attempt => attempt.id === lockedRefund.processingAttemptId)
+      : undefined;
+    if (activeAttempt && activeAttempt.endedAt == null) {
+      await tx.update(groupBuyRefundAttemptsTable).set({
+        endedAt: now,
+        resultCode: "manual_completed",
+        failureReason: reason,
+      }).where(and(
+        eq(groupBuyRefundAttemptsTable.id, activeAttempt.id),
+        eq(groupBuyRefundAttemptsTable.refundId, args.refundId),
+        isNull(groupBuyRefundAttemptsTable.endedAt),
+      ));
+    }
+
+    const explorerUrl = `https://etherscan.io/tx/${canonicalTxid}`;
+    let completedRefund: Record<string, any> | undefined;
+    try {
+      [completedRefund] = await tx.update(groupBuyRefundsTable).set({
+        status: "completed",
+        outgoingTxid: canonicalTxid,
+        confirmationCount: null,
+        explorerUrl,
+        processorUsername: args.username.trim(),
+        processorRole: "admin",
+        completedAt: now,
+        verificationErrorCode: null,
+        verificationErrorMessage: null,
+        failedAt: null,
+      }).where(and(
+        eq(groupBuyRefundsTable.id, args.refundId),
+        inArray(groupBuyRefundsTable.status, ["requested", "verification_failed", "verifying"]),
+      )).returning();
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new GroupBuyRefundError("txid_replay");
+      throw error;
+    }
+    if (!completedRefund) throw new GroupBuyRefundError("refund_claim_lost");
+
+    const [updatedOrder] = await tx.update(ordersTable).set({
+      refundStatus: "refunded",
+      refundedAt: now,
+      status: "Cancelled",
+      paymentStatus: "refunded",
+    }).where(and(
+      eq(ordersTable.id, locked.order.id),
+      eq(ordersTable.status, locked.order.status),
+      eq(ordersTable.paymentStatus, "confirmed"),
+      isNull(ordersTable.refundStatus),
+      isNull(ordersTable.deletedAt),
+    )).returning();
+    if (!updatedOrder) throw new GroupBuyRefundError("order_state_changed");
+
+    const attemptId = activeAttempt?.id ?? `manual:${args.refundId}`;
+    const transition = lockedRefund.status === "verifying"
+      ? "verifying_to_completed_manual"
+      : "requested_or_verification_failed_to_completed_manual";
+    await auditRefundTransition(tx, {
+      refundId: args.refundId,
+      attemptId,
+      orderId: locked.order.id,
+      groupBuyId: locked.groupBuy.id,
+      accountId: locked.account.telegramUsername,
+      method: lockedRefund.method,
+      processorUsername: args.username.trim(),
+      processorRole: "admin",
+      source: "admin",
+      transition,
+      action: "group_buy_refund_manually_completed",
+      resultCode: "manual_crypto_refund_completed",
+      txid: canonicalTxid,
+      reason,
+    });
+    await enqueueRefundNotification(tx, {
+      refundId: args.refundId,
+      accountId: locked.account.telegramUsername,
+      status: "completed",
+      orderCode: locked.order.code,
+      amountUsd,
+      explorerUrl,
+      txid: canonicalTxid,
+    });
+    return asRefundResult({
+      ...lockedRefund,
+      status: "completed",
+      amountUsd,
+      outgoingTxid: canonicalTxid,
+      confirmationCount: null,
+      explorerUrl,
+      completedAt: now,
+    });
+  });
+  await opportunisticRefundAuditDrain(database);
+  return result;
+}
+
+// Keep the entrypoint discoverable under the action-oriented name used by
+// callers while retaining the explicit crypto naming above.
+export const manualCompleteCryptoRefund = completeManualCryptoRefund;
 
 async function lockCryptoRows(
   tx: DatabaseLike,

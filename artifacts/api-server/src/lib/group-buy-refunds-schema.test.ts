@@ -134,9 +134,13 @@ describe("group buy refund schema contract", () => {
       expect.arrayContaining([
         "refund_id", "attempt_id", "transition", "processor_username",
         "processor_role", "submitted_txid", "result_code", "delivered_at",
-      "attempt_count", "last_attempt_at", "last_error",
+       "attempt_count", "last_attempt_at", "last_error", "reason",
       ]),
     );
+    expect(getTableConfig(groupBuyRefundTransitionOutboxTable).columns.find(column => column.name === "reason")).toMatchObject({
+      columnType: "PgText",
+      notNull: false,
+    });
     expect(refundColumns.map(column => column.name)).not.toContain("verification_error");
     expect(attemptColumns.map(column => column.name)).not.toContain("completed_at");
   });
