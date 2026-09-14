@@ -156,3 +156,121 @@ mtime_ms = 1788691763769
 storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:bbc34ef6-d242-429e-ba8d-882d8f2a859e/b799a56a-52b6-4e7f-a515-9beff3facf31/0e25eea8-4172-410f-bd7c-b0d447e0f5ef"
 storage_version_token = "1788691771489927"
 content_type = "application/pdf"
+
+[[outputs]]
+id = "Q4-sTshYDNNNN2ydCqy5Z"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/01-title.mp3"
+type = "audio"
+title = "01-title"
+description = "Text-to-speech audio: How to request a Group Buy refund."
+logical_id = "6791e431-7397-4d38-8eb7-bc2bcdfa70f8"
+
+[[outputs]]
+id = "GXtfCsq5EbxMV4D7bw93Z"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/02-orders.mp3"
+type = "audio"
+title = "02-orders"
+description = "Text-to-speech audio: Open the customer portal and navigate to My Orders."
+logical_id = "848d58e1-74f1-451c-8219-d61d413e2d45"
+
+[[outputs]]
+id = "3V5oW5gmaxtMpj3MFi3jt"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/03-select.mp3"
+type = "audio"
+title = "03-select"
+description = "Text-to-speech audio: Select the relevant confirmed Group Buy order."
+logical_id = "c955d75a-1f5a-4338-b217-44c161783f12"
+
+[[outputs]]
+id = "dcjPXgu3FNllVJnjLLmGC"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/04-action.mp3"
+type = "audio"
+title = "04-action"
+description = "Text-to-speech audio: Locate and select, I want a refund."
+logical_id = "485a95b1-53d1-4c17-9f8a-d0acb9bfbaf3"
+
+[[outputs]]
+id = "Idk-rFVVlxBy5wy8Whq8I"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/07-submit.mp3"
+type = "audio"
+title = "07-submit"
+description = "Text-to-speech audio: Review the amount and submit."
+logical_id = "fb3c03e7-c8f5-475d-aa6a-60ce296977fb"
+
+[[outputs]]
+id = "vkpkt50xbykILWDNZiif4"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/06-wallet.mp3"
+type = "audio"
+title = "06-wallet"
+description = "Text-to-speech audio: For crypto, confirm the asset and enter your destination wallet."
+logical_id = "469d44be-92e5-4a96-ace3-37638dbc0bff"
+
+[[outputs]]
+id = "3UGuTgSUIXc01lJseMDrX"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/09-verifying.mp3"
+type = "audio"
+title = "09-verifying"
+description = "Text-to-speech audio: Once an admin starts processing it, the status updates to Being verified."
+logical_id = "2fc0d1dc-2c27-401e-bd03-3f2b6f093773"
+
+[[outputs]]
+id = "oaljykzWmFXqJce4v1Y52"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/05-method.mp3"
+type = "audio"
+title = "05-method"
+description = "Text-to-speech audio: You can choose account credit, or crypto when enabled."
+logical_id = "88dd53a5-170f-48c8-9bfc-ff595959f0af"
+
+[[outputs]]
+id = "x3zWi4TFj2hDKBY6WbnSx"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/08-requested.mp3"
+type = "audio"
+title = "08-requested"
+description = "Text-to-speech audio: Your request will show as Requested while waiting for review."
+logical_id = "e41c7edd-4de8-4388-8086-b9e2cf436783"
+
+[[outputs]]
+id = "bJMWV-L7axvASMNE6kvNd"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/13-closing.mp3"
+type = "audio"
+title = "13-closing"
+description = "Text-to-speech audio: You can return to the order at any time to check the status."
+logical_id = "88958f43-bc78-40fd-ba2e-ea4fce099504"
+
+[[outputs]]
+id = "2MFeJBXXIqSoTqCYyRydK"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/10-failed.mp3"
+type = "audio"
+title = "10-failed"
+description = "Text-to-speech audio: If there's an issue with your wallet or the network, it will show as Verification failed."
+logical_id = "2b1627d0-9e3a-4d89-97ea-cd30a3a6d6a5"
+
+[[outputs]]
+id = "FPOxqbEgM4zeCgNctdtYP"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/12-confirmations.mp3"
+type = "audio"
+title = "12-confirmations"
+description = "Text-to-speech audio: Please note that crypto completion may take time while blockchain confirmations arrive."
+logical_id = "47282f40-16a0-4543-a419-eec4cc71aff4"
+
+[[outputs]]
+id = "8f9Eb5-zZCh1ENCbMNm_H"
+uri = "file://artifacts/group-buy-refund-tutorial/public/audio/lines/11-completed.mp3"
+type = "audio"
+title = "11-completed"
+description = "Text-to-speech audio: When the refund is successfully sent, it shows as Completed."
+logical_id = "b4a6e4ba-5280-4368-ae42-dc987ba81240"
+
+[[outputs]]
+id = "BOko8eAdYQFDRaRt6cpm9"
+uri = "file://exports/group-buy-refund-customer-tutorial.mp4"
+type = "video"
+title = "Group Buy Refund Customer Tutorial"
+description = "58-second 16:9 MP4 with British-English voiceover and burned-in captions."
+logical_id = "c3247651-4163-412e-8bf7-def5af10294d"
+content_hash = "sha256:e27eba4556ac8f30b36ec38841a5d4c1ae06d3762f9a62dd0d9a409bbb3be846"
+size = 7919914
+mtime_ms = 1789376016720
+storage_uri = "gcs://replit-rams-assets-riker/rams/assets/repl:bbc34ef6-d242-429e-ba8d-882d8f2a859e/c3247651-4163-412e-8bf7-def5af10294d/f9daf40f-2c85-4e88-93b5-a41d8d96101d"
+storage_version_token = "1789376175678259"
+content_type = "video/mp4"

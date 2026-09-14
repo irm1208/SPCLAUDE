@@ -1,0 +1,28 @@
+kind = "video"
+previewPath = "/group-buy-refund-tutorial/"
+title = "Group Buy Refund Tutorial"
+description = "Customer-only animated tutorial showing how to request and monitor a Group Buy refund."
+version = "1.0.0"
+id = "artifacts/group-buy-refund-tutorial"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/group-buy-refund-tutorial/" ]
+localPort = 19235
+
+[services.development]
+run = "pnpm --filter @workspace/group-buy-refund-tutorial run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/group-buy-refund-tutorial", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/group-buy-refund-tutorial/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19235"
+BASE_PATH = "/group-buy-refund-tutorial/"
