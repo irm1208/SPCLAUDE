@@ -27,6 +27,7 @@ export type RefundNotificationInput = {
   amountUsd: string;
   explorerUrl?: string | null;
   txid?: string | null;
+  txid2?: string | null;
   /** A crypto processing attempt makes each failure occurrence distinct. */
   attemptId?: string | null;
   transitionKey?: string;
@@ -38,6 +39,7 @@ export type RefundNotificationVarsInput = {
   status?: unknown;
   explorerUrl?: unknown;
   txid?: unknown;
+  txid2?: unknown;
   // Deliberately accepted and ignored: callers may pass a larger refund
   // record, but customer variables are an explicit allow-list.
   [key: string]: unknown;
@@ -93,6 +95,7 @@ export type RefundAuditOutboxInput = {
   action: string;
   resultCode: string;
   txid?: string | null;
+  txid2?: string | null;
   reason?: string | null;
 };
 
@@ -106,12 +109,19 @@ export function transitionKeyFor(
 }
 
 export function buildRefundNotificationVars(input: RefundNotificationVarsInput): Record<string, string> {
+  const txid = input.txid == null ? "" : String(input.txid);
+  const txid2 = input.txid2 == null ? "" : String(input.txid2);
+  const explorerUrl = input.explorerUrl == null ? "" : String(input.explorerUrl);
   return {
     order_code: input.orderCode == null ? "" : String(input.orderCode),
     amount_usd: input.amountUsd == null ? "" : String(input.amountUsd),
     status: input.status == null ? "" : String(input.status),
-    explorer_url: input.explorerUrl == null ? "" : String(input.explorerUrl),
-    txid: input.txid == null ? "" : String(input.txid),
+    explorer_url: explorerUrl,
+    txid,
+    ...(txid2.trim() ? { txid2 } : {}),
+    txid_line: txid.trim() ? `\nRefund TXID (first): <code>${txid}</code>` : "",
+    txid2_line: txid2.trim() ? `\nRefund TXID (second): <code>${txid2}</code>` : "",
+    explorer_link: explorerUrl.trim() ? `\n<a href="${explorerUrl}">View refund transaction</a>` : "",
   };
 }
 
@@ -127,6 +137,7 @@ function markerValues(input: RefundNotificationInput): Omit<RefundNotificationMa
     amountUsd: input.amountUsd,
     explorerUrl: input.explorerUrl ?? null,
     txid: input.txid ?? null,
+    ...(input.txid2?.trim() ? { txid2: input.txid2 } : {}),
     attemptId: input.attemptId ?? null,
   } as Omit<RefundNotificationMarker, "id">;
 }
@@ -189,6 +200,7 @@ export async function enqueueRefundAudit(
       processorUsername: input.processorUsername,
       processorRole: input.processorRole,
       submittedTxid: input.txid ?? null,
+      ...(input.txid2?.trim() ? { submittedTxid2: input.txid2 } : {}),
       reason: input.reason ?? null,
       resultCode: input.resultCode,
       deliveredAt: null,
@@ -243,6 +255,7 @@ export async function drainRefundAudits(
             transition: marker.transition,
             resultCode: marker.resultCode,
             txid: marker.submittedTxid,
+            txid2: (marker as { submittedTxid2?: string | null }).submittedTxid2,
             reason: (marker as RefundNotificationMarker & { reason?: string | null }).reason,
           }),
           ip: null,
@@ -508,6 +521,7 @@ export type RefundAuditInput = {
   transition: string;
   resultCode: string;
   txid?: string | null;
+  txid2?: string | null;
   reason?: string | null;
   attemptId?: string | null;
   action?: string;
@@ -528,6 +542,7 @@ function safeAuditMetadata(input: RefundAuditInput): Record<string, unknown> {
     transition: input.transition,
     resultCode: input.resultCode,
     ...(input.txid ? { txid: input.txid } : {}),
+    ...(input.txid2 ? { txid2: input.txid2 } : {}),
     ...(input.reason ? { reason: input.reason } : {}),
   };
   for (const key of Object.keys(metadata)) {
@@ -555,6 +570,7 @@ export async function auditRefundTransition(
     action: input.action ?? `group_buy_refund_${input.transition}`,
     resultCode: input.resultCode,
     txid: input.txid,
+    txid2: input.txid2,
     reason: input.reason,
   });
 }

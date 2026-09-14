@@ -247,9 +247,10 @@ const attempt = {
 };
 const originalPaymentTxid = `0x${"C".repeat(64)}`;
 const additionPaymentTxid = `0x${"2".repeat(64)}`;
-const plainPaymentTxid = "b".repeat(64);
+const plainPaymentTxid = "d".repeat(64);
 const balancePaymentTxid = `0x${"3".repeat(64)}`;
 const outgoingRefundTxid = `0x${"A".repeat(64)}`;
+const outgoingRefundTxid2 = `0x${"B".repeat(64)}`;
 const solanaPaymentTxid = `1${"A".repeat(87)}`;
 
 function buildApp(...routers: Express["router"][]): Express {
@@ -444,7 +445,7 @@ describe("group-buy refund route contracts", () => {
     }));
   });
 
-  it("accepts exactly TXID and reason for the Admin manual completion route", async () => {
+  it("accepts exactly TXID, optional TXID2, and reason for Admin manual completion", async () => {
     const app = buildApp(groupBuyRefundsRouter);
     const valid = await request(app, "/admin/group-buy-refunds/refund-1/manual-complete", {
       method: "POST",
@@ -458,6 +459,16 @@ describe("group-buy refund route contracts", () => {
       txid: attempt.submittedTxid,
       reason: "Provider unavailable",
     });
+    const withSecond = await request(app, "/admin/group-buy-refunds/refund-1/manual-complete", {
+      method: "POST",
+      headers: json({ txid: attempt.submittedTxid, txid2: `0x${"2".repeat(64)}`, reason: "Top-up confirmed" }, { "x-test-admin": "admin" }),
+    });
+    expect(withSecond.status).toBe(200);
+    expect(mocks.state.completeManualCryptoRefund).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      txid: attempt.submittedTxid,
+      txid2: `0x${"2".repeat(64)}`,
+      reason: "Top-up confirmed",
+    }));
 
     for (const body of [
       {},
@@ -465,7 +476,9 @@ describe("group-buy refund route contracts", () => {
       { txid: attempt.submittedTxid, reason: " " },
       { txid: attempt.submittedTxid, reason: "ok", extra: "nope" },
       { txid: "not-a-txid", reason: "ok" },
+      { txid: attempt.submittedTxid, txid2: attempt.submittedTxid.slice(2).toUpperCase(), reason: "duplicate IDs" },
       { txid: attempt.submittedTxid, reason: "x".repeat(1001) },
+      { txid: attempt.submittedTxid, txid2: "not-a-txid", reason: "bad second" },
     ]) {
       const response = await request(app, "/admin/group-buy-refunds/refund-1/manual-complete", {
         method: "POST",
@@ -473,6 +486,16 @@ describe("group-buy refund route contracts", () => {
       });
       expect(response.status).toBe(400);
     }
+    const blankSecond = await request(app, "/admin/group-buy-refunds/refund-1/manual-complete", {
+      method: "POST",
+      headers: json({ txid: attempt.submittedTxid, txid2: "  ", reason: "blank second is absent" }, { "x-test-admin": "admin" }),
+    });
+    expect(blankSecond.status).toBe(200);
+    expect(mocks.state.completeManualCryptoRefund).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      txid: attempt.submittedTxid,
+      txid2: undefined,
+      reason: "blank second is absent",
+    }));
 
     const organiser = await request(app, "/organiser/group-buy-refunds/refund-1/manual-complete", {
       method: "POST",
@@ -529,6 +552,7 @@ describe("group-buy refund route contracts", () => {
         `  ${additionPaymentTxid}  `,
         plainPaymentTxid,
         `  ${outgoingRefundTxid.slice(2).toLowerCase()}  `,
+        `  ${outgoingRefundTxid2.slice(2).toLowerCase()}  `,
         "",
         originalPaymentTxid,
         solanaPaymentTxid,
@@ -537,6 +561,7 @@ describe("group-buy refund route contracts", () => {
       balancePaymentStatus: "pending_confirmation",
       testPaymentTxHash: "test-payment-must-not-leak",
       outgoingTxid: outgoingRefundTxid,
+      outgoingTxid2: outgoingRefundTxid2,
     };
 
     const surfaces = [
@@ -554,6 +579,7 @@ describe("group-buy refund route contracts", () => {
         originalPaymentTxid, additionPaymentTxid, plainPaymentTxid, solanaPaymentTxid, balancePaymentTxid,
       ]);
       expect(row.outgoingTxid, surface.path).toBe(outgoingRefundTxid);
+      expect(row.outgoingTxid2, surface.path).toBe(outgoingRefundTxid2);
       expect(row.testPaymentTxHash, surface.path).toBeUndefined();
     }
   });

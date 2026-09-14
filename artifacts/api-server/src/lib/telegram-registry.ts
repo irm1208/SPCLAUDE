@@ -772,9 +772,9 @@ export const TEMPLATE_REGISTRY: TemplateEventMeta[] = [
     audience: "customer",
     prefKey: "payment",
     description: "Sent when a group-buy refund is completed.",
-    placeholders: ["order_code", "amount_usd", "status", "explorer_url", "txid"],
+    placeholders: ["order_code", "amount_usd", "status", "explorer_url", "txid", "txid2", "txid_line", "txid2_line", "explorer_link"],
     defaultTemplate:
-      `✅ <b>Refund completed</b>\n\nYour refund for order <code>#{{order_code}}</code> is complete.\nAmount: <b>\${{amount_usd}}</b>\nStatus: {{status}}{{txid}}{{explorer_url}}`,
+      `✅ <b>Refund completed</b>\n\nYour refund for order <code>#{{order_code}}</code> is complete.\nAmount: <b>\${{amount_usd}}</b>\nStatus: {{status}}{{txid_line}}{{txid2_line}}{{explorer_link}}`,
     editableInAdmin: false,
   },
 ];

@@ -53,6 +53,7 @@ const fake = vi.hoisted(() => {
     failOutboxUpdate: false,
     orderUpdateReturnsEmpty: false,
     serial: Promise.resolve(),
+    forUpdateTables: [] as unknown[],
   };
   const eq = (column: unknown, value: unknown) => ({ kind: "eq", column, value });
   const ne = (column: unknown, value: unknown) => ({ kind: "ne", column, value });
@@ -123,7 +124,10 @@ const fake = vi.hoisted(() => {
             ? Object.fromEntries(Object.entries(selection).map(([key, column]) => [key, row[column as string]]))
             : row);
           const query: any = {
-            for: vi.fn(async () => result),
+            for: vi.fn(async () => {
+              state.forUpdateTables.push(table);
+              return result;
+            }),
             then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
           };
           query.orderBy = () => query;
@@ -248,7 +252,7 @@ const fake = vi.hoisted(() => {
       method: "crypto", asset: "USDC", network: "Ethereum ERC-20",
       amountUsd: "123.45",
       destinationWallet: `0x${"b".repeat(40)}`, amountBaseUnits: "123450000",
-      status: "requested", outgoingTxid: null, processorUsername: null,
+       status: "requested", outgoingTxid: null, outgoingTxid2: null, processorUsername: null,
       processorRole: null, processingAttemptId: null, verifyingAt: null, updatedAt: null,
     }];
     state.attempts = [];
@@ -275,6 +279,7 @@ const fake = vi.hoisted(() => {
     state.failNotificationInsert = false;
     state.failOutboxUpdate = false;
     state.orderUpdateReturnsEmpty = false;
+    state.forUpdateTables = [];
     state.serial = Promise.resolve();
   }
   return { tables, state, db, eq, ne, isNotNull, and, inArray, reset, verify: vi.fn(async () => state.verify) };
@@ -305,8 +310,8 @@ vi.mock("./payment-verify", () => ({
 }));
 vi.mock("./refund-crypto-verifier", () => ({
   normalizeEthereumTxid: (value: unknown) => typeof value === "string"
-    && /^(?:0x)?[0-9a-fA-F]{64}$/.test(value)
-    ? (value.startsWith("0x") ? value : `0x${value}`).toLowerCase()
+    && /^(?:0x)?[0-9a-fA-F]{64}$/i.test(value)
+    ? (/^0x/i.test(value) ? value : `0x${value}`).toLowerCase()
     : null,
   verifyRefundCryptoTransfer: fake.verify,
 }));
@@ -324,6 +329,7 @@ import {
 
 const tx1 = `0x${"1".repeat(64)}`;
 const tx2 = `0x${"2".repeat(64)}`;
+const tx3 = `0x${"3".repeat(64)}`;
 const processor = { username: "admin", role: "admin" };
 
 describe("submitCryptoRefund transactional lifecycle", () => {
@@ -367,8 +373,45 @@ describe("submitCryptoRefund transactional lifecycle", () => {
   it("completes, cancels the order, and audits normalized outgoing TXID", async () => {
     const result = await submitCryptoRefund(fake.db, processor, "refund-1", tx1);
     expect(result).toMatchObject({ status: "completed", outgoingTxid: tx1.toLowerCase() });
+    expect(result).not.toHaveProperty("outgoingTxid2");
     expect(fake.state.order).toMatchObject({ status: "Cancelled", refundStatus: "refunded", paymentStatus: "refunded" });
     expect(fake.state.audits.at(-1)!.metadata.txid).toBe(tx1);
+    expect(fake.state.audits.at(-1)!.metadata).not.toHaveProperty("txid2");
+    expect(fake.state.notifications.at(-1)!).not.toHaveProperty("txid2");
+  });
+
+  it("rejects automatic verification when a legacy outgoing TXID2 collides without a claim row", async () => {
+    fake.state.refunds.push({
+      id: "legacy-refund",
+      orderId: "legacy-order",
+      groupBuyId: "gb-1",
+      accountId: "legacy-buyer",
+      method: "crypto",
+      outgoingTxid2: tx1.slice(2).toUpperCase(),
+      status: "completed",
+    });
+    const before = structuredClone({
+      refunds: fake.state.refunds,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      order: fake.state.order,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+      audits: fake.state.audits,
+    });
+    const verifyCallsBefore = fake.verify.mock.calls.length;
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1))
+      .rejects.toMatchObject({ code: "txid_replay" });
+    expect(fake.verify.mock.calls.length).toBe(verifyCallsBefore);
+    expect({
+      refunds: fake.state.refunds,
+      attempts: fake.state.attempts,
+      claims: fake.state.claims,
+      order: fake.state.order,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+      audits: fake.state.audits,
+    }).toEqual(before);
   });
 
   it.each(["not-a-txid", `0x${"a".repeat(63)}`, `0x${"g".repeat(64)}`])(
@@ -864,6 +907,114 @@ describe("completeManualCryptoRefund transactional lifecycle", () => {
     }));
   });
 
+  it("supports an optional second manual outgoing transfer and persists both canonical IDs", async () => {
+    await completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1.toUpperCase(),
+      txid2: tx2.slice(2).toUpperCase(),
+      reason: "Split payout confirmed",
+    });
+    expect(fake.state.refunds[0]).toMatchObject({ outgoingTxid: tx1, outgoingTxid2: tx2 });
+    expect(fake.state.claims.map(claim => claim.txid)).toEqual(expect.arrayContaining([tx1, tx2]));
+    expect(fake.state.outbox).toContainEqual(expect.objectContaining({
+      submittedTxid: tx1,
+      submittedTxid2: tx2,
+    }));
+    expect(fake.state.notifications).toContainEqual(expect.objectContaining({ txid: tx1, txid2: tx2 }));
+  });
+
+  it("claims a reversed pair in canonical order while preserving payout order", async () => {
+    const results = await Promise.all([
+      completeManualCryptoRefund(fake.db, {
+        refundId: "refund-1", username: "admin", role: "admin",
+        txid: tx2, txid2: tx1, reason: "Reversed pair ordering",
+      }),
+      completeManualCryptoRefund(fake.db, {
+        refundId: "refund-1", username: "admin", role: "admin",
+        txid: tx2, txid2: tx1, reason: "Concurrent reversed retry",
+      }),
+    ]);
+    expect(results).toHaveLength(2);
+    expect(fake.state.claims.map(claim => claim.txid)).toEqual([tx1, tx2]);
+    expect(fake.state.refunds[0]).toMatchObject({ outgoingTxid: tx2, outgoingTxid2: tx1 });
+    expect(fake.state.outbox).toContainEqual(expect.objectContaining({
+      submittedTxid: tx2,
+      submittedTxid2: tx1,
+    }));
+    expect(fake.state.notifications).toContainEqual(expect.objectContaining({ txid: tx2, txid2: tx1 }));
+  });
+
+  it("normalizes a blank second TXID to absent and rejects equivalent first/second TXIDs", async () => {
+    await completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      txid2: "  ",
+      reason: "Single payout",
+    });
+    expect(fake.state.refunds[0].outgoingTxid2).toBeNull();
+    expect(fake.state.notifications[0]).not.toHaveProperty("txid2");
+
+    fake.reset();
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1", username: "admin", role: "admin",
+      txid: tx1, txid2: tx1.slice(2).toUpperCase(), reason: "Duplicate IDs",
+    })).rejects.toMatchObject({ code: "invalid_txid_pair" });
+  });
+
+  it.each([123, { txid: tx2 }])("rejects a non-string second TXID (%s) before any write", async txid2 => {
+    const before = structuredClone({
+      refunds: fake.state.refunds,
+      claims: fake.state.claims,
+      order: fake.state.order,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      txid2,
+      reason: "Invalid second transfer input",
+    } as any)).rejects.toMatchObject({ code: "invalid_txid" });
+    expect({
+      refunds: fake.state.refunds,
+      claims: fake.state.claims,
+      order: fake.state.order,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    }).toEqual(before);
+  });
+
+  it("requires the same first and second pair for completed idempotency", async () => {
+    await completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1", username: "admin", role: "admin", txid: tx1, txid2: tx2, reason: "First completion",
+    });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1", username: "admin", role: "admin", txid: tx1, txid2: tx2, reason: "Retry completion",
+    })).resolves.toMatchObject({ status: "completed", outgoingTxid: tx1 });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1", username: "admin", role: "admin", txid: tx1, txid2: tx3, reason: "Changed top-up",
+    })).rejects.toMatchObject({ code: "completed_txid_immutable" });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1", username: "admin", role: "admin", txid: tx1, reason: "Removed top-up",
+    })).rejects.toMatchObject({ code: "completed_txid_immutable" });
+  });
+
+  it("rolls back both claims when the second TXID is already claimed", async () => {
+    fake.state.claims.push({ txid: tx2, refundId: "other-refund" });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1", username: "admin", role: "admin", txid: tx1, txid2: tx2, reason: "Replay pair",
+    })).rejects.toMatchObject({ code: "txid_replay" });
+    expect(fake.state.claims).toEqual([{ txid: tx2, refundId: "other-refund" }]);
+    expect(fake.state.refunds[0].status).toBe("requested");
+    expect(fake.state.order.paymentStatus).toBe("confirmed");
+  });
+
   it("cannot be overwritten by a delayed automatic verifier finalization", async () => {
     let releaseVerifier!: () => void;
     fake.verify.mockImplementationOnce(async () => {
@@ -914,7 +1065,43 @@ describe("completeManualCryptoRefund transactional lifecycle", () => {
     }).toEqual(before);
   });
 
-  it("rejects a legacy outgoing TXID claim using case and prefix-insensitive comparison", async () => {
+  it.each([
+    ["first", tx1],
+    ["second", tx2],
+  ])("rejects a legacy outgoing TXID2 replay matching the proposed %s ID without any claim row or historical refund lock", async (_label, legacyTxid) => {
+    fake.state.refunds.push({
+      id: "legacy-refund",
+      orderId: "legacy-order",
+      groupBuyId: "gb-1",
+      accountId: "legacy-buyer",
+      method: "crypto",
+      outgoingTxid2: legacyTxid.slice(2).toUpperCase(),
+      status: "completed",
+    });
+    const before = structuredClone({
+      refund: fake.state.refunds,
+      claims: fake.state.claims,
+      order: fake.state.order,
+      outbox: fake.state.outbox,
+      notifications: fake.state.notifications,
+    });
+    await expect(completeManualCryptoRefund(fake.db, {
+      refundId: "refund-1",
+      username: "admin",
+      role: "admin",
+      txid: tx1,
+      txid2: tx2,
+      reason: "Legacy second-transfer replay check",
+    })).rejects.toMatchObject({ code: "txid_replay" });
+    expect(fake.state.forUpdateTables.filter(table => table === fake.tables.refunds)).toHaveLength(1);
+    expect(fake.state.refunds).toEqual(before.refund);
+    expect(fake.state.claims).toEqual(before.claims);
+    expect(fake.state.order).toEqual(before.order);
+    expect(fake.state.outbox).toEqual(before.outbox);
+    expect(fake.state.notifications).toEqual(before.notifications);
+  });
+
+  it("rejects a legacy first outgoing TXID claim using case and prefix-insensitive comparison", async () => {
     const legacyTxid = tx1.slice(2).toUpperCase();
     fake.state.refunds.push({
       id: "legacy-refund",

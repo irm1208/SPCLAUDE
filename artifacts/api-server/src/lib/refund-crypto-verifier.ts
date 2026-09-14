@@ -51,8 +51,8 @@ export type RefundCryptoVerificationResult =
     };
 
 export function normalizeEthereumTxid(txid: unknown): string | null {
-  if (typeof txid !== "string" || !/^(?:0x)?[0-9a-fA-F]{64}$/.test(txid)) return null;
-  return (txid.startsWith("0x") ? txid : `0x${txid}`).toLowerCase();
+  if (typeof txid !== "string" || !/^(?:0x)?[0-9a-fA-F]{64}$/i.test(txid)) return null;
+  return (/^0x/i.test(txid) ? txid : `0x${txid}`).toLowerCase();
 }
 
 type NormalizedInput = {

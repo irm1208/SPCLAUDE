@@ -55,13 +55,25 @@ describe("GroupBuyRefundQueue", () => {
     expect(markup).toContain("Payment TXID(s)");
     expect(markup).toContain("payment-1");
     expect(markup).toContain("payment-2");
-    expect(markup).toContain("Refund TXID: refund-1");
+    expect(markup).toContain("Refund TXID(s): refund-1");
 
     const emptyMarkup = renderToStaticMarkup(createElement(GroupBuyRefundCardMetadata, {
       paymentTxids: null,
       outgoingTxid: null,
     }));
     expect(emptyMarkup).toContain("No payment TXID recorded");
+  });
+
+  it("renders both outgoing refund TXIDs without blank second-transfer noise", () => {
+    const markup = renderToStaticMarkup(createElement(GroupBuyRefundCardMetadata, {
+      outgoingTxid: "0x" + "1".repeat(64),
+      outgoingTxid2: "0x" + "2".repeat(64),
+      showPayment: false,
+    }));
+    expect(markup).toContain("Refund TXID(s):");
+    expect(markup).toContain("0x" + "1".repeat(64));
+    expect(markup).toContain("0x" + "2".repeat(64));
+    expect(markup).not.toContain("undefined");
   });
 
   it("normalizes missing and legacy payment TXID fields for list/detail/polling data", () => {
@@ -249,6 +261,7 @@ describe("GroupBuyRefundQueue", () => {
       workingId: null,
       pollingId: null,
       txids: { [row.id]: "0x" + "a".repeat(64) },
+      txid2s: { [row.id]: "0x" + "b".repeat(64) },
       reasons: { [row.id]: "Provider unavailable" },
       onTxidChange: () => undefined,
       onReasonChange: () => undefined,
@@ -259,6 +272,8 @@ describe("GroupBuyRefundQueue", () => {
     expect(adminMarkup).toContain("Mark complete manually");
     expect(adminMarkup).toContain("verification. Confirm the transfer was sent");
     expect(adminMarkup).toContain("Manual completion reason");
+    expect(adminMarkup).toContain("Second TXID for ORDER-admin-crypto");
+    expect(adminMarkup).toContain("0x" + "b".repeat(64));
 
     const organiserMarkup = renderToStaticMarkup(createElement(GroupBuyRefundCardList, {
       role: "organiser",
@@ -272,6 +287,46 @@ describe("GroupBuyRefundQueue", () => {
     }));
     expect(organiserMarkup).not.toContain("Mark complete manually");
     expect(organiserMarkup).not.toContain("Manual completion reason");
+    expect(organiserMarkup).not.toContain("Second TXID");
+  });
+
+  it("wires the Admin card's entered second TXID into the exact manual POST body", async () => {
+    const row = refundRow("admin-integrated", "crypto", "admin-integrated-customer");
+    const txid = "0x" + "a".repeat(64);
+    const txid2 = "0x" + "b".repeat(64);
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => response({ status: "completed" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const card = GroupBuyRefundCardList({
+      role: "admin",
+      rows: [row],
+      workingId: null,
+      pollingId: null,
+      txids: { [row.id]: txid },
+      txid2s: { [row.id]: txid2 },
+      reasons: { [row.id]: "Provider unavailable" },
+      onTxidChange: () => undefined,
+      onTxid2Change: () => undefined,
+      onReasonChange: () => undefined,
+      onVerify: () => undefined,
+      onManualComplete: selected => postManualRefundCompletion({
+        basePath: "/api/admin/group-buy-refunds",
+        refundId: selected.id,
+        txid,
+        txid2,
+        reason: "Provider unavailable",
+        headers: {},
+        credentials: "omit",
+      }),
+      onCompleteCredit: () => undefined,
+    });
+    const button = findButton(card, "Mark complete manually");
+    expect(button).toBeDefined();
+    await button!.props.onClick();
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+      txid,
+      txid2,
+      reason: "Provider unavailable",
+    });
   });
 
   it("validates missing manual TXID and reason before making a request", () => {
@@ -300,6 +355,25 @@ describe("GroupBuyRefundQueue", () => {
       credentials: "omit",
     }, async () => { refreshed.push("yes"); });
     expect(refreshed).toEqual(["yes"]);
+  });
+
+  it("includes a nonblank second TXID in the manual request while omitting blank txid2", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => response({ status: "completed" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await postManualRefundCompletion({
+      basePath: "/api/admin/group-buy-refunds",
+      refundId: "refund-1",
+      txid: "0x" + "a".repeat(64),
+      txid2: "  0x" + "b".repeat(64) + " ",
+      reason: "because",
+      headers: {},
+      credentials: "omit",
+    });
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+      txid: "0x" + "a".repeat(64),
+      txid2: "0x" + "b".repeat(64),
+      reason: "because",
+    });
   });
 
   it("surfaces server errors and does not refresh after a failed manual request", async () => {
@@ -368,6 +442,19 @@ function refundRow(
     requestedAt: "2026-01-01T00:00:00.000Z",
     paymentTxids: [`payment-${id}`],
   };
+}
+
+function findButton(node: unknown, label: string): ReactElement<{ onClick: () => void | Promise<void> }> | undefined {
+  if (!isValidElement(node)) return undefined;
+  const element = node as ReactElement<any>;
+  if (element.type === "button" && Children.toArray(element.props.children).join("").includes(label)) {
+    return element as ReactElement<{ onClick: () => void | Promise<void> }>;
+  }
+  for (const child of Children.toArray(element.props.children)) {
+    const found = findButton(child, label);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 function renderFilteredResults(

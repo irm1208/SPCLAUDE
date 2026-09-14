@@ -21,6 +21,7 @@ export interface GroupBuyRefundQueueItem {
   completedAt?: string | null;
   paymentTxids: string[];
   outgoingTxid?: string | null;
+  outgoingTxid2?: string | null;
   explorerUrl?: string | null;
   verificationError?: { code?: string | null; message?: string | null } | null;
   attempts?: Array<{ id: string; submittedTxid?: string | null }>;
@@ -167,6 +168,7 @@ export interface ManualRefundCompletionRequest {
   basePath: string;
   refundId: string;
   txid: string;
+  txid2?: string;
   reason: string;
   headers: Record<string, string>;
   credentials: RequestCredentials;
@@ -181,7 +183,11 @@ export async function postManualRefundCompletion(
       method: "POST",
       credentials: request.credentials,
       headers: { ...request.headers, "Content-Type": "application/json" },
-      body: JSON.stringify({ txid: request.txid.trim(), reason: request.reason.trim() }),
+      body: JSON.stringify({
+        txid: request.txid.trim(),
+        ...(request.txid2?.trim() ? { txid2: request.txid2.trim() } : {}),
+        reason: request.reason.trim(),
+      }),
     },
   );
   if (!response.ok) throw new Error(errorText(response, body));
@@ -238,6 +244,7 @@ function dateLabel(value: string): string {
 export interface GroupBuyRefundCardMetadataProps {
   paymentTxids?: string[] | null;
   outgoingTxid?: string | null;
+  outgoingTxid2?: string | null;
   showPayment?: boolean;
   showRefund?: boolean;
 }
@@ -264,6 +271,7 @@ export function normalizeRefundQueueItem(value: unknown): GroupBuyRefundQueueIte
 export function GroupBuyRefundCardMetadata({
   paymentTxids,
   outgoingTxid,
+  outgoingTxid2,
   showPayment = true,
   showRefund = true,
 }: GroupBuyRefundCardMetadataProps) {
@@ -278,8 +286,10 @@ export function GroupBuyRefundCardMetadata({
             : <p className="text-sm">No payment TXID recorded</p>}
         </div>
       )}
-      {showRefund && outgoingTxid && (
-        <span className="max-w-full break-all font-mono text-xs text-muted-foreground">Refund TXID: {outgoingTxid}</span>
+      {showRefund && (outgoingTxid || outgoingTxid2) && (
+        <span className="max-w-full break-all font-mono text-xs text-muted-foreground">
+          Refund TXID(s): {[outgoingTxid, outgoingTxid2].filter(Boolean).join(" · ")}
+        </span>
       )}
     </>
   );
@@ -291,7 +301,9 @@ export interface GroupBuyRefundCardListProps {
   workingId: string | null;
   pollingId: string | null;
   txids: Record<string, string>;
+  txid2s?: Record<string, string>;
   onTxidChange: (id: string, value: string) => void;
+  onTxid2Change?: (id: string, value: string) => void;
   onVerify: (row: GroupBuyRefundQueueItem) => void | Promise<void>;
   reasons?: Record<string, string>;
   onReasonChange?: (id: string, value: string) => void;
@@ -305,7 +317,9 @@ export function GroupBuyRefundCardList({
   workingId,
   pollingId,
   txids,
+  txid2s = {},
   onTxidChange,
+  onTxid2Change,
   onVerify,
   reasons = {},
   onReasonChange,
@@ -336,7 +350,7 @@ export function GroupBuyRefundCardList({
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
               <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold capitalize">Status: {statusLabel(row.status)}</span>
               <span className="text-xs text-muted-foreground">Processing attempts: {row.attempts?.length ?? 0}</span>
-              <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} outgoingTxid={row.outgoingTxid} showPayment={false} />
+               <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} outgoingTxid={row.outgoingTxid} outgoingTxid2={row.outgoingTxid2} showPayment={false} />
             </div>
             {row.verificationError && <p className="mt-2 text-xs font-medium text-red-600">{row.verificationError.message || row.verificationError.code || "Verification failed."}</p>}
             {isCrypto && row.status !== "completed" && (
@@ -344,6 +358,7 @@ export function GroupBuyRefundCardList({
                 <p className="flex items-start gap-1.5 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Irreversible warning: confirm the destination wallet, asset, network, and amount before sending crypto externally.</p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input aria-label={`TXID for ${row.orderCode || row.orderId}`} value={txids[row.id] ?? ""} onChange={event => onTxidChange(row.id, event.target.value)} placeholder="Enter outgoing transfer TXID" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs" disabled={busy || verifying} />
+                  {role === "admin" && <input aria-label={`Second TXID for ${row.orderCode || row.orderId}`} value={txid2s[row.id] ?? ""} onChange={event => onTxid2Change?.(row.id, event.target.value)} placeholder="Optional second transfer TXID" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs" disabled={busy || verifying} />}
                   <button type="button" onClick={() => void onVerify(row)} disabled={busy || verifying} className="rounded-lg bg-[#1B3A7A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{verifying ? "Verifying…" : "Verify outgoing transfer"}</button>
                 </div>
                 {role === "admin" && (
@@ -417,6 +432,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [txids, setTxids] = useState<Record<string, string>>({});
+  const [txid2s, setTxid2s] = useState<Record<string, string>>({});
   const [manualReasons, setManualReasons] = useState<Record<string, string>>({});
   const manualCompletionInFlight = useRef(new Set<string>());
   const [workingId, setWorkingId] = useState<string | null>(null);
@@ -543,6 +559,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
 
   const manuallyComplete = async (row: GroupBuyRefundQueueItem) => {
     const txid = (txids[row.id] ?? "").trim();
+    const txid2 = (txid2s[row.id] ?? "").trim();
     const reason = (manualReasons[row.id] ?? "").trim();
     const inputError = validateManualCompletionInput(txid, reason);
     if (inputError) {
@@ -557,6 +574,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
           basePath,
           refundId: row.id,
           txid,
+          txid2: txid2 || undefined,
           reason,
           credentials: role === "organiser" ? "include" : "omit",
           headers,
@@ -609,8 +627,10 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
         workingId={workingId}
         pollingId={pollingId}
         txids={txids}
+        txid2s={txid2s}
         reasons={manualReasons}
         onTxidChange={(id, value) => setTxids(previous => ({ ...previous, [id]: value }))}
+        onTxid2Change={(id, value) => setTxid2s(previous => ({ ...previous, [id]: value }))}
         onReasonChange={(id, value) => setManualReasons(previous => ({ ...previous, [id]: value }))}
         onVerify={verifyTransfer}
         onManualComplete={manuallyComplete}

@@ -49,6 +49,8 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
   amountBaseUnits: numeric("amount_base_units", { precision: 30, scale: 0 }),
   // Once recorded, an outgoing transaction identity must never be replaced.
   outgoingTxid: text("outgoing_txid"),
+  // Optional second transfer used when an administrator completes a split/top-up payout.
+  outgoingTxid2: text("outgoing_txid_2"),
   confirmationCount: integer("confirmation_count"),
   explorerUrl: text("explorer_url"),
   processorUsername: text("processor_username"),
@@ -106,6 +108,9 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
   uniqueIndex("group_buy_refunds_outgoing_txid_unique")
     .on(t.outgoingTxid)
     .where(sql`${t.outgoingTxid} is not null`),
+  uniqueIndex("group_buy_refunds_outgoing_txid_2_unique")
+    .using("btree", sql`lower(regexp_replace(${t.outgoingTxid2}, '^0x', '', 'i'))`)
+    .where(sql`${t.outgoingTxid2} is not null`),
   index("group_buy_refunds_order_id_idx").on(t.orderId),
   index("group_buy_refunds_group_buy_status_idx").on(t.groupBuyId, t.status, t.requestedAt, t.id),
   index("group_buy_refunds_requested_queue_idx").on(t.requestedAt.desc(), t.id.desc()),
@@ -149,6 +154,7 @@ export const groupBuyRefundTransitionOutboxTable = pgTable("group_buy_refund_tra
   processorUsername: text("processor_username").notNull(),
   processorRole: text("processor_role").notNull(),
   submittedTxid: text("submitted_txid"),
+  submittedTxid2: text("submitted_txid_2"),
   reason: text("reason"),
   resultCode: text("result_code").notNull(),
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
@@ -184,6 +190,7 @@ export const groupBuyRefundNotificationsTable = pgTable("group_buy_refund_notifi
   amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }),
   explorerUrl: text("explorer_url"),
   txid: text("txid"),
+  txid2: text("txid_2"),
   attemptCount: integer("attempt_count").notNull().default(0),
   claimToken: text("claim_token"),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),

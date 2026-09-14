@@ -10,7 +10,7 @@ import {
   ordersTable,
   type GroupBuyRefund,
 } from "@workspace/db";
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   isValidEthAddress,
 } from "./payment-verify";
@@ -64,6 +64,7 @@ export type RefundRequestResult = Pick<
   | "destinationWallet" | "amountBaseUnits"
 > & {
   outgoingTxid?: string | null;
+  outgoingTxid2?: string | null;
   confirmationCount?: number | null;
   explorerUrl?: string | null;
 };
@@ -81,6 +82,7 @@ export type ManualCryptoRefundArgs = {
   username: string;
   role: string;
   txid: string;
+  txid2?: string | null;
   reason: string;
 };
 
@@ -126,6 +128,7 @@ function asRefundResult(refund: Record<string, any>): RefundRequestResult {
     destinationWallet: refund.destinationWallet ?? null,
     amountBaseUnits: refund.amountBaseUnits == null ? null : String(refund.amountBaseUnits),
     outgoingTxid: refund.outgoingTxid ?? null,
+    ...(refund.outgoingTxid2 ? { outgoingTxid2: refund.outgoingTxid2 } : {}),
     confirmationCount: refund.confirmationCount ?? null,
     explorerUrl: refund.explorerUrl ?? null,
   };
@@ -169,6 +172,21 @@ async function loadRows(database: DatabaseLike, table: unknown, predicate: unkno
 
 async function lockRows(database: DatabaseLike, table: unknown, predicate: unknown): Promise<any[]> {
   return await database.select().from(table).where(predicate).for("update");
+}
+
+function rowHasOutgoingTxid(row: Record<string, any>, canonicalTxid: string): boolean {
+  return [row.outgoingTxid, row.outgoingTxid2]
+    .some(value => normalizeEthereumTxid(value) === canonicalTxid);
+}
+
+async function findHistoricalOutgoingTxidRows(
+  database: DatabaseLike,
+  canonicalTxids: string | string[],
+): Promise<Record<string, any>[]> {
+  const predicate = sql`(${groupBuyRefundsTable.outgoingTxid} is not null OR ${(groupBuyRefundsTable as any).outgoingTxid2} is not null)`;
+  const rows = await loadRows(database, groupBuyRefundsTable, predicate);
+  const candidates = Array.isArray(canonicalTxids) ? canonicalTxids : [canonicalTxids];
+  return rows.filter(row => candidates.some(canonicalTxid => rowHasOutgoingTxid(row, canonicalTxid)));
 }
 
 function validateProcessorScope(
@@ -594,8 +612,14 @@ function validateCryptoProcessorScope(
   }
 }
 
-function completedCryptoResult(refund: Record<string, any>, txid: string): RefundRequestResult {
-  if (normalizeEthereumTxid(refund.outgoingTxid) !== txid) {
+function completedCryptoResult(refund: Record<string, any>, txid: string, txid2?: string | null): RefundRequestResult {
+  if (
+    normalizeEthereumTxid(refund.outgoingTxid) !== txid
+    || txid2 !== undefined
+      && (txid2 === null
+        ? refund.outgoingTxid2 != null
+        : normalizeEthereumTxid(refund.outgoingTxid2) !== txid2)
+  ) {
     throw new GroupBuyRefundError("completed_txid_immutable");
   }
   return asRefundResult(refund);
@@ -636,6 +660,7 @@ function isUniqueConstraintError(error: unknown): boolean {
   const context = `${String(candidate.constraint ?? "")} ${String(candidate.detail ?? "")}`.toLowerCase();
   return context.includes("group_buy_refund_tx_claim")
     || context.includes("group_buy_refunds_outgoing_txid")
+    || context.includes("group_buy_refunds_outgoing_txid_2_unique")
     || context.includes("outgoing_txid");
 }
 
@@ -650,6 +675,15 @@ export async function completeManualCryptoRefund(
 ): Promise<RefundRequestResult> {
   const canonicalTxid = normalizeEthereumTxid(args.txid);
   if (!canonicalTxid) throw new GroupBuyRefundError("invalid_txid");
+  if (args.txid2 != null && typeof args.txid2 !== "string") {
+    throw new GroupBuyRefundError("invalid_txid");
+  }
+  const txid2Input = typeof args.txid2 === "string" ? args.txid2.trim() : "";
+  const canonicalTxid2 = !txid2Input
+    ? null
+    : normalizeEthereumTxid(txid2Input);
+  if (txid2Input && !canonicalTxid2) throw new GroupBuyRefundError("invalid_txid");
+  if (canonicalTxid2 === canonicalTxid) throw new GroupBuyRefundError("invalid_txid_pair");
   if (args.role !== "admin" || typeof args.username !== "string" || !args.username.trim()) {
     throw new GroupBuyRefundError("forbidden");
   }
@@ -688,7 +722,7 @@ export async function completeManualCryptoRefund(
 
     if (lockedRefund.status === "completed") {
       validateCompletedTerminal(locked.order);
-      return completedCryptoResult(locked.refund, canonicalTxid);
+      return completedCryptoResult(locked.refund, canonicalTxid, canonicalTxid2);
     }
     if (!["requested", "verification_failed", "verifying"].includes(String(lockedRefund.status))) {
       throw new GroupBuyRefundError("invalid_refund_transition");
@@ -699,21 +733,20 @@ export async function completeManualCryptoRefund(
     ) {
       throw new GroupBuyRefundError("completed_txid_immutable");
     }
+    if (
+      lockedRefund.outgoingTxid2 != null
+      && normalizeEthereumTxid(lockedRefund.outgoingTxid2) !== canonicalTxid2
+    ) {
+      throw new GroupBuyRefundError("completed_txid_immutable");
+    }
     // Legacy rows may predate the global claim table. Lock and compare their
     // outgoing TXIDs canonically before claiming, so those rows remain replay
     // protected without any startup backfill or mutation.
-    const legacyOutgoingRows = await lockRows(
+    const legacyOutgoingRows = await findHistoricalOutgoingTxidRows(
       tx,
-      groupBuyRefundsTable,
-      and(
-        ne(groupBuyRefundsTable.id, args.refundId),
-        isNotNull(groupBuyRefundsTable.outgoingTxid),
-        sql`lower(regexp_replace(${groupBuyRefundsTable.outgoingTxid}, '^0x', '')) = ${canonicalTxid.slice(2)}`,
-      ),
+      [canonicalTxid, ...(canonicalTxid2 ? [canonicalTxid2] : [])],
     );
-    if (legacyOutgoingRows.some(row =>
-      row.id !== args.refundId && normalizeEthereumTxid(row.outgoingTxid) === canonicalTxid
-    )) {
+    if (legacyOutgoingRows.some(row => row.id !== args.refundId)) {
       throw new GroupBuyRefundError("txid_replay");
     }
     if (
@@ -741,26 +774,31 @@ export async function completeManualCryptoRefund(
     });
     if (!evidenceCheck.eligible) throw new GroupBuyRefundError("payment_evidence_changed");
 
-    // The claim table is the global, canonical replay guard. Insert it before
-    // any terminal writes so a concurrent refund cannot reuse this transfer.
-    let claimedTxid: Record<string, any> | undefined;
-    try {
-      [claimedTxid] = await tx
-        .insert(groupBuyRefundTxClaimsTable)
-        .values({ txid: canonicalTxid, refundId: args.refundId, createdAt: new Date() })
-        .onConflictDoNothing()
-        .returning();
-    } catch (error) {
-      if (isUniqueConstraintError(error)) throw new GroupBuyRefundError("txid_replay");
-      throw error;
-    }
-    if (!claimedTxid) {
-      const [existingClaim] = await lockRows(
-        tx,
-        groupBuyRefundTxClaimsTable,
-        eq(groupBuyRefundTxClaimsTable.txid, canonicalTxid),
-      );
-      if (existingClaim?.refundId !== args.refundId) throw new GroupBuyRefundError("txid_replay");
+    // The claim table is the global, canonical replay guard. Insert both IDs
+    // before any terminal writes so a concurrent refund cannot reuse either.
+    const canonicalTxids = [canonicalTxid, ...(canonicalTxid2 ? [canonicalTxid2] : [])];
+    // Acquire multi-transfer claims in one deterministic global order. Keep the
+    // original first/second order above for every persisted payout artifact.
+    for (const claimTxid of [...canonicalTxids].sort()) {
+      let claimedTxid: Record<string, any> | undefined;
+      try {
+        [claimedTxid] = await tx
+          .insert(groupBuyRefundTxClaimsTable)
+          .values({ txid: claimTxid, refundId: args.refundId, createdAt: new Date() })
+          .onConflictDoNothing()
+          .returning();
+      } catch (error) {
+        if (isUniqueConstraintError(error)) throw new GroupBuyRefundError("txid_replay");
+        throw error;
+      }
+      if (!claimedTxid) {
+        const [existingClaim] = await lockRows(
+          tx,
+          groupBuyRefundTxClaimsTable,
+          eq(groupBuyRefundTxClaimsTable.txid, claimTxid),
+        );
+        if (existingClaim?.refundId !== args.refundId) throw new GroupBuyRefundError("txid_replay");
+      }
     }
 
     const now = new Date();
@@ -785,6 +823,7 @@ export async function completeManualCryptoRefund(
       [completedRefund] = await tx.update(groupBuyRefundsTable).set({
         status: "completed",
         outgoingTxid: canonicalTxid,
+        outgoingTxid2: canonicalTxid2,
         confirmationCount: null,
         explorerUrl,
         processorUsername: args.username.trim(),
@@ -835,6 +874,7 @@ export async function completeManualCryptoRefund(
       action: "group_buy_refund_manually_completed",
       resultCode: "manual_crypto_refund_completed",
       txid: canonicalTxid,
+      txid2: canonicalTxid2,
       reason,
     });
     await enqueueRefundNotification(tx, {
@@ -845,12 +885,14 @@ export async function completeManualCryptoRefund(
       amountUsd,
       explorerUrl,
       txid: canonicalTxid,
+      txid2: canonicalTxid2,
     });
     return asRefundResult({
       ...lockedRefund,
       status: "completed",
       amountUsd,
       outgoingTxid: canonicalTxid,
+      outgoingTxid2: canonicalTxid2,
       confirmationCount: null,
       explorerUrl,
       completedAt: now,
@@ -1141,12 +1183,8 @@ export async function submitCryptoRefund(
       await recoverStaleCryptoAttempt(database, unlockedRefund, currentAttempt);
     }
   }
-  const [replayedRefund] = await loadRows(
-    database,
-    groupBuyRefundsTable,
-    eq(groupBuyRefundsTable.outgoingTxid, canonicalTxid),
-  );
-  if (replayedRefund && replayedRefund.id !== refundId) throw new GroupBuyRefundError("txid_replay");
+  const replayedRefunds = await findHistoricalOutgoingTxidRows(database, canonicalTxid);
+  if (replayedRefunds.some(row => row.id !== refundId)) throw new GroupBuyRefundError("txid_replay");
 
   let attemptId: string | undefined;
   let completedDuringClaim: RefundRequestResult | undefined;

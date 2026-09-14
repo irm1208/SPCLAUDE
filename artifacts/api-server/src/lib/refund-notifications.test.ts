@@ -4,6 +4,7 @@ import {
   groupBuyRefundTransitionOutboxTable,
 } from "@workspace/db";
 import { REGISTRY_MAP } from "./telegram-registry";
+import { renderTemplate } from "./telegram";
 import {
   buildRefundNotificationVars,
   REFUND_NOTIFICATION_EVENT_KEYS,
@@ -184,8 +185,45 @@ describe("refund notification contract", () => {
       status: "completed",
       explorer_url: "https://etherscan.io/tx/0xabc",
       txid: "0xabc",
+      txid_line: "\nRefund TXID (first): <code>0xabc</code>",
+      txid2_line: "",
+      explorer_link: '\n<a href="https://etherscan.io/tx/0xabc">View refund transaction</a>',
     });
     expect(JSON.stringify(vars)).not.toMatch(/private|processor|secret|password/i);
+  });
+
+  it("includes an optional second TXID without emitting an absent blank variable", () => {
+    expect(buildRefundNotificationVars({ txid: "0x111", txid2: "0x222", status: "completed" }))
+      .toMatchObject({ txid: "0x111", txid2: "0x222" });
+    expect(buildRefundNotificationVars({ txid: "0x111", status: "completed" })).not.toHaveProperty("txid2");
+  });
+
+  it("renders the real completed-refund registry template with labelled TXIDs and no absent noise", () => {
+    const event = REGISTRY_MAP.get("group_buy_refund_completed");
+    expect(event).toBeDefined();
+    const withSecond = renderTemplate(event!.defaultTemplate, buildRefundNotificationVars({
+      orderCode: "GB-42",
+      amountUsd: "10.00",
+      status: "completed",
+      explorerUrl: "https://etherscan.io/tx/0xabc",
+      txid: "0xabc",
+      txid2: "0xdef",
+    }));
+    expect(withSecond).toContain("Refund TXID (first): <code>0xabc</code>");
+    expect(withSecond).toContain("Refund TXID (second): <code>0xdef</code>");
+    expect(withSecond).toContain('<a href="https://etherscan.io/tx/0xabc">View refund transaction</a>');
+
+    const withoutSecond = renderTemplate(event!.defaultTemplate, buildRefundNotificationVars({
+      orderCode: "GB-42",
+      amountUsd: "10.00",
+      status: "completed",
+      explorerUrl: "https://etherscan.io/tx/0xabc",
+      txid: "0xabc",
+    }));
+    expect(withoutSecond).toContain("Refund TXID (first): <code>0xabc</code>");
+    expect(withoutSecond).not.toContain("Refund TXID (second)");
+    expect(withoutSecond).not.toContain("undefined");
+    expect(withoutSecond).toContain('<a href="https://etherscan.io/tx/0xabc">View refund transaction</a>');
   });
 
   it("persists one marker per transition and retries failed delivery", async () => {

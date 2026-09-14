@@ -109,21 +109,26 @@ function parseTxidBody(body: unknown): string | null {
     : null;
 }
 
-function parseManualCompleteBody(body: unknown): { txid: string; reason: string } | { code: "invalid_txid" } | null {
+function parseManualCompleteBody(body: unknown): { txid: string; txid2?: string; reason: string } | { code: "invalid_txid" | "invalid_txid_pair" } | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const record = body as Record<string, unknown>;
   const keys = Object.keys(record);
   if (
-    keys.length !== 2
-    || !keys.every(key => key === "txid" || key === "reason")
+    keys.length < 2
+    || keys.length > 3
+    || !keys.every(key => key === "txid" || key === "txid2" || key === "reason")
     || typeof record.txid !== "string"
+    || record.txid2 !== undefined && typeof record.txid2 !== "string"
     || typeof record.reason !== "string"
   ) return null;
   const txid = record.txid.trim();
+  const txid2 = typeof record.txid2 === "string" ? record.txid2.trim() : "";
   const reason = record.reason.trim();
   if (!normalizeEthereumTxid(txid)) return { code: "invalid_txid" };
+  if (txid2 && !normalizeEthereumTxid(txid2)) return { code: "invalid_txid" };
+  if (txid2 && normalizeEthereumTxid(txid2) === normalizeEthereumTxid(txid)) return { code: "invalid_txid_pair" };
   if (!reason || reason.length > MAX_MANUAL_REFUND_REASON_LENGTH) return null;
-  return { txid, reason };
+  return txid2 ? { txid, txid2, reason } : { txid, reason };
 }
 
 function safeAttempt(attempt: Record<string, unknown>) {
@@ -145,16 +150,18 @@ function paymentTxids(refund: Record<string, unknown>): string[] {
     ...(Array.isArray(refund.paymentTxHashes) ? refund.paymentTxHashes : []),
   ];
   values.push(refund.balanceTxHash);
-  const outgoing = typeof refund.outgoingTxid === "string"
-    ? txidComparisonKey(refund.outgoingTxid.trim())
-    : null;
+  const outgoing = new Set(
+    [refund.outgoingTxid, refund.outgoingTxid2]
+      .filter((value): value is string => typeof value === "string")
+      .map(value => txidComparisonKey(value.trim())),
+  );
   const seen = new Set<string>();
   return values.reduce<string[]>((result, value) => {
     if (typeof value !== "string") return result;
     const trimmed = value.trim();
     if (!isValidTxHash(trimmed)) return result;
     const comparisonKey = txidComparisonKey(trimmed);
-    if (comparisonKey === outgoing || seen.has(comparisonKey)) return result;
+    if (outgoing.has(comparisonKey) || seen.has(comparisonKey)) return result;
     seen.add(comparisonKey);
     result.push(trimmed);
     return result;
@@ -189,6 +196,7 @@ function safeRefund(refund: Record<string, unknown>, customerUsername?: string, 
     failedAt: refund.failedAt,
     completedAt: refund.completedAt,
     outgoingTxid: refund.outgoingTxid,
+    outgoingTxid2: refund.outgoingTxid2,
     confirmationCount: refund.confirmationCount,
     explorerUrl: refund.explorerUrl,
     verificationError: refund.verificationErrorCode
@@ -415,6 +423,7 @@ router.post("/admin/group-buy-refunds/:refundId/manual-complete", async (req, re
       username: adminUsername(res),
       role: "admin",
       txid: input.txid,
+      txid2: input.txid2,
       reason: input.reason,
     });
     res.json(result);

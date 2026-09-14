@@ -135,9 +135,22 @@ describe("group buy refund schema contract", () => {
         "refund_id", "attempt_id", "transition", "processor_username",
         "processor_role", "submitted_txid", "result_code", "delivered_at",
        "attempt_count", "last_attempt_at", "last_error", "reason",
+       "submitted_txid_2",
       ]),
     );
     expect(getTableConfig(groupBuyRefundTransitionOutboxTable).columns.find(column => column.name === "reason")).toMatchObject({
+      columnType: "PgText",
+      notNull: false,
+    });
+    expect(getTableConfig(groupBuyRefundTransitionOutboxTable).columns.find(column => column.name === "submitted_txid_2")).toMatchObject({
+      columnType: "PgText",
+      notNull: false,
+    });
+    expect(getTableConfig(groupBuyRefundsTable).columns.find(column => column.name === "outgoing_txid_2")).toMatchObject({
+      columnType: "PgText",
+      notNull: false,
+    });
+    expect(getTableConfig(groupBuyRefundNotificationsTable).columns.find(column => column.name === "txid_2")).toMatchObject({
       columnType: "PgText",
       notNull: false,
     });
@@ -152,6 +165,7 @@ describe("group buy refund schema contract", () => {
     expect(refundIndexes.map(index => index.config.name)).toEqual(expect.arrayContaining([
       "group_buy_refunds_active_order_unique",
       "group_buy_refunds_outgoing_txid_unique",
+      "group_buy_refunds_outgoing_txid_2_unique",
     ]));
     expect(getTableConfig(groupBuyRefundAttemptsTable).indexes.map(index => index.config.name))
       .not.toContain("group_buy_refund_attempts_txid_unique");
@@ -179,6 +193,7 @@ describe("group buy refund schema contract", () => {
 
     const activeIndex = refundIndexes.find(index => index.config.name === "group_buy_refunds_active_order_unique");
     const txidIndex = refundIndexes.find(index => index.config.name === "group_buy_refunds_outgoing_txid_unique");
+    const txid2Index = refundIndexes.find(index => index.config.name === "group_buy_refunds_outgoing_txid_2_unique");
     const ledgerIndex = creditIndexes.find(index => index.config.name === "credit_transactions_account_refund_unique");
     const operationIndex = creditIndexes.find(index => index.config.name === "credit_transactions_account_operation_unique");
 
@@ -186,6 +201,8 @@ describe("group buy refund schema contract", () => {
       "status in ('requested', 'verifying', 'verification_failed')",
     );
     expect(sqlText(txidIndex!.config.where!)).toBe("outgoing_txid is not null");
+    expect(sqlText(txid2Index!.config.where!)).toBe("outgoing_txid_2 is not null");
+    expect(sqlText((txid2Index!.config.columns as any[])[0])).toContain("lower");
     expect(sqlText(ledgerIndex!.config.where!)).toBe("refund_id is not null");
     expect((ledgerIndex!.config.columns as any[]).map(column => column.name)).toEqual([
       "account_username",
