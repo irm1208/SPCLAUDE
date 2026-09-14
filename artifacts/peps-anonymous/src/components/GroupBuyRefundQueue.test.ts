@@ -1,14 +1,25 @@
-import { createElement } from "react";
+import { Children, createElement, isValidElement } from "react";
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GroupBuyRefundCardMetadata,
+  GroupBuyRefundCardList,
+  GroupBuyRefundCompletionFilter,
+  GroupBuyRefundFilteredResults,
+  GroupBuyRefundMethodFilter,
+  type GroupBuyRefundCompletionFilterValue,
+  type GroupBuyRefundMethodFilterValue,
+  filterRefundQueueRowsByCompletion,
+  filterRefundQueueRows,
   fetchRefundQueueJson,
   normalizeRefundQueueItem,
+  refundQueueEmptyLabel,
 } from "./GroupBuyRefundQueue";
 
-describe("fetchRefundQueueJson", () => {
+describe("GroupBuyRefundQueue", () => {
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -54,4 +65,223 @@ describe("fetchRefundQueueJson", () => {
     expect(normalizeRefundQueueItem({ paymentTxids: "legacy-payment" }).paymentTxids).toEqual([]);
     expect(normalizeRefundQueueItem({}).paymentTxids).toEqual([]);
   });
+
+  it("filters loaded refund rows by the exact selected method while keeping unknown methods in All", () => {
+    const rows = [
+      { id: "crypto-1", method: "crypto", status: "requested" },
+      { id: "credit-1", method: "credit", status: "requested" },
+      { id: "legacy-1", method: "legacy", status: "unknown" },
+    ];
+
+    expect(filterRefundQueueRows(rows, "all")).toEqual(rows);
+    expect(filterRefundQueueRows(rows, "crypto")).toEqual([rows[0]]);
+    expect(filterRefundQueueRows(rows, "credit")).toEqual([rows[1]]);
+  });
+
+  it("requires status data for completion-aware pure filtering and keeps method filtering exact", () => {
+    const rows = [
+      { id: "done-crypto", method: "crypto", status: "completed" },
+      { id: "open-crypto", method: "crypto", status: "requested" },
+      { id: "done-credit", method: "credit", status: "completed" },
+    ];
+
+    expect(filterRefundQueueRows(rows, "crypto", "done")).toEqual([rows[0]]);
+    expect(filterRefundQueueRows(rows, "crypto", "not_done")).toEqual([rows[1]]);
+
+    // @ts-expect-error Completion-aware filtering must not accept rows without status.
+    filterRefundQueueRows([{ method: "crypto" }], "crypto", "done");
+  });
+
+  it("filters completion by exact completed status and treats every other status as not done", () => {
+    const rows = [
+      refundRow("done", "crypto", "done-customer", "completed"),
+      refundRow("requested", "crypto", "requested-customer", "requested"),
+      refundRow("verifying", "crypto", "verifying-customer", "verifying"),
+      refundRow("failed", "crypto", "failed-customer", "verification_failed"),
+      refundRow("unknown", "crypto", "unknown-customer", "unknown"),
+    ];
+
+    expect(filterRefundQueueRowsByCompletion(rows, "all")).toEqual(rows);
+    expect(filterRefundQueueRowsByCompletion(rows, "done")).toEqual([rows[0]]);
+    expect(filterRefundQueueRowsByCompletion(rows, "not_done")).toEqual(rows.slice(1));
+  });
+
+  it("renders keyboard-native method filters with an accessible pressed state", () => {
+    const markup = renderToStaticMarkup(createElement(GroupBuyRefundMethodFilter, {
+      value: "crypto",
+      onChange: () => undefined,
+    }));
+
+    expect(markup).toContain('aria-label="Filter refund requests"');
+    expect(markup).toContain(">All</button>");
+    expect(markup).toContain(">Crypto</button>");
+    expect(markup).toContain(">Credits</button>");
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('aria-pressed="false"');
+    expect(markup).toContain("<button");
+    expect(markup).not.toContain('role="button"');
+    expect(markup).toContain("focus-visible:ring-2");
+  });
+
+  it("invokes native filter button handlers without requiring a DOM", () => {
+    const selected: GroupBuyRefundMethodFilterValue[] = [];
+    const selector = GroupBuyRefundMethodFilter({
+      value: "all",
+      onChange: value => selected.push(value),
+    });
+    const buttons = Children.toArray((selector as ReactElement).props.children).filter(isValidElement) as Array<ReactElement<{ onClick: () => void }>>;
+
+    buttons[1].props.onClick();
+    buttons[2].props.onClick();
+
+    expect(selected).toEqual(["crypto", "credit"]);
+  });
+
+  it("renders and invokes an independently labelled completion filter with a default All state", () => {
+    const selected: GroupBuyRefundCompletionFilterValue[] = [];
+    const selector = GroupBuyRefundCompletionFilter({
+      value: "all",
+      onChange: value => selected.push(value),
+    });
+    const markup = renderToStaticMarkup(selector);
+    const buttons = Children.toArray((selector as ReactElement).props.children).filter(isValidElement) as Array<ReactElement<{ onClick: () => void }>>;
+
+    expect(markup).toContain('aria-label="Filter refund completion"');
+    expect(markup).toContain(">All</button>");
+    expect(markup).toContain(">Done</button>");
+    expect(markup).toContain(">Not done</button>");
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain('aria-pressed="false"');
+    expect(markup).toContain("focus-visible:ring-2");
+
+    buttons[1].props.onClick();
+    buttons[2].props.onClick();
+    expect(selected).toEqual(["done", "not_done"]);
+  });
+
+  it("uses distinct empty states for filtered queues and preserves the queue empty state", () => {
+    expect(refundQueueEmptyLabel("all")).toBe("No refund requests.");
+    expect(refundQueueEmptyLabel("crypto")).toBe("No crypto refund requests.");
+    expect(refundQueueEmptyLabel("credit")).toBe("No credit refund requests.");
+    expect(refundQueueEmptyLabel("all", "done")).toBe("No done refund requests.");
+    expect(refundQueueEmptyLabel("all", "not_done")).toBe("No unfinished refund requests.");
+    expect(refundQueueEmptyLabel("crypto", "not_done")).toBe("No unfinished crypto refund requests.");
+  });
+
+  it("filters SSR card results for All, Crypto, and Credits", () => {
+    const rows = [
+      refundRow("crypto-1", "crypto", "crypto-customer"),
+      refundRow("credit-1", "credit", "credit-customer"),
+    ];
+    const allMarkup = renderFilteredResults(rows, "all");
+    const cryptoMarkup = renderFilteredResults(rows, "crypto");
+    const creditMarkup = renderFilteredResults(rows, "credit");
+
+    expect(allMarkup).toContain("crypto-customer");
+    expect(allMarkup).toContain("credit-customer");
+    expect(cryptoMarkup).toContain("crypto-customer");
+    expect(cryptoMarkup).not.toContain("credit-customer");
+    expect(creditMarkup).not.toContain("crypto-customer");
+    expect(creditMarkup).toContain("credit-customer");
+  });
+
+  it("combines method and completion filters with AND semantics", () => {
+    const rows = [
+      refundRow("done-crypto", "crypto", "done-crypto-customer", "completed"),
+      refundRow("open-crypto", "crypto", "open-crypto-customer", "requested"),
+      refundRow("done-credit", "credit", "done-credit-customer", "completed"),
+    ];
+    const markup = renderFilteredResults(rows, "crypto", "not_done");
+
+    expect(markup).toContain("open-crypto-customer");
+    expect(markup).not.toContain("done-crypto-customer");
+    expect(markup).not.toContain("done-credit-customer");
+  });
+
+  it("shows the queue empty state when the filtered results have no requests", () => {
+    const markup = renderFilteredResults([], "all");
+
+    expect(markup).toContain("No refund requests.");
+  });
+
+  it("shows a selected-method empty state when requests exist for another method", () => {
+    const markup = renderFilteredResults([refundRow("credit-1", "credit", "credit-customer")], "crypto");
+
+    expect(markup).toContain("No crypto refund requests.");
+    expect(markup).not.toContain("No refund requests.");
+  });
+
+  it("describes completion empty states and preserves the truly empty queue label", () => {
+    expect(renderFilteredResults([refundRow("done-1", "crypto", "done-customer", "completed")], "all", "not_done"))
+      .toContain("No unfinished refund requests.");
+    expect(renderFilteredResults([refundRow("open-1", "credit", "open-customer", "requested")], "crypto", "done"))
+      .toContain("No done crypto refund requests.");
+    expect(renderFilteredResults([], "all", "not_done"))
+      .toContain("No refund requests.");
+  });
+
+  it("renders unknown methods as Unsupported without either mutation action", () => {
+    const markup = renderToStaticMarkup(createElement(GroupBuyRefundCardList, {
+      rows: [refundRow("legacy-1", "legacy", "legacy-customer")],
+      workingId: null,
+      pollingId: null,
+      txids: {},
+      onTxidChange: () => undefined,
+      onVerify: () => undefined,
+      onCompleteCredit: () => undefined,
+    }));
+
+    expect(markup).toContain("Unsupported");
+    expect(markup).not.toContain("Verify outgoing transfer");
+    expect(markup).not.toContain("Complete credit refund");
+  });
 });
+
+function response(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function refundRow(
+  id: string,
+  method: "crypto" | "credit" | "legacy",
+  customerUsername: string,
+  status: string = "requested",
+) {
+  return {
+    id,
+    orderId: `order-${id}`,
+    orderCode: `ORDER-${id}`,
+    groupBuyId: "group-buy-1",
+    groupBuyName: "Test group buy",
+    customerUsername,
+    method,
+    asset: method === "crypto" ? "USDT" : null,
+    network: method === "crypto" ? "TRC20" : null,
+    amountUsd: "12.50",
+    destinationWallet: method === "crypto" ? "wallet-1" : null,
+    status,
+    requestedAt: "2026-01-01T00:00:00.000Z",
+    paymentTxids: [`payment-${id}`],
+  };
+}
+
+function renderFilteredResults(
+  rows: ReturnType<typeof refundRow>[],
+  methodFilter: GroupBuyRefundMethodFilterValue,
+  completionFilter: GroupBuyRefundCompletionFilterValue = "all",
+): string {
+  return renderToStaticMarkup(createElement(GroupBuyRefundFilteredResults, {
+    rows,
+    methodFilter,
+    completionFilter,
+    workingId: null,
+    pollingId: null,
+    txids: {},
+    onTxidChange: () => undefined,
+    onVerify: () => undefined,
+    onCompleteCredit: () => undefined,
+  }));
+}

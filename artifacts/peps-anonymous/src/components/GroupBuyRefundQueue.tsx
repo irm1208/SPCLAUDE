@@ -26,6 +26,104 @@ export interface GroupBuyRefundQueueItem {
   attempts?: Array<{ id: string; submittedTxid?: string | null }>;
 }
 
+export type GroupBuyRefundMethodFilterValue = "all" | "crypto" | "credit";
+export type GroupBuyRefundCompletionFilterValue = "all" | "done" | "not_done";
+
+export function filterRefundQueueRows<T extends Pick<GroupBuyRefundQueueItem, "method" | "status">>(
+  rows: T[],
+  method: GroupBuyRefundMethodFilterValue,
+  completion?: GroupBuyRefundCompletionFilterValue,
+): T[] {
+  const methodRows = method === "all" ? rows : rows.filter(row => row.method === method);
+  return completion && completion !== "all"
+    ? filterRefundQueueRowsByCompletion(methodRows, completion)
+    : methodRows;
+}
+
+export function filterRefundQueueRowsByCompletion<T extends Pick<GroupBuyRefundQueueItem, "status">>(
+  rows: T[],
+  completion: GroupBuyRefundCompletionFilterValue,
+): T[] {
+  if (completion === "all") return rows;
+  if (completion === "done") return rows.filter(row => row.status === "completed");
+  return rows.filter(row => row.status !== "completed");
+}
+
+export function refundQueueEmptyLabel(
+  method: GroupBuyRefundMethodFilterValue,
+  completion: GroupBuyRefundCompletionFilterValue = "all",
+): string {
+  if (completion === "done") {
+    if (method === "crypto") return "No done crypto refund requests.";
+    if (method === "credit") return "No done credit refund requests.";
+    return "No done refund requests.";
+  }
+  if (completion === "not_done") {
+    if (method === "crypto") return "No unfinished crypto refund requests.";
+    if (method === "credit") return "No unfinished credit refund requests.";
+    return "No unfinished refund requests.";
+  }
+  if (method === "crypto") return "No crypto refund requests.";
+  if (method === "credit") return "No credit refund requests.";
+  return "No refund requests.";
+}
+
+export interface GroupBuyRefundMethodFilterProps {
+  value: GroupBuyRefundMethodFilterValue;
+  onChange: (value: GroupBuyRefundMethodFilterValue) => void;
+}
+
+export function GroupBuyRefundMethodFilter({ value, onChange }: GroupBuyRefundMethodFilterProps) {
+  const options: Array<{ value: GroupBuyRefundMethodFilterValue; label: string }> = [
+    { value: "all", label: "All" },
+    { value: "crypto", label: "Crypto" },
+    { value: "credit", label: "Credits" },
+  ];
+  return (
+    <div role="group" aria-label="Filter refund requests" className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6BCC] ${value === option.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export interface GroupBuyRefundCompletionFilterProps {
+  value: GroupBuyRefundCompletionFilterValue;
+  onChange: (value: GroupBuyRefundCompletionFilterValue) => void;
+}
+
+export function GroupBuyRefundCompletionFilter({ value, onChange }: GroupBuyRefundCompletionFilterProps) {
+  const options: Array<{ value: GroupBuyRefundCompletionFilterValue; label: string }> = [
+    { value: "all", label: "All" },
+    { value: "done", label: "Done" },
+    { value: "not_done", label: "Not done" },
+  ];
+  return (
+    <div role="group" aria-label="Filter refund completion" className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6BCC] ${value === option.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export interface GroupBuyRefundQueueProps {
   role: GroupBuyRefundQueueRole;
   adminSecret?: string;
@@ -130,6 +228,98 @@ export function GroupBuyRefundCardMetadata({
   );
 }
 
+export interface GroupBuyRefundCardListProps {
+  rows: GroupBuyRefundQueueItem[];
+  workingId: string | null;
+  pollingId: string | null;
+  txids: Record<string, string>;
+  onTxidChange: (id: string, value: string) => void;
+  onVerify: (row: GroupBuyRefundQueueItem) => void | Promise<void>;
+  onCompleteCredit: (row: GroupBuyRefundQueueItem) => void | Promise<void>;
+}
+
+export function GroupBuyRefundCardList({
+  rows,
+  workingId,
+  pollingId,
+  txids,
+  onTxidChange,
+  onVerify,
+  onCompleteCredit,
+}: GroupBuyRefundCardListProps) {
+  return (
+    <div className="space-y-3">
+      {rows.map(row => {
+        const isCrypto = row.method === "crypto";
+        const isCredit = row.method === "credit";
+        const busy = workingId === row.id;
+        const verifying = pollingId === row.id;
+        return (
+          <article key={row.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Customer</p><p className="text-sm font-semibold">{row.customerUsername || "—"}</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Order</p><p className="text-sm font-semibold">{row.orderCode || row.orderId}</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Group buy</p><p className="text-sm">{row.groupBuyName || row.groupBuyId}</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Method</p><p className="text-sm">{isCrypto ? "Crypto" : isCredit ? "Credits" : "Unsupported"}</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Asset</p><p className="text-sm">{isCrypto ? row.asset || "—" : isCredit ? "Account credit" : "Unsupported"}</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Network</p><p className="text-sm">{isCrypto ? row.network || "—" : "—"}</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Refund amount</p><p className="text-sm font-semibold">{money(row.amountUsd)}</p></div>
+              <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Destination wallet</p><p className="break-all font-mono text-xs">{isCrypto ? row.destinationWallet || "—" : isCredit ? "Account credits" : "Unsupported"}</p></div>
+              <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Request date</p><p className="text-sm">{dateLabel(row.requestedAt)}</p></div>
+              <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} showRefund={false} />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+              <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold capitalize">Status: {statusLabel(row.status)}</span>
+              <span className="text-xs text-muted-foreground">Processing attempts: {row.attempts?.length ?? 0}</span>
+              <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} outgoingTxid={row.outgoingTxid} showPayment={false} />
+            </div>
+            {row.verificationError && <p className="mt-2 text-xs font-medium text-red-600">{row.verificationError.message || row.verificationError.code || "Verification failed."}</p>}
+            {isCrypto && row.status !== "completed" && (
+              <div className="mt-3 space-y-2">
+                <p className="flex items-start gap-1.5 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Irreversible warning: confirm the destination wallet, asset, network, and amount before sending crypto externally.</p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input aria-label={`TXID for ${row.orderCode || row.orderId}`} value={txids[row.id] ?? ""} onChange={event => onTxidChange(row.id, event.target.value)} placeholder="Enter outgoing transfer TXID" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs" disabled={busy || verifying} />
+                  <button type="button" onClick={() => void onVerify(row)} disabled={busy || verifying} className="rounded-lg bg-[#1B3A7A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{verifying ? "Verifying…" : "Verify outgoing transfer"}</button>
+                </div>
+              </div>
+            )}
+            {isCredit && row.status !== "completed" && (
+              <button type="button" onClick={() => void onCompleteCredit(row)} disabled={busy} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#1B3A7A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Complete credit refund
+              </button>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export interface GroupBuyRefundFilteredResultsProps extends GroupBuyRefundCardListProps {
+  methodFilter: GroupBuyRefundMethodFilterValue;
+  completionFilter?: GroupBuyRefundCompletionFilterValue;
+  showEmptyState?: boolean;
+}
+
+export function GroupBuyRefundFilteredResults({
+  rows,
+  methodFilter,
+  completionFilter = "all",
+  showEmptyState = true,
+  ...cardListProps
+}: GroupBuyRefundFilteredResultsProps) {
+  const filteredRows = filterRefundQueueRows(rows, methodFilter, completionFilter);
+  if (showEmptyState && filteredRows.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+        {refundQueueEmptyLabel(rows.length === 0 ? "all" : methodFilter, rows.length === 0 ? "all" : completionFilter)}
+      </p>
+    );
+  }
+  return <GroupBuyRefundCardList rows={filteredRows} {...cardListProps} />;
+}
+
 /**
  * Manual-only processor queue. The server owns the refund amount and destination;
  * this surface only records a credit completion or verifies an externally sent TXID.
@@ -142,6 +332,8 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
   const [txids, setTxids] = useState<Record<string, string>>({});
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [pollingId, setPollingId] = useState<string | null>(null);
+  const [methodFilter, setMethodFilter] = useState<GroupBuyRefundMethodFilterValue>("all");
+  const [completionFilter, setCompletionFilter] = useState<GroupBuyRefundCompletionFilterValue>("all");
 
   const basePath = role === "admin" ? "/api/admin/group-buy-refunds" : "/api/organiser/group-buy-refunds";
   const headers = useMemo<Record<string, string>>(() => {
@@ -286,52 +478,23 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
         </div>
       )}
       {actionError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">Refund action failed: {actionError}</p>}
-      {loading && rows.length === 0 && <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
-      {!loading && !error && rows.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">No refund requests.</p>}
-
-      <div className="space-y-3">
-        {rows.map(row => {
-          const isCrypto = row.method === "crypto";
-          const busy = workingId === row.id;
-          const verifying = pollingId === row.id;
-          return (
-            <article key={row.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Customer</p><p className="text-sm font-semibold">{row.customerUsername || "—"}</p></div>
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Order</p><p className="text-sm font-semibold">{row.orderCode || row.orderId}</p></div>
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Group buy</p><p className="text-sm">{row.groupBuyName || row.groupBuyId}</p></div>
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Asset</p><p className="text-sm">{isCrypto ? row.asset || "—" : "Account credit"}</p></div>
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Network</p><p className="text-sm">{isCrypto ? row.network || "—" : "—"}</p></div>
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Refund amount</p><p className="text-sm font-semibold">{money(row.amountUsd)}</p></div>
-                <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Destination wallet</p><p className="break-all font-mono text-xs">{isCrypto ? row.destinationWallet || "—" : "Account credits"}</p></div>
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Request date</p><p className="text-sm">{dateLabel(row.requestedAt)}</p></div>
-                 <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} showRefund={false} />
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-                <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold capitalize">Status: {statusLabel(row.status)}</span>
-                <span className="text-xs text-muted-foreground">Processing attempts: {row.attempts?.length ?? 0}</span>
-                <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} outgoingTxid={row.outgoingTxid} showPayment={false} />
-              </div>
-              {row.verificationError && <p className="mt-2 text-xs font-medium text-red-600">{row.verificationError.message || row.verificationError.code || "Verification failed."}</p>}
-              {isCrypto && row.status !== "completed" && (
-                <div className="mt-3 space-y-2">
-                  <p className="flex items-start gap-1.5 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Irreversible warning: confirm the destination wallet, asset, network, and amount before sending crypto externally.</p>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <input aria-label={`TXID for ${row.orderCode || row.orderId}`} value={txids[row.id] ?? ""} onChange={event => setTxids(previous => ({ ...previous, [row.id]: event.target.value }))} placeholder="Enter outgoing transfer TXID" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs" disabled={busy || verifying} />
-                    <button type="button" onClick={() => void verifyTransfer(row)} disabled={busy || verifying} className="rounded-lg bg-[#1B3A7A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{verifying ? "Verifying…" : "Verify outgoing transfer"}</button>
-                  </div>
-                </div>
-              )}
-              {!isCrypto && row.status !== "completed" && (
-                <button type="button" onClick={() => void completeCredit(row)} disabled={busy} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#1B3A7A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
-                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  Complete credit refund
-                </button>
-              )}
-            </article>
-          );
-        })}
+      <div className="flex flex-wrap items-center gap-2">
+        <GroupBuyRefundMethodFilter value={methodFilter} onChange={setMethodFilter} />
+        <GroupBuyRefundCompletionFilter value={completionFilter} onChange={setCompletionFilter} />
       </div>
+      {loading && rows.length === 0 && <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+      <GroupBuyRefundFilteredResults
+        rows={rows}
+        methodFilter={methodFilter}
+        completionFilter={completionFilter}
+        showEmptyState={!loading && !error}
+        workingId={workingId}
+        pollingId={pollingId}
+        txids={txids}
+        onTxidChange={(id, value) => setTxids(previous => ({ ...previous, [id]: value }))}
+        onVerify={verifyTransfer}
+        onCompleteCredit={completeCredit}
+      />
     </section>
   );
 }
