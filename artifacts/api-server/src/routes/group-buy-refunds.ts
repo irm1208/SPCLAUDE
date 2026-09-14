@@ -19,6 +19,7 @@ import {
 } from "../lib/group-buy-refund";
 import type { RefundRequestInput } from "../lib/refund-money";
 import { getCustomerRefundView } from "../lib/customer-refund-view";
+import { isValidTxHash } from "../lib/payment-verify";
 
 const router: IRouter = Router();
 const REFUND_STATUSES = ["requested", "verifying", "verification_failed", "completed"] as const;
@@ -118,6 +119,35 @@ function safeAttempt(attempt: Record<string, unknown>) {
   };
 }
 
+function paymentTxids(refund: Record<string, unknown>): string[] {
+  const values: unknown[] = [
+    refund.paymentTxHash,
+    ...(Array.isArray(refund.paymentTxHashes) ? refund.paymentTxHashes : []),
+  ];
+  values.push(refund.balanceTxHash);
+  const outgoing = typeof refund.outgoingTxid === "string"
+    ? txidComparisonKey(refund.outgoingTxid.trim())
+    : null;
+  const seen = new Set<string>();
+  return values.reduce<string[]>((result, value) => {
+    if (typeof value !== "string") return result;
+    const trimmed = value.trim();
+    if (!isValidTxHash(trimmed)) return result;
+    const comparisonKey = txidComparisonKey(trimmed);
+    if (comparisonKey === outgoing || seen.has(comparisonKey)) return result;
+    seen.add(comparisonKey);
+    result.push(trimmed);
+    return result;
+  }, []);
+}
+
+function txidComparisonKey(value: string): string {
+  const withoutPrefix = value.replace(/^0x/i, "");
+  return /^[0-9a-fA-F]{64}$/.test(withoutPrefix)
+    ? withoutPrefix.toLowerCase()
+    : value;
+}
+
 function safeRefund(refund: Record<string, unknown>, customerUsername?: string, groupBuyName?: string, orderCode?: string) {
   return {
     id: refund.id,
@@ -133,6 +163,7 @@ function safeRefund(refund: Record<string, unknown>, customerUsername?: string, 
     amountBaseUnits: refund.amountBaseUnits == null ? null : String(refund.amountBaseUnits),
     destinationWallet: refund.destinationWallet,
     status: refund.status,
+    paymentTxids: paymentTxids(refund),
     requestedAt: refund.requestedAt,
     verifyingAt: refund.verifyingAt,
     failedAt: refund.failedAt,
@@ -201,6 +232,19 @@ function organiserOwnerPredicate(req: Request) {
     : sql`lower(regexp_replace(${groupBuysTable.organiserId}, '^@', '')) = ${organiserUsername(req)}`;
 }
 
+function refundWithPaymentFields(row: Record<string, any>): Record<string, unknown> {
+  return {
+    ...row.refund,
+    customerUsername: row.customerUsername,
+    groupBuyName: row.groupBuyName,
+    orderCode: row.orderCode,
+    paymentTxHash: row.paymentTxHash ?? row.refund.paymentTxHash,
+    paymentTxHashes: row.paymentTxHashes ?? row.refund.paymentTxHashes,
+    balanceTxHash: row.balanceTxHash ?? row.refund.balanceTxHash,
+    balancePaymentStatus: row.balancePaymentStatus ?? row.refund.balancePaymentStatus,
+  };
+}
+
 async function loadRefundForRole(refundId: string, role: "admin" | "organiser", username?: string, req?: Request): Promise<Record<string, unknown> | undefined> {
   const predicates = [eq(groupBuyRefundsTable.id, refundId)];
   if (role === "organiser") {
@@ -213,6 +257,10 @@ async function loadRefundForRole(refundId: string, role: "admin" | "organiser", 
     customerUsername: accountsTable.telegramUsername,
     groupBuyName: groupBuysTable.name,
     orderCode: ordersTable.code,
+    paymentTxHash: ordersTable.paymentTxHash,
+    paymentTxHashes: ordersTable.paymentTxHashes,
+    balanceTxHash: ordersTable.balanceTxHash,
+    balancePaymentStatus: ordersTable.balancePaymentStatus,
   })
     .from(groupBuyRefundsTable)
     .innerJoin(groupBuysTable, eq(groupBuyRefundsTable.groupBuyId, groupBuysTable.id))
@@ -220,7 +268,7 @@ async function loadRefundForRole(refundId: string, role: "admin" | "organiser", 
     .leftJoin(accountsTable, eq(groupBuyRefundsTable.accountId, accountsTable.telegramUsername))
     .where(and(...predicates));
   if (!row) return undefined;
-  return { ...row.refund, customerUsername: row.customerUsername, groupBuyName: row.groupBuyName, orderCode: row.orderCode };
+  return refundWithPaymentFields(row as Record<string, any>);
 }
 
 async function listRefunds(role: "admin" | "organiser", req: Request, username?: string): Promise<unknown[]> {
@@ -239,6 +287,10 @@ async function listRefunds(role: "admin" | "organiser", req: Request, username?:
     customerUsername: accountsTable.telegramUsername,
     groupBuyName: groupBuysTable.name,
     orderCode: ordersTable.code,
+    paymentTxHash: ordersTable.paymentTxHash,
+    paymentTxHashes: ordersTable.paymentTxHashes,
+    balanceTxHash: ordersTable.balanceTxHash,
+    balancePaymentStatus: ordersTable.balancePaymentStatus,
   })
     .from(groupBuyRefundsTable)
     .innerJoin(groupBuysTable, eq(groupBuyRefundsTable.groupBuyId, groupBuysTable.id))
@@ -250,7 +302,7 @@ async function listRefunds(role: "admin" | "organiser", req: Request, username?:
     .offset((parsed.page - 1) * parsed.limit);
   const attempts = await attemptsForMany(rows.map(row => String(row.refund.id)));
   return Promise.all(rows.map(row => detailFor(
-    row.refund as unknown as Record<string, unknown>,
+    refundWithPaymentFields(row as Record<string, any>),
     row.customerUsername ?? undefined,
     row.groupBuyName ?? undefined,
     row.orderCode ?? undefined,

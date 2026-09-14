@@ -1,5 +1,11 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchRefundQueueJson } from "./GroupBuyRefundQueue";
+import {
+  GroupBuyRefundCardMetadata,
+  fetchRefundQueueJson,
+  normalizeRefundQueueItem,
+} from "./GroupBuyRefundQueue";
 
 describe("fetchRefundQueueJson", () => {
   afterEach(() => {
@@ -23,5 +29,29 @@ describe("fetchRefundQueueJson", () => {
     await vi.advanceTimersByTimeAsync(15_000);
 
     await rejection;
+  });
+
+  it("renders every incoming payment TXID with an explicit empty state and separates refund TXIDs", () => {
+    const markup = renderToStaticMarkup(createElement(GroupBuyRefundCardMetadata, {
+      paymentTxids: ["payment-1", "payment-2"],
+      outgoingTxid: "refund-1",
+    }));
+    expect(markup).toContain("Payment TXID(s)");
+    expect(markup).toContain("payment-1");
+    expect(markup).toContain("payment-2");
+    expect(markup).toContain("Refund TXID: refund-1");
+
+    const emptyMarkup = renderToStaticMarkup(createElement(GroupBuyRefundCardMetadata, {
+      paymentTxids: null,
+      outgoingTxid: null,
+    }));
+    expect(emptyMarkup).toContain("No payment TXID recorded");
+  });
+
+  it("normalizes missing and legacy payment TXID fields for list/detail/polling data", () => {
+    expect(normalizeRefundQueueItem({ paymentTxids: ["  payment-1  ", 42, ""] }).paymentTxids).toEqual(["payment-1"]);
+    expect(normalizeRefundQueueItem({ paymentTxids: null }).paymentTxids).toEqual([]);
+    expect(normalizeRefundQueueItem({ paymentTxids: "legacy-payment" }).paymentTxids).toEqual([]);
+    expect(normalizeRefundQueueItem({}).paymentTxids).toEqual([]);
   });
 });

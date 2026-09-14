@@ -19,6 +19,7 @@ export interface GroupBuyRefundQueueItem {
   requestedAt: string;
   verifyingAt?: string | null;
   completedAt?: string | null;
+  paymentTxids: string[];
   outgoingTxid?: string | null;
   explorerUrl?: string | null;
   verificationError?: { code?: string | null; message?: string | null } | null;
@@ -79,6 +80,56 @@ function dateLabel(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
+export interface GroupBuyRefundCardMetadataProps {
+  paymentTxids?: string[] | null;
+  outgoingTxid?: string | null;
+  showPayment?: boolean;
+  showRefund?: boolean;
+}
+
+export function normalizePaymentTxids(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+      .filter((txid): txid is string => typeof txid === "string")
+      .map(txid => txid.trim())
+      .filter(Boolean)
+    : [];
+}
+
+export function normalizeRefundQueueItem(value: unknown): GroupBuyRefundQueueItem {
+  const record = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    ...record,
+    paymentTxids: normalizePaymentTxids(record.paymentTxids),
+  } as unknown as GroupBuyRefundQueueItem;
+}
+
+export function GroupBuyRefundCardMetadata({
+  paymentTxids,
+  outgoingTxid,
+  showPayment = true,
+  showRefund = true,
+}: GroupBuyRefundCardMetadataProps) {
+  const normalizedPaymentTxids = normalizePaymentTxids(paymentTxids);
+  return (
+    <>
+      {showPayment && (
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Payment TXID(s)</p>
+          {normalizedPaymentTxids.length > 0
+            ? <div className="space-y-1">{normalizedPaymentTxids.map((txid, index) => <p key={`${txid}-${index}`} className="break-all font-mono text-xs">{txid}</p>)}</div>
+            : <p className="text-sm">No payment TXID recorded</p>}
+        </div>
+      )}
+      {showRefund && outgoingTxid && (
+        <span className="max-w-full break-all font-mono text-xs text-muted-foreground">Refund TXID: {outgoingTxid}</span>
+      )}
+    </>
+  );
+}
+
 /**
  * Manual-only processor queue. The server owns the refund amount and destination;
  * this surface only records a credit completion or verifies an externally sent TXID.
@@ -114,7 +165,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
         headers,
       });
       if (!response.ok) throw new Error(errorText(response, body));
-      setRows(Array.isArray(body) ? body as GroupBuyRefundQueueItem[] : []);
+      setRows(Array.isArray(body) ? body.map(normalizeRefundQueueItem) : []);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load refund queue.");
     } finally {
@@ -136,7 +187,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new Error(errorText(response, body));
-    return body as GroupBuyRefundQueueItem;
+    return normalizeRefundQueueItem(body);
   }, [basePath, headers, role]);
 
   // Deliberately polls just the row selected for verification, never the whole queue.
@@ -254,11 +305,12 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
                 <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Refund amount</p><p className="text-sm font-semibold">{money(row.amountUsd)}</p></div>
                 <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Destination wallet</p><p className="break-all font-mono text-xs">{isCrypto ? row.destinationWallet || "—" : "Account credits"}</p></div>
                 <div><p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Request date</p><p className="text-sm">{dateLabel(row.requestedAt)}</p></div>
+                 <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} showRefund={false} />
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
                 <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-bold capitalize">Status: {statusLabel(row.status)}</span>
                 <span className="text-xs text-muted-foreground">Processing attempts: {row.attempts?.length ?? 0}</span>
-                {row.outgoingTxid && <span className="max-w-full break-all font-mono text-xs text-muted-foreground">TXID: {row.outgoingTxid}</span>}
+                <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} outgoingTxid={row.outgoingTxid} showPayment={false} />
               </div>
               {row.verificationError && <p className="mt-2 text-xs font-medium text-red-600">{row.verificationError.message || row.verificationError.code || "Verification failed."}</p>}
               {isCrypto && row.status !== "completed" && (

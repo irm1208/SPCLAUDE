@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ETH_USDT_CONTRACT,
   TRANSFER_TOPIC,
+  isValidTxHash,
   verifyTransaction,
 } from "./payment-verify";
 
@@ -17,6 +18,19 @@ afterEach(() => {
 });
 
 describe("payment audit evidence", () => {
+  it.each([
+    ["EVM", `0x${"a".repeat(64)}`],
+    ["plain hex", "b".repeat(64)],
+    ["Solana signature", `1${"A".repeat(87)}`],
+  ])("accepts a supported %s transaction ID", (_label, value) => {
+    expect(isValidTxHash(value)).toBe(true);
+  });
+
+  it.each(["fiat:revolut", "fiat:paypal", "anonpay:payment-session", "test-payment-marker"])(
+    "rejects non-chain payment marker %s",
+    value => expect(isValidTxHash(value)).toBe(false),
+  );
+
   it("reports the observed token recipient and amount when the transfer went to a different wallet", async () => {
     vi.stubGlobal("fetch", vi.fn(async (_input: unknown, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body ?? "{}"));

@@ -119,4 +119,5 @@
 - [Publish startup readiness](publish-startup-readiness.md) — bind the API port before database bootstrap; keep normal API traffic gated until bootstrap succeeds.
 - [Replit preview account cookies](replit-preview-account-cookies.md) — iframe sessions need Secure + SameSite=None + Partitioned; login and all clear paths must share identical options.
 - [Paid group-buy refund eligibility](historical-crypto-refund-visibility.md) — confirmed paid GB orders qualify without incoming tx proof; snapshot current grandTotal under lock.
+- [Refund queue payment TXIDs](refund-queue-payment-txids.md) — show original/additional/balance chain TXIDs to Admin/organiser; exclude fiat/test markers and outgoing refund TXID.
 - [Shared-order active membership invariant](shared-order-active-membership-invariant.md) — an active wholesale_shared order must have a member row pointing to its exact order ID; removal and FS3 must enforce this.

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
   type Query = { table: string; where?: unknown; joins: string[]; limit?: number; offset?: number };
   const state = {
     selectRows: ((_query: Query): unknown[] => []) as (query: Query) => unknown[],
+    refundRow: null as Record<string, unknown> | null,
     queries: [] as Query[],
     updates: [] as Array<{ table: string; values: unknown; where?: unknown }>,
     inserts: [] as Array<{ table: string; values: unknown }>,
@@ -242,6 +243,12 @@ const attempt = {
   startedAt: new Date("2026-01-01T00:00:00Z"), endedAt: null,
   resultCode: null, failureReason: null,
 };
+const originalPaymentTxid = `0x${"C".repeat(64)}`;
+const additionPaymentTxid = `0x${"2".repeat(64)}`;
+const plainPaymentTxid = "b".repeat(64);
+const balancePaymentTxid = `0x${"3".repeat(64)}`;
+const outgoingRefundTxid = `0x${"A".repeat(64)}`;
+const solanaPaymentTxid = `1${"A".repeat(87)}`;
 
 function buildApp(...routers: Express["router"][]): Express {
   const app = express();
@@ -292,6 +299,7 @@ const json = (body: unknown, headers: Record<string, string> = {}) => ({
 
 beforeEach(() => {
   mocks.state.queries.length = 0;
+  mocks.state.refundRow = refund;
   mocks.state.updates.length = 0;
   mocks.state.inserts.length = 0;
   mocks.state.deletes.length = 0;
@@ -300,12 +308,28 @@ beforeEach(() => {
     if (query.table === "group_buy_refund_attempts") return [attempt];
     const params = sqlParams(query.where);
     if (query.table === "group_buy_refunds" && query.joins.length > 0 && params.includes("outside")) return [];
-    if (query.table === "group_buy_refunds" && query.joins.length > 0) return [{
-      refund,
+    if (query.table === "group_buy_refunds" && query.joins.length > 0) {
+      const joined = mocks.state.refundRow ?? refund;
+      const {
+        paymentTxHash,
+        paymentTxHashes,
+        balanceTxHash,
+        balancePaymentStatus,
+        testPaymentTxHash,
+        ...refundWithoutPaymentFields
+      } = joined;
+      return [{
+        refund: refundWithoutPaymentFields,
       customerUsername: "buyer",
       groupBuyName: "Owned GB",
       orderCode: "GB-001",
-    }];
+        paymentTxHash,
+        paymentTxHashes,
+        balanceTxHash,
+        balancePaymentStatus,
+        testPaymentTxHash,
+      }];
+    }
     if (query.table === "group_buys" && params.includes("not-owned")) return [];
     if (query.table === "group_buys" && (params.includes("owned-gb") || params.includes("organiser"))) return [{
       id: "owned-gb", name: "Owned GB", organiserId: "organiser",
@@ -343,7 +367,9 @@ describe("group-buy refund route contracts", () => {
         destinationWallet: refund.destinationWallet,
       },
     });
-    expect((await account.json() as Record<string, unknown>).amountUsd).toBe("123.45");
+    const accountBody = await account.json() as Record<string, unknown>;
+    expect(accountBody.amountUsd).toBe("123.45");
+    expect(accountBody.paymentTxids).toBeUndefined();
 
     const adminList = await request(app, "/admin/group-buy-refunds?groupBuyId=owned-gb&status=requested&page=1&limit=10", {
       headers: { "x-test-admin": "admin" },
@@ -446,6 +472,82 @@ describe("group-buy refund route contracts", () => {
     expect(body.proof).toBeUndefined();
     expect(body.outboxSecret).toBeUndefined();
     expect(body.attempts[0].privateKey).toBeUndefined();
+  });
+
+  it("projects trimmed, deduplicated incoming payment TXIDs to protected list and detail views", async () => {
+    const app = buildApp(groupBuyRefundsRouter);
+    mocks.state.refundRow = {
+      ...refund,
+      paymentTxHash: `  ${originalPaymentTxid}  `,
+      paymentTxHashes: [
+        originalPaymentTxid.slice(2).toLowerCase(),
+        `  ${additionPaymentTxid}  `,
+        plainPaymentTxid,
+        `  ${outgoingRefundTxid.slice(2).toLowerCase()}  `,
+        "",
+        originalPaymentTxid,
+        solanaPaymentTxid,
+      ],
+      balanceTxHash: `  ${balancePaymentTxid}  `,
+      balancePaymentStatus: "pending_confirmation",
+      testPaymentTxHash: "test-payment-must-not-leak",
+      outgoingTxid: outgoingRefundTxid,
+    };
+
+    const surfaces = [
+      { path: "/admin/group-buy-refunds", headers: { "x-test-admin": "admin" }, list: true },
+      { path: "/admin/group-buy-refunds/refund-1", headers: { "x-test-admin": "admin" }, list: false },
+      { path: "/organiser/group-buy-refunds?groupBuyId=owned-gb", headers: { "x-test-organiser": "organiser" }, list: true },
+      { path: "/organiser/group-buy-refunds/refund-1", headers: { "x-test-organiser": "organiser" }, list: false },
+    ];
+    for (const surface of surfaces) {
+      const response = await request(app, surface.path, { headers: surface.headers });
+      expect(response.status, surface.path).toBe(200);
+      const body = await response.json() as Record<string, unknown> | Array<Record<string, unknown>>;
+      const row = surface.list ? (body as Array<Record<string, unknown>>)[0] : body as Record<string, unknown>;
+      expect(row.paymentTxids, surface.path).toEqual([
+        originalPaymentTxid, additionPaymentTxid, plainPaymentTxid, solanaPaymentTxid, balancePaymentTxid,
+      ]);
+      expect(row.outgoingTxid, surface.path).toBe(outgoingRefundTxid);
+      expect(row.testPaymentTxHash, surface.path).toBeUndefined();
+    }
+  });
+
+  it("excludes fiat, AnonPay, and other manual payment markers from payment TXIDs", async () => {
+    const app = buildApp(groupBuyRefundsRouter);
+    mocks.state.refundRow = {
+      ...refund,
+      paymentTxHash: "fiat:revolut",
+      paymentTxHashes: ["anonpay:payment-session", "fiat:paypal"],
+      balanceTxHash: "fiat:paypal",
+      balancePaymentStatus: "pending_confirmation",
+    };
+
+    const response = await request(app, "/admin/group-buy-refunds/refund-1", {
+      headers: { "x-test-admin": "admin" },
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json() as Record<string, unknown>).paymentTxids).toEqual([]);
+  });
+
+  it("returns no payment TXIDs for a manually paid order without recorded references", async () => {
+    const app = buildApp(groupBuyRefundsRouter);
+    mocks.state.refundRow = {
+      ...refund,
+      paymentTxHash: null,
+      paymentTxHashes: null,
+      balanceTxHash: " ",
+      balancePaymentStatus: "pending_confirmation",
+      testPaymentTxHash: "test-payment-must-not-leak",
+    };
+
+    const response = await request(app, "/admin/group-buy-refunds/refund-1", {
+      headers: { "x-test-admin": "admin" },
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json() as Record<string, unknown>).paymentTxids).toEqual([]);
   });
 
   it("validates status, groupBuyId, and deterministic pagination inputs", async () => {
