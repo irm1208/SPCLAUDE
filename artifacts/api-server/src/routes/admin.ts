@@ -10956,7 +10956,7 @@ router.get("/admin/wholesale-tracking", async (req, res): Promise<void> => {
   }
 });
 
-// ── GET /api/admin/impersonate-redirect?token=XYZ — set cookie and redirect ────
+// ── GET /api/admin/impersonate-redirect?token=XYZ — set cookie and open account ─
 router.get("/admin/impersonate-redirect", async (req: any, res: any): Promise<void> => {
   const token = req.query?.token as string | undefined;
   if (!token) { res.status(400).send("Missing token"); return; }
@@ -10967,7 +10967,26 @@ router.get("/admin/impersonate-redirect", async (req: any, res: any): Promise<vo
   }
   impersonateTokens.delete(token); // one-use
   await issueAccountCookieForAccount(res, entry.telegramUsername);
-  res.redirect("/account");
+  // Do not use an HTTP redirect here. In Replit's embedded preview/new-tab
+  // context Chromium can follow the 302 before committing the Partitioned
+  // account cookie, so /account immediately appears logged out. A real HTML
+  // response gives the browser a document boundary at which to store the
+  // cookie before navigating to the customer account.
+  res
+    .status(200)
+    .type("html")
+    .send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta http-equiv="refresh" content="0;url=/account">
+    <title>Opening member account…</title>
+  </head>
+  <body>
+    <p>Opening member account… <a href="/account">Continue</a></p>
+  </body>
+</html>`);
 });
 
 export default router;
