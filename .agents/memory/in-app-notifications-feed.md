@@ -20,6 +20,10 @@ The customer dashboard bell reads `GET /api/account/notifications`, which querie
 - Unread state is client-only: localStorage `sp_notif_seen` timestamp in DashboardShell; there is no server-side read receipt.
 - Feed queries are covered by index `tg_logs_recipient_sent_idx` (recipient_type, recipient_username, sent_at desc) — keep it if the table is ever rebuilt.
 
+**Permanent Telegram recipient failures:** deactivated users, blocked bots, and missing chats are terminal. Clear the stale chat ID only with a compare-and-clear condition against the attempted ID, then return `skipped` so durable notification outboxes stop retrying. Keep transient transport failures retryable.
+
+**Why:** retrying a permanent 403 floods Telegram logs and outbox attempts, while an unconditional clear could erase a newly relinked chat during a race.
+
 ## Action links in the feed
 
 The endpoint extracts `<a href="...">` anchors from the stored Telegram HTML into a `links: [{href,label}]` array (max 3, http/https + relative only — javascript:/data: dropped) BEFORE stripping tags; the client renders them as chips (same-host/relative → SPA navigate, external → new tab noopener).

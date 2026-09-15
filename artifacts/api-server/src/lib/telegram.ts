@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable, telegramMessageLogsTable, ticketTelegramMessagesTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { REGISTRY_MAP } from "./telegram-registry";
 import { notifyUserDiscord, sendAdminDiscordMessage } from "./discord";
 
@@ -240,7 +240,12 @@ export async function sendTelegramMessageFull(
   parseMode: "HTML" | "Markdown" | "" = "HTML",
   logCtx?: TgLogCtx,
   extraPayload?: Record<string, unknown>,
-): Promise<{ ok: boolean; messageId?: number }> {
+): Promise<{
+  ok: boolean;
+  messageId?: number;
+  errorDescription?: string;
+  permanentRecipientFailure?: boolean;
+}> {
   const { token } = await getCredentials();
   if (!token) return { ok: false };
   const ctx: TgLogCtx = logCtx ?? { recipientType: "user" };
@@ -275,7 +280,11 @@ export async function sendTelegramMessageFull(
       const errMsg = data.description ?? "sendMessage failed";
       console.error("[telegram] sendMessage failed:", data);
       logTgMessage(chatId, text, false, errMsg, ctx);
-      return { ok: false };
+      return {
+        ok: false,
+        errorDescription: errMsg,
+        permanentRecipientFailure: isPermanentTelegramRecipientFailure(errMsg),
+      };
     }
     logTgMessage(chatId, text, true, undefined, ctx);
     return { ok: true, messageId: data.result?.message_id };
@@ -285,6 +294,13 @@ export async function sendTelegramMessageFull(
     logTgMessage(chatId, text, false, errMsg, ctx);
     return { ok: false };
   }
+}
+
+export function isPermanentTelegramRecipientFailure(description: string): boolean {
+  const normalized = description.trim().toLowerCase();
+  return normalized.includes("user is deactivated")
+    || normalized.includes("bot was blocked by the user")
+    || normalized.includes("chat not found");
 }
 
 export async function sendTelegramMessage(
@@ -517,6 +533,17 @@ export async function notifyUserFull(
     );
     if (result.ok) {
       console.log(`[telegram:notify] SENT event=${prefKey} user=@${bare} chatId=${account.telegramChatId}`);
+    } else if (result.permanentRecipientFailure) {
+      await db.update(accountsTable)
+        .set({ telegramChatId: null })
+        .where(and(
+          eq(accountsTable.telegramUsername, bare),
+          eq(accountsTable.telegramChatId, account.telegramChatId),
+        ));
+      console.warn(
+        `[telegram:notify] DISABLED event=${prefKey} user=@${bare} — permanent recipient failure: ${result.errorDescription ?? "unreachable"}`,
+      );
+      return { ...result, skipped: true, chatId: account.telegramChatId };
     } else {
       console.error(`[telegram:notify] FAIL event=${prefKey} user=@${bare} chatId=${account.telegramChatId} — sendMessage returned false`);
     }
