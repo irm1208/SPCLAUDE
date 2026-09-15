@@ -241,7 +241,10 @@ export async function withRefundMutationGuard<T>(
     if (options.allowNonTransactionalTestAdapter === true) return mutate(database);
     throw new RefundMutationTransactionRequiredError();
   }
-  return (transaction as <R>(callback: (tx: GuardDatabase) => Promise<R>) => Promise<R>)(async tx => {
+  return (transaction as <R>(
+    this: typeof database,
+    callback: (tx: GuardDatabase) => Promise<R>,
+  ) => Promise<R>).call(database, async tx => {
     await assertNoActiveRefunds(tx, orderIds);
     return mutate(tx);
   });

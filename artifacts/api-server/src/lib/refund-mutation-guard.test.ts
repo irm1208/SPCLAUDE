@@ -139,6 +139,17 @@ describe("refund mutation guard", () => {
     expect(mutate).toHaveBeenCalledOnce();
   });
 
+  it("calls transaction with the database receiver intact", async () => {
+    const database = fakeDatabase([]);
+    database.transaction = async function (callback: (tx: typeof database) => Promise<unknown>) {
+      if (this !== database) throw new TypeError("database receiver was lost");
+      return callback(database);
+    };
+
+    await expect(withRefundMutationGuard(database, ["order-a"], async () => "mutated"))
+      .resolves.toBe("mutated");
+  });
+
   it("rejects a non-transactional adapter unless a test explicitly opts in", async () => {
     const database = fakeDatabase([]);
     const mutate = vi.fn(async () => "mutated");
