@@ -13,6 +13,7 @@ import {
   drainRefundAudits,
   drainRefundNotifications,
   enqueueRefundNotification,
+  shouldSendRefundCustomerNotification,
   startRefundNotificationDrain,
 } from "./refund-notifications";
 
@@ -142,6 +143,13 @@ class PersistedFakeDb {
 }
 
 describe("refund notification contract", () => {
+  it("only sends successful completed refund notifications to customers", () => {
+    expect(shouldSendRefundCustomerNotification("completed")).toBe(true);
+    expect(shouldSendRefundCustomerNotification("requested")).toBe(false);
+    expect(shouldSendRefundCustomerNotification("verifying")).toBe(false);
+    expect(shouldSendRefundCustomerNotification("verification_failed")).toBe(false);
+  });
+
   it("has one customer event for each lifecycle status", () => {
     expect(REFUND_NOTIFICATION_EVENT_KEYS).toEqual({
       requested: "group_buy_refund_requested",

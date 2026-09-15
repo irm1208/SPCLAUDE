@@ -1125,6 +1125,7 @@ export async function submitCryptoRefund(
   processor: CryptoRefundProcessor,
   refundId: string,
   txid: string,
+  txid2?: string,
 ): Promise<RefundRequestResult> {
   await opportunisticRefundAuditDrain(database);
   const canonicalTxid = typeof normalizeEthereumTxid === "function"
@@ -1135,6 +1136,13 @@ export async function submitCryptoRefund(
   if (!canonicalTxid) {
     throw new GroupBuyRefundError("invalid_txid");
   }
+  const canonicalTxid2 = txid2?.trim()
+    ? normalizeEthereumTxid(txid2)
+    : null;
+  if (txid2?.trim() && (!canonicalTxid2 || canonicalTxid2 === canonicalTxid)) {
+    throw new GroupBuyRefundError("invalid_txid_pair");
+  }
+  const canonicalTxids = [canonicalTxid, ...(canonicalTxid2 ? [canonicalTxid2] : [])];
   const actor = cryptoProcessorValues(processor);
   const [unlockedRefund] = await loadRows(database, groupBuyRefundsTable, eq(groupBuyRefundsTable.id, refundId));
   if (!unlockedRefund) throw new GroupBuyRefundError("not_found");
@@ -1155,7 +1163,7 @@ export async function submitCryptoRefund(
   if (unlockedRefund.status === "completed") {
     validateCompletedTerminal(unlockedOrder);
     validateCryptoRefundAmount(unlockedRefund);
-    return completedCryptoResult(unlockedRefund, canonicalTxid);
+    return completedCryptoResult(unlockedRefund, canonicalTxid, canonicalTxid2);
   }
   validateCryptoRefundAmount(unlockedRefund);
   if (refundVerifyLeaseMs() === null) {
@@ -1183,7 +1191,7 @@ export async function submitCryptoRefund(
       await recoverStaleCryptoAttempt(database, unlockedRefund, currentAttempt);
     }
   }
-  const replayedRefunds = await findHistoricalOutgoingTxidRows(database, canonicalTxid);
+  const replayedRefunds = await findHistoricalOutgoingTxidRows(database, canonicalTxids);
   if (replayedRefunds.some(row => row.id !== refundId)) throw new GroupBuyRefundError("txid_replay");
 
   let attemptId: string | undefined;
@@ -1197,7 +1205,7 @@ export async function submitCryptoRefund(
     validateCryptoRefundAmount(locked.refund);
     if (locked.refund.status === "completed") {
       validateCompletedTerminal(locked.order);
-      completedDuringClaim = completedCryptoResult(locked.refund, canonicalTxid);
+      completedDuringClaim = completedCryptoResult(locked.refund, canonicalTxid, canonicalTxid2);
       return;
     }
     if (locked.refund.status === "verifying") {
@@ -1212,18 +1220,20 @@ export async function submitCryptoRefund(
     }
 
     attemptId = randomUUID();
-    const [claimed] = await tx
-      .insert(groupBuyRefundTxClaimsTable)
-      .values({ txid: canonicalTxid, refundId, createdAt: new Date() })
-      .onConflictDoNothing()
-      .returning();
-    if (!claimed) {
-      const [existingClaim] = await lockRows(
-        tx,
-        groupBuyRefundTxClaimsTable,
-        eq(groupBuyRefundTxClaimsTable.txid, canonicalTxid),
-      );
-      if (existingClaim?.refundId !== refundId) throw new GroupBuyRefundError("txid_replay");
+    for (const claimTxid of [...canonicalTxids].sort()) {
+      const [claimed] = await tx
+        .insert(groupBuyRefundTxClaimsTable)
+        .values({ txid: claimTxid, refundId, createdAt: new Date() })
+        .onConflictDoNothing()
+        .returning();
+      if (!claimed) {
+        const [existingClaim] = await lockRows(
+          tx,
+          groupBuyRefundTxClaimsTable,
+          eq(groupBuyRefundTxClaimsTable.txid, claimTxid),
+        );
+        if (existingClaim?.refundId !== refundId) throw new GroupBuyRefundError("txid_replay");
+      }
     }
     const [claimedRefund] = await tx
       .update(groupBuyRefundsTable)
@@ -1247,6 +1257,7 @@ export async function submitCryptoRefund(
       id: attemptId,
       refundId,
       submittedTxid: canonicalTxid,
+      submittedTxid2: canonicalTxid2,
       processorUsername: actor.username,
       processorRole: actor.role,
       startedAt: new Date(),
@@ -1283,13 +1294,40 @@ export async function submitCryptoRefund(
 
   let verification: RefundCryptoVerificationResult;
   try {
-    verification = await verifyRefundCryptoTransfer({
-      txid: canonicalTxid,
+    const results = await Promise.all(canonicalTxids.map(refundTxid => verifyRefundCryptoTransfer({
+      txid: refundTxid,
       asset: String(unlockedRefund.asset),
       network: String(unlockedRefund.network),
       destinationWallet: String(unlockedRefund.destinationWallet),
       amountBaseUnits: String(unlockedRefund.amountBaseUnits),
-    });
+      allowPartialAmount: canonicalTxids.length > 1,
+    })));
+    if (results.length === 1) {
+      verification = results[0]!;
+    } else {
+      const failed = results.find(result => !result.verified);
+      if (failed && !failed.verified) {
+        verification = failed;
+      } else {
+        const verified = results.filter((result): result is Extract<RefundCryptoVerificationResult, { verified: true }> => result.verified);
+        const total = verified.reduce((sum, result) => sum + BigInt(result.amountBaseUnits), 0n);
+        if (total !== BigInt(String(unlockedRefund.amountBaseUnits))) {
+          verification = {
+            verified: false,
+            code: "wrong_amount",
+            message: "The combined transfer amount does not exactly match the locked refund amount.",
+          };
+        } else {
+          verification = {
+            ...verified[0],
+            verified: true,
+            txid: canonicalTxid,
+            confirmationCount: Math.min(...verified.map(result => result.confirmationCount)),
+            amountBaseUnits: total.toString(),
+          };
+        }
+      }
+    }
   } catch {
     verification = {
       verified: false,
@@ -1310,6 +1348,7 @@ export async function submitCryptoRefund(
     if (
       !attempt
       || attempt.submittedTxid !== canonicalTxid
+      || (attempt.submittedTxid2 ?? null) !== canonicalTxid2
       || attempt.processorUsername !== actor.username
       || locked.refund.status !== "verifying"
       || normalizeUsername(locked.refund.processorUsername ?? "") !== normalizeUsername(actor.username)
@@ -1363,6 +1402,7 @@ export async function submitCryptoRefund(
         action: "group_buy_refund_verification_failed",
         resultCode: verification.code,
         txid: canonicalTxid,
+        txid2: canonicalTxid2,
       });
       await enqueueRefundNotification(tx, {
         refundId,
@@ -1379,6 +1419,7 @@ export async function submitCryptoRefund(
     const [completedRefund] = await tx.update(groupBuyRefundsTable).set({
       status: "completed",
       outgoingTxid: canonicalTxid,
+      outgoingTxid2: canonicalTxid2,
       confirmationCount: verification.confirmationCount,
       explorerUrl,
       processorUsername: actor.username,
@@ -1419,6 +1460,7 @@ export async function submitCryptoRefund(
       action: "group_buy_refund_completed",
       resultCode: "crypto_refund_completed",
       txid: canonicalTxid,
+      txid2: canonicalTxid2,
     });
     await enqueueRefundNotification(tx, {
       refundId,
@@ -1428,11 +1470,13 @@ export async function submitCryptoRefund(
       amountUsd: String(locked.refund.amountUsd),
       explorerUrl,
       txid: canonicalTxid,
+      txid2: canonicalTxid2,
     });
     return asRefundResult({
       ...locked.refund,
       status: "completed",
       outgoingTxid: canonicalTxid,
+      outgoingTxid2: canonicalTxid2,
       confirmationCount: verification.confirmationCount,
       explorerUrl,
       completedAt: now,

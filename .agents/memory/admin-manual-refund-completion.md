@@ -5,7 +5,11 @@ description: Money-integrity rules for manually completing a crypto group-buy re
 
 Manual crypto refund completion is an Admin-only verifier bypass. It requires one valid outgoing TXID, allows one optional top-up TXID, requires a bounded non-empty reason, and may recover requested, verification-failed, or stuck-verifying refunds.
 
-**Why:** Operational verification providers can fail, but a recovery path must not bypass transaction replay protection, order/refund invariants, auditability, or customer notification.
+Automatic verification also accepts one or two outgoing TXIDs. With two, verify each independently for the exact token, destination, network, and minimum confirmations, then require their base-unit amounts to sum exactly to the locked refund amount. Bind and claim the exact pair before provider calls.
+
+Customer refund notifications are success-only: send the completed transition, but terminally suppress requested, verifying, and verification-failed markers without invoking Telegram or creating in-app alerts.
+
+**Why:** Operational verification providers can fail, but a recovery path must not bypass transaction replay protection, order/refund invariants, auditability, or the successful customer notification. Intermediate and failed verification alerts create noise without requiring customer action.
 
 **How to apply:** Use the same lock order and completion invariants as automatic verification; canonically check and deterministically claim both IDs; preserve entered pair order in evidence; supersede active attempts; atomically update refund/order/audit/notification; keep organiser access denied.
 

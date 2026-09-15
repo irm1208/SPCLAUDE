@@ -7,7 +7,7 @@ import {
   isValidEthAddress,
 } from "./payment-verify";
 
-export const REFUND_MIN_CONFIRMATIONS_DEFAULT = 12;
+export const REFUND_MIN_CONFIRMATIONS_DEFAULT = 6;
 export const REFUND_CRYPTO_ERROR_CODES = [
   "invalid_txid",
   "wrong_network",
@@ -27,6 +27,8 @@ export type RefundCryptoVerificationInput = {
   network: string;
   destinationWallet: string;
   amountBaseUnits: string | bigint;
+  /** Accept a positive partial transfer; the caller must sum all verified transfers. */
+  allowPartialAmount?: boolean;
   minConfirmations?: number;
   rpcCall?: RefundRpcCall;
   rpcEndpoints?: string[];
@@ -62,6 +64,7 @@ type NormalizedInput = {
   destinationWallet: string;
   amountBaseUnits: bigint;
   minConfirmations: number;
+  allowPartialAmount: boolean;
 };
 
 function failure(code: RefundCryptoErrorCode, message: string, pending = false): RefundCryptoVerificationResult {
@@ -126,6 +129,7 @@ function normalizeInput(input: RefundCryptoVerificationInput): NormalizedInput |
     destinationWallet: input.destinationWallet.toLowerCase(),
     amountBaseUnits,
     minConfirmations,
+    allowPartialAmount: input.allowPartialAmount === true,
   };
 }
 
@@ -256,21 +260,20 @@ export async function verifyRefundCryptoTransfer(
       ? "No transfer from the selected refund token was found."
       : "No valid transfer from the selected refund token was found.");
   }
-  const exactMatches = matchingTokenLogs.filter(log =>
-    log.recipient === normalized.destinationWallet && log.amount === normalized.amountBaseUnits);
   const destinationMatches = matchingTokenLogs.filter(log =>
     log.recipient === normalized.destinationWallet);
   if (destinationMatches.length > 1) {
     return failure("wrong_amount", "The transaction contains multiple transfers to the refund destination.");
   }
-  if (exactMatches.length > 1) {
-    return failure("wrong_amount", "The transaction contains ambiguous matching refund transfers.");
-  }
-  if (exactMatches.length === 0) {
-    if (matchingTokenLogs.some(log => log.recipient === normalized.destinationWallet)) {
-      return failure("wrong_amount", "The token amount does not exactly match the locked refund amount.");
-    }
+  const destinationMatch = destinationMatches[0];
+  if (!destinationMatch) {
     return failure("wrong_recipient", "The token transfer recipient does not match the refund destination.");
+  }
+  if (!normalized.allowPartialAmount && destinationMatch.amount !== normalized.amountBaseUnits) {
+    return failure("wrong_amount", "The token amount does not exactly match the locked refund amount.");
+  }
+  if (destinationMatch.amount <= 0n) {
+    return failure("wrong_amount", "The token transfer amount must be positive.");
   }
 
   let latestBlock: unknown;
@@ -294,7 +297,7 @@ export async function verifyRefundCryptoTransfer(
     txid: normalized.txid,
     asset: normalized.asset,
     confirmationCount,
-    amountBaseUnits: normalized.amountBaseUnits.toString(),
+    amountBaseUnits: destinationMatch.amount.toString(),
     destinationWallet: normalized.destinationWallet,
   };
 }

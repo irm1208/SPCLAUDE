@@ -119,6 +119,7 @@ describe("group buy refund schema contract", () => {
       "id",
       "refund_id",
       "submitted_txid",
+      "submitted_txid_2",
       "processor_username",
       "processor_role",
       "started_at",

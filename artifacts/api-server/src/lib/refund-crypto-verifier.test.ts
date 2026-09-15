@@ -3,12 +3,18 @@ import {
   ETH_USDC_CONTRACT,
   TRANSFER_TOPIC,
 } from "./payment-verify";
-import { verifyRefundCryptoTransfer } from "./refund-crypto-verifier";
+import { REFUND_MIN_CONFIRMATIONS_DEFAULT, verifyRefundCryptoTransfer } from "./refund-crypto-verifier";
 
 const txid = `0x${"a".repeat(64)}`;
 const destination = `0x${"b".repeat(40)}`;
 const topicAddress = (address: string) => `0x${address.slice(2).padStart(64, "0")}`;
 const amount = 123_450_000n;
+
+describe("refund confirmation policy", () => {
+  it("defaults to six confirmations", () => {
+    expect(REFUND_MIN_CONFIRMATIONS_DEFAULT).toBe(6);
+  });
+});
 
 function rpcSuccess(latestBlock = 112n) {
   return async (method: string, _params?: unknown[]) => ({

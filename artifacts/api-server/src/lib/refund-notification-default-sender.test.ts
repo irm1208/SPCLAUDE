@@ -140,7 +140,7 @@ describe("refund notification default sender", () => {
     await enqueueRefundNotification(fakeDb, {
       refundId: "refund-disabled",
       accountId: "buyer",
-      status: "requested",
+      status: "completed",
       orderCode: "GB-1",
       amountUsd: "1.00",
     });

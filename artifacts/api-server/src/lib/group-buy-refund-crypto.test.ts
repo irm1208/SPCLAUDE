@@ -435,6 +435,43 @@ describe("submitCryptoRefund transactional lifecycle", () => {
     });
   });
 
+  it("verifies both outgoing TXIDs and completes when their amounts sum to the refund", async () => {
+    const verifyCallsBefore = fake.verify.mock.calls.length;
+    fake.verify
+      .mockResolvedValueOnce({ verified: true, confirmationCount: 8, amountBaseUnits: "100000000" })
+      .mockResolvedValueOnce({ verified: true, confirmationCount: 6, amountBaseUnits: "23450000" });
+
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1, tx2))
+      .resolves.toMatchObject({
+        status: "completed",
+        outgoingTxid: tx1,
+        outgoingTxid2: tx2,
+        confirmationCount: 6,
+      });
+    expect(fake.verify.mock.calls.length - verifyCallsBefore).toBe(2);
+    expect(fake.verify.mock.calls[verifyCallsBefore]?.[0]).toMatchObject({ txid: tx1, allowPartialAmount: true });
+    expect(fake.verify.mock.calls[verifyCallsBefore + 1]?.[0]).toMatchObject({ txid: tx2, allowPartialAmount: true });
+    expect(fake.state.claims.map(claim => claim.txid).sort()).toEqual([tx1, tx2].sort());
+  });
+
+  it("does not complete when two outgoing TXIDs have the wrong combined amount", async () => {
+    fake.verify
+      .mockResolvedValueOnce({ verified: true, confirmationCount: 8, amountBaseUnits: "100000000" })
+      .mockResolvedValueOnce({ verified: true, confirmationCount: 8, amountBaseUnits: "20000000" });
+
+    await expect(submitCryptoRefund(fake.db, processor, "refund-1", tx1, tx2))
+      .rejects.toMatchObject({ code: "wrong_amount" });
+    expect(fake.state.order).toMatchObject({
+      status: "Submitted",
+      refundStatus: null,
+      paymentStatus: "confirmed",
+    });
+    expect(fake.state.refunds[0]).toMatchObject({
+      status: "verification_failed",
+      verificationErrorCode: "wrong_amount",
+    });
+  });
+
   it.each([
     ["zero USD", "0.00", "123450000"],
     ["malformed USD", "not-a-number", "123450000"],

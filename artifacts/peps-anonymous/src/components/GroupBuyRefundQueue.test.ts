@@ -15,6 +15,7 @@ import {
   fetchRefundQueueJson,
   normalizeRefundQueueItem,
   completeManualRefundRequest,
+  buildVerifyTransferBody,
   MANUAL_REFUND_REASON_MAX_LENGTH,
   postManualRefundCompletion,
   refundQueueEmptyLabel,
@@ -290,6 +291,26 @@ describe("GroupBuyRefundQueue", () => {
     expect(organiserMarkup).not.toContain("Second TXID");
   });
 
+  it("renders an action error inside its refund card above the outgoing TXID section", () => {
+    const row = refundRow("failed-crypto", "crypto", "failed-customer");
+    const markup = renderToStaticMarkup(createElement(GroupBuyRefundCardList, {
+      role: "admin",
+      rows: [row],
+      workingId: null,
+      pollingId: null,
+      txids: {},
+      actionErrors: { [row.id]: "insufficient_confirmations" },
+      onTxidChange: () => undefined,
+      onVerify: () => undefined,
+      onCompleteCredit: () => undefined,
+    }));
+
+    const errorIndex = markup.indexOf("Refund action failed: insufficient_confirmations");
+    const txidIndex = markup.indexOf("Outgoing refund TXID");
+    expect(errorIndex).toBeGreaterThan(markup.indexOf("failed-customer"));
+    expect(errorIndex).toBeLessThan(txidIndex);
+  });
+
   it("keeps manual completion disabled until both the first TXID and reason are entered", () => {
     const row = refundRow("admin-required-fields", "crypto", "admin-customer");
     const card = GroupBuyRefundCardList({
@@ -427,10 +448,12 @@ describe("GroupBuyRefundQueue", () => {
     expect(inFlight).toEqual(new Set());
   });
 
-  it("keeps the normal verify request path and payload unchanged", async () => {
+  it("submits one or two outgoing TXIDs for automatic verification", async () => {
+    expect(buildVerifyTransferBody(" tx-1 ")).toEqual({ txid: "tx-1" });
+    expect(buildVerifyTransferBody(" tx-1 ", " tx-2 ")).toEqual({ txid: "tx-1", txid2: "tx-2" });
     const source = await import("node:fs/promises").then(fs => fs.readFile(new URL("./GroupBuyRefundQueue.tsx", import.meta.url), "utf8"));
     expect(source).toContain('/verify');
-    expect(source).toContain('body: JSON.stringify({ txid })');
+    expect(source).toContain('body: JSON.stringify(buildVerifyTransferBody(txid, txid2))');
     expect(source).toContain('Verify outgoing transfer');
   });
 });

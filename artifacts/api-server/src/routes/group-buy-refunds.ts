@@ -101,12 +101,20 @@ function parseRefundRequestBody(body: unknown): RefundRequestInput | null {
   return null;
 }
 
-function parseTxidBody(body: unknown): string | null {
+function parseTxidBody(body: unknown): { txid: string; txid2?: string } | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const record = body as Record<string, unknown>;
-  return Object.keys(record).length === 1 && typeof record.txid === "string" && record.txid.trim().length > 0
-    ? record.txid
-    : null;
+  const keys = Object.keys(record);
+  if (
+    keys.length < 1
+    || keys.length > 2
+    || !keys.every(key => key === "txid" || key === "txid2")
+    || typeof record.txid !== "string"
+    || record.txid2 !== undefined && typeof record.txid2 !== "string"
+  ) return null;
+  const txid = record.txid.trim();
+  const txid2 = typeof record.txid2 === "string" ? record.txid2.trim() : "";
+  return txid ? { txid, ...(txid2 ? { txid2 } : {}) } : null;
 }
 
 function parseManualCompleteBody(body: unknown): { txid: string; txid2?: string; reason: string } | { code: "invalid_txid" | "invalid_txid_pair" } | null {
@@ -398,10 +406,12 @@ router.post("/admin/group-buy-refunds/:refundId/credit-complete", async (req, re
 
 router.post("/admin/group-buy-refunds/:refundId/verify", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const txid = parseTxidBody(req.body);
-  if (!txid) { res.status(400).json({ code: "invalid_txid", error: "invalid_txid" }); return; }
+  const txids = parseTxidBody(req.body);
+  if (!txids) { res.status(400).json({ code: "invalid_txid", error: "invalid_txid" }); return; }
   try {
-    const result = await submitCryptoRefund(db, { username: adminUsername(res), role: "admin" }, String(req.params["refundId"]), txid);
+    const result = txids.txid2
+      ? await submitCryptoRefund(db, { username: adminUsername(res), role: "admin" }, String(req.params["refundId"]), txids.txid, txids.txid2)
+      : await submitCryptoRefund(db, { username: adminUsername(res), role: "admin" }, String(req.params["refundId"]), txids.txid);
     res.json(result);
   } catch (error) { errorResponse(res, error); }
 });
@@ -463,12 +473,14 @@ router.post("/organiser/group-buy-refunds/:refundId/credit-complete", requireOrg
 });
 
 router.post("/organiser/group-buy-refunds/:refundId/verify", requireOrganiser, async (req, res): Promise<void> => {
-  const txid = parseTxidBody(req.body);
-  if (!txid) { res.status(400).json({ code: "invalid_txid", error: "invalid_txid" }); return; }
+  const txids = parseTxidBody(req.body);
+  if (!txids) { res.status(400).json({ code: "invalid_txid", error: "invalid_txid" }); return; }
   try {
     const scoped = await loadRefundForRole(String(req.params["refundId"]), "organiser", organiserUsername(req), req);
     if (!scoped) { res.status(404).json({ code: "not_found", error: "not_found" }); return; }
-    const result = await submitCryptoRefund(db, organiserProcessor(req), String(req.params["refundId"]), txid);
+    const result = txids.txid2
+      ? await submitCryptoRefund(db, organiserProcessor(req), String(req.params["refundId"]), txids.txid, txids.txid2)
+      : await submitCryptoRefund(db, organiserProcessor(req), String(req.params["refundId"]), txids.txid);
     res.json(result);
   } catch (error) { errorResponse(res, error); }
 });

@@ -203,6 +203,12 @@ export async function completeManualRefundRequest(
   return body;
 }
 
+export function buildVerifyTransferBody(txid: string, txid2?: string): { txid: string; txid2?: string } {
+  const first = txid.trim();
+  const second = txid2?.trim() ?? "";
+  return { txid: first, ...(second ? { txid2: second } : {}) };
+}
+
 export async function withManualRefundCompletionGuard<T>(
   inFlight: Set<string>,
   refundId: string,
@@ -302,6 +308,7 @@ export interface GroupBuyRefundCardListProps {
   pollingId: string | null;
   txids: Record<string, string>;
   txid2s?: Record<string, string>;
+  actionErrors?: Record<string, string>;
   onTxidChange: (id: string, value: string) => void;
   onTxid2Change?: (id: string, value: string) => void;
   onVerify: (row: GroupBuyRefundQueueItem) => void | Promise<void>;
@@ -318,6 +325,7 @@ export function GroupBuyRefundCardList({
   pollingId,
   txids,
   txid2s = {},
+  actionErrors = {},
   onTxidChange,
   onTxid2Change,
   onVerify,
@@ -352,9 +360,13 @@ export function GroupBuyRefundCardList({
               <span className="text-xs text-muted-foreground">Processing attempts: {row.attempts?.length ?? 0}</span>
                <GroupBuyRefundCardMetadata paymentTxids={row.paymentTxids} outgoingTxid={row.outgoingTxid} outgoingTxid2={row.outgoingTxid2} showPayment={false} />
             </div>
-            {row.verificationError && <p className="mt-2 text-xs font-medium text-red-600">{row.verificationError.message || row.verificationError.code || "Verification failed."}</p>}
             {isCrypto && row.status !== "completed" && (
               <div className="mt-3 space-y-2">
+                {(actionErrors[row.id] || row.verificationError) && (
+                  <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                    Refund action failed: {actionErrors[row.id] || row.verificationError?.message || row.verificationError?.code || "Verification failed."}
+                  </p>
+                )}
                 <p className="flex items-start gap-1.5 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />Irreversible warning: confirm the destination wallet, asset, network, and amount before sending crypto externally.</p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <label className="min-w-0 flex-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -442,7 +454,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
   const [rows, setRows] = useState<GroupBuyRefundQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [txids, setTxids] = useState<Record<string, string>>({});
   const [txid2s, setTxid2s] = useState<Record<string, string>>({});
   const [manualReasons, setManualReasons] = useState<Record<string, string>>({});
@@ -515,7 +527,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
           void refreshAfterMutation();
         }
       }).catch(cause => {
-        setActionError(cause instanceof Error ? cause.message : "Unable to refresh verification status.");
+        setActionErrors(previous => ({ ...previous, [pollingId]: cause instanceof Error ? cause.message : "Unable to refresh verification status." }));
         setPollingId(null);
       });
     }, 3000);
@@ -524,7 +536,11 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
 
   const completeCredit = async (row: GroupBuyRefundQueueItem) => {
     setWorkingId(row.id);
-    setActionError(null);
+    setActionErrors(previous => {
+      const next = { ...previous };
+      delete next[row.id];
+      return next;
+    });
     try {
       const response = await fetch(`${basePath}/${encodeURIComponent(row.id)}/credit-complete`, {
         method: "POST",
@@ -535,7 +551,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
       if (!response.ok) throw new Error(errorText(response, body));
       await refreshAfterMutation();
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Unable to complete credit refund.");
+      setActionErrors(previous => ({ ...previous, [row.id]: cause instanceof Error ? cause.message : "Unable to complete credit refund." }));
     } finally {
       setWorkingId(null);
     }
@@ -543,18 +559,23 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
 
   const verifyTransfer = async (row: GroupBuyRefundQueueItem) => {
     const txid = (txids[row.id] ?? "").trim();
+    const txid2 = (txid2s[row.id] ?? "").trim();
     if (!txid) {
-      setActionError("Enter a TXID before verifying the outgoing transfer.");
+      setActionErrors(previous => ({ ...previous, [row.id]: "Enter a TXID before verifying the outgoing transfer." }));
       return;
     }
     setWorkingId(row.id);
-    setActionError(null);
+    setActionErrors(previous => {
+      const next = { ...previous };
+      delete next[row.id];
+      return next;
+    });
     try {
       const response = await fetch(`${basePath}/${encodeURIComponent(row.id)}/verify`, {
         method: "POST",
         credentials: role === "organiser" ? "include" : "omit",
         headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ txid }),
+        body: JSON.stringify(buildVerifyTransferBody(txid, txid2)),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(errorText(response, body));
@@ -562,7 +583,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
       const updated = body as GroupBuyRefundQueueItem;
       setPollingId(updated?.status === "verifying" ? row.id : null);
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : "Unable to verify outgoing transfer.");
+      setActionErrors(previous => ({ ...previous, [row.id]: cause instanceof Error ? cause.message : "Unable to verify outgoing transfer." }));
       setPollingId(null);
     } finally {
       setWorkingId(null);
@@ -575,12 +596,16 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
     const reason = (manualReasons[row.id] ?? "").trim();
     const inputError = validateManualCompletionInput(txid, reason);
     if (inputError) {
-      setActionError(inputError);
+      setActionErrors(previous => ({ ...previous, [row.id]: inputError }));
       return;
     }
     await withManualRefundCompletionGuard(manualCompletionInFlight.current, row.id, async () => {
       setWorkingId(row.id);
-      setActionError(null);
+      setActionErrors(previous => {
+        const next = { ...previous };
+        delete next[row.id];
+        return next;
+      });
       try {
         await completeManualRefundRequest({
           basePath,
@@ -592,7 +617,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
           headers,
         }, refreshAfterMutation);
       } catch (cause) {
-        setActionError(cause instanceof Error ? cause.message : "Unable to manually complete refund.");
+        setActionErrors(previous => ({ ...previous, [row.id]: cause instanceof Error ? cause.message : "Unable to manually complete refund." }));
       } finally {
         setWorkingId(null);
       }
@@ -624,7 +649,6 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
           </button>
         </div>
       )}
-      {actionError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">Refund action failed: {actionError}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <GroupBuyRefundMethodFilter value={methodFilter} onChange={setMethodFilter} />
         <GroupBuyRefundCompletionFilter value={completionFilter} onChange={setCompletionFilter} />
@@ -640,6 +664,7 @@ export function GroupBuyRefundQueue({ role, adminSecret, groupBuyId, onUpdated }
         pollingId={pollingId}
         txids={txids}
         txid2s={txid2s}
+        actionErrors={actionErrors}
         reasons={manualReasons}
         onTxidChange={(id, value) => setTxids(previous => ({ ...previous, [id]: value }))}
         onTxid2Change={(id, value) => setTxid2s(previous => ({ ...previous, [id]: value }))}

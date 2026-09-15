@@ -1034,6 +1034,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_status boolean NOT NULL DEFAULT true`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_tracking boolean NOT NULL DEFAULT true`);
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_address boolean NOT NULL DEFAULT true`);
+    // group_buy_refund_attempts — bind automatic two-transfer verification to the exact pair
+    await db.execute(sql`ALTER TABLE group_buy_refund_attempts ADD COLUMN IF NOT EXISTS submitted_txid_2 text`);
     console.log("[startup:migrations] Schema sync complete");
 }
 

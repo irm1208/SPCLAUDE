@@ -300,12 +300,19 @@ async function defaultSender(
   marker: RefundNotificationMarker,
   vars: Record<string, string>,
 ): Promise<NotificationDelivery> {
+  if (!shouldSendRefundCustomerNotification(marker.status)) {
+    return { ok: false, skipped: true };
+  }
   return notifyUserFromTemplateFull(
     marker.accountId,
     REFUND_NOTIFICATION_PREF,
     marker.eventKey,
     vars,
   );
+}
+
+export function shouldSendRefundCustomerNotification(status: RefundStatus): boolean {
+  return status === "completed";
 }
 
 /**
