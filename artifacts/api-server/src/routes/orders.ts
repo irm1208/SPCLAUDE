@@ -2273,7 +2273,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   // Capture old line items for audit log before deleting them
   const oldLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
 
-  const { updatedOrder, insertedLineItems } = await db.transaction(async tx => {
+  const { updatedOrder, insertedLineItems, lineItemsToInsert } = await db.transaction(async tx => {
   const [lockedOrder] = await tx.select({ id: ordersTable.id }).from(ordersTable)
     .where(eq(ordersTable.id, rawId)).for("update");
   if (!lockedOrder) throw new Error("Order no longer exists.");
@@ -2334,7 +2334,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     .insert(orderLineItemsTable)
     .values(lineItemsToInsert)
     .returning();
-  return { updatedOrder, insertedLineItems };
+  return { updatedOrder, insertedLineItems, lineItemsToInsert };
   });
 
   const formatted = formatOrderResponse(updatedOrder as unknown as Record<string, unknown>, insertedLineItems as unknown as Record<string, unknown>[]);
