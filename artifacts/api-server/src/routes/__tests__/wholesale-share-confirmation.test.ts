@@ -20,6 +20,10 @@ const activeMembershipSource = fs.readFileSync(
   path.resolve(here, "../../lib/shared-order-active-membership.ts"),
   "utf8",
 );
+const wholesaleSubmitSource = fs.readFileSync(
+  path.resolve(here, "../../lib/wholesale-submit.ts"),
+  "utf8",
+);
 
 describe("shared wholesale order confirmations", () => {
   it("persists a per-member confirmation timestamp and exposes it to the shared-order UI", () => {
@@ -95,6 +99,22 @@ describe("shared wholesale order confirmations", () => {
     expect(cancelIndex).toBeGreaterThanOrEqual(0);
     expect(deleteMemberIndex).toBeGreaterThan(cancelIndex);
     expect(removalHandler).toContain("lockedMember.orderId");
+  });
+
+  it("cancels and soft-deletes a linked unpaid order before an open-share member leaves", () => {
+    const leaveHandler = routeSource.slice(
+      routeSource.indexOf('router.post("/wholesale-shares/:id/leave"'),
+      routeSource.indexOf('router.post("/wholesale-shares/:id/confirm"'),
+    );
+    const cancelIndex = leaveHandler.indexOf("cancelRemovedSharedOrder");
+    const deleteMemberIndex = leaveHandler.indexOf("tx.delete(wholesaleShareMembersTable)");
+
+    expect(leaveHandler).toContain("db.transaction(async (tx)");
+    expect(leaveHandler).toContain(".for(\"update\")");
+    expect(cancelIndex).toBeGreaterThanOrEqual(0);
+    expect(deleteMemberIndex).toBeGreaterThan(cancelIndex);
+    expect(leaveHandler).toContain("lockedMember.orderId");
+    expect(leaveHandler).toContain("MEMBER_ORDER_PAYMENT_STARTED");
   });
 
   it("filters orphaned shared orders from Admin and every FS3 operational query", () => {
@@ -216,20 +236,36 @@ describe("shared wholesale order confirmations", () => {
     expect(adminHandler).not.toContain("wholesale_share_organiser_payment_confirmed");
   });
 
-  it("submits organiser payment only through a conditional submitted-share update", () => {
+  it("submits organiser payment for submitted shares and repairs stale locked shares from active members only", () => {
     const start = routeSource.indexOf('router.post("/wholesale-shares/:id/organiser-payment"');
     const end = routeSource.indexOf("// Admin confirms the organiser's platform payment.", start);
     const handler = routeSource.slice(start, end);
 
     expect(handler).toContain("normalizeOrganiserWallets(share.leadCryptoOptions)");
     expect(handler).toContain("An organiser-owned wallet is required for this payment flow.");
-    expect(handler).toContain('eq(wholesaleSharesTable.status, "submitted")');
+    expect(handler).toContain('["locked", "submitted"].includes(share.status)');
     expect(handler).toContain("db.transaction(async (tx)");
-    expect(handler).toContain('eq(wholesaleSharesTable.status, "submitted")');
+    expect(handler).toContain("wholesaleShareMembersTable.orderId");
+    expect(handler).toContain("activeMembers.length");
+    expect(handler).toContain('paymentStatus === "confirmed"');
+    expect(handler).toContain('paymentStatus === "test_confirmed"');
+    expect(handler).toContain('status: "submitted"');
+    expect(handler).toContain('inArray(wholesaleSharesTable.status, ["locked", "submitted"])');
     expect(handler).toContain('inArray(wholesaleSharesTable.organiserPaymentStatus, ["unpaid", "pending"])');
     expect(handler).toContain(".returning(");
     expect(handler).toContain("The shared order changed before this payment could be submitted.");
     expect(handler).not.toContain(".where(eq(wholesaleSharesTable.id, share.id));");
+  });
+
+  it("ignores historical orphan orders when auto-submitting a fully paid shared order", () => {
+    const siblingQuery = wholesaleSubmitSource.slice(
+      wholesaleSubmitSource.indexOf("const siblings ="),
+      wholesaleSubmitSource.indexOf("if (siblings.length === 0)"),
+    );
+
+    expect(siblingQuery).toContain(".innerJoin(wholesaleShareMembersTable");
+    expect(siblingQuery).toContain("wholesaleShareMembersTable.orderId");
+    expect(siblingQuery).toContain("wholesaleShareMembersTable.shareId");
   });
 
   it("refreshes detail and grouped rows after every successful admin confirmation", () => {

@@ -37,6 +37,10 @@ export async function maybeSubmitSharedOrder(orderId: string): Promise<void> {
     const siblings = await db
       .select({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus, grandTotal: ordersTable.grandTotal })
       .from(ordersTable)
+      .innerJoin(wholesaleShareMembersTable, and(
+        eq(wholesaleShareMembersTable.orderId, ordersTable.id),
+        eq(wholesaleShareMembersTable.shareId, shareId),
+      ))
       .where(eq(ordersTable.sharedOrderId, shareId));
 
     if (siblings.length === 0) return;

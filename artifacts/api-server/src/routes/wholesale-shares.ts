@@ -1050,35 +1050,62 @@ router.post("/wholesale-shares/:id/leave", requireWholesale, async (req, res): P
     res.status(400).json({ error: "As the organiser, you cannot leave — use Cancel instead." });
     return;
   }
-  const member = await loadMember(share.id, me);
-  if (!member) { res.status(404).json({ error: "You are not a member of this shared order." }); return; }
 
-  // If the leaving member is the designated delivery recipient, clear the delivery
-  // snapshot so the organiser must choose a new recipient before locking.
-  const isDelivery = share.deliveryUsername && share.deliveryUsername.toLowerCase() === me.toLowerCase();
-  if (isDelivery) {
-    await db.update(wholesaleSharesTable)
-      .set({
-        deliveryUsername: null,
-        shippingName: null,
-        shippingPhone: null,
-        shippingEmail: null,
-        shippingAddress: null,
-        shippingCountry: null,
-      })
-      .where(and(
-        eq(wholesaleSharesTable.id, share.id),
-        eq(wholesaleSharesTable.status, "open"),
-      ));
-  }
+  try {
+    await db.transaction(async (tx) => {
+      const [lockedShare] = await tx.select()
+        .from(wholesaleSharesTable)
+        .where(eq(wholesaleSharesTable.id, share.id))
+        .for("update");
+      if (!lockedShare || lockedShare.status !== "open") throw LOCK_CONFLICT;
+      if (lockedShare.creatorUsername.toLowerCase() === me.toLowerCase()) throw new Error("CREATOR_MEMBER");
 
-  const left = await db.delete(wholesaleShareMembersTable)
-    .where(and(
-      eq(wholesaleShareMembersTable.id, member.id),
-      sql`EXISTS (SELECT 1 FROM ${wholesaleSharesTable} WHERE ${wholesaleSharesTable.id} = ${share.id} AND ${wholesaleSharesTable.status} = 'open')`,
-    ))
-    .returning({ id: wholesaleShareMembersTable.id });
-  if (left.length === 0) {
+      const [lockedMember] = await tx.select()
+        .from(wholesaleShareMembersTable)
+        .where(and(
+          eq(wholesaleShareMembersTable.shareId, lockedShare.id),
+          sql`lower(${wholesaleShareMembersTable.username}) = ${me.toLowerCase()}`,
+        ))
+        .for("update");
+      if (!lockedMember) throw new Error("MEMBER_NOT_FOUND");
+
+      await cancelRemovedSharedOrder(tx, lockedMember.orderId, me);
+      await tx.delete(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.id, lockedMember.id));
+
+      const wasDelivery = !!lockedShare.deliveryUsername
+        && lockedShare.deliveryUsername.toLowerCase() === lockedMember.username.toLowerCase();
+      await tx.update(wholesaleSharesTable)
+        .set(wasDelivery
+          ? {
+              deliveryUsername: null,
+              shippingName: null,
+              shippingPhone: null,
+              shippingEmail: null,
+              shippingAddress: null,
+              shippingCountry: null,
+            }
+          : { updatedAt: new Date() })
+        .where(eq(wholesaleSharesTable.id, lockedShare.id));
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "MEMBER_NOT_FOUND") {
+      res.status(404).json({ error: "You are not a member of this shared order." });
+      return;
+    }
+    if (e instanceof Error && e.message === "CREATOR_MEMBER") {
+      res.status(400).json({ error: "As the organiser, you cannot leave — use Cancel instead." });
+      return;
+    }
+    if (e instanceof Error && e.message === "MEMBER_ORDER_PAYMENT_STARTED") {
+      res.status(409).json({ error: "Your order has payment activity. Contact the organiser or an admin before leaving." });
+      return;
+    }
+    const refundOrderId = refundMutationErrorOrderId(e);
+    if (refundOrderId) {
+      res.status(409).json({ error: "You cannot leave while a refund is active.", code: "refund_active", orderId: refundOrderId });
+      return;
+    }
     res.status(409).json({ error: "This shared order is locked — you can no longer leave. Contact the organiser." });
     return;
   }
@@ -3619,7 +3646,7 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
     res.status(403).json({ error: "Only the organiser can submit this payment." }); return;
   }
 
-  if (share.status !== "submitted") {
+  if (!["locked", "submitted"].includes(share.status)) {
     res.status(409).json({ error: "Payment can only be submitted once all members have paid." }); return;
   }
   if ((share.organiserPaymentStatus ?? "unpaid") === "confirmed") {
@@ -3656,7 +3683,7 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
       .for("update");
     if (
       !lockedShare ||
-      lockedShare.status !== "submitted" ||
+      !["locked", "submitted"].includes(lockedShare.status) ||
       normalizeTg(lockedShare.creatorUsername) !== normalizeTg(me)
     ) return null;
     try {
@@ -3665,8 +3692,42 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
       return null;
     }
 
+    if (lockedShare.status === "locked") {
+      const activeMembers = await tx
+        .select({
+          orderId: wholesaleShareMembersTable.orderId,
+          isCreator: wholesaleShareMembersTable.isCreator,
+        })
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, lockedShare.id));
+      const activeOrderIds = activeMembers
+        .map(member => member.orderId)
+        .filter((orderId): orderId is string => orderId != null);
+      if (activeMembers.length === 0 || activeOrderIds.length !== activeMembers.length) return null;
+
+      const activeOrders = await tx
+        .select({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus })
+        .from(ordersTable)
+        .where(and(
+          inArray(ordersTable.id, activeOrderIds),
+          eq(ordersTable.sharedOrderId, lockedShare.id),
+        ));
+      const creatorOrderId = activeMembers.find(member => member.isCreator)?.orderId ?? null;
+      const hasOwnWallet = Array.isArray(lockedShare.leadCryptoOptions)
+        && lockedShare.leadCryptoOptions.length > 0;
+      const allActiveMembersPaid = activeOrders.length === activeMembers.length
+        && activeOrders.every(order =>
+          order.paymentStatus === "confirmed"
+          || order.paymentStatus === "test_confirmed"
+          || (hasOwnWallet && creatorOrderId != null && order.id === creatorOrderId),
+        );
+      if (!allActiveMembersPaid) return null;
+    }
+
     const [updated] = await tx.update(wholesaleSharesTable)
       .set({
+        status: "submitted",
+        submittedAt: lockedShare.submittedAt ?? new Date(),
         organiserPaymentStatus: "pending",
         organiserPaymentTxHash: submittedTxHash,
         organiserPaymentCurrency: submittedCurrency,
@@ -3674,7 +3735,7 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
       })
       .where(and(
         eq(wholesaleSharesTable.id, share.id),
-        eq(wholesaleSharesTable.status, "submitted"),
+        inArray(wholesaleSharesTable.status, ["locked", "submitted"]),
         inArray(wholesaleSharesTable.organiserPaymentStatus, ["unpaid", "pending"]),
         eq(wholesaleSharesTable.creatorUsername, lockedShare.creatorUsername),
       ))
