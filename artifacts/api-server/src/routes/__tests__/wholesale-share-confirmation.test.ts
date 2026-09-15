@@ -14,6 +14,14 @@ const adminSource = fs.readFileSync(
   path.resolve(here, "../../../../peps-anonymous/src/pages/Admin.tsx"),
   "utf8",
 );
+const wholesaleSharedSource = fs.readFileSync(
+  path.resolve(here, "../../../../peps-anonymous/src/pages/WholesaleShared.tsx"),
+  "utf8",
+);
+const wholesaleHooksSource = fs.readFileSync(
+  path.resolve(here, "../../../../peps-anonymous/src/hooks/use-wholesale-shares.ts"),
+  "utf8",
+);
 const adminRouteSource = fs.readFileSync(path.resolve(here, "../admin.ts"), "utf8");
 const groupBuyAdminRouteSource = fs.readFileSync(path.resolve(here, "../group-buys-admin.ts"), "utf8");
 const activeMembershipSource = fs.readFileSync(
@@ -115,6 +123,20 @@ describe("shared wholesale order confirmations", () => {
     expect(deleteMemberIndex).toBeGreaterThan(cancelIndex);
     expect(leaveHandler).toContain("lockedMember.orderId");
     expect(leaveHandler).toContain("MEMBER_ORDER_PAYMENT_STARTED");
+  });
+
+  it("does not leave the organiser removal button spinning forever", () => {
+    const removeRequestStart = wholesaleHooksSource.indexOf("export function removeWholesaleShareMember");
+    const removeRequest = wholesaleHooksSource.slice(removeRequestStart, removeRequestStart + 500);
+    const removeHandler = wholesaleSharedSource.slice(
+      wholesaleSharedSource.indexOf("const removeMember = async"),
+      wholesaleSharedSource.indexOf("const setFeeAmount", wholesaleSharedSource.indexOf("const removeMember = async")),
+    );
+
+    expect(removeRequest).toContain("AbortSignal.timeout(15_000)");
+    expect(removeHandler).toContain('error.name === "TimeoutError"');
+    expect(removeHandler).toContain("invalidate(id);");
+    expect(removeHandler).toContain("setBusy(null);");
   });
 
   it("filters orphaned shared orders from Admin and every FS3 operational query", () => {

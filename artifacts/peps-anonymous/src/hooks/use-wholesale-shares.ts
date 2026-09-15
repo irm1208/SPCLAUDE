@@ -499,6 +499,7 @@ export function removeWholesaleShareMember(id: string, username: string) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/remove-member`, {
     method: "POST",
     body: JSON.stringify({ username }),
+    signal: AbortSignal.timeout(15_000),
   });
 }
 

@@ -862,8 +862,15 @@ export default function WholesaleShared() {
     if (!id) return;
     setActionError(""); setBusy(`remove:${username}`);
     try { await removeWholesaleShareMember(id, username); invalidate(id); }
-    catch (e) { setActionError((e as Error).message); }
-    finally { setBusy(null); }
+    catch (e) {
+      const error = e as Error;
+      setActionError(
+        error.name === "TimeoutError" || error.name === "AbortError"
+          ? "Removing this member timed out. The order has been refreshed—please check the member list and try again."
+          : error.message,
+      );
+    }
+    finally { invalidate(id); setBusy(null); }
   };
 
   const setFeeAmount = (username: string, value: string) => {
