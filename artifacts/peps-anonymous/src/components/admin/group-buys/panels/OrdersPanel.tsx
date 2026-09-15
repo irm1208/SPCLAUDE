@@ -18,6 +18,7 @@ import { currSym } from "@/lib/currency";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { lookupBatchPrefix, findMatchingPeptide } from "@/data/batchPrefixes";
 import { CARRIERS_17TRACK } from "@/lib/carriers";
+import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
 import { resolveCountry, apiUrl, INFO_CARD_TYPE_OPTIONS, InfoCardsEditor, ShippingOptionsEditor, CRYPTO_CURRENCIES, TROCADOR_COINS, CRYPTO_NETWORKS, DEFAULT_CRYPTO_NETWORKS, GbPaymentGatewayInlineContent, EU_COUNTRIES, POPULAR_COUNTRIES, GBP_TO_USD, GB_STATUS_STYLES, CopyIdBadge, StatusBadge } from "../shared/core";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
 export interface GbOrder {
@@ -466,7 +467,8 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
       || (paymentStatusFilter === "pending" && o.paymentStatus === "pending_confirmation")
       || (paymentStatusFilter === "rejected" && (o.paymentStatus === "rejected" || o.paymentStatus === "failed"))
       || (paymentStatusFilter === "test_payment" && o.paymentStatus === "test_confirmed")
-      || (paymentStatusFilter === "partial" && o.testPaymentTxHash != null && o.paymentTxHash == null);
+      || (paymentStatusFilter === "partial" && o.testPaymentTxHash != null && o.paymentTxHash == null)
+      || (paymentStatusFilter === "cancelled_refunded" && matchesCancelledOrRefunded(o));
     const matchSearch = !q || o.code.toLowerCase().includes(q) || o.telegramUsername.toLowerCase().includes(q) || o.status.toLowerCase().includes(q) || o.paymentStatus.toLowerCase().includes(q) || (o.notes ?? "").toLowerCase().includes(q) || (o.adminNotes ?? "").toLowerCase().includes(q) || (o.paymentTxHash ?? "").toLowerCase().includes(q) || (o.balanceTxHash ?? "").toLowerCase().includes(q);
     const matchNoVs = !noVsFilter || (o.vendorShipping === 0 || o.vendorShipping == null);
     const matchBalance = balanceFilter === "all"
@@ -661,6 +663,7 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
           { value: "test_payment", label: "Test Payment",    color: "#7C3AED" },
           { value: "partial",      label: "Partial",         color: "#EA580C" },
           { value: "rejected",     label: "Failed/Rejected", color: "#64748B" },
+          { value: "cancelled_refunded", label: "Cancelled/Refunded", color: "#DC2626" },
         ] as const).map(t => {
           const count = t.value === "all" ? orders.length
             : t.value === "confirmed" ? orders.filter(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed").length
@@ -668,6 +671,7 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
             : t.value === "rejected" ? orders.filter(o => o.paymentStatus === "rejected" || o.paymentStatus === "failed").length
             : t.value === "test_payment" ? orders.filter(o => o.paymentStatus === "test_confirmed").length
             : t.value === "partial" ? orders.filter(o => o.testPaymentTxHash != null && o.paymentTxHash == null).length
+            : t.value === "cancelled_refunded" ? orders.filter(matchesCancelledOrRefunded).length
             : orders.filter(o => o.paymentStatus === t.value).length;
           const active = paymentStatusFilter === t.value;
           return (
