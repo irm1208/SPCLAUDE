@@ -4,7 +4,8 @@ set -e
 cd "$(dirname "$0")"
 
 echo "[start] Clearing any stale processes..."
-pkill -f "tsx.*src/index.ts" 2>/dev/null || true
+# The bracket expression keeps pkill from matching this command's own argv.
+pkill -f "[t]sx.*src/index.ts" 2>/dev/null || true
 
 # Free only the ports this script owns.
 # Port 21503 is left free for the canvas artifact (Replit injects PORT=21503 for it).
@@ -96,7 +97,7 @@ node -e "
   server.listen(5000, '0.0.0.0', () => console.log('[proxy] Port 5000 → 21504 ready'));
 " &
 
-# Ensure .env exists — dev scripts use --env-file=../../.env and fail hard if absent.
+# Ensure .env exists — the API dev command loads it with Node's dotenv parser.
 # Replit injects secrets as real env vars, so an empty file is fine.
 touch "$(dirname "$0")/.env"
 
@@ -109,4 +110,4 @@ echo "[start] Starting API server on port ${API_PORT:-8080}..."
 PORT=8080 NODE_ENV=development pnpm --filter @workspace/api-server run dev &
 
 echo "[start] Starting frontend on port 21504..."
-BASE_PATH=/ PORT=21504 pnpm --filter @workspace/peps-anonymous run dev
+API_PORT=8080 BASE_PATH=/ PORT=21504 pnpm --filter @workspace/peps-anonymous run dev
