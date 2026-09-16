@@ -40,9 +40,9 @@ vi.mock("@workspace/db", async () => {
           if (!mockState.casConflict) {
             mockState.updates.push({ table: getTableName(table as never), values });
           }
-          const result = Promise.resolve(mockState.casConflict
-            ? []
-            : [{ id: mockState.order?.id ?? "order-1" }]);
+           const result = Promise.resolve(mockState.casConflict
+             ? []
+             : [{ ...(mockState.order ?? {}), ...values, id: mockState.order?.id ?? "order-1" }]);
           return Object.assign(result, { returning: () => result });
         },
       }),
@@ -65,7 +65,7 @@ vi.mock("../../lib/telegram", () => ({
   sendAdminMessage: vi.fn(),
   sendTelegramMessage: vi.fn(),
   notifyUserFromTemplate: mockState.notifyUserFromTemplate,
-  sendAdminFromTemplate: vi.fn(),
+  sendAdminFromTemplate: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../lib/email", () => ({
@@ -417,7 +417,7 @@ describe("admin bulk tracking route", () => {
     });
   });
 
-  it("rejects shared-order pairing before applying an accompanying payment change", async () => {
+  it("persists explicit packages for a shared order alongside an accompanying payment change", async () => {
     mockState.order = {
       id: "order-1", code: "ORDER-1", status: "Processing",
       trackingNumber: null, trackingNumbers: null, trackingPackages: null,
@@ -438,8 +438,18 @@ describe("admin bulk tracking route", () => {
           }],
         }),
       });
-      expect(response.status).toBe(400);
-      expect(mockState.updates).toHaveLength(0);
+      const responseText = await response.text();
+      expect(response.status, responseText).toBe(200);
+      expect(mockState.updates).toHaveLength(1);
+      expect(mockState.updates[0].values).toMatchObject({
+        paymentStatus: "confirmed",
+        trackingNumber: "INTL",
+        trackingNumbers: ["INTL", "LOCAL"],
+        trackingPackages: [{
+          id: "p1", courier: "bmurfs",
+          internationalTrackingNumber: "INTL", localTrackingNumber: "LOCAL",
+        }],
+      });
     });
   });
 

@@ -129,10 +129,6 @@ export function prepareTrackingWrite(
   if (!hasStructured && !hasFlat) {
     return { updates: {}, beforeSnapshot, numbersChanged: false, groupingChanged: false, shouldNotify: false };
   }
-  if (hasStructured && (source.orderType === "wholesale_shared" || source.sharedOrderId)) {
-    throw new Error("Paired package tracking is out of scope for shared orders");
-  }
-
   let packages: TrackingPackage[] | null = null;
   let numbers: string[];
   if (hasStructured) {

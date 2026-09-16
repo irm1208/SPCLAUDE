@@ -36,6 +36,40 @@ describe("prepareTrackingWrite", () => {
     expect(result.shouldNotify).toBe(false);
   });
 
+  it("accepts an explicit physical package list for a shared wholesale order", () => {
+    const packages = [
+      {
+        id: "package-1",
+        courier: "other",
+        internationalTrackingNumber: "GLY60509092736SZ",
+        localTrackingNumber: null,
+      },
+      {
+        id: "package-2",
+        courier: "other",
+        internationalTrackingNumber: "GLY60509112836SZ",
+        localTrackingNumber: null,
+      },
+    ];
+
+    const result = prepareTrackingWrite(
+      {
+        orderType: "wholesale_shared",
+        sharedOrderId: "shared-1",
+        trackingNumber: null,
+        trackingNumbers: null,
+        trackingPackages: null,
+      },
+      { trackingPackages: packages },
+    );
+
+    expect(result.updates).toMatchObject({
+      trackingNumber: packages[0].internationalTrackingNumber,
+      trackingNumbers: packages.map(pkg => pkg.internationalTrackingNumber),
+      trackingPackages: packages,
+    });
+  });
+
   it("rejects local legs for non-BMURFS couriers", () => {
     expect(() => prepareTrackingWrite(
       { trackingNumber: null, trackingNumbers: null, trackingPackages: null },
