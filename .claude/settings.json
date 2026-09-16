@@ -10,7 +10,10 @@
       "WebFetch(domain:geeksta.net)",
       "WebFetch(domain:edgetts.github.io)",
       "Bash(node --env-file=.env scripts/generate-tour-voiceover.mjs)",
-      "Bash(sort -k5 -n)"
+      "Bash(sort -k5 -n)",
+      "Bash(grep -rn \"code:.*#\\\\|order.code\\\\|'#' *+\\\\|startsWith\\(\\\\\"#\\\\\"\\)\\\\|\\\\`#\\\\${\" artifacts/api-server/src/routes/orders.ts)",
+      "Bash(ls -la .claude/ 2>/dev/null; echo \"=== project settings ===\"; cat .claude/settings.json 2>/dev/null; echo \"=== local ===\"; cat .claude/settings.local.json 2>/dev/null; echo \"=== user ===\"; cat ~/.claude/settings.json 2>/dev/null)",
+      "Read(//home/m_zengabjj/.claude/**)"
     ]
   }
 }
