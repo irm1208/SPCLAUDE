@@ -1036,6 +1036,29 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS reshipper_can_edit_address boolean NOT NULL DEFAULT true`);
     // group_buy_refund_attempts — bind automatic two-transfer verification to the exact pair
     await db.execute(sql`ALTER TABLE group_buy_refund_attempts ADD COLUMN IF NOT EXISTS submitted_txid_2 text`);
+    // order_invoices — editable invoice/receipt snapshots. Existing orders are
+    // seeded lazily by the admin invoice endpoint so this migration is cheap.
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS order_invoices (
+        order_id text PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+        invoice_number text NOT NULL,
+        issue_date text NOT NULL,
+        due_date text,
+        currency text NOT NULL DEFAULT 'GBP',
+        status text NOT NULL DEFAULT 'draft',
+        seller jsonb NOT NULL DEFAULT '{}'::jsonb,
+        customer jsonb NOT NULL DEFAULT '{}'::jsonb,
+        line_items jsonb NOT NULL DEFAULT '[]'::jsonb,
+        notes text NOT NULL DEFAULT '',
+        terms text NOT NULL DEFAULT '',
+        shipping_cost numeric(12,2) NOT NULL DEFAULT 0,
+        subtotal numeric(12,2) NOT NULL DEFAULT 0,
+        total_tax numeric(12,2) NOT NULL DEFAULT 0,
+        total numeric(12,2) NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
     console.log("[startup:migrations] Schema sync complete");
 }
 

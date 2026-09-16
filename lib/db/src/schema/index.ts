@@ -56,3 +56,4 @@ export * from "./organiser_todos";
 export * from "./email_templates";
 export * from "./payment_audit";
 export * from "./admin_security";
+export * from "./order-invoices";

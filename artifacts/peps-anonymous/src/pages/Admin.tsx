@@ -5,7 +5,7 @@ import {
   Lock, Loader2, Package, Users, User, ShoppingCart, BarChart3, BarChart2, Truck,
   ChevronDown, ChevronUp, Save, X, Plus, Pencil, Check,
   Search, RefreshCw, Download, Tag, CreditCard, Trash2,
-  ShieldCheck, Clock, AlertCircle, Eye, EyeOff, GripVertical, TriangleAlert, AlertTriangle, FileEdit,
+  ShieldCheck, Clock, AlertCircle, Eye, EyeOff, GripVertical, TriangleAlert, AlertTriangle, FileEdit, FileText,
   Bell, CalendarDays, Calendar, ToggleLeft, ToggleRight, MessageSquarePlus, MessageSquare, TestTube, PackageCheck, Globe, FlaskConical, Info,
   ScrollText, Filter, ChevronLeft, ChevronRight, AtSign, ShieldAlert, UserX, CheckCircle2, Activity,
   Settings2, Home, LayoutGrid, Upload, Sun, Moon, Navigation, UserCheck, ExternalLink, Wallet, SendHorizonal, Copy, Ticket, Building2,
@@ -32,6 +32,7 @@ import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
 import { TrackingPackageEditor } from "@/components/admin/TrackingPackageEditor";
+import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
 import {
   bindTrackingPackagesDraft,
   canApplyReviewedShipment,
@@ -674,6 +675,7 @@ function OrdersTab({ secret }: { secret: string }) {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [invoiceOrderId, setInvoiceOrderId] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [orderTab, setOrderTab] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<Record<string, any>>({});
@@ -1999,6 +2001,17 @@ function OrdersTab({ secret }: { secret: string }) {
 
   return (
     <div className="space-y-4">
+      {invoiceOrderId && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
+          <div className="mx-auto min-h-full max-w-[1440px] rounded-lg bg-background p-4 shadow-2xl sm:p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div><p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Order invoice</p><p className="text-sm text-muted-foreground">Changes update the order's editable financial document.</p></div>
+              <button type="button" title="Close invoice editor" onClick={() => setInvoiceOrderId(null)} className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <InvoiceEditor orderId={invoiceOrderId} adminSecret={secret} onSaved={() => { load(); }} />
+          </div>
+        </div>
+      )}
       {/* Confirm delete dialog */}
       {confirmDeleteIds && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -3182,6 +3195,12 @@ function OrdersTab({ secret }: { secret: string }) {
                         </button>
                         <span className="text-[10px] text-amber-700">Opens their account in a new tab</span>
                         {impersonateOrderErr[order.id] && <span className="text-xs text-red-600 font-semibold ml-2">{impersonateOrderErr[order.id]}</span>}
+                        <button
+                          onClick={() => setInvoiceOrderId(order.id)}
+                          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 transition-colors"
+                        >
+                          <FileText className="w-3 h-3" />Edit invoice
+                        </button>
                       </div>
                       {/* ── Sub-tab bar ── */}
                       {(() => {

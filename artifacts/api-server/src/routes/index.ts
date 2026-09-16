@@ -65,6 +65,7 @@ import groupBuyBreakdownRouter from "./group-buy-breakdown";
 import groupBuyRefundsRouter from "./group-buy-refunds";
 import wholesaleTrackingRouter from "./wholesale-tracking";
 import adminAuthRouter from "./admin-auth";
+import adminInvoicesRouter from "./admin-invoices";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
 const router: IRouter = Router();
@@ -98,6 +99,7 @@ router.use("/admin/security/recovery-codes", adminTwoFactorLimiter);
 // boundary; every other /admin route gets its mode from the database.
 router.use(adminAuthRouter);
 router.use("/admin", adminAuthorizationMiddleware);
+router.use(adminInvoicesRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them
 // after the scoped admin boundary so their /admin handlers receive the
