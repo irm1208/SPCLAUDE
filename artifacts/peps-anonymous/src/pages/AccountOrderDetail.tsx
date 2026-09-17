@@ -3096,7 +3096,7 @@ export default function AccountOrderDetail() {
                       <SecIcon Icon={Pencil} />
                       <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
                     </div>
-                    {!isAdminPreview && isLoggedIn && !refundActive && (
+                    {!isAdminPreview && isLoggedIn && isPaidOrder && !refundActive && (
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border"
                         style={{ background: "var(--t-blue-08)", color: "var(--t-blue)", borderColor: "var(--t-blue-20)", padding: "10px 16px" }}

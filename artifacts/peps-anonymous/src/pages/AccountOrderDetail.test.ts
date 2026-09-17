@@ -8,6 +8,7 @@ test("member order detail exposes invoice editing for paid orders", () => {
   assert.match(source, /InvoiceEditor/);
   assert.match(source, /invoiceEditing/);
   assert.match(source, /Edit invoice/);
+  assert.match(source, /isPaidOrder && !refundActive/);
   assert.match(source, /access=\{\{\s*kind:\s*"member"\s*\}\}/);
 });
 
