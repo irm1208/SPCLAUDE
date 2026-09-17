@@ -11,7 +11,7 @@ import {
   AlertCircle, Globe, Lock, SendHorizonal, Truck,
   Sparkles, LayoutDashboard, Info, Download, ClipboardList, QrCode,
   MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield, Calculator,
-  ArrowUp, ArrowDown, Eye, EyeOff, TestTube,
+  ArrowUp, ArrowDown, Eye, EyeOff, TestTube, List, Columns3,
 } from "lucide-react";
 import ShippingSplitTab from "./ShippingSplitTab";
 import { PageLayout } from "@/components/PageLayout";
@@ -197,6 +197,8 @@ interface OrgOrder {
   createdAt: string;
   paymentConfirmedAt?: string | null;
   orderType: string | null;
+  routingType?: string | null;
+  directShippingRequested?: boolean;
   lineItems: { id: string; productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos?: boolean }[];
 }
 
@@ -7079,6 +7081,146 @@ function EntryFeePaymentsPanel({ gb }: { gb: OrganiserGB }) {
   );
 }
 
+function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
+  const [orders, setOrders] = useState<OrgOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [view, setView] = useState<"list" | "board">("board");
+  const [search, setSearch] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/orders`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Failed to load fulfilment");
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load fulfilment");
+    } finally {
+      setLoading(false);
+    }
+  }, [gb.id]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const visibleOrders = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q
+      ? orders.filter(o => o.telegramUsername.toLowerCase().includes(q) || o.code.toLowerCase().includes(q))
+      : orders;
+  }, [orders, search]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; tone: "green" | "blue" | "amber" | "slate"; orders: OrgOrder[] }>();
+    const add = (key: string, label: string, tone: "green" | "blue" | "amber" | "slate", order: OrgOrder) => {
+      const group = map.get(key) ?? { key, label, tone, orders: [] };
+      group.orders.push(order);
+      map.set(key, group);
+    };
+    for (const order of visibleOrders) {
+      if (order.routingType === "direct" || order.directShippingRequested) add("direct", "Direct Shipping", "green", order);
+      else if (order.reshipperUsername) add(`reshipper:${order.reshipperUsername}`, `@${order.reshipperUsername.replace(/^@/, "")}`, "blue", order);
+      else if (order.routingType === "unrouted") add("unrouted", "Unrouted", "amber", order);
+      else add("legacy", "Legacy", "slate", order);
+    }
+    return [...map.values()].sort((a, b) => {
+      const rank = (key: string) => key === "direct" ? 0 : key.startsWith("reshipper:") ? 1 : key === "unrouted" ? 2 : 3;
+      return rank(a.key) - rank(b.key) || a.label.localeCompare(b.label);
+    });
+  }, [visibleOrders]);
+
+  const tone = {
+    green: { head: "#ECFDF5", border: "#A7F3D0", text: "#047857" },
+    blue: { head: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8" },
+    amber: { head: "#FFFBEB", border: "#FDE68A", text: "#B45309" },
+    slate: { head: "#F8FAFC", border: "#CBD5E1", text: "#475569" },
+  };
+  const kitCount = (order: OrgOrder) => order.lineItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+
+  if (loading) return (
+    <div className="flex items-center justify-center gap-2 py-16 text-sm" style={{ color: "var(--t-muted)" }}>
+      <Loader2 className="h-4 w-4 animate-spin" /> Loading fulfilment…
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-black" style={{ color: "var(--t-text)" }}>Fulfilment</h2>
+          <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{visibleOrders.length} orders · {visibleOrders.reduce((sum, o) => sum + kitCount(o), 0)} kits</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:w-64">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-subtle)" }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search username or code…" className="h-9 w-full rounded-lg border bg-transparent pl-9 pr-3 text-xs outline-none" style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }} />
+          </div>
+          <div className="flex rounded-lg border p-0.5" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+            <button onClick={() => setView("list")} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-bold" style={view === "list" ? { background: "var(--t-blue-deep)", color: "#fff" } : { color: "var(--t-muted)" }}><List className="h-3.5 w-3.5" />List</button>
+            <button onClick={() => setView("board")} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-bold" style={view === "board" ? { background: "var(--t-blue-deep)", color: "#fff" } : { color: "var(--t-muted)" }}><Columns3 className="h-3.5 w-3.5" />Board</button>
+          </div>
+          <button onClick={() => void load()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
+        </div>
+      </div>
+
+      {error && <ErrorBanner msg={error} onClose={() => setError("")} />}
+
+      {view === "list" ? (
+        <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+          <div className="hidden grid-cols-[1.2fr_.8fr_.7fr_.7fr_.55fr] gap-3 border-b px-4 py-2 text-[10px] font-black uppercase tracking-wider md:grid" style={{ borderColor: "var(--t-border)", color: "var(--t-subtle)" }}>
+            <span>Member</span><span>Route</span><span>Payment</span><span>Country</span><span className="text-right">Kits</span>
+          </div>
+          {visibleOrders.map(order => (
+            <div key={order.id} className="grid gap-2 border-b px-4 py-3 last:border-0 md:grid-cols-[1.2fr_.8fr_.7fr_.7fr_.55fr] md:items-center" style={{ borderColor: "var(--t-border)" }}>
+              <div><p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p><p className="font-mono text-[10px]" style={{ color: "var(--t-subtle)" }}>{order.code}</p></div>
+              <span className="text-xs" style={{ color: "var(--t-muted)" }}>{order.directShippingRequested || order.routingType === "direct" ? "Direct" : order.reshipperUsername ? `@${order.reshipperUsername.replace(/^@/, "")}` : order.routingType === "unrouted" ? "Unrouted" : "Legacy"}</span>
+              <span className="w-fit rounded-full px-2 py-1 text-[10px] font-black uppercase" style={{ background: ["confirmed", "test_confirmed"].includes(order.paymentStatus) ? "#DCFCE7" : "#FEF3C7", color: ["confirmed", "test_confirmed"].includes(order.paymentStatus) ? "#15803D" : "#B45309" }}>{order.paymentStatus.replaceAll("_", " ")}</span>
+              <span className="text-xs" style={{ color: "var(--t-muted)" }}>{resolveCountry(order.shippingCountry || order.accountCountry) || "—"}</span>
+              <span className="text-right text-xs font-bold" style={{ color: "var(--t-text)" }}>{kitCount(order)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-3">
+          {groups.map(group => {
+            const colors = tone[group.tone];
+            return (
+              <section key={group.key} className="w-[290px] shrink-0 overflow-hidden rounded-xl border" style={{ borderColor: colors.border, background: "var(--t-surface)" }}>
+                <div className="border-b px-3 py-3" style={{ background: colors.head, borderColor: colors.border }}>
+                  <p className="text-sm font-black" style={{ color: colors.text }}>{group.label}</p>
+                  <p className="mt-0.5 text-[10px]" style={{ color: colors.text }}>{group.orders.length} orders · {group.orders.reduce((sum, o) => sum + kitCount(o), 0)} kits</p>
+                </div>
+                <div className="max-h-[62vh] space-y-2 overflow-y-auto p-2">
+                  {group.orders.map(order => (
+                    <article key={order.id} className="rounded-xl border p-3 shadow-sm" style={{ borderColor: order.shippingAddress || order.shippingName ? "var(--t-border)" : "#FCD34D", background: "var(--t-surface)" }}>
+                      <div className="flex items-start justify-between gap-2"><div><p className="text-sm font-black" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p><p className="font-mono text-[10px]" style={{ color: "var(--t-subtle)" }}>{order.code}</p></div><span className="text-sm font-black" style={{ color: "var(--t-text)" }}>{gb.currency === "USD" ? "$" : gb.currency === "EUR" ? "€" : "£"}{Number(order.grandTotal).toFixed(2)}</span></div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="rounded-full bg-green-100 px-2 py-1 text-[9px] font-black uppercase text-green-700">{order.paymentStatus.replaceAll("_", " ")}</span>
+                        {!order.shippingAddress && !order.shippingName && <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black text-amber-700">No address</span>}
+                      </div>
+                      <p className="mt-2 text-[11px]" style={{ color: "var(--t-muted)" }}>{resolveCountry(order.shippingCountry || order.accountCountry) || "Country unknown"}</p>
+                      <p className="mt-1 text-[10px]" style={{ color: "var(--t-subtle)" }}>{kitCount(order)} kits · {Number(order.deliveryPrice || 0).toFixed(2)} delivery</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+          {groups.length === 0 && (
+            <div className="flex min-h-48 w-full flex-col items-center justify-center rounded-xl border border-dashed px-6 text-center" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}>
+              <Package className="mb-2 h-6 w-6" />
+              <p className="text-sm font-bold">No fulfilment orders</p>
+              <p className="mt-1 text-xs">Orders will appear here when members join this group buy.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [orders, setOrders] = useState<OrgOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12981,7 +13123,7 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
+type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "fulfilment" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
 
 const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired: boolean; externalPath?: (gbId: string) => string }[] = [
   { id: "overview", label: "My GBs", icon: LayoutDashboard, gbRequired: false },
@@ -12990,6 +13132,7 @@ const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired
   { id: "shipping", label: "Ship & Pay", icon: CreditCard, gbRequired: true },
   { id: "shippingsplit", label: "Shipping Split", icon: Calculator, gbRequired: true },
   { id: "orders", label: "Orders", icon: ShoppingBag, gbRequired: true },
+  { id: "fulfilment", label: "Fulfilment", icon: Package, gbRequired: true },
   { id: "refunds", label: "Refunds", icon: Wallet, gbRequired: true },
   { id: "summary", label: "Summary", icon: ClipboardList, gbRequired: true },
   { id: "parcels", label: "Parcels", icon: Truck, gbRequired: true },
@@ -13014,7 +13157,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
   archived: { color: "#6B7280", bg: "rgba(107,114,128,0.12)", label: "Archived" },
 };
 
-const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "shippingsplit", "orders", "refunds", "qrcodes"];
+const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "shippingsplit", "orders", "fulfilment", "refunds", "qrcodes"];
 const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "dispatch", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
 
 function getTabVisibility(username: string, gbId: string | null): Record<string, boolean> {
@@ -13297,6 +13440,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
+        {activeTab === "fulfilment" && selectedGb && <FulfilmentTab gb={selectedGb} />}
         {activeTab === "refunds" && selectedGb && <GroupBuyRefundQueue role="organiser" groupBuyId={selectedGb.id} />}
         {activeTab === "summary" && selectedGb && <SummaryTab gb={selectedGb} />}
         {activeTab === "parcels" && selectedGb && <ParcelsTab gb={selectedGb} />}
