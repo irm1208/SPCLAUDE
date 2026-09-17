@@ -53,3 +53,9 @@ test("fulfilment card formats delivery in the group buy currency", () => {
   const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
   assert.match(fulfilment, /moneySymbol\}\{Number\(order\.deliveryPrice/);
 });
+
+test("fulfilment displays stablecoin amounts with a dollar symbol", () => {
+  const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
+  assert.match(fulfilment, /gb\.currency === "USDT"/);
+  assert.match(fulfilment, /gb\.currency === "USDC"/);
+});

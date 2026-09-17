@@ -7161,7 +7161,9 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
     slate: { head: "#F8FAFC", border: "#CBD5E1", text: "#475569" },
   };
   const kitCount = (order: OrgOrder) => order.lineItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-  const moneySymbol = gb.currency === "USD" ? "$" : gb.currency === "EUR" ? "€" : gb.currency === "GBP" ? "£" : gb.currency;
+  const moneySymbol = gb.currency === "USD" || gb.currency === "USDT" || gb.currency === "USDC"
+    ? "$"
+    : gb.currency === "EUR" ? "€" : gb.currency === "GBP" ? "£" : gb.currency;
 
   const routeOrder = useCallback(async (orderId: string, groupKey: string) => {
     const current = orders.find(order => order.id === orderId);
