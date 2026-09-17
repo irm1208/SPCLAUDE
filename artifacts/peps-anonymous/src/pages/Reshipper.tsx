@@ -19,6 +19,7 @@ import { useAccount, useLogout, useAccountOrders } from "@/hooks/use-account";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES } from "@/data/countries";
+import { filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
 // ─── Admin impersonation ──────────────────────────────────────────────────────
 // Module-level vars set once when the page initializes in admin preview mode
@@ -98,6 +99,7 @@ interface ROrder {
   id: string;
   code: string;
   telegramUsername: string;
+  reshipperUsername?: string | null;
   status: string;
   paymentStatus: string;
   grandTotal: number;
@@ -368,16 +370,18 @@ function OverviewTab({ orders, gbName, country, currency }: { orders: ROrder[]; 
   );
 }
 
-// ─── Summary Tab ──────────────────────────────────────────────────────────────
+// ─── Fulfilment Manifest Tab ──────────────────────────────────────────────────
 
-function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAssignment }) {
+function FulfilmentManifestTab({ orders, assignment }: { orders: ROrder[]; assignment: RAssignment }) {
   const gb = assignment.gb;
   const currency = gb?.currency ?? "";
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const assignedOrders = filterAssignedFulfilmentOrders(orders, assignment.reshipperUsername);
 
-  // Product-level breakdown — coerce qty/total to numbers (Postgres numeric comes back as strings)
+  // Product-level manifest for this reshipper only — unclaimed orders can be present
+  // in the shared endpoint response and must not be counted as incoming stock.
   const productMap = new Map<string, { qty: number; total: number; ordersList: { code: string; username: string; quantity: number; lineTotal: number; status: string; paymentStatus: string }[] }>();
-  for (const o of orders) {
+  for (const o of assignedOrders) {
     for (const li of o.lineItems ?? []) {
       const existing = productMap.get(li.productName) ?? { qty: 0, total: 0, ordersList: [] };
       const q = Number(li.quantity);
@@ -396,7 +400,7 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
   const handleDownload = () => {
     if (productRows.length === 0) return;
     const lines = [
-      `Order Summary — ${gb?.name ?? assignment.gbId} · ${assignment.country}`,
+      `Fulfilment Manifest — ${gb?.name ?? assignment.gbId} · ${assignment.country}`,
       `Generated: ${new Date().toLocaleString("en-GB")}`,
       "─".repeat(56), "",
       ...productRows.map(([name, { qty, total }]) =>
@@ -409,7 +413,7 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `summary-${(gb?.name ?? assignment.gbId).replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.download = `fulfilment-${(gb?.name ?? assignment.gbId).replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -418,7 +422,7 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
     <div className="space-y-4">
       <div className="flex gap-2 items-center flex-wrap">
         <h2 className="text-base font-bold flex-1" style={{ color: "var(--t-text)" }}>
-          Order Summary — {gb?.name ?? assignment.gbId}
+          Fulfilment manifest — {gb?.name ?? assignment.gbId}
         </h2>
         {productRows.length > 0 && (
           <button onClick={handleDownload}
@@ -433,9 +437,9 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
           {/* Stats strip */}
           <div className="grid grid-cols-3 gap-2">
             {[
-              { label: "Products", value: String(productRows.length) },
-              { label: "Total Qty", value: String(totalQty) },
-              { label: "Total Value", value: `${currency} ${totalRevenue.toFixed(2)}` },
+              { label: "Product lines", value: String(productRows.length) },
+              { label: "Total items", value: String(totalQty) },
+              { label: "Assigned orders", value: String(assignedOrders.length) },
             ].map(s => (
               <div key={s.label} className="p-3 rounded-xl text-center" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                 <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{s.value}</p>
@@ -448,7 +452,7 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
           <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--t-border)" }}>
             <div className="px-4 py-2.5" style={{ background: "var(--t-surface2)" }}>
               <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>
-                Order List — tap a product to see who ordered it
+                All items assigned to you — tap a product to see the member orders
               </p>
             </div>
             {productRows.map(([name, { qty, total: rowTotal, ordersList }]) => {
@@ -509,7 +513,7 @@ function SummaryTab({ orders, assignment }: { orders: ROrder[]; assignment: RAss
           </div>
         </>
       ) : (
-        <div className="text-center py-16 text-[12px]" style={{ color: "var(--t-muted)" }}>No orders yet</div>
+        <div className="text-center py-16 text-[12px]" style={{ color: "var(--t-muted)" }}>No items are assigned to you yet</div>
       )}
     </div>
   );
@@ -3769,11 +3773,11 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
   );
 }
 
-type RTab = "overview" | "summary" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "dispatch" | "payments" | "broadcast";
+type RTab = "overview" | "fulfilment" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "dispatch" | "payments" | "broadcast";
 
 const TAB_HELP: Record<RTab, string> = {
   overview: "A quick snapshot of this group buy: how many orders you have, totals at a glance, and your progress. Start here to see where things stand.",
-  summary: "A breakdown of your orders in numbers and charts: what's been ordered, money owed, and totals. Use it to double-check figures.",
+  fulfilment: "A complete manifest of every item currently assigned to you for this Group Buy. Expand a product to see the member orders it belongs to.",
   orders: "The orders you're responsible for reshipping. Tap any order to see its items, the customer's address, tracking, and to update its status.",
   unclaimed: "Orders in this group buy that nobody has picked up yet. Claim the ones you'll handle and they'll move into your 'My Orders' tab.",
   qr: "The shipping-label QR codes for each order. Tap a code to make it big enough to scan at the post office, then mark it 'Posted' once it's sent.",
@@ -3825,7 +3829,7 @@ function TabHelp({ tab }: { tab: RTab }) {
 
 const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "overview",  label: "Overview",  icon: LayoutDashboard },
-  { id: "summary",   label: "Summary",   icon: BarChart3 },
+  { id: "fulfilment", label: "Fulfilment", icon: BarChart3 },
   { id: "orders",    label: "My Orders", icon: ShoppingBag },
   { id: "unclaimed", label: "Unclaimed", icon: Inbox },
   { id: "qr",        label: "QR Codes",  icon: QrCode },
@@ -3905,6 +3909,7 @@ export default function ReshipperPage() {
   const [activeTab, setActiveTab] = useState<RTab>("overview");
   const [orders, setOrders] = useState<ROrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const ordersRequestRef = useRef(0);
   const [unclaimedOrders, setUnclaimedOrders] = useState<ROrder[]>([]);
   const [unclaimedLoading, setUnclaimedLoading] = useState(false);
   const [showJoinForm, setShowJoinForm] = useState(false);
@@ -3934,11 +3939,15 @@ export default function ReshipperPage() {
 
   const loadOrders = useCallback(async (gbId: string) => {
     if (!gbId) return;
+    const requestId = ++ordersRequestRef.current;
     setOrdersLoading(true);
     try {
       const res = await reshipFetch(`/api/reshipper/gb/${gbId}/orders`, { credentials: "include" });
-      if (res.ok) setOrders(await res.json());
-    } finally { setOrdersLoading(false); }
+      const data = res.ok ? await res.json() : null;
+      if (requestId === ordersRequestRef.current && data) setOrders(data);
+    } finally {
+      if (requestId === ordersRequestRef.current) setOrdersLoading(false);
+    }
   }, []);
 
   const loadUnclaimed = useCallback(async (gbId: string) => {
@@ -3952,8 +3961,10 @@ export default function ReshipperPage() {
   }, []);
 
   useEffect(() => {
+    ordersRequestRef.current += 1;
+    setOrders([]);
     if (selectedGbId) { loadOrders(selectedGbId); loadUnclaimed(selectedGbId); }
-    else { setOrders([]); setUnclaimedOrders([]); }
+    else { setUnclaimedOrders([]); }
   }, [selectedGbId, loadOrders, loadUnclaimed]);
 
   // Auto-poll every 60 s so deleted/new orders appear without a manual refresh
@@ -3969,7 +3980,7 @@ export default function ReshipperPage() {
   // Refresh the relevant list whenever the user switches to the orders or unclaimed tab
   useEffect(() => {
     if (!selectedGbId) return;
-    if (activeTab === "orders" || activeTab === "overview" || activeTab === "summary" || activeTab === "qr") {
+    if (activeTab === "orders" || activeTab === "overview" || activeTab === "fulfilment" || activeTab === "qr") {
       loadOrders(selectedGbId);
     }
     if (activeTab === "unclaimed") {
@@ -4162,7 +4173,12 @@ export default function ReshipperPage() {
         {assignments.length > 1 && (
           <div className="flex gap-1.5 px-4 md:px-7 py-2 overflow-x-auto shrink-0" style={{ background: P.panel2, borderBottom: `1px solid ${P.border}` }}>
             {assignments.map(a => (
-              <button key={a.gbId} onClick={() => setSelectedGbId(a.gbId)}
+              <button key={a.gbId} onClick={() => {
+                if (a.gbId === selectedGbId) return;
+                ordersRequestRef.current += 1;
+                setOrders([]);
+                setSelectedGbId(a.gbId);
+              }}
                 className="flex items-center gap-1 px-3 h-7 rounded-full text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
                 style={selectedGbId === a.gbId
                   ? { background: ACCENT, color: "#fff" }
@@ -4224,10 +4240,10 @@ export default function ReshipperPage() {
                   ? <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} /></div>
                   : <OverviewTab orders={orders} gbName={currentAssignment.gb?.name ?? currentAssignment.gbId} country={currentAssignment.country} currency={currentAssignment.gb?.currency} />
               )}
-              {activeTab === "summary" && (
+              {activeTab === "fulfilment" && (
                 ordersLoading
                   ? <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} /></div>
-                  : <SummaryTab orders={orders} assignment={currentAssignment} />
+                  : <FulfilmentManifestTab key={selectedGbId} orders={orders} assignment={currentAssignment} />
               )}
               {activeTab === "orders" && (
                 ordersLoading

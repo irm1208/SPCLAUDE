@@ -10,7 +10,7 @@ test("organiser dashboard exposes fulfilment with list and board views", () => {
   assert.match(source, /function FulfilmentTab/);
   assert.match(source, /setView\("list"\)/);
   assert.match(source, /setView\("board"\)/);
-  assert.match(source, /activeTab === "fulfilment"[\s\S]*<FulfilmentTab gb=\{selectedGb\}/);
+  assert.match(source, /activeTab === "fulfilment"[\s\S]*<FulfilmentTab[^>]*gb=\{selectedGb\}/);
 });
 
 test("fulfilment uses organiser-scoped order data", () => {
@@ -38,6 +38,26 @@ test("reshippers tab exposes a totals modal", () => {
   assert.match(source, /reshipperTotalsOpen/);
   assert.match(source, /Combined kits/);
   assert.match(source, /Order total/);
+});
+
+test("organiser fulfilment tab exposes the per-reshipper totals modal", () => {
+  const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
+  assert.match(fulfilment, /setReshipperTotalsOpen\(true\)/);
+  assert.match(fulfilment, /Reshipper totals/);
+  assert.match(fulfilment, /<ReshipperTotalsModal/);
+});
+
+test("reshipper totals canonicalise usernames and exclude cancelled or refunded orders", () => {
+  const modal = source.slice(source.indexOf("function ReshipperTotalsModal"), source.indexOf("function FulfilmentTab"));
+  assert.match(modal, /usernameMap/);
+  assert.match(modal, /canonicalReshipperUsername/);
+  assert.match(modal, /filterAssignedFulfilmentOrders/);
+});
+
+test("organiser fulfilment ignores stale loads when the selected group buy changes", () => {
+  const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
+  assert.match(fulfilment, /loadRequestRef/);
+  assert.match(source, /<FulfilmentTab key=\{selectedGb\.id\} gb=\{selectedGb\}/);
 });
 
 test("explicit organiser routing wins over the customer's original direct request", () => {

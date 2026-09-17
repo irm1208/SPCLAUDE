@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { GroupBuyOrderBreakdown } from "@/components/GroupBuyOrderBreakdown";
 import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
+import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
 const _codeToName: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.code.toLowerCase(), c.name]));
 const _nameToCode: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.name.toLowerCase(), c.code]));
@@ -7083,6 +7084,131 @@ function EntryFeePaymentsPanel({ gb }: { gb: OrganiserGB }) {
   );
 }
 
+function ReshipperTotalsModal({
+  open,
+  onClose,
+  gb,
+  orders,
+  reshippers,
+}: {
+  open: boolean;
+  onClose: () => void;
+  gb: OrganiserGB;
+  orders: OrgOrder[];
+  reshippers: OrgReshipper[];
+}) {
+  const usernameMap = new Map<string, string>();
+  const addUsername = (rawUsername: string) => {
+    const username = rawUsername.replace(/^@/, "").trim();
+    if (!username) return;
+    const key = canonicalReshipperUsername(username);
+    if (!usernameMap.has(key)) usernameMap.set(key, username);
+  };
+  reshippers.forEach(row => addUsername(row.reshipperUsername));
+  orders.forEach(order => {
+    if (order.reshipperUsername) addUsername(order.reshipperUsername);
+  });
+  const usernames = [...usernameMap.entries()].sort(([, a], [, b]) => a.localeCompare(b));
+  const rows = usernames.map(([usernameKey, username]) => {
+    const assignedOrders = filterAssignedFulfilmentOrders(orders, usernameKey);
+    const itemMap = new Map<string, number>();
+    for (const order of assignedOrders) {
+      for (const item of order.lineItems) {
+        itemMap.set(item.productName, (itemMap.get(item.productName) ?? 0) + Number(item.quantity || 0));
+      }
+    }
+    return {
+      username,
+      orders: assignedOrders.length,
+      kits: assignedOrders.reduce((sum, order) =>
+        sum + order.lineItems.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0), 0),
+      orderTotal: assignedOrders.reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
+      items: [...itemMap.entries()]
+        .map(([name, quantity]) => ({ name, quantity }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  });
+  const totalOrders = rows.reduce((sum, row) => sum + row.orders, 0);
+  const totalKits = rows.reduce((sum, row) => sum + row.kits, 0);
+  const moneySymbol = ["USD", "USDT", "USDC"].includes(gb.currency)
+    ? "$"
+    : gb.currency === "EUR" ? "€" : gb.currency === "GBP" ? "£" : gb.currency;
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) onClose();
+          }}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Reshipper totals"
+            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
+            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+            style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black" style={{ color: "var(--t-text)" }}>Reshipper totals</h3>
+                <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Assigned orders and complete item manifests for {gb.name}</p>
+              </div>
+              <button type="button" onClick={onClose} className="rounded-lg p-2" style={{ color: "var(--t-muted)", background: "var(--t-surface2)" }} aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {[
+                { label: "Reshippers", value: usernames.length },
+                { label: "Orders", value: totalOrders },
+                { label: "Combined items", value: totalKits },
+              ].map(stat => (
+                <div key={stat.label} className="rounded-xl p-3" style={{ background: "var(--t-surface2)" }}>
+                  <p className="text-[10px] font-black uppercase" style={{ color: "var(--t-subtle)" }}>{stat.label}</p>
+                  <p className="mt-1 text-xl font-black" style={{ color: "var(--t-text)" }}>{stat.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {rows.map(row => (
+                <section key={row.username} className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--t-border)" }}>
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3" style={{ background: "var(--t-surface2)" }}>
+                    <div>
+                      <p className="text-sm font-black" style={{ color: "var(--t-text)" }}>@{row.username}</p>
+                      <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>{row.orders} orders · {row.kits} items</p>
+                    </div>
+                    <p className="text-sm font-black" style={{ color: "var(--t-text)" }}>{moneySymbol}{row.orderTotal.toFixed(2)}</p>
+                  </div>
+                  <div className="grid gap-x-6 gap-y-2 px-4 py-3 sm:grid-cols-2">
+                    {row.items.map(item => (
+                      <div key={item.name} className="flex items-start justify-between gap-3 text-xs">
+                        <span style={{ color: "var(--t-muted)" }}>{item.name}</span>
+                        <span className="shrink-0 font-black" style={{ color: "var(--t-text)" }}>×{item.quantity}</span>
+                      </div>
+                    ))}
+                    {row.items.length === 0 && <p className="text-xs" style={{ color: "var(--t-subtle)" }}>No assigned items.</p>}
+                  </div>
+                </section>
+              ))}
+              {rows.length === 0 && <p className="py-8 text-center text-xs" style={{ color: "var(--t-subtle)" }}>No reshippers assigned yet.</p>}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
   const [orders, setOrders] = useState<OrgOrder[]>([]);
   const [reshippers, setReshippers] = useState<OrgReshipper[]>([]);
@@ -7093,8 +7219,11 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
   const [routingOrderId, setRoutingOrderId] = useState<string | null>(null);
+  const [reshipperTotalsOpen, setReshipperTotalsOpen] = useState(false);
+  const loadRequestRef = useRef(0);
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     setError("");
     try {
@@ -7106,16 +7235,23 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
       const reshippersData = await reshippersRes.json();
       if (!ordersRes.ok) throw new Error(ordersData?.error ?? "Failed to load fulfilment");
       if (!reshippersRes.ok) throw new Error(reshippersData?.error ?? "Failed to load reshippers");
+      if (requestId !== loadRequestRef.current) return;
       setOrders(Array.isArray(ordersData) ? ordersData : []);
       setReshippers(Array.isArray(reshippersData) ? reshippersData : []);
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load fulfilment");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }, [gb.id]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => {
+      loadRequestRef.current += 1;
+    };
+  }, [load]);
 
   const visibleOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -7220,6 +7356,9 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
             <button onClick={() => setView("list")} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-bold" style={view === "list" ? { background: "var(--t-blue-deep)", color: "#fff" } : { color: "var(--t-muted)" }}><List className="h-3.5 w-3.5" />List</button>
             <button onClick={() => setView("board")} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-[11px] font-bold" style={view === "board" ? { background: "var(--t-blue-deep)", color: "#fff" } : { color: "var(--t-muted)" }}><Columns3 className="h-3.5 w-3.5" />Board</button>
           </div>
+          <button type="button" onClick={() => setReshipperTotalsOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold" style={{ borderColor: "var(--t-border)", color: "var(--t-blue)" }}>
+            <BarChart3 className="h-3.5 w-3.5" />Reshipper totals
+          </button>
           <button onClick={() => void load()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
         </div>
       </div>
@@ -7335,6 +7474,13 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
           )}
         </div>
       )}
+      <ReshipperTotalsModal
+        open={reshipperTotalsOpen}
+        onClose={() => setReshipperTotalsOpen(false)}
+        gb={gb}
+        orders={orders}
+        reshippers={reshippers}
+      />
     </div>
   );
 }
@@ -13668,7 +13814,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
-        {activeTab === "fulfilment" && selectedGb && <FulfilmentTab gb={selectedGb} />}
+        {activeTab === "fulfilment" && selectedGb && <FulfilmentTab key={selectedGb.id} gb={selectedGb} />}
         {activeTab === "refunds" && selectedGb && <GroupBuyRefundQueue role="organiser" groupBuyId={selectedGb.id} />}
         {activeTab === "summary" && selectedGb && <SummaryTab gb={selectedGb} />}
         {activeTab === "parcels" && selectedGb && <ParcelsTab gb={selectedGb} />}

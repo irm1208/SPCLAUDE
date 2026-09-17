@@ -465,7 +465,8 @@ router.get("/reshipper/gb/:gbId/orders", requireReshipper, async (req, res): Pro
     ));
 
   // Build the where clause:
-  //  • Always include orders explicitly assigned to this reshipper (reshipperUsername = me).
+  //  • Always include orders explicitly assigned to this reshipper.
+  //    Match legacy case/@ variants so historical routing remains visible.
   //  • Also include unassigned orders (reshipperUsername IS NULL) in this reshipper's country leg
   //    so they appear in the queue before they've been claimed/allocated.
   //  • Once an order has ANY reshipperUsername set, it is only visible to that reshipper —
@@ -473,17 +474,19 @@ router.get("/reshipper/gb/:gbId/orders", requireReshipper, async (req, res): Pro
   //    fragile "count how many reshippers are on this leg" detection.
   //  • Direct-to-home orders are never the reshipper's concern — excluded in all branches.
   const notDirectShipping = sql`(${ordersTable.directShippingRequested} IS NOT TRUE)`;
+  const assignedUsername = assignment.reshipperUsername.trim().replace(/^@/, "").toLowerCase();
+  const assignedToReshipper = sql`lower(ltrim(btrim(${ordersTable.reshipperUsername}), '@')) = ${assignedUsername}`;
   const whereClause = countryLeg
     ? and(
         eq(ordersTable.groupBuyId, gbId),
         or(
-          eq(ordersTable.reshipperUsername, assignment.reshipperUsername),
+          assignedToReshipper,
           and(isNull(ordersTable.reshipperUsername), eq(ordersTable.countryLegId, countryLeg.id)),
         ),
         isNull(ordersTable.deletedAt),
         notDirectShipping,
       )
-    : and(eq(ordersTable.groupBuyId, gbId), eq(ordersTable.reshipperUsername, assignment.reshipperUsername), isNull(ordersTable.deletedAt), notDirectShipping);
+    : and(eq(ordersTable.groupBuyId, gbId), assignedToReshipper, isNull(ordersTable.deletedAt), notDirectShipping);
 
   const rows = await db
     .select()
