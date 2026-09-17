@@ -40,3 +40,8 @@ test("explicit organiser routing wins over the customer's original direct reques
   const grouping = source.slice(groupingStart, groupingEnd);
   assert.ok(grouping.indexOf('order.routingType === "unrouted"') < grouping.indexOf("order.directShippingRequested"));
 });
+
+test("fulfilment card formats delivery in the group buy currency", () => {
+  const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
+  assert.match(fulfilment, /moneySymbol\}\{Number\(order\.deliveryPrice/);
+});

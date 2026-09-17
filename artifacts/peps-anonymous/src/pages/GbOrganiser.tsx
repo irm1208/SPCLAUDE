@@ -7165,6 +7165,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
     slate: { head: "#F8FAFC", border: "#CBD5E1", text: "#475569" },
   };
   const kitCount = (order: OrgOrder) => order.lineItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const moneySymbol = gb.currency === "USD" ? "$" : gb.currency === "EUR" ? "€" : gb.currency === "GBP" ? "£" : gb.currency;
 
   const routeOrder = useCallback(async (orderId: string, groupKey: string) => {
     const current = orders.find(order => order.id === orderId);
@@ -7297,14 +7298,14 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
                           <GripVertical className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
                           <div><p className="text-sm font-black" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p><p className="font-mono text-[10px]" style={{ color: "var(--t-subtle)" }}>{order.code}</p></div>
                         </div>
-                        <span className="text-sm font-black" style={{ color: "var(--t-text)" }}>{gb.currency === "USD" ? "$" : gb.currency === "EUR" ? "€" : "£"}{Number(order.grandTotal).toFixed(2)}</span>
+                        <span className="text-sm font-black" style={{ color: "var(--t-text)" }}>{moneySymbol}{Number(order.grandTotal).toFixed(2)}</span>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <span className="rounded-full bg-green-100 px-2 py-1 text-[9px] font-black uppercase text-green-700">{order.paymentStatus.replaceAll("_", " ")}</span>
                         {!order.shippingAddress && !order.shippingName && <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black text-amber-700">No address</span>}
                       </div>
                       <p className="mt-2 text-[11px]" style={{ color: "var(--t-muted)" }}>{resolveCountry(order.shippingCountry || order.accountCountry) || "Country unknown"}</p>
-                      <p className="mt-1 text-[10px]" style={{ color: "var(--t-subtle)" }}>{kitCount(order)} kits · {Number(order.deliveryPrice || 0).toFixed(2)} delivery</p>
+                      <p className="mt-1 text-[10px]" style={{ color: "var(--t-subtle)" }}>{kitCount(order)} kits · {moneySymbol}{Number(order.deliveryPrice || 0).toFixed(2)} delivery</p>
                       <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--t-border)" }}>
                         {order.lineItems.map(item => (
                           <div key={item.id} className="flex items-start justify-between gap-2 text-[10px]" style={{ color: "var(--t-muted)" }}>
