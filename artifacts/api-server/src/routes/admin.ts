@@ -10280,13 +10280,14 @@ router.get("/admin/group-buys/:gbId/fulfillment-board", async (req, res): Promis
     const reshipperByUsername = new Map(reshippers.map(r => [r.reshipperUsername, r]));
 
     function getGroupKey(o: typeof orders[number]): string {
+      // The username is the durable assignment. Older rows can retain
+      // routingType="direct" after a reshipper was assigned, so assignment
+      // must win or the board hides those orders in Direct Shipping.
+      if (o.reshipperUsername) return `reshipper:${o.reshipperUsername}`;
       if (o.routingType === "direct") return "direct";
       if (o.routingType === "reshipper") return `reshipper:${o.reshipperUsername ?? "__unassigned__"}`;
       if (o.routingType === "unrouted") return "unrouted";
       if (o.directShippingRequested) return "direct";
-      // Legacy orders (no routingType set) — still group by reshipperUsername if one is assigned,
-      // so they appear under the correct reshipper column rather than all lumped into "Legacy".
-      if (o.reshipperUsername) return `reshipper:${o.reshipperUsername}`;
       return "legacy";
     }
 

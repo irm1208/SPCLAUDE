@@ -5,6 +5,7 @@ import test from "node:test";
 const organiserSource = readFileSync(new URL("../organiser.ts", import.meta.url), "utf8");
 const reshipperSource = readFileSync(new URL("../organiser-reshippers.ts", import.meta.url), "utf8");
 const adminReshipperSource = readFileSync(new URL("../reshipper-admin.ts", import.meta.url), "utf8");
+const adminSource = readFileSync(new URL("../admin.ts", import.meta.url), "utf8");
 
 test("organiser order list exposes fulfilment routing fields", () => {
   assert.match(organiserSource, /routingType:\s*ordersTable\.routingType/);
@@ -36,4 +37,11 @@ test("manual reshipper assignment keeps routing fields synchronized", () => {
   );
   assert.match(adminReassign, /reshipperUsername,\s*routingType:\s*"reshipper"/);
   assert.match(adminReassign, /reshipperUsername:\s*clearing\s*\?\s*null\s*:\s*reshipperUsername,[\s\S]*routingType:\s*clearing\s*\?\s*"unrouted"\s*:\s*"reshipper"/);
+});
+
+test("admin fulfilment honours an assigned reshipper over a stale routing type", () => {
+  const groupKeyStart = adminSource.indexOf("function getGroupKey");
+  const groupKeyEnd = adminSource.indexOf("\n    }\n\n    type BoardOrder", groupKeyStart);
+  const groupKey = adminSource.slice(groupKeyStart, groupKeyEnd);
+  assert.ok(groupKey.indexOf("if (o.reshipperUsername)") < groupKey.indexOf('if (o.routingType === "direct")'));
 });

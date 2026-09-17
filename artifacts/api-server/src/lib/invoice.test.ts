@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { calculateInvoiceTotals, formatInvoiceMoney } from "./invoice";
+import { calculateInvoiceTotals, formatInvoiceMoney, invoiceCurrencyForGroupBuy } from "./invoice";
 import { buildInvoicePdf } from "./invoice-pdf";
 
 describe("invoice calculations", () => {
+  it("maps stablecoin group-buy currencies to dollar invoices", () => {
+    expect(invoiceCurrencyForGroupBuy("USDT")).toBe("USD");
+    expect(invoiceCurrencyForGroupBuy("USDC")).toBe("USD");
+    expect(invoiceCurrencyForGroupBuy("USD")).toBe("USD");
+  });
+
   it("calculates discounted line subtotal, tax, shipping, and total in cents", () => {
     const totals = calculateInvoiceTotals({
       currency: "GBP",

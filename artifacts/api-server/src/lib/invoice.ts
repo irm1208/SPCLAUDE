@@ -6,6 +6,13 @@ export const invoiceStatuses = ["draft", "sent", "paid", "void"] as const;
 export type InvoiceCurrency = (typeof invoiceCurrencies)[number];
 export type InvoiceStatus = (typeof invoiceStatuses)[number];
 
+export function invoiceCurrencyForGroupBuy(currency: string | null | undefined): InvoiceCurrency {
+  const normalized = String(currency ?? "").trim().toUpperCase();
+  if (normalized === "EUR") return "EUR";
+  if (normalized === "USD" || normalized === "USDT" || normalized === "USDC") return "USD";
+  return "GBP";
+}
+
 export interface InvoiceParty {
   name: string;
   addressLines: string[];

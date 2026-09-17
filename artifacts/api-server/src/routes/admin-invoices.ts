@@ -8,6 +8,7 @@ import {
   calculateInvoiceTotals,
   calculateInvoiceLineItemTotal,
   invoiceDocumentSchema,
+  invoiceCurrencyForGroupBuy,
   seedInvoiceFromOrder,
   type InvoiceDocument,
 } from "../lib/invoice";
@@ -47,7 +48,7 @@ async function loadOrSeedInvoice(orderId: string): Promise<InvoiceDocument | nul
   const seeded = seedInvoiceFromOrder(order, items);
   if (order.groupBuyId) {
     const [groupBuy] = await db.select({ currency: groupBuysTable.currency }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
-    if (groupBuy?.currency && ["GBP", "EUR", "USD"].includes(groupBuy.currency)) seeded.currency = groupBuy.currency as InvoiceDocument["currency"];
+    if (groupBuy?.currency) seeded.currency = invoiceCurrencyForGroupBuy(groupBuy.currency);
   }
   const [created] = await db.insert(orderInvoicesTable).values({
     orderId: seeded.orderId,

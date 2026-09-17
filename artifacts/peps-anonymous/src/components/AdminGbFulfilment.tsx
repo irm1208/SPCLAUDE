@@ -16,6 +16,7 @@ import {
   PointerSensor, useSensor, useSensors,
 } from "@dnd-kit/core";
 import { toast } from "sonner";
+import { currSym } from "@/lib/currency";
 
 // ── API ───────────────────────────────────────────────────────────────────────
 function apiUrl(path: string) { return `/api${path}`; }
@@ -177,6 +178,7 @@ function OrderCard({
   const [open, setOpen] = useState(false);
   const tgHandle = order.telegramUsername.replace(/^@/, "");
   const effectiveType: "direct" | "reshipper" | "unrouted" | "legacy" =
+    order.reshipperUsername ? "reshipper" :
     order.routingType === "direct" ? "direct" :
     order.routingType === "reshipper" ? "reshipper" :
     order.routingType === "unrouted" ? "unrouted" : "legacy";
@@ -1206,7 +1208,7 @@ export function AdminGbFulfilment({
   const [countryLegs, setCountryLegs] = useState<CountryLeg[]>([]);
   const [flags, setFlags] = useState<string[]>([]);
 
-  const currSymbol = currency === "USD" ? "$" : currency === "EUR" ? "€" : "£";
+  const currSymbol = currSym(currency);
 
   // ── Responsive ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1413,7 +1415,8 @@ export function AdminGbFulfilment({
     const { routingType, reshipperUsername } = dropIdToRouting(dropId);
 
     // Check if already in this group
-    const currentGroupKey = order.routingType === "direct" ? "direct" :
+    const currentGroupKey = order.reshipperUsername ? `reshipper:${order.reshipperUsername}` :
+      order.routingType === "direct" ? "direct" :
       order.routingType === "reshipper" ? `reshipper:${order.reshipperUsername ?? "__unassigned__"}` :
       order.routingType === "unrouted" ? "unrouted" : "legacy";
     const targetGroupKey = routingType === "direct" ? "direct" :
