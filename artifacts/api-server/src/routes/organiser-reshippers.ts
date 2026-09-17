@@ -6,6 +6,7 @@ import {
   gbReshippersTable,
   groupBuysTable,
   ordersTable,
+  routingHistoryTable,
 } from "@workspace/db";
 import { eq, and, isNull, or } from "drizzle-orm";
 import { randomUUID, randomBytes } from "crypto";
@@ -215,6 +216,106 @@ router.get("/organiser/approved-reshippers", requireOrganiser, async (_req, res)
     .orderBy(accountsTable.telegramUsername);
 
   res.json(rows);
+});
+
+// ── PATCH /organiser/group-buys/:gbId/orders/:orderId/route ────────────────
+// Manual board routing for an order in a GB owned by the requesting organiser.
+router.patch("/organiser/group-buys/:gbId/orders/:orderId/route", requireOrganiser, async (req, res): Promise<void> => {
+  const gbId = String(req.params["gbId"]);
+  const orderId = String(req.params["orderId"]);
+  const gb = await requireOwnedGb(req, res, gbId);
+  if (!gb) return;
+
+  const { routingType, reshipperUsername } = req.body as {
+    routingType?: string;
+    reshipperUsername?: string | null;
+  };
+  const VALID_ROUTING_TYPES = ["direct", "reshipper", "unrouted"] as const;
+  if (!routingType || !VALID_ROUTING_TYPES.includes(routingType as typeof VALID_ROUTING_TYPES[number])) {
+    res.status(400).json({ error: `routingType must be one of: ${VALID_ROUTING_TYPES.join(", ")}` });
+    return;
+  }
+  if (routingType === "reshipper" && !reshipperUsername) {
+    res.status(400).json({ error: "reshipperUsername is required for reshipper routing" });
+    return;
+  }
+
+  const [order] = await db
+    .select({
+      id: ordersTable.id,
+      routingType: ordersTable.routingType,
+      reshipperUsername: ordersTable.reshipperUsername,
+      countryLegId: ordersTable.countryLegId,
+      batchLocked: ordersTable.batchLocked,
+      telegramUsername: ordersTable.telegramUsername,
+      code: ordersTable.code,
+      shippingCountry: ordersTable.shippingCountry,
+    })
+    .from(ordersTable)
+    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+
+  if (!order) { res.status(404).json({ error: "Order not found in this group buy" }); return; }
+  if (order.batchLocked) {
+    res.status(409).json({ error: "Order is batch-locked and cannot be moved" });
+    return;
+  }
+
+  const targetReshipper = routingType === "reshipper" ? String(reshipperUsername) : null;
+  if (targetReshipper) {
+    const [assignment] = await db
+      .select({ id: gbReshippersTable.id })
+      .from(gbReshippersTable)
+      .where(and(
+        eq(gbReshippersTable.gbId, gbId),
+        eq(gbReshippersTable.reshipperUsername, targetReshipper),
+      ));
+    if (!assignment) {
+      res.status(400).json({ error: "Reshipper is not assigned to this group buy" });
+      return;
+    }
+  }
+
+  const [updated] = await db
+    .update(ordersTable)
+    .set({ routingType: routingType as "direct" | "reshipper" | "unrouted", reshipperUsername: targetReshipper })
+    .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId))))
+    .returning({
+      id: ordersTable.id,
+      routingType: ordersTable.routingType,
+      reshipperUsername: ordersTable.reshipperUsername,
+    });
+
+  if (!updated) {
+    res.status(409).json({ error: "Order routing could not be updated" });
+    return;
+  }
+
+  await db.insert(routingHistoryTable).values({
+    orderId,
+    changedBy: `organiser:${req.organiser!.telegramUsername}`,
+    fromRoutingType: order.routingType ?? null,
+    toRoutingType: routingType,
+    fromReshipperUsername: order.reshipperUsername ?? null,
+    toReshipperUsername: targetReshipper,
+    fromCountryLegId: order.countryLegId ?? null,
+    toCountryLegId: order.countryLegId ?? null,
+    reason: "Organiser fulfilment board drag-and-drop",
+  });
+
+  writeLog("change", "info", "organiser_order_routed",
+    `Organiser @${req.organiser!.telegramUsername} routed order ${orderId} to ${routingType}${targetReshipper ? ` @${targetReshipper}` : ""}`,
+    { gbId, orderId, routingType, reshipperUsername: targetReshipper },
+  ).catch(() => {});
+
+  if (targetReshipper && targetReshipper !== order.reshipperUsername) {
+    notifyUserFromTemplate(targetReshipper, "status", "reshipper_force_assigned", {
+      code: order.code ?? orderId,
+      customer_username: order.telegramUsername ?? "",
+      shipping_country: order.shippingCountry ?? "",
+    }).catch(() => {});
+  }
+
+  res.json({ ok: true, order: updated });
 });
 
 // ── PATCH /organiser/group-buys/:gbId/orders/:orderId/reassign-reshipper ──

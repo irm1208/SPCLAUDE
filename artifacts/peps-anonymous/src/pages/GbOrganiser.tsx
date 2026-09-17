@@ -11,7 +11,7 @@ import {
   AlertCircle, Globe, Lock, SendHorizonal, Truck,
   Sparkles, LayoutDashboard, Info, Download, ClipboardList, QrCode,
   MessageSquare, Search, UserCheck, Save, Copy, Settings, Shield, Calculator,
-  ArrowUp, ArrowDown, Eye, EyeOff, TestTube, List, Columns3,
+  ArrowUp, ArrowDown, Eye, EyeOff, TestTube, List, Columns3, GripVertical,
 } from "lucide-react";
 import ShippingSplitTab from "./ShippingSplitTab";
 import { PageLayout } from "@/components/PageLayout";
@@ -199,6 +199,8 @@ interface OrgOrder {
   orderType: string | null;
   routingType?: string | null;
   directShippingRequested?: boolean;
+  batchLocked?: boolean;
+  vendorShipping?: number;
   lineItems: { id: string; productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos?: boolean }[];
 }
 
@@ -7083,19 +7085,29 @@ function EntryFeePaymentsPanel({ gb }: { gb: OrganiserGB }) {
 
 function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
   const [orders, setOrders] = useState<OrgOrder[]>([]);
+  const [reshippers, setReshippers] = useState<OrgReshipper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [view, setView] = useState<"list" | "board">("board");
   const [search, setSearch] = useState("");
+  const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
+  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
+  const [routingOrderId, setRoutingOrderId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/organiser/group-buys/${gb.id}/orders`, { credentials: "include" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Failed to load fulfilment");
-      setOrders(Array.isArray(data) ? data : []);
+      const [ordersRes, reshippersRes] = await Promise.all([
+        fetch(`/api/organiser/group-buys/${gb.id}/orders`, { credentials: "include" }),
+        fetch(`/api/organiser/group-buys/${gb.id}/reshippers`, { credentials: "include" }),
+      ]);
+      const ordersData = await ordersRes.json();
+      const reshippersData = await reshippersRes.json();
+      if (!ordersRes.ok) throw new Error(ordersData?.error ?? "Failed to load fulfilment");
+      if (!reshippersRes.ok) throw new Error(reshippersData?.error ?? "Failed to load reshippers");
+      setOrders(Array.isArray(ordersData) ? ordersData : []);
+      setReshippers(Array.isArray(reshippersData) ? reshippersData : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load fulfilment");
     } finally {
@@ -7114,22 +7126,37 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
 
   const groups = useMemo(() => {
     const map = new Map<string, { key: string; label: string; tone: "green" | "blue" | "amber" | "slate"; orders: OrgOrder[] }>();
+    map.set("direct", { key: "direct", label: "Direct Shipping", tone: "green", orders: [] });
+    for (const assignment of reshippers) {
+      const username = assignment.reshipperUsername.replace(/^@/, "");
+      const key = `reshipper:${username}`;
+      if (!map.has(key)) map.set(key, { key, label: `@${username}`, tone: "blue", orders: [] });
+    }
+    map.set("unrouted", { key: "unrouted", label: "Unrouted", tone: "amber", orders: [] });
     const add = (key: string, label: string, tone: "green" | "blue" | "amber" | "slate", order: OrgOrder) => {
       const group = map.get(key) ?? { key, label, tone, orders: [] };
       group.orders.push(order);
       map.set(key, group);
     };
     for (const order of visibleOrders) {
-      if (order.routingType === "direct" || order.directShippingRequested) add("direct", "Direct Shipping", "green", order);
-      else if (order.reshipperUsername) add(`reshipper:${order.reshipperUsername}`, `@${order.reshipperUsername.replace(/^@/, "")}`, "blue", order);
+      if (order.routingType === "direct") add("direct", "Direct Shipping", "green", order);
+      else if (order.routingType === "reshipper" && order.reshipperUsername) {
+        const username = order.reshipperUsername.replace(/^@/, "");
+        add(`reshipper:${username}`, `@${username}`, "blue", order);
+      }
       else if (order.routingType === "unrouted") add("unrouted", "Unrouted", "amber", order);
+      else if (order.directShippingRequested) add("direct", "Direct Shipping", "green", order);
+      else if (order.reshipperUsername) {
+        const username = order.reshipperUsername.replace(/^@/, "");
+        add(`reshipper:${username}`, `@${username}`, "blue", order);
+      }
       else add("legacy", "Legacy", "slate", order);
     }
     return [...map.values()].sort((a, b) => {
       const rank = (key: string) => key === "direct" ? 0 : key.startsWith("reshipper:") ? 1 : key === "unrouted" ? 2 : 3;
       return rank(a.key) - rank(b.key) || a.label.localeCompare(b.label);
     });
-  }, [visibleOrders]);
+  }, [visibleOrders, reshippers]);
 
   const tone = {
     green: { head: "#ECFDF5", border: "#A7F3D0", text: "#047857" },
@@ -7138,6 +7165,38 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
     slate: { head: "#F8FAFC", border: "#CBD5E1", text: "#475569" },
   };
   const kitCount = (order: OrgOrder) => order.lineItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+
+  const routeOrder = useCallback(async (orderId: string, groupKey: string) => {
+    const current = orders.find(order => order.id === orderId);
+    if (!current || current.batchLocked || groupKey === "legacy") return;
+    const routingType = groupKey.startsWith("reshipper:") ? "reshipper" : groupKey;
+    const reshipperUsername = groupKey.startsWith("reshipper:") ? groupKey.slice("reshipper:".length) : null;
+    const previousOrders = orders;
+    setRoutingOrderId(orderId);
+    setError("");
+    setOrders(prev => prev.map(order => order.id === orderId ? {
+      ...order,
+      routingType,
+      reshipperUsername,
+    } : order));
+    try {
+      const res = await fetch(`/api/organiser/group-buys/${gb.id}/orders/${orderId}/route`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routingType, reshipperUsername }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Failed to move order");
+    } catch (err) {
+      setOrders(previousOrders);
+      setError(err instanceof Error ? err.message : "Failed to move order");
+    } finally {
+      setRoutingOrderId(null);
+      setDraggedOrderId(null);
+      setDragOverGroup(null);
+    }
+  }, [gb.id, orders]);
 
   if (loading) return (
     <div className="flex items-center justify-center gap-2 py-16 text-sm" style={{ color: "var(--t-muted)" }}>
@@ -7175,7 +7234,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
           {visibleOrders.map(order => (
             <div key={order.id} className="grid gap-2 border-b px-4 py-3 last:border-0 md:grid-cols-[1.2fr_.8fr_.7fr_.7fr_.55fr] md:items-center" style={{ borderColor: "var(--t-border)" }}>
               <div><p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p><p className="font-mono text-[10px]" style={{ color: "var(--t-subtle)" }}>{order.code}</p></div>
-              <span className="text-xs" style={{ color: "var(--t-muted)" }}>{order.directShippingRequested || order.routingType === "direct" ? "Direct" : order.reshipperUsername ? `@${order.reshipperUsername.replace(/^@/, "")}` : order.routingType === "unrouted" ? "Unrouted" : "Legacy"}</span>
+              <span className="text-xs" style={{ color: "var(--t-muted)" }}>{order.routingType === "direct" ? "Direct" : order.routingType === "reshipper" && order.reshipperUsername ? `@${order.reshipperUsername.replace(/^@/, "")}` : order.routingType === "unrouted" ? "Unrouted" : order.directShippingRequested ? "Direct" : order.reshipperUsername ? `@${order.reshipperUsername.replace(/^@/, "")}` : "Legacy"}</span>
               <span className="w-fit rounded-full px-2 py-1 text-[10px] font-black uppercase" style={{ background: ["confirmed", "test_confirmed"].includes(order.paymentStatus) ? "#DCFCE7" : "#FEF3C7", color: ["confirmed", "test_confirmed"].includes(order.paymentStatus) ? "#15803D" : "#B45309" }}>{order.paymentStatus.replaceAll("_", " ")}</span>
               <span className="text-xs" style={{ color: "var(--t-muted)" }}>{resolveCountry(order.shippingCountry || order.accountCountry) || "—"}</span>
               <span className="text-right text-xs font-bold" style={{ color: "var(--t-text)" }}>{kitCount(order)}</span>
@@ -7187,23 +7246,79 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
           {groups.map(group => {
             const colors = tone[group.tone];
             return (
-              <section key={group.key} className="w-[290px] shrink-0 overflow-hidden rounded-xl border" style={{ borderColor: colors.border, background: "var(--t-surface)" }}>
+              <section
+                key={group.key}
+                onDragOver={event => {
+                  if (group.key === "legacy") return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDragOverGroup(group.key);
+                }}
+                onDragLeave={event => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverGroup(null);
+                }}
+                onDrop={event => {
+                  event.preventDefault();
+                  const orderId = event.dataTransfer.getData("text/order-id") || draggedOrderId;
+                  if (orderId) void routeOrder(orderId, group.key);
+                }}
+                className="w-[290px] shrink-0 overflow-hidden rounded-xl border transition-all"
+                style={{
+                  borderColor: dragOverGroup === group.key ? colors.text : colors.border,
+                  background: dragOverGroup === group.key ? colors.head : "var(--t-surface)",
+                  boxShadow: dragOverGroup === group.key ? `0 0 0 2px ${colors.border}` : undefined,
+                }}
+              >
                 <div className="border-b px-3 py-3" style={{ background: colors.head, borderColor: colors.border }}>
                   <p className="text-sm font-black" style={{ color: colors.text }}>{group.label}</p>
                   <p className="mt-0.5 text-[10px]" style={{ color: colors.text }}>{group.orders.length} orders · {group.orders.reduce((sum, o) => sum + kitCount(o), 0)} kits</p>
                 </div>
                 <div className="max-h-[62vh] space-y-2 overflow-y-auto p-2">
                   {group.orders.map(order => (
-                    <article key={order.id} className="rounded-xl border p-3 shadow-sm" style={{ borderColor: order.shippingAddress || order.shippingName ? "var(--t-border)" : "#FCD34D", background: "var(--t-surface)" }}>
-                      <div className="flex items-start justify-between gap-2"><div><p className="text-sm font-black" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p><p className="font-mono text-[10px]" style={{ color: "var(--t-subtle)" }}>{order.code}</p></div><span className="text-sm font-black" style={{ color: "var(--t-text)" }}>{gb.currency === "USD" ? "$" : gb.currency === "EUR" ? "€" : "£"}{Number(order.grandTotal).toFixed(2)}</span></div>
+                    <article
+                      key={order.id}
+                      draggable={!order.batchLocked && routingOrderId !== order.id}
+                      onDragStart={event => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/order-id", order.id);
+                        setDraggedOrderId(order.id);
+                      }}
+                      onDragEnd={() => { setDraggedOrderId(null); setDragOverGroup(null); }}
+                      className="rounded-xl border p-3 shadow-sm transition-opacity"
+                      style={{
+                        borderColor: order.shippingAddress || order.shippingName ? "var(--t-border)" : "#FCD34D",
+                        background: "var(--t-surface)",
+                        opacity: draggedOrderId === order.id || routingOrderId === order.id ? 0.55 : 1,
+                        cursor: order.batchLocked ? "not-allowed" : "grab",
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-start gap-1.5">
+                          <GripVertical className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--t-subtle)" }} />
+                          <div><p className="text-sm font-black" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p><p className="font-mono text-[10px]" style={{ color: "var(--t-subtle)" }}>{order.code}</p></div>
+                        </div>
+                        <span className="text-sm font-black" style={{ color: "var(--t-text)" }}>{gb.currency === "USD" ? "$" : gb.currency === "EUR" ? "€" : "£"}{Number(order.grandTotal).toFixed(2)}</span>
+                      </div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <span className="rounded-full bg-green-100 px-2 py-1 text-[9px] font-black uppercase text-green-700">{order.paymentStatus.replaceAll("_", " ")}</span>
                         {!order.shippingAddress && !order.shippingName && <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black text-amber-700">No address</span>}
                       </div>
                       <p className="mt-2 text-[11px]" style={{ color: "var(--t-muted)" }}>{resolveCountry(order.shippingCountry || order.accountCountry) || "Country unknown"}</p>
                       <p className="mt-1 text-[10px]" style={{ color: "var(--t-subtle)" }}>{kitCount(order)} kits · {Number(order.deliveryPrice || 0).toFixed(2)} delivery</p>
+                      <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--t-border)" }}>
+                        {order.lineItems.map(item => (
+                          <div key={item.id} className="flex items-start justify-between gap-2 text-[10px]" style={{ color: "var(--t-muted)" }}>
+                            <span className="min-w-0 truncate">{item.productName}</span>
+                            <span className="shrink-0 font-bold">×{Number(item.quantity)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {order.batchLocked && <p className="mt-2 flex items-center gap-1 text-[9px] font-bold uppercase text-amber-700"><Lock className="h-3 w-3" /> Batch locked</p>}
                     </article>
                   ))}
+                  {group.orders.length === 0 && group.key !== "legacy" && (
+                    <p className="py-8 text-center text-[10px] font-semibold" style={{ color: colors.text }}>Drop orders here</p>
+                  )}
                 </div>
               </section>
             );
@@ -11652,6 +11767,7 @@ export function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
   const [assignments, setAssignments] = useState<OrgReshipper[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reshipperTotalsOpen, setReshipperTotalsOpen] = useState(false);
 
   // Invite code — seed from existing GB value so it's visible immediately on mount
   const [inviteCode, setInviteCode] = useState<string | null>(gb.reshipperInviteCode ?? null);
@@ -11771,6 +11887,11 @@ export function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
     } finally { setLoadingOrders(false); }
   }
 
+  useEffect(() => {
+    setOrdersLoaded(false);
+    void loadOrders();
+  }, [gb.id]);
+
   async function forceAssignOrder(orderId: string) {
     const newReshipper = orderReassignTarget[orderId] ?? "";
     setOrderReassigning(orderId);
@@ -11809,6 +11930,23 @@ export function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
   }
 
   const assignedUsernames = new Set(assignments.map(a => a.reshipperUsername));
+  const moneySymbol = gb.currency === "USD" ? "$" : gb.currency === "EUR" ? "€" : "£";
+  const uniqueReshipperNames = [...new Set(assignments.map(a => a.reshipperUsername.replace(/^@/, "")))];
+  const reshipperTotals = uniqueReshipperNames.map(username => {
+    const assignedOrders = orders.filter(order =>
+      order.reshipperUsername?.replace(/^@/, "").toLowerCase() === username.toLowerCase(),
+    );
+    return {
+      username,
+      orders: assignedOrders.length,
+      kits: assignedOrders.reduce((sum, order) => sum + order.lineItems.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0), 0),
+      orderTotal: assignedOrders.reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
+      vendorShipping: assignedOrders.reduce((sum, order) => sum + Number(order.vendorShipping || 0), 0),
+    };
+  });
+  const combinedReshipperKits = reshipperTotals.reduce((sum, row) => sum + row.kits, 0);
+  const combinedReshipperOrders = reshipperTotals.reduce((sum, row) => sum + row.orders, 0);
+  const combinedReshipperValue = reshipperTotals.reduce((sum, row) => sum + row.orderTotal, 0);
   const filteredReshippers = approvedReshippers.filter(
     r => !assignedUsernames.has(r.telegramUsername) &&
       r.telegramUsername.toLowerCase().includes(reshipperSearch.toLowerCase()),
@@ -11820,6 +11958,93 @@ export function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
   return (
     <div className="space-y-4">
       {error && <ErrorBanner msg={error} onClose={() => setError(null)} />}
+
+      <SectionCard>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Reshipper fulfilment totals</p>
+            <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
+              {loadingOrders ? "Loading assigned orders…" : `${uniqueReshipperNames.length} reshippers · ${combinedReshipperOrders} orders · ${combinedReshipperKits} kits`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReshipperTotalsOpen(true)}
+            disabled={loadingOrders}
+            className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-white disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg, var(--t-blue) 0%, #1E3A8A 100%)" }}
+          >
+            <BarChart3 className="h-4 w-4" />
+            Reshipper totals
+          </button>
+        </div>
+      </SectionCard>
+
+      <AnimatePresence>
+        {reshipperTotalsOpen && (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={event => {
+              if (event.target === event.currentTarget) setReshipperTotalsOpen(false);
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Reshipper totals"
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border p-5 shadow-2xl"
+              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-black" style={{ color: "var(--t-text)" }}>Reshipper totals</h3>
+                  <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Full assigned-order totals for {gb.name}</p>
+                </div>
+                <button type="button" onClick={() => setReshipperTotalsOpen(false)} className="rounded-lg p-2" style={{ color: "var(--t-muted)", background: "var(--t-surface2)" }} aria-label="Close">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="rounded-xl p-3" style={{ background: "var(--t-surface2)" }}>
+                  <p className="text-[10px] font-black uppercase" style={{ color: "var(--t-subtle)" }}>Combined kits</p>
+                  <p className="mt-1 text-xl font-black" style={{ color: "var(--t-text)" }}>{combinedReshipperKits}</p>
+                </div>
+                <div className="rounded-xl p-3" style={{ background: "var(--t-surface2)" }}>
+                  <p className="text-[10px] font-black uppercase" style={{ color: "var(--t-subtle)" }}>Orders</p>
+                  <p className="mt-1 text-xl font-black" style={{ color: "var(--t-text)" }}>{combinedReshipperOrders}</p>
+                </div>
+                <div className="rounded-xl p-3" style={{ background: "var(--t-surface2)" }}>
+                  <p className="text-[10px] font-black uppercase" style={{ color: "var(--t-subtle)" }}>Order total</p>
+                  <p className="mt-1 text-xl font-black" style={{ color: "var(--t-text)" }}>{moneySymbol}{combinedReshipperValue.toFixed(2)}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-hidden rounded-xl border" style={{ borderColor: "var(--t-border)" }}>
+                <div className="hidden grid-cols-[1.2fr_.55fr_.55fr_.8fr_.8fr] gap-2 border-b px-3 py-2 text-[10px] font-black uppercase sm:grid" style={{ borderColor: "var(--t-border)", color: "var(--t-subtle)" }}>
+                  <span>Reshipper</span><span>Orders</span><span>Kits</span><span>Vendor shipping</span><span className="text-right">Order total</span>
+                </div>
+                {reshipperTotals.map(row => (
+                  <div key={row.username} className="grid gap-1 border-b px-3 py-3 text-xs last:border-0 sm:grid-cols-[1.2fr_.55fr_.55fr_.8fr_.8fr] sm:items-center" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}>
+                    <span className="font-bold" style={{ color: "var(--t-text)" }}>@{row.username}</span>
+                    <span>{row.orders} orders</span>
+                    <span className="font-bold">{row.kits} kits</span>
+                    <span>{moneySymbol}{row.vendorShipping.toFixed(2)}</span>
+                    <span className="font-black sm:text-right" style={{ color: "var(--t-text)" }}>{moneySymbol}{row.orderTotal.toFixed(2)}</span>
+                  </div>
+                ))}
+                {reshipperTotals.length === 0 && <p className="px-4 py-8 text-center text-xs" style={{ color: "var(--t-subtle)" }}>No reshippers assigned yet.</p>}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Invite Code */}
       <SectionCard>
