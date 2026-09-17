@@ -7209,6 +7209,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
         <div>
           <h2 className="text-lg font-black" style={{ color: "var(--t-text)" }}>Fulfilment</h2>
           <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{visibleOrders.length} orders · {visibleOrders.reduce((sum, o) => sum + kitCount(o), 0)} kits</p>
+          {view === "board" && <p className="mt-1 text-[10px] font-semibold" style={{ color: "var(--t-blue)" }}>Drag orders between columns to update routing</p>}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1 sm:w-64">
@@ -7258,7 +7259,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
                 }}
                 onDrop={event => {
                   event.preventDefault();
-                  const orderId = event.dataTransfer.getData("text/order-id") || draggedOrderId;
+                  const orderId = event.dataTransfer.getData("text/order-id") || event.dataTransfer.getData("text/plain") || draggedOrderId;
                   if (orderId) void routeOrder(orderId, group.key);
                 }}
                 className="w-[290px] shrink-0 overflow-hidden rounded-xl border transition-all"
@@ -7280,9 +7281,12 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
                       onDragStart={event => {
                         event.dataTransfer.effectAllowed = "move";
                         event.dataTransfer.setData("text/order-id", order.id);
+                        event.dataTransfer.setData("text/plain", order.id);
                         setDraggedOrderId(order.id);
                       }}
                       onDragEnd={() => { setDraggedOrderId(null); setDragOverGroup(null); }}
+                      aria-label={`Drag order ${order.code} to another fulfilment column`}
+                      aria-grabbed={draggedOrderId === order.id}
                       className="rounded-xl border p-3 shadow-sm transition-opacity"
                       style={{
                         borderColor: order.shippingAddress || order.shippingName ? "var(--t-border)" : "#FCD34D",

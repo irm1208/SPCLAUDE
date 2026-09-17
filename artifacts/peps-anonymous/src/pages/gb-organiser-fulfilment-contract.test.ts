@@ -26,6 +26,13 @@ test("fulfilment supports real drag-and-drop routing", () => {
   assert.match(source, /Drop orders here/);
 });
 
+test("organiser board uses a browser-compatible drag payload and explains the interaction", () => {
+  const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
+  assert.match(fulfilment, /setData\("text\/plain",\s*order\.id\)/);
+  assert.match(fulfilment, /getData\("text\/order-id"\)\s*\|\|\s*event\.dataTransfer\.getData\("text\/plain"\)/);
+  assert.match(fulfilment, /Drag orders between columns/);
+});
+
 test("reshippers tab exposes a totals modal", () => {
   assert.match(source, /Reshipper totals/);
   assert.match(source, /reshipperTotalsOpen/);
