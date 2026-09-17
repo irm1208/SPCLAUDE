@@ -26,6 +26,7 @@ import { buildBalanceAnonPayUrl, getBalanceAnonPayUrl } from "./balance-anonpay-
 import { BALANCE_PAYMENT_METHOD_COPY, getBalancePaymentCardTheme } from "./balance-payment-card-theme";
 import { getOrderPaymentSummary } from "./order-payment-summary";
 import CustomerRefundPanel from "@/components/CustomerRefundPanel";
+import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
 import type { CustomerRefund } from "@/hooks/use-account";
 import type { TrackingPackageView } from "@workspace/shipping/tracking";
 import { safeAddMoney, safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
@@ -2031,6 +2032,7 @@ export default function AccountOrderDetail() {
   const [accountCredits, setAccountCredits] = useState(0);
   const [applyingCredits, setApplyingCredits] = useState(false);
   const [creditsError, setCreditsError] = useState<string | null>(null);
+  const [invoiceEditing, setInvoiceEditing] = useState(false);
   const creditOperationKeys = useRef(new Map<string, string>());
 
   const isPaidOrder = order?.paymentStatus === "confirmed" || order?.paymentStatus === "test_confirmed";
@@ -2234,6 +2236,41 @@ export default function AccountOrderDetail() {
     <Chrome>
       <div className="warm-order flex flex-col" style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <SiteAnnouncements />
+        {invoiceEditing && order && !isAdminPreview && (
+          <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
+            <div className="mx-auto min-h-full max-w-[1440px] rounded-lg bg-background p-4 shadow-2xl sm:p-6">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Order invoice</p>
+                  <p className="text-sm text-muted-foreground">Changes update the order&apos;s editable financial document.</p>
+                </div>
+                <button
+                  type="button"
+                  title="Close invoice editor"
+                  onClick={() => setInvoiceEditing(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <InvoiceEditor
+                orderId={order.id}
+                access={{ kind: "member" }}
+                onSaved={(saved) => {
+                  setOrder(prev => prev ? {
+                    ...prev,
+                    productSubtotal: Number(saved.subtotal),
+                    grandTotal: Number(saved.total),
+                    deliveryPrice: Number(saved.shippingCost),
+                    notes: saved.notes || null,
+                  } : prev);
+                  setInvoiceEditing(false);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
+            </div>
+          </div>
+        )}
         <main className={`flex-1 px-4 py-5 ${useDashChrome ? "pb-24 lg:pb-6" : "pb-24 md:pb-5"} max-w-md lg:max-w-2xl mx-auto w-full`}>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
 
@@ -3059,6 +3096,15 @@ export default function AccountOrderDetail() {
                       <SecIcon Icon={Pencil} />
                       <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
                     </div>
+                    {!isAdminPreview && isLoggedIn && !refundActive && (
+                      <button
+                        className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border"
+                        style={{ background: "var(--t-blue-08)", color: "var(--t-blue)", borderColor: "var(--t-blue-20)", padding: "10px 16px" }}
+                        onClick={() => setInvoiceEditing(true)}
+                      >
+                        <FileText className="w-4 h-4" /> Edit invoice
+                      </button>
+                    )}
                     {refundActive ? (
                       <div role="status" className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>Refund request active — order edits, additional items, and cancellation are temporarily locked.</div>
                     ) : order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (
