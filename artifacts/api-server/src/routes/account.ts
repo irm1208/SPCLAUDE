@@ -32,6 +32,9 @@ import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayme
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
 import { getWholesaleAccessOutstandingAmount } from "../lib/wholesale-access-payment";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
+import { invoiceDocumentSchema } from "../lib/invoice";
+import { buildInvoicePdf } from "../lib/invoice-pdf";
+import { invoiceFilename, loadOrSeedInvoice, saveInvoice } from "../lib/invoice-service";
 import {
   getOrderTrackingStatus,
   getTrackingPackages,
@@ -1836,6 +1839,68 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
   }));
 
   res.json(results);
+});
+
+async function findOwnedInvoiceOrder(telegramUsername: string, orderId: string) {
+  const tgBare = telegramUsername.replace(/^@/, "").toLowerCase();
+  const tgWithAt = `@${tgBare}`;
+  const [order] = await db
+    .select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.id, orderId),
+      isNull(ordersTable.deletedAt),
+      sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`,
+    ));
+  return order ?? null;
+}
+
+router.get("/account/orders/:id/invoice", requireAccount, async (req, res): Promise<void> => {
+  try {
+    const order = await findOwnedInvoiceOrder(req.account!.telegramUsername, String(req.params.id));
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    const invoice = await loadOrSeedInvoice(order.id);
+    if (!invoice) { res.status(404).json({ error: "Order not found" }); return; }
+    res.json(invoice);
+  } catch (error) {
+    console.error("[account] invoice load failed", error);
+    res.status(500).json({ error: "Failed to load invoice" });
+  }
+});
+
+router.put("/account/orders/:id/invoice", requireAccount, async (req, res): Promise<void> => {
+  const order = await findOwnedInvoiceOrder(req.account!.telegramUsername, String(req.params.id));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const parsed = invoiceDocumentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid invoice" });
+    return;
+  }
+
+  try {
+    const saved = await saveInvoice(order.id, parsed.data);
+    if (!saved) { res.status(404).json({ error: "Order not found" }); return; }
+    res.json(saved);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to save invoice";
+    res.status(/refund/i.test(message) ? 409 : 400).json({ error: message });
+  }
+});
+
+router.get("/account/orders/:id/invoice-pdf", requireAccount, async (req, res): Promise<void> => {
+  try {
+    const order = await findOwnedInvoiceOrder(req.account!.telegramUsername, String(req.params.id));
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    const invoice = await loadOrSeedInvoice(order.id);
+    if (!invoice) { res.status(404).json({ error: "Order not found" }); return; }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="invoice-${invoiceFilename(invoice.invoiceNumber)}.pdf"`);
+    res.send(buildInvoicePdf(invoice));
+  } catch (error) {
+    console.error("[account] invoice PDF failed", error);
+    res.status(500).json({ error: "Failed to generate invoice PDF" });
+  }
 });
 
 // GET /api/account/hidden-orders — returns the list of order IDs the member has hidden

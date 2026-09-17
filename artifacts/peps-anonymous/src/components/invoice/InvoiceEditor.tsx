@@ -68,12 +68,32 @@ function toDocument(orderId: string, value: InvoiceForm): Omit<InvoiceDocument, 
   };
 }
 
-export function InvoiceEditor({ orderId, adminSecret, onSaved }: { orderId: string; adminSecret: string; onSaved?: () => void }) {
+export type InvoiceEditorAccess =
+  | { kind: "admin"; adminSecret: string }
+  | { kind: "member" };
+
+export function InvoiceEditor({
+  orderId,
+  access,
+  adminSecret,
+  onSaved,
+}: {
+  orderId: string;
+  access?: InvoiceEditorAccess;
+  adminSecret?: string;
+  onSaved?: (invoice: InvoiceDocument) => void;
+}) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const resolvedAccess: InvoiceEditorAccess = access ?? { kind: "admin", adminSecret: adminSecret ?? "" };
+  const accessKind = resolvedAccess.kind;
+  const effectiveAdminSecret = resolvedAccess.kind === "admin" ? resolvedAccess.adminSecret : "";
+  const basePath = resolvedAccess.kind === "member"
+    ? `/api/account/orders/${encodeURIComponent(orderId)}/invoice`
+    : `/api/admin/orders/${encodeURIComponent(orderId)}/invoice`;
   const { control, register, reset, handleSubmit } = useForm<InvoiceForm>({ defaultValues: { invoiceNumber: "", issueDate: new Date().toISOString().slice(0, 10), dueDate: "", currency: "GBP", status: "draft", seller: EMPTY_PARTY, customer: EMPTY_PARTY, lineItems: [EMPTY_ITEM], notes: "", terms: "", shippingCost: "0" } });
   const { fields, append, remove } = useFieldArray({ control, name: "lineItems" });
   const watched = useWatch({ control });
@@ -82,25 +102,30 @@ export function InvoiceEditor({ orderId, adminSecret, onSaved }: { orderId: stri
     const totals = calculateInvoiceTotals(draft);
     return { ...draft, ...totals };
   }, [orderId, watched]);
-  const requestHeaders = (json = false): HeadersInit => ({ ...(json ? { "Content-Type": "application/json" } : {}), ...(adminSecret !== "__admin_session__" ? { "x-admin-secret": adminSecret } : {}) });
+  const requestHeaders = (json = false): HeadersInit => ({
+    ...(json ? { "Content-Type": "application/json" } : {}),
+    ...(resolvedAccess.kind === "admin" && effectiveAdminSecret !== "__admin_session__"
+      ? { "x-admin-secret": effectiveAdminSecret }
+      : {}),
+  });
   useEffect(() => {
     let active = true;
     setLoading(true);
-    fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/invoice`, { headers: requestHeaders(), credentials: "include" })
+    fetch(basePath, { headers: requestHeaders(), credentials: "include" })
       .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error ?? "Failed to load invoice"); return body as InvoiceDocument; })
       .then((invoice) => { if (active) reset(normalizeInvoice(invoice)); })
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Failed to load invoice"); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [adminSecret, orderId, reset]);
+  }, [accessKind, basePath, effectiveAdminSecret, orderId, reset]);
 
   const onSubmit: SubmitHandler<InvoiceForm> = async (value) => {
     setSaving(true); setError(null); setSaved(false);
     try {
-      const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/invoice`, { method: "PUT", headers: requestHeaders(true), credentials: "include", body: JSON.stringify(toDocument(orderId, value)) });
+      const response = await fetch(basePath, { method: "PUT", headers: requestHeaders(true), credentials: "include", body: JSON.stringify(toDocument(orderId, value)) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Failed to save invoice");
-      reset(normalizeInvoice(body as InvoiceDocument)); setSaved(true); onSaved?.();
+      reset(normalizeInvoice(body as InvoiceDocument)); setSaved(true); onSaved?.(body as InvoiceDocument);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Failed to save invoice"); }
     finally { setSaving(false); }
   };
@@ -108,7 +133,7 @@ export function InvoiceEditor({ orderId, adminSecret, onSaved }: { orderId: stri
   const downloadPdf = async () => {
     setDownloading(true); setError(null);
     try {
-      const response = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}/invoice-pdf`, { headers: requestHeaders(), credentials: "include" });
+      const response = await fetch(`${basePath}-pdf`, { headers: requestHeaders(), credentials: "include" });
       if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error ?? "Failed to download PDF"); }
       const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `invoice-${preview.invoiceNumber || orderId}.pdf`; link.click(); URL.revokeObjectURL(url);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Failed to download PDF"); }
