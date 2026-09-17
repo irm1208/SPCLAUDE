@@ -41,6 +41,14 @@ test("explicit organiser routing wins over the customer's original direct reques
   assert.ok(grouping.indexOf('order.routingType === "unrouted"') < grouping.indexOf("order.directShippingRequested"));
 });
 
+test("an existing reshipper assignment wins over a stale direct routing marker", () => {
+  const fulfilmentStart = source.indexOf("function FulfilmentTab");
+  const groupingStart = source.indexOf("for (const order of visibleOrders)", fulfilmentStart);
+  const groupingEnd = source.indexOf("return [...map.values()]", groupingStart);
+  const grouping = source.slice(groupingStart, groupingEnd);
+  assert.ok(grouping.indexOf("order.reshipperUsername") < grouping.indexOf('order.routingType === "direct"'));
+});
+
 test("fulfilment card formats delivery in the group buy currency", () => {
   const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
   assert.match(fulfilment, /moneySymbol\}\{Number\(order\.deliveryPrice/);

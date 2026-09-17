@@ -338,12 +338,12 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId/reassign-reshipper", r
   if (!order) { res.status(404).json({ error: "Order not found in this group buy" }); return; }
 
   if (reshipperUsername === null || reshipperUsername === "") {
-    await db.update(ordersTable).set({ reshipperUsername: null }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+    await db.update(ordersTable).set({ reshipperUsername: null, routingType: "unrouted" }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
     writeLog("change", "info", "reshipper_reassigned",
       `Organiser @${req.organiser!.telegramUsername} (manual override) cleared reshipper for order ${orderId} in GB ${gbId}`,
       { orderId, gbId, clearedBy: req.organiser!.telegramUsername, manualOverride: true },
     ).catch(() => {});
-    res.json({ ok: true, reshipperUsername: null });
+    res.json({ ok: true, reshipperUsername: null, routingType: "unrouted" });
     return;
   }
 
@@ -367,7 +367,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId/reassign-reshipper", r
     return;
   }
 
-  await db.update(ordersTable).set({ reshipperUsername }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+  await db.update(ordersTable).set({ reshipperUsername, routingType: "reshipper" }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   writeLog("change", "info", "reshipper_reassigned",
     `Organiser @${req.organiser!.telegramUsername} (manual override) force-assigned reshipper @${reshipperUsername} to order ${orderId} in GB ${gbId}`,
@@ -380,7 +380,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId/reassign-reshipper", r
     shipping_country: order.shippingCountry ?? "",
   }).catch(() => {});
 
-  res.json({ ok: true, reshipperUsername });
+  res.json({ ok: true, reshipperUsername, routingType: "reshipper" });
 });
 
 // ── POST /organiser/group-buys/:gbId/reshipper-invite-code ────────────────

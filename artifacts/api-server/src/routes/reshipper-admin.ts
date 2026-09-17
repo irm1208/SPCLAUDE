@@ -376,9 +376,9 @@ router.patch("/admin/orders/:orderId/reassign-reshipper", async (req, res): Prom
   if (reshipperUsername === null || reshipperUsername === "") {
     // Set reshipperCleared=true so the gbReshippers fallback (gbId::country lookup)
     // is permanently suppressed for this order, even after a page refresh.
-    await db.update(ordersTable).set({ reshipperUsername: null, reshipperCleared: true, countryLegId: null }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+    await db.update(ordersTable).set({ reshipperUsername: null, routingType: "unrouted", reshipperCleared: true, countryLegId: null }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
     writeLog("change", "info", "reshipper_reassigned", `Admin (manual override) cleared reshipper for order ${orderId}`, { orderId, gbId: order.groupBuyId, country: order.shippingCountry }).catch(() => {});
-    res.json({ ok: true, reshipperUsername: null, reshipperCleared: true });
+    res.json({ ok: true, reshipperUsername: null, routingType: "unrouted", reshipperCleared: true });
     return;
   }
 
@@ -392,7 +392,7 @@ router.patch("/admin/orders/:orderId/reassign-reshipper", async (req, res): Prom
   if (account.reshipperStatus !== "approved") { res.status(400).json({ error: "Account is not an approved reshipper" }); return; }
 
   // Update the order row directly — reset reshipperCleared since a reshipper is now assigned
-  await db.update(ordersTable).set({ reshipperUsername, reshipperCleared: false }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+  await db.update(ordersTable).set({ reshipperUsername, routingType: "reshipper", reshipperCleared: false }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
 
   writeLog("change", "info", "reshipper_reassigned", `Admin (manual override) force-assigned reshipper @${reshipperUsername} to order ${orderId}`, { orderId, gbId: order.groupBuyId, country: order.shippingCountry, reshipperUsername, manualOverride: true }).catch(() => {});
 
@@ -402,7 +402,7 @@ router.patch("/admin/orders/:orderId/reassign-reshipper", async (req, res): Prom
     shipping_country: order.shippingCountry ?? "",
   }).catch(() => {});
 
-  res.json({ ok: true, reshipperUsername });
+  res.json({ ok: true, reshipperUsername, routingType: "reshipper" });
 });
 
 // ── POST /admin/orders/bulk-reassign-reshipper ──────────────────────────────
@@ -442,6 +442,7 @@ router.post("/admin/orders/bulk-reassign-reshipper", async (req, res): Promise<v
       await db.update(ordersTable)
         .set({
           reshipperUsername: clearing ? null : reshipperUsername,
+          routingType: clearing ? "unrouted" : "reshipper",
           // reshipperCleared=true suppresses the gbReshippers fallback (gbId::country
           // lookup) permanently so clearing survives page refreshes.
           reshipperCleared: clearing ? true : false,

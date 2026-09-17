@@ -122,3 +122,4 @@
 - [Refund queue payment TXIDs](refund-queue-payment-txids.md) — show original/additional/balance chain TXIDs to Admin/organiser; exclude fiat/test markers and outgoing refund TXID.
 - [Crypto refund completion](admin-manual-refund-completion.md) — automatic verification sums one/two TXIDs; Admin-only bypass still preserves replay, locks, audit, notification, and terminal guards.
 - [Shared-order active membership invariant](shared-order-active-membership-invariant.md) — an active wholesale_shared order must have a member row pointing to its exact order ID; removal and FS3 must enforce this.
+- [GB reshipper routing field consistency](gb-reshipper-routing-field-consistency.md) — assigned reshipper wins over stale routingType; manual assign/clear must update both fields together.

@@ -7139,17 +7139,13 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
       map.set(key, group);
     };
     for (const order of visibleOrders) {
-      if (order.routingType === "direct") add("direct", "Direct Shipping", "green", order);
-      else if (order.routingType === "reshipper" && order.reshipperUsername) {
+      if (order.reshipperUsername) {
         const username = order.reshipperUsername.replace(/^@/, "");
         add(`reshipper:${username}`, `@${username}`, "blue", order);
       }
+      else if (order.routingType === "direct") add("direct", "Direct Shipping", "green", order);
       else if (order.routingType === "unrouted") add("unrouted", "Unrouted", "amber", order);
       else if (order.directShippingRequested) add("direct", "Direct Shipping", "green", order);
-      else if (order.reshipperUsername) {
-        const username = order.reshipperUsername.replace(/^@/, "");
-        add(`reshipper:${username}`, `@${username}`, "blue", order);
-      }
       else add("legacy", "Legacy", "slate", order);
     }
     return [...map.values()].sort((a, b) => {
@@ -7235,7 +7231,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
           {visibleOrders.map(order => (
             <div key={order.id} className="grid gap-2 border-b px-4 py-3 last:border-0 md:grid-cols-[1.2fr_.8fr_.7fr_.7fr_.55fr] md:items-center" style={{ borderColor: "var(--t-border)" }}>
               <div><p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</p><p className="font-mono text-[10px]" style={{ color: "var(--t-subtle)" }}>{order.code}</p></div>
-              <span className="text-xs" style={{ color: "var(--t-muted)" }}>{order.routingType === "direct" ? "Direct" : order.routingType === "reshipper" && order.reshipperUsername ? `@${order.reshipperUsername.replace(/^@/, "")}` : order.routingType === "unrouted" ? "Unrouted" : order.directShippingRequested ? "Direct" : order.reshipperUsername ? `@${order.reshipperUsername.replace(/^@/, "")}` : "Legacy"}</span>
+              <span className="text-xs" style={{ color: "var(--t-muted)" }}>{order.reshipperUsername ? `@${order.reshipperUsername.replace(/^@/, "")}` : order.routingType === "direct" ? "Direct" : order.routingType === "unrouted" ? "Unrouted" : order.directShippingRequested ? "Direct" : "Legacy"}</span>
               <span className="w-fit rounded-full px-2 py-1 text-[10px] font-black uppercase" style={{ background: ["confirmed", "test_confirmed"].includes(order.paymentStatus) ? "#DCFCE7" : "#FEF3C7", color: ["confirmed", "test_confirmed"].includes(order.paymentStatus) ? "#15803D" : "#B45309" }}>{order.paymentStatus.replaceAll("_", " ")}</span>
               <span className="text-xs" style={{ color: "var(--t-muted)" }}>{resolveCountry(order.shippingCountry || order.accountCountry) || "—"}</span>
               <span className="text-right text-xs font-bold" style={{ color: "var(--t-text)" }}>{kitCount(order)}</span>
