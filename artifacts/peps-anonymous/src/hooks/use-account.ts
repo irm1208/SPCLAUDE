@@ -642,6 +642,7 @@ export interface AccountOrder {
   status: string;
   paymentStatus: string;
   grandTotal: number;
+  creditsApplied?: number;
   productSubtotal: number;
   deliveryMethod: string;
   groupBuyId: string | null;

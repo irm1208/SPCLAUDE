@@ -31,6 +31,7 @@ import { GroupBuyOrderBreakdown } from "@/components/GroupBuyOrderBreakdown";
 import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 import { getCreditAdjustedTotal } from "@/lib/credit-payment";
+import { hasAppliedCredit } from "@/lib/credit-payment";
 import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
@@ -7502,6 +7503,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [confirmDeleteOrgOrder, setConfirmDeleteOrgOrder] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
+  const [creditFilter, setCreditFilter] = useState<"all" | "applied">("all");
   const [countryFilter, setCountryFilter] = useState("all");
   const [countryLegFilter, setCountryLegFilter] = useState("all");
   const [legs, setLegs] = useState<{ id: string; countryName: string; countryCode: string }[]>([]);
@@ -8091,7 +8093,11 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
     ? countryFiltered
     : countryFiltered.filter(o => o.countryLegId === countryLegFilter);
 
-  const dateFiltered = legFiltered.filter(o => {
+  const creditFiltered = creditFilter === "all"
+    ? legFiltered
+    : legFiltered.filter(o => hasAppliedCredit(o.creditsApplied));
+
+  const dateFiltered = creditFiltered.filter(o => {
     const orderDate = new Date(o.createdAt);
     const matchFrom = !dateFrom || orderDate >= new Date(dateFrom);
     const matchTo = !dateTo || orderDate <= new Date(new Date(dateTo).getTime() + 86399999);
@@ -8670,12 +8676,18 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
             <option key={f.id} value={f.id}>{f.label}</option>
           ))}
         </select>
-        <select value={paymentMethodFilter} onChange={e => { setPaymentMethodFilter(e.target.value as any); setPage(1); }}
+         <select value={paymentMethodFilter} onChange={e => { setPaymentMethodFilter(e.target.value as any); setPage(1); }}
           className="h-9 px-3 rounded-xl text-[12px] font-semibold w-full appearance-none"
           style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
           {[{ id: "all", label: "All Methods" }, { id: "revolut", label: "Revolut" }, { id: "paypal", label: "PayPal" }, { id: "anonpay", label: "AnonPay" }, { id: "manual", label: "Crypto" }].map(f => (
             <option key={f.id} value={f.id}>{f.label}</option>
           ))}
+        </select>
+        <select value={creditFilter} onChange={e => { setCreditFilter(e.target.value as "all" | "applied"); setPage(1); }}
+          className="h-9 px-3 rounded-xl text-[12px] font-semibold w-full appearance-none"
+          style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
+          <option value="all">All Credit</option>
+          <option value="applied">Credit Applied</option>
         </select>
         <select value={countryFilter} onChange={e => { setCountryFilter(e.target.value); setPage(1); }}
           className="h-9 px-3 rounded-xl text-[12px] font-semibold w-full appearance-none"
@@ -8715,6 +8727,27 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                   {pendingConfirmationCount}
                 </span>
               )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="hidden sm:flex gap-1.5 flex-wrap items-center">
+        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Credit</span>
+        {[
+          { id: "all" as const, label: "All", count: orders.length },
+          { id: "applied" as const, label: "Applied", count: orders.filter(o => hasAppliedCredit(o.creditsApplied)).length },
+        ].map(f => {
+          const isActive = creditFilter === f.id;
+          return (
+            <button key={f.id} onClick={() => { setCreditFilter(f.id); setPage(1); }}
+              className="h-7 px-3 rounded-full text-[11px] font-bold transition-all flex items-center gap-1.5"
+              style={{
+                background: isActive ? "var(--t-blue-deep)" : "var(--t-surface2)",
+                color: isActive ? "#fff" : "var(--t-muted)",
+                border: `1px solid ${isActive ? "transparent" : "var(--t-border)"}`,
+              }}>
+              {f.label}
+              <span className="text-[9px] font-black px-1 py-0.5 rounded-full leading-none" style={{ background: isActive ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.1)", color: isActive ? "#fff" : "var(--t-muted)" }}>{f.count}</span>
             </button>
           );
         })}
@@ -9207,7 +9240,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                       <span style={{ fontSize: 10, fontWeight: 700, color: isPaid ? "#059669" : isTestPaid ? "#F97316" : "#94A3B8" }}>
                         {isPaid ? "Paid ✓" : isTestPaid ? `Test ✓ · Rem: ${gb.currency}${(o.grandTotal - (o.paymentTestAmount ?? 0)).toFixed(2)}` : o.paymentStatus.replace(/_/g, " ")}
                       </span>
-                      <CreditPaymentPill creditsApplied={o.creditsApplied} grandTotal={o.grandTotal} />
+                      <CreditPaymentPill creditsApplied={o.creditsApplied} grandTotal={o.grandTotal} currency={gb.currency} />
                     </div>
                     {(gb.organiserOrderEditEnabled || gb.organiserCanEditPaymentStatus) ? (
                       <button

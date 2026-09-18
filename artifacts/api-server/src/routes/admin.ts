@@ -364,14 +364,14 @@ router.post("/admin/fs3-verify", (req: any, res: any): void => {
 
 // ─── GET /api/admin/orders ────────────────────────────────────
 // Supports server-side filtering + pagination.
-// Query params: groupBuyId, country, reshipper, status, paymentStatus, paymentMethod,
+// Query params: groupBuyId, country, reshipper, status, paymentStatus, paymentMethod, creditsApplied,
 //   routingType, batchLocked, balanceDueReview, search, dateFrom, dateTo,
 //   page (1-based, default 1), pageSize (default 100, max 500)
 export async function adminOrdersHandler(req: Request, res: Response): Promise<void> {
   try {
   const {
     groupBuyId, country, reshipper, scopeType: scopeTypeQ,
-    status: statusQ, paymentStatus: payStatusQ, paymentMethod: payMethodQ,
+    status: statusQ, paymentStatus: payStatusQ, paymentMethod: payMethodQ, creditsApplied: creditsAppliedQ,
     routingType: routingTypeQ, batchLocked: batchLockedQ, balanceDueReview: balanceDueReviewQ,
     search: searchQ, dateFrom: dateFromQ, dateTo: dateToQ,
     page: pageQ, pageSize: pageSizeQ,
@@ -409,6 +409,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
       conditions.push(eq(ordersTable.paymentStatus, payStatusQ));
     }
   }
+  if (creditsAppliedQ === "applied") conditions.push(sql`${ordersTable.creditsApplied} > 0`);
 
   // Payment method filter (applied in JS after since it's derived from txHash)
   // Routing type filter
@@ -768,7 +769,7 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
   try {
     const {
       groupBuyId, country, reshipper,
-      status: statusQ, paymentStatus: payStatusQ,
+       status: statusQ, paymentStatus: payStatusQ, creditsApplied: creditsAppliedQ,
       routingType: routingTypeQ, batchLocked: batchLockedQ, balanceDueReview: balanceDueReviewQ,
       search: searchQ, dateFrom: dateFromQ, dateTo: dateToQ,
       vendor: vendorQ,
@@ -784,6 +785,7 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
       else if (payStatusQ === "rejected") conditions.push(or(eq(ordersTable.paymentStatus, "rejected"), eq(ordersTable.paymentStatus, "failed")));
       else conditions.push(eq(ordersTable.paymentStatus, payStatusQ));
     }
+    if (creditsAppliedQ === "applied") conditions.push(sql`${ordersTable.creditsApplied} > 0`);
     if (routingTypeQ && routingTypeQ !== "all") {
       if (routingTypeQ === "unrouted") conditions.push(or(isNull(ordersTable.routingType), eq(ordersTable.routingType, "unrouted")));
       else conditions.push(eq(ordersTable.routingType, routingTypeQ));

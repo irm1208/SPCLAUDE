@@ -19,6 +19,8 @@ import {
 import { BottomTabs } from "@/components/BottomTabs";
 import { fmtC } from "@/lib/currency";
 import { accountRequiresVerification } from "@/lib/account-verification-flow";
+import { hasAppliedCredit } from "@/lib/credit-payment";
+import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
   Draft:      { label: "Draft",      color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText },
@@ -78,7 +80,8 @@ function OrderCard({ order, onManage }: { order: AccountOrder; onManage: () => v
           </div>
           <div className="text-right shrink-0">
             <p className="text-sm font-bold text-slate-800">{fmtC(order.grandTotal, order.currency)}</p>
-            <p className="text-[11px] font-semibold" style={{ color: payment.color }}>{payment.label}</p>
+             <p className="text-[11px] font-semibold" style={{ color: payment.color }}>{payment.label}</p>
+             <CreditPaymentPill creditsApplied={order.creditsApplied} grandTotal={order.grandTotal} currency={order.currency} />
           </div>
         </div>
 
@@ -830,6 +833,7 @@ export default function AccountOrders() {
   const [mainTab, setMainTab] = useState<"orders" | "profile">("orders");
   const [orderFilter, setOrderFilter] = useState<"groupbuy" | "wholesale" | "shop">("groupbuy");
   const [orderFilterTouched, setOrderFilterTouched] = useState(false);
+  const [creditFilter, setCreditFilter] = useState<"all" | "applied">("all");
 
   // Split the customer's orders into the three categories. Group buys are
   // identified by groupBuyId (their orderType is null); wholesale orders by
@@ -843,6 +847,20 @@ export default function AccountOrders() {
     }
     return g;
   }, [orders]);
+
+  const visibleOrders = useMemo(
+    () => orders.filter(o => creditFilter === "all" || hasAppliedCredit(o.creditsApplied)),
+    [orders, creditFilter],
+  );
+  const visibleGroupedOrders = useMemo(() => {
+    const g = { groupbuy: [] as AccountOrder[], wholesale: [] as AccountOrder[], shop: [] as AccountOrder[] };
+    for (const o of visibleOrders) {
+      if (o.orderType === "wholesale" || o.orderType === "wholesale_shared") g.wholesale.push(o);
+      else if (o.groupBuyId) g.groupbuy.push(o);
+      else g.shop.push(o);
+    }
+    return g;
+  }, [visibleOrders]);
 
   // Until the user taps a tab, land on the first category that actually has orders.
   React.useEffect(() => {
@@ -1028,8 +1046,25 @@ export default function AccountOrders() {
                       })}
                     </div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500">Show</span>
+                    <button
+                      onClick={() => setCreditFilter("all")}
+                      className="h-8 rounded-lg px-3 text-xs font-semibold"
+                      style={creditFilter === "all" ? { background: "var(--t-blue)", color: "#fff" } : { background: "var(--t-surface2)", color: "var(--t-muted)" }}
+                    >
+                      All orders
+                    </button>
+                    <button
+                      onClick={() => setCreditFilter("applied")}
+                      className="h-8 rounded-lg px-3 text-xs font-semibold"
+                      style={creditFilter === "applied" ? { background: "var(--t-blue)", color: "#fff" } : { background: "var(--t-surface2)", color: "var(--t-muted)" }}
+                    >
+                      Credit applied
+                    </button>
+                  </div>
 
-                  {groupedOrders[orderFilter].length === 0 ? (
+                  {visibleGroupedOrders[orderFilter].length === 0 ? (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       className="bg-white rounded-xl p-8 text-center shadow-sm"
                       style={{ border: "1px solid var(--t-border)" }}>
@@ -1040,7 +1075,7 @@ export default function AccountOrders() {
                           : <ShoppingBag className="w-7 h-7 text-blue-600" />}
                       </div>
                       <p className="text-sm font-semibold text-slate-700 mb-1">
-                        No {orderFilter === "groupbuy" ? "group buy" : orderFilter === "wholesale" ? "wholesale" : "shop"} orders
+                        {creditFilter === "applied" ? "No orders with credit applied" : `No ${orderFilter === "groupbuy" ? "group buy" : orderFilter === "wholesale" ? "wholesale" : "shop"} orders`}
                       </p>
                       <p className="text-xs text-slate-400 leading-relaxed">
                         {orderFilter === "groupbuy" ? "You haven't joined any group buys yet."
@@ -1050,7 +1085,7 @@ export default function AccountOrders() {
                     </motion.div>
                   ) : (
                     <div className="space-y-4">
-                      {groupedOrders[orderFilter].map(order => (
+                      {visibleGroupedOrders[orderFilter].map(order => (
                         <OrderCard
                           key={order.id}
                           order={order}

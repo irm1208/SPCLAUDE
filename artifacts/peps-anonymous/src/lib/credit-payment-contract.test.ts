@@ -3,8 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const helperPath = new URL("./credit-payment.ts", import.meta.url);
+const pillSource = readFileSync(new URL("../components/CreditPaymentPill.tsx", import.meta.url), "utf8");
 const adminSource = readFileSync(new URL("../pages/Admin.tsx", import.meta.url), "utf8");
 const organiserSource = readFileSync(new URL("../pages/GbOrganiser.tsx", import.meta.url), "utf8");
+const accountOrdersSource = readFileSync(new URL("../pages/AccountOrders.tsx", import.meta.url), "utf8");
 
 test("credit payment status classifies none, partial, and full coverage", async () => {
   assert.ok(existsSync(helperPath), "credit payment helper should exist");
@@ -25,10 +27,31 @@ test("credit-adjusted total subtracts applied credit without going below zero", 
   assert.equal(getCreditAdjustedTotal(100, 150), 0);
 });
 
+test("credit detection accepts positive applied credit and rejects zero or invalid values", async () => {
+  assert.ok(existsSync(helperPath), "credit payment helper should exist");
+  if (!existsSync(helperPath)) return;
+  const { hasAppliedCredit } = await import("./credit-payment");
+  assert.equal(hasAppliedCredit(563), true);
+  assert.equal(hasAppliedCredit("0.01"), true);
+  assert.equal(hasAppliedCredit(0), false);
+  assert.equal(hasAppliedCredit(undefined), false);
+});
+
+test("credit payment pill includes the applied amount", () => {
+  assert.match(pillSource, /creditsApplied/);
+  assert.match(pillSource, /fmtC\(creditsApplied/);
+});
+
 test("main admin renders the pill in both order surfaces", () => {
   assert.ok((adminSource.match(/<CreditPaymentPill/g) ?? []).length >= 2);
 });
 
 test("organiser renders the shared credit payment pill", () => {
   assert.match(organiserSource, /<CreditPaymentPill/);
+});
+
+test("all order lists expose an applied-credit filter", () => {
+  assert.match(adminSource, /creditFilter/);
+  assert.match(organiserSource, /creditFilter/);
+  assert.match(accountOrdersSource, /creditFilter/);
 });

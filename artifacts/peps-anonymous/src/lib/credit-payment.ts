@@ -14,6 +14,11 @@ function roundedCents(value: number | string | null | undefined): bigint | null 
   return cents + (thirdDecimal !== undefined && thirdDecimal >= "5" ? 1n : 0n);
 }
 
+export function hasAppliedCredit(creditsApplied: number | string | null | undefined): boolean {
+  const creditCents = roundedCents(creditsApplied) ?? safeMoneyToCents(creditsApplied ?? "");
+  return creditCents !== null && creditCents > 0n;
+}
+
 export function getCreditPaymentStatus(
   creditsApplied: number | string | null | undefined,
   grandTotal: number | string | null | undefined,

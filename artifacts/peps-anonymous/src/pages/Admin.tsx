@@ -64,7 +64,7 @@ import {
   type AdminEnrolment,
 } from "@/lib/admin-auth";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
-import { getCreditAdjustedTotal } from "@/lib/credit-payment";
+import { getCreditAdjustedTotal, hasAppliedCredit } from "@/lib/credit-payment";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -676,6 +676,7 @@ function OrdersTab({ secret }: { secret: string }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
+  const [creditFilter, setCreditFilter] = useState<"all" | "applied">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [invoiceOrderId, setInvoiceOrderId] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -1099,6 +1100,7 @@ function OrdersTab({ secret }: { secret: string }) {
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (paymentStatusFilter !== "all") params.set("paymentStatus", paymentStatusFilter);
       if (paymentMethodFilter !== "all") params.set("paymentMethod", paymentMethodFilter);
+      if (creditFilter !== "all") params.set("creditsApplied", creditFilter);
       if (reshipperFilter !== "all") params.set("reshipper", reshipperFilter);
       if (countryFilter.length > 0) params.set("country", countryFilter.join(","));
       if (routingFilter !== "all") params.set("routingType", routingFilter);
@@ -1134,7 +1136,7 @@ function OrdersTab({ secret }: { secret: string }) {
       setSelected(new Set());
       setSelectAllPages(false);
     }
-  }, [secret, gbFilter, statusFilter, paymentStatusFilter, paymentMethodFilter, reshipperFilter, countryFilter, routingFilter, batchLockedFilter, balanceDueReview, dateFrom, dateTo, debouncedSearch, currentPage, vendorFilter, pageSize]);
+  }, [secret, gbFilter, statusFilter, paymentStatusFilter, paymentMethodFilter, creditFilter, reshipperFilter, countryFilter, routingFilter, batchLockedFilter, balanceDueReview, dateFrom, dateTo, debouncedSearch, currentPage, vendorFilter, pageSize]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1178,7 +1180,7 @@ function OrdersTab({ secret }: { secret: string }) {
   const uniqueOrderVendors = [...new Set(productVendorMap.values())].filter(Boolean).sort();
 
   // Reset page to 1 whenever any server-side filter changes
-  useEffect(() => { setCurrentPage(1); }, [gbFilter, statusFilter, paymentStatusFilter, paymentMethodFilter, reshipperFilter, countryFilter, routingFilter, batchLockedFilter, balanceDueReview, dateFrom, dateTo, debouncedSearch, vendorFilter, pageSize]);
+  useEffect(() => { setCurrentPage(1); }, [gbFilter, statusFilter, paymentStatusFilter, paymentMethodFilter, creditFilter, reshipperFilter, countryFilter, routingFilter, batchLockedFilter, balanceDueReview, dateFrom, dateTo, debouncedSearch, vendorFilter, pageSize]);
 
   // Client-side filters (applied to the current page results for filters not sent to server)
   // Note: vendorFilter is now server-side; kept here as no-op (always true) so variable stays used
@@ -1192,11 +1194,12 @@ function OrdersTab({ secret }: { secret: string }) {
       || (balanceFilter === "owed" && (o.amountDue ?? 0) > 0 && o.balancePaymentStatus !== "confirmed")
       || (balanceFilter === "paid" && o.balancePaymentStatus === "confirmed");
     const matchDirectShipping = !directShippingFilter || o.directShippingRequested === true;
+    const matchCredit = creditFilter === "all" || hasAppliedCredit(o.creditsApplied);
     const matchOrderView = orderView === "all" ? true
       : orderView === "wholesale" ? o.orderType === "wholesale"
       : orderView === "shared" ? o.orderType === "wholesale_shared"
       : !o.isWholesale;
-    return matchVendor && matchPayFrom && matchPayTo && matchNoVs && matchBalance && matchDirectShipping && matchOrderView;
+    return matchVendor && matchPayFrom && matchPayTo && matchNoVs && matchBalance && matchDirectShipping && matchOrderView && matchCredit;
   }).sort((a, b) => {
     if (sortBy === "order_asc") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     if (sortBy === "pay_desc") {
@@ -1551,6 +1554,7 @@ function OrdersTab({ secret }: { secret: string }) {
       if (gbFilter) params.set("groupBuyId", gbFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (paymentStatusFilter !== "all") params.set("paymentStatus", paymentStatusFilter);
+      if (creditFilter !== "all") params.set("creditsApplied", creditFilter);
       if (reshipperFilter !== "all") params.set("reshipper", reshipperFilter);
       if (countryFilter.length > 0) params.set("country", countryFilter.join(","));
       if (routingFilter !== "all") params.set("routingType", routingFilter);
@@ -2110,7 +2114,7 @@ function OrdersTab({ secret }: { secret: string }) {
       })()}
       {/* ── Grouped Filter Bar ── */}
       {(() => {
-        const paymentActive = (paymentStatusFilter !== "all" ? 1 : 0) + (paymentMethodFilter !== "all" ? 1 : 0);
+        const paymentActive = (paymentStatusFilter !== "all" ? 1 : 0) + (paymentMethodFilter !== "all" ? 1 : 0) + (creditFilter !== "all" ? 1 : 0);
         const flagsActive = (noVsFilter ? 1 : 0) + (balanceFilter !== "all" ? 1 : 0) + (directShippingFilter ? 1 : 0) + (routingFilter !== "all" ? 1 : 0) + (batchLockedFilter !== "all" ? 1 : 0) + (balanceDueReview ? 1 : 0);
         const scopeActive = (gbFilter ? 1 : 0) + countryFilter.length + (reshipperFilter !== "all" ? 1 : 0) + (vendorFilter ? 1 : 0);
         const datesActive = ((dateFrom || dateTo) ? 1 : 0) + ((payDateFrom || payDateTo) ? 1 : 0);
@@ -2184,6 +2188,19 @@ function OrdersTab({ secret }: { secret: string }) {
                           { value: "manual", label: "Crypto" },
                         ] as const).map(t => (
                           <button key={t.value} onClick={() => setPaymentMethodFilter(t.value)} className={pillCls(paymentMethodFilter === t.value)}>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className={sectionLabel}>Store Credit</p>
+                      <div className="flex flex-wrap gap-1">
+                        {([
+                          { value: "all", label: "Any" },
+                          { value: "applied", label: "Credit applied" },
+                        ] as const).map(t => (
+                          <button key={t.value} onClick={() => setCreditFilter(t.value)} className={pillCls(creditFilter === t.value)}>
                             {t.label}
                           </button>
                         ))}
@@ -2425,6 +2442,11 @@ function OrdersTab({ secret }: { secret: string }) {
                 {paymentMethodFilter !== "all" && (
                   <button onClick={() => setPaymentMethodFilter("all")} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20">
                     {paymentMethodFilter} <X className="w-3 h-3" />
+                  </button>
+                )}
+                {creditFilter !== "all" && (
+                  <button onClick={() => setCreditFilter("all")} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200">
+                    Credit applied <X className="w-3 h-3" />
                   </button>
                 )}
                 {noVsFilter && (
@@ -3131,7 +3153,7 @@ function OrdersTab({ secret }: { secret: string }) {
                     🏪 Wholesale
                   </span>
                 )}
-                <CreditPaymentPill creditsApplied={order.creditsApplied} grandTotal={order.grandTotal} />
+                <CreditPaymentPill creditsApplied={order.creditsApplied} grandTotal={order.grandTotal} currency={order.currency} />
                 {order.missingAddress && (
                   <span title="Missing delivery address" className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600 border border-red-200">
                     <AlertTriangle className="w-2.5 h-2.5" />Addr
@@ -26642,6 +26664,7 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
                                     <CreditPaymentPill
                                       creditsApplied={Number(o.creditsApplied ?? 0)}
                                       grandTotal={Number(o.grandTotal ?? 0)}
+                                      currency={typeof o.currency === "string" ? o.currency : undefined}
                                     />
                                     <p className="text-[10px]" style={{ color: (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed") ? "#16A34A" : "#94A3B8" }}>
                                       {String(o.paymentStatus ?? "").replace(/_/g, " ")}
