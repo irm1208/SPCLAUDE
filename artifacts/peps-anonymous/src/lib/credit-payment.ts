@@ -1,5 +1,4 @@
-import { safeMoneyToCents } from "./exact-money";
-import { safeSubtractMoneyClamped } from "./exact-money";
+import { safeMoneyToCents, safeSubtractMoneyClamped } from "./exact-money";
 
 export type CreditPaymentStatus = "partial" | "full";
 
