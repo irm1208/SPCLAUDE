@@ -29,6 +29,7 @@ import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { cn } from "@/lib/utils";
 import { GroupBuyOrderBreakdown } from "@/components/GroupBuyOrderBreakdown";
 import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
+import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
@@ -166,6 +167,7 @@ interface OrgOrder {
   status: string;
   paymentStatus: string;
   grandTotal: number;
+  creditsApplied?: number;
   productSubtotal: number;
   deliveryPrice: number;
   tip: number;
@@ -9204,6 +9206,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                       <span style={{ fontSize: 10, fontWeight: 700, color: isPaid ? "#059669" : isTestPaid ? "#F97316" : "#94A3B8" }}>
                         {isPaid ? "Paid ✓" : isTestPaid ? `Test ✓ · Rem: ${gb.currency}${(o.grandTotal - (o.paymentTestAmount ?? 0)).toFixed(2)}` : o.paymentStatus.replace(/_/g, " ")}
                       </span>
+                      <CreditPaymentPill creditsApplied={o.creditsApplied} grandTotal={o.grandTotal} />
                     </div>
                     {(gb.organiserOrderEditEnabled || gb.organiserCanEditPaymentStatus) ? (
                       <button

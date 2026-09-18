@@ -2278,6 +2278,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
       status: ordersTable.status,
       paymentStatus: ordersTable.paymentStatus,
       grandTotal: ordersTable.grandTotal,
+      creditsApplied: ordersTable.creditsApplied,
       productSubtotal: ordersTable.productSubtotal,
       deliveryPrice: ordersTable.deliveryPrice,
       tip: ordersTable.tip,
@@ -2370,6 +2371,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
     return {
       ...rest,
       grandTotal: parseFloat(String(o.grandTotal)),
+      creditsApplied: parseFloat(String(o.creditsApplied ?? "0")),
       productSubtotal: parseFloat(String(o.productSubtotal)),
       deliveryPrice: parseFloat(String(o.deliveryPrice)),
       adminFee: parseFloat(String((o as any).adminFee ?? "0")),

@@ -63,6 +63,7 @@ import {
   type AdminActionBinding,
   type AdminEnrolment,
 } from "@/lib/admin-auth";
+import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -3129,6 +3130,7 @@ function OrdersTab({ secret }: { secret: string }) {
                     🏪 Wholesale
                   </span>
                 )}
+                <CreditPaymentPill creditsApplied={order.creditsApplied} grandTotal={order.grandTotal} />
                 {order.missingAddress && (
                   <span title="Missing delivery address" className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600 border border-red-200">
                     <AlertTriangle className="w-2.5 h-2.5" />Addr
@@ -26633,6 +26635,10 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
                                   </div>
                                   <div className="text-right shrink-0">
                                     <p className="text-sm font-bold tabular-nums">{Number(o.grandTotal ?? 0).toFixed(2)}</p>
+                                    <CreditPaymentPill
+                                      creditsApplied={Number(o.creditsApplied ?? 0)}
+                                      grandTotal={Number(o.grandTotal ?? 0)}
+                                    />
                                     <p className="text-[10px]" style={{ color: (o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed") ? "#16A34A" : "#94A3B8" }}>
                                       {String(o.paymentStatus ?? "").replace(/_/g, " ")}
                                     </p>
