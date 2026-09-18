@@ -64,6 +64,7 @@ import {
   type AdminEnrolment,
 } from "@/lib/admin-auth";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
+import { getCreditAdjustedTotal } from "@/lib/credit-payment";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -3176,7 +3177,7 @@ function OrdersTab({ secret }: { secret: string }) {
                     {order.lineItems.reduce((s, li) => s + li.quantity, 0)}×
                   </span>
                 )}
-                <span className="text-sm font-semibold shrink-0">{fmtC(order.grandTotal, order.currency)}</span>
+                <span className="text-sm font-semibold shrink-0">{fmtC(getCreditAdjustedTotal(order.grandTotal, order.creditsApplied), order.currency)}</span>
                 {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
                 </button>
               </div>
@@ -3422,7 +3423,10 @@ function OrdersTab({ secret }: { secret: string }) {
                             <span>−{fmtC(order.creditsApplied!, order.currency)}</span>
                           </div>
                         )}
-                        <div className="flex justify-between font-bold border-t border-border pt-1.5"><span>Grand Total</span><span>{fmtC(order.grandTotal, order.currency)}</span></div>
+                        <div className="flex justify-between font-bold border-t border-border pt-1.5">
+                          <span>{(order.creditsApplied ?? 0) > 0 ? "Total after credit" : "Grand Total"}</span>
+                          <span>{fmtC(getCreditAdjustedTotal(order.grandTotal, order.creditsApplied), order.currency)}</span>
+                        </div>
                       </div>
                       {/* Payment info */}
                       {(() => {
@@ -26634,7 +26638,7 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
                                     <span className="ml-2 text-[11px] text-muted-foreground">@{String(o.telegramUsername)}</span>
                                   </div>
                                   <div className="text-right shrink-0">
-                                    <p className="text-sm font-bold tabular-nums">{Number(o.grandTotal ?? 0).toFixed(2)}</p>
+                                    <p className="text-sm font-bold tabular-nums">{getCreditAdjustedTotal(Number(o.grandTotal ?? 0), Number(o.creditsApplied ?? 0)).toFixed(2)}</p>
                                     <CreditPaymentPill
                                       creditsApplied={Number(o.creditsApplied ?? 0)}
                                       grandTotal={Number(o.grandTotal ?? 0)}

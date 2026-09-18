@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { GroupBuyOrderBreakdown } from "@/components/GroupBuyOrderBreakdown";
 import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
+import { getCreditAdjustedTotal } from "@/lib/credit-payment";
 import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
@@ -9197,7 +9198,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                     <div style={{ textAlign: "right" }}>
-                      <p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--t-text)", fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px" }}>{gb.currency} {o.grandTotal.toFixed(2)}</p>
+                      <p style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--t-text)", fontVariantNumeric: "tabular-nums", letterSpacing: "-0.3px" }}>{gb.currency} {getCreditAdjustedTotal(o.grandTotal, o.creditsApplied).toFixed(2)}</p>
                       {(o.adminFee ?? 0) > 0 && (
                         <p style={{ margin: "1px 0 0", fontSize: 9, fontWeight: 600, color: "#A78BFA", letterSpacing: "0.02em" }}>
                           incl. {gb.currency}{(o.adminFee!).toFixed(2)} {o.adminFeeLabel ?? "admin fee"}

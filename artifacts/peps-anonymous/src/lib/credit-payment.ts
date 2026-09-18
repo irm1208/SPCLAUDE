@@ -1,4 +1,5 @@
 import { safeMoneyToCents } from "./exact-money";
+import { safeSubtractMoneyClamped } from "./exact-money";
 
 export type CreditPaymentStatus = "partial" | "full";
 
@@ -22,4 +23,11 @@ export function getCreditPaymentStatus(
   const totalCents = roundedCents(grandTotal) ?? safeMoneyToCents(grandTotal ?? "");
   if (creditCents === null || totalCents === null || creditCents <= 0n) return null;
   return creditCents < totalCents ? "partial" : "full";
+}
+
+export function getCreditAdjustedTotal(
+  grandTotal: number | string | null | undefined,
+  creditsApplied: number | string | null | undefined,
+): number {
+  return safeSubtractMoneyClamped(grandTotal ?? 0, creditsApplied ?? 0);
 }

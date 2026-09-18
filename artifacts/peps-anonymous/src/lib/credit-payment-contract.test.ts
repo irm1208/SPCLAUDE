@@ -16,6 +16,15 @@ test("credit payment status classifies none, partial, and full coverage", async 
   assert.equal(getCreditPaymentStatus(100.001, 100), "full");
 });
 
+test("credit-adjusted total subtracts applied credit without going below zero", async () => {
+  assert.ok(existsSync(helperPath), "credit payment helper should exist");
+  if (!existsSync(helperPath)) return;
+  const { getCreditAdjustedTotal } = await import("./credit-payment");
+  assert.equal(getCreditAdjustedTotal(671, 563), 108);
+  assert.equal(getCreditAdjustedTotal(100, 0), 100);
+  assert.equal(getCreditAdjustedTotal(100, 150), 0);
+});
+
 test("main admin renders the pill in both order surfaces", () => {
   assert.ok((adminSource.match(/<CreditPaymentPill/g) ?? []).length >= 2);
 });
