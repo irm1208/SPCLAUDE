@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  calculateInvoiceTotals,
   invoiceDocumentSchema,
 } from "../lib/invoice";
 import { buildInvoicePdf } from "../lib/invoice-pdf";
@@ -43,9 +44,26 @@ router.get("/admin/orders/:id/invoice-pdf", async (req, res): Promise<void> => {
     const filename = invoiceFilename(invoice.invoiceNumber);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="invoice-${filename}.pdf"`);
-    res.send(buildInvoicePdf(invoice));
+    res.send(await buildInvoicePdf(invoice));
   } catch (error) {
     console.error("[admin] invoice PDF failed", error);
+    res.status(500).json({ error: "Failed to generate invoice PDF" });
+  }
+});
+
+router.post("/admin/orders/:id/invoice-pdf", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const parsed = invoiceDocumentSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid invoice" }); return; }
+  try {
+    const order = await loadOrSeedInvoice(req.params.id);
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    const invoice = { orderId: req.params.id, ...parsed.data, ...calculateInvoiceTotals(parsed.data) };
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="invoice-${invoiceFilename(invoice.invoiceNumber)}.pdf"`);
+    res.send(await buildInvoicePdf(invoice));
+  } catch (error) {
+    console.error("[admin] draft invoice PDF failed", error);
     res.status(500).json({ error: "Failed to generate invoice PDF" });
   }
 });

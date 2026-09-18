@@ -32,7 +32,7 @@ import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayme
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
 import { getWholesaleAccessOutstandingAmount } from "../lib/wholesale-access-payment";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
-import { invoiceDocumentSchema } from "../lib/invoice";
+import { calculateInvoiceTotals, invoiceDocumentSchema } from "../lib/invoice";
 import { buildInvoicePdf } from "../lib/invoice-pdf";
 import { invoiceFilename, loadOrSeedInvoice, saveInvoice } from "../lib/invoice-service";
 import {
@@ -1896,9 +1896,28 @@ router.get("/account/orders/:id/invoice-pdf", requireAccount, async (req, res): 
     if (!invoice) { res.status(404).json({ error: "Order not found" }); return; }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="invoice-${invoiceFilename(invoice.invoiceNumber)}.pdf"`);
-    res.send(buildInvoicePdf(invoice));
+    res.send(await buildInvoicePdf(invoice));
   } catch (error) {
     console.error("[account] invoice PDF failed", error);
+    res.status(500).json({ error: "Failed to generate invoice PDF" });
+  }
+});
+
+router.post("/account/orders/:id/invoice-pdf", requireAccount, async (req, res): Promise<void> => {
+  try {
+    const order = await findOwnedInvoiceOrder(req.account!.telegramUsername, String(req.params.id));
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    const parsed = invoiceDocumentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid invoice" });
+      return;
+    }
+    const invoice = { orderId: order.id, ...parsed.data, ...calculateInvoiceTotals(parsed.data) };
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="invoice-${invoiceFilename(invoice.invoiceNumber)}.pdf"`);
+    res.send(await buildInvoicePdf(invoice));
+  } catch (error) {
+    console.error("[account] draft invoice PDF failed", error);
     res.status(500).json({ error: "Failed to generate invoice PDF" });
   }
 });

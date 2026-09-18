@@ -28,13 +28,15 @@ interface InvoiceForm {
   notes: string;
   terms: string;
   shippingCost: string;
+  showTax: boolean;
 }
 
-const EMPTY_PARTY: InvoicePartyForm = { name: "", addressLines: ["", "", "", ""], email: "", phone: "", taxId: "", logoUrl: "" };
+const DEFAULT_INVOICE_LOGO = "/brand/salt-peps-logo.svg";
+const EMPTY_PARTY: InvoicePartyForm = { name: "", addressLines: ["", "", "", ""], email: "", phone: "", taxId: "", logoUrl: DEFAULT_INVOICE_LOGO };
 const EMPTY_ITEM = { id: "new", description: "", quantity: "1", unitPrice: "0", taxRate: "0", discount: "0" };
 
 function normalizeInvoice(value: InvoiceDocument): InvoiceForm {
-  const normalizeParty = (party: InvoiceDocument["seller"]): InvoicePartyForm => ({ ...EMPTY_PARTY, ...party, addressLines: [...party.addressLines, "", "", "", ""].slice(0, 4) });
+  const normalizeParty = (party: InvoiceDocument["seller"]): InvoicePartyForm => ({ ...EMPTY_PARTY, ...party, logoUrl: party.logoUrl || DEFAULT_INVOICE_LOGO, addressLines: [...party.addressLines, "", "", "", ""].slice(0, 4) });
   return {
     invoiceNumber: value.invoiceNumber,
     issueDate: value.issueDate,
@@ -47,6 +49,7 @@ function normalizeInvoice(value: InvoiceDocument): InvoiceForm {
     notes: value.notes ?? "",
     terms: value.terms ?? "",
     shippingCost: value.shippingCost ?? "0",
+    showTax: value.showTax !== false,
   };
 }
 
@@ -65,6 +68,7 @@ function toDocument(orderId: string, value: InvoiceForm): Omit<InvoiceDocument, 
     notes: value.notes,
     terms: value.terms,
     shippingCost: value.shippingCost,
+    showTax: value.showTax,
   };
 }
 
@@ -94,7 +98,7 @@ export function InvoiceEditor({
   const basePath = resolvedAccess.kind === "member"
     ? `/api/account/orders/${encodeURIComponent(orderId)}/invoice`
     : `/api/admin/orders/${encodeURIComponent(orderId)}/invoice`;
-  const { control, register, reset, handleSubmit } = useForm<InvoiceForm>({ defaultValues: { invoiceNumber: "", issueDate: new Date().toISOString().slice(0, 10), dueDate: "", currency: "GBP", status: "draft", seller: EMPTY_PARTY, customer: EMPTY_PARTY, lineItems: [EMPTY_ITEM], notes: "", terms: "", shippingCost: "0" } });
+  const { control, register, reset, handleSubmit } = useForm<InvoiceForm>({ defaultValues: { invoiceNumber: "", issueDate: new Date().toISOString().slice(0, 10), dueDate: "", currency: "GBP", status: "draft", seller: EMPTY_PARTY, customer: { ...EMPTY_PARTY, logoUrl: "" }, lineItems: [EMPTY_ITEM], notes: "", terms: "", shippingCost: "0", showTax: true } });
   const { fields, append, remove } = useFieldArray({ control, name: "lineItems" });
   const watched = useWatch({ control });
   const preview = useMemo<InvoiceDocument>(() => {
@@ -133,7 +137,7 @@ export function InvoiceEditor({
   const downloadPdf = async () => {
     setDownloading(true); setError(null);
     try {
-      const response = await fetch(`${basePath}-pdf`, { headers: requestHeaders(), credentials: "include" });
+       const response = await fetch(`${basePath}-pdf`, { method: "POST", headers: requestHeaders(true), credentials: "include", body: JSON.stringify(preview) });
       if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error ?? "Failed to download PDF"); }
       const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `invoice-${preview.invoiceNumber || orderId}.pdf`; link.click(); URL.revokeObjectURL(url);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Failed to download PDF"); }
@@ -145,5 +149,5 @@ export function InvoiceEditor({
 
   const partyFields = (prefix: "seller" | "customer", includeLogo = false) => <div className="space-y-3"><div><Label>Name</Label><Input {...register(`${prefix}.name`)} className="mt-1 h-9" /></div><div><Label>Email</Label><Input type="email" {...register(`${prefix}.email`)} className="mt-1 h-9" /></div><div><Label>Phone</Label><Input {...register(`${prefix}.phone`)} className="mt-1 h-9" /></div>{prefix === "seller" && <div><Label>VAT / Tax ID</Label><Input {...register("seller.taxId")} className="mt-1 h-9" /></div>}<div><Label>Address</Label><div className="mt-1 space-y-2">{[0, 1, 2, 3].map((index) => <Input key={index} {...register(`${prefix}.addressLines.${index}`)} placeholder={`Address line ${index + 1}`} className="h-9" />)}</div></div>{includeLogo && <div><Label>Logo URL</Label><Input {...register("seller.logoUrl")} placeholder="https://…" className="mt-1 h-9" /></div>}</div>;
 
-  return <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,620px)]"><div className="min-w-0 space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Invoice editor</p><h2 className="text-xl font-bold">{preview.invoiceNumber || "New invoice"}</h2></div><div className="flex gap-2"><Button type="button" variant="outline" onClick={downloadPdf} disabled={downloading || saving} className="gap-1.5">{downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}PDF</Button><Button type="submit" disabled={saving || downloading} className="gap-1.5">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}Save</Button></div></div>{error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}{saved && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">Invoice saved.</p>}<Card className="space-y-4 p-4"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><h3 className="text-sm font-bold">Invoice details</h3></div><div className="grid gap-3 sm:grid-cols-2"><div><Label>Invoice number</Label><Input {...register("invoiceNumber", { required: true })} className="mt-1 h-9" /></div><div><Label>Currency</Label><select {...register("currency")} className="mt-1 h-9 w-full rounded-xl border border-input bg-background px-3 text-sm">{INVOICE_CURRENCIES.map((currency) => <option key={currency}>{currency}</option>)}</select></div><div><Label>Issue date</Label><Input type="date" {...register("issueDate")} className="mt-1 h-9" /></div><div><Label>Due date</Label><Input type="date" {...register("dueDate")} className="mt-1 h-9" /></div><div><Label>Status</Label><select {...register("status")} className="mt-1 h-9 w-full rounded-xl border border-input bg-background px-3 text-sm">{INVOICE_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></div><div><Label>Shipping</Label><Input type="number" min="0" step="0.01" {...register("shippingCost")} className="mt-1 h-9" /></div></div></Card><div className="grid gap-4 lg:grid-cols-2"><Card className="p-4"><h3 className="mb-3 text-sm font-bold">Seller details</h3>{partyFields("seller", true)}</Card><Card className="p-4"><h3 className="mb-3 text-sm font-bold">Customer details</h3>{partyFields("customer")}</Card></div><Card className="p-4"><InvoiceLineItems register={register} fields={fields} append={append} remove={remove} /></Card><Card className="grid gap-4 p-4 sm:grid-cols-2"><div><Label>Notes</Label><Textarea {...register("notes")} className="mt-1 min-h-24" /></div><div><Label>Terms</Label><Textarea {...register("terms")} className="mt-1 min-h-24" /></div></Card></div><div className="min-w-0 xl:sticky xl:top-4 xl:self-start"><div className="mb-2 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Live preview</p><p className="text-xs font-semibold text-muted-foreground">{formatInvoiceMoney(preview.total, preview.currency)}</p></div><InvoicePreview invoice={preview} /></div></form>;
+  return <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,620px)]"><div className="min-w-0 space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Invoice editor</p><h2 className="text-xl font-bold">{preview.invoiceNumber || "New invoice"}</h2></div><div className="flex gap-2"><Button type="button" variant="outline" onClick={downloadPdf} disabled={downloading || saving} className="gap-1.5">{downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}PDF</Button><Button type="submit" disabled={saving || downloading} className="gap-1.5">{saving ? <Loader2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}Save</Button></div></div>{error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}{saved && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">Invoice saved.</p>}<Card className="space-y-4 p-4"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><h3 className="text-sm font-bold">Invoice details</h3></div><div className="grid gap-3 sm:grid-cols-2"><div><Label>Invoice number</Label><Input {...register("invoiceNumber", { required: true })} className="mt-1 h-9" /></div><div><Label>Currency</Label><select {...register("currency")} className="mt-1 h-9 w-full rounded-xl border border-input bg-background px-3 text-sm">{INVOICE_CURRENCIES.map((currency) => <option key={currency}>{currency}</option>)}</select></div><div><Label>Issue date</Label><Input type="date" {...register("issueDate")} className="mt-1 h-9" /></div><div><Label>Due date</Label><Input type="date" {...register("dueDate")} className="mt-1 h-9" /></div><div><Label>Status</Label><select {...register("status")} className="mt-1 h-9 w-full rounded-xl border border-input bg-background px-3 text-sm">{INVOICE_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></div><div><Label>Shipping</Label><Input type="number" min="0" step="0.01" {...register("shippingCost")} className="mt-1 h-9" /></div></div><label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-slate-50 px-3 py-2.5 text-sm"><input type="checkbox" {...register("showTax")} className="h-4 w-4 accent-slate-900" /><span><span className="block font-semibold">Show tax on invoice</span><span className="block text-xs text-muted-foreground">Hide tax fields, line labels, and the tax total when disabled.</span></span></label></Card><div className="grid gap-4 lg:grid-cols-2"><Card className="p-4"><h3 className="mb-3 text-sm font-bold">Seller details</h3>{partyFields("seller", true)}</Card><Card className="p-4"><h3 className="mb-3 text-sm font-bold">Customer details</h3>{partyFields("customer")}</Card></div><Card className="p-4"><InvoiceLineItems register={register} fields={fields} append={append} remove={remove} showTax={Boolean(watched.showTax)} /></Card><Card className="grid gap-4 p-4 sm:grid-cols-2"><div><Label>Notes</Label><Textarea {...register("notes")} className="mt-1 min-h-24" /></div><div><Label>Terms</Label><Textarea {...register("terms")} className="mt-1 min-h-24" /></div></Card></div><div className="min-w-0 xl:sticky xl:top-4 xl:self-start"><div className="mb-2 flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Live preview</p><p className="text-xs font-semibold text-muted-foreground">{formatInvoiceMoney(preview.total, preview.currency)}</p></div><InvoicePreview invoice={preview} /></div></form>;
 }

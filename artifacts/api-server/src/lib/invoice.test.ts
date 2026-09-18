@@ -32,6 +32,15 @@ describe("invoice calculations", () => {
     });
   });
 
+  it("removes tax from totals when the invoice hides tax", () => {
+    expect(calculateInvoiceTotals({
+      currency: "GBP",
+      shippingCost: "2.00",
+      showTax: false,
+      lineItems: [{ id: "line-1", description: "Item", quantity: "1", unitPrice: "10", taxRate: "20", discount: "0" }],
+    })).toEqual({ subtotal: "10.00", totalTax: "0.00", total: "12.00" });
+  });
+
   it("formats supported currencies with the requested locale", () => {
     expect(formatInvoiceMoney("1234.5", "GBP")).toContain("1,234.50");
     expect(formatInvoiceMoney("1234.5", "EUR")).toContain("1.234,50");
@@ -53,17 +62,31 @@ describe("invoice calculations", () => {
     })).toThrow("quantity");
   });
 
-  it("renders an A4 PDF with the invoice number and total", () => {
-    const pdf = buildInvoicePdf({
+  it("renders an A4 PDF with the invoice number and total", async () => {
+    const pdf = await buildInvoicePdf({
       orderId: "order-1", invoiceNumber: "INV-100", issueDate: "2026-09-15", dueDate: null,
       currency: "GBP", status: "draft", seller: { name: "Salt & Peps", addressLines: [], email: "" },
       customer: { name: "Ada Buyer", addressLines: ["1 Example Road"], email: "ada@example.test" },
       lineItems: [{ id: "item-1", description: "Example item", quantity: "1", unitPrice: "10", taxRate: "0", discount: "0" }],
-      notes: "", terms: "", shippingCost: "2.50", subtotal: "10.00", totalTax: "0.00", total: "12.50",
+      notes: "", terms: "", shippingCost: "2.50", subtotal: "10.00", totalTax: "0.00", total: "12.50", showTax: true,
     });
 
     expect(pdf.subarray(0, 8).toString("latin1")).toBe("%PDF-1.4");
     expect(pdf.toString("latin1")).toContain("INV-100");
-    expect(pdf.toString("latin1")).toContain("12.50 GBP");
+    expect(pdf.toString("latin1")).toContain("12.50");
+    expect(pdf.toString("latin1")).toContain("/Im1 Do");
+  });
+
+  it("omits tax labels and tax values when tax display is disabled", async () => {
+    const pdf = await buildInvoicePdf({
+      orderId: "order-1", invoiceNumber: "INV-101", issueDate: "2026-09-15", dueDate: null,
+      currency: "GBP", status: "draft", seller: { name: "Seller", addressLines: [], email: "" },
+      customer: { name: "Buyer", addressLines: [], email: "" },
+      lineItems: [{ id: "item-1", description: "Example item", quantity: "1", unitPrice: "10", taxRate: "20", discount: "0" }],
+      notes: "", terms: "", shippingCost: "0", subtotal: "10.00", totalTax: "2.00", total: "12.00", showTax: false,
+    });
+
+    expect(pdf.toString("latin1")).not.toContain("Tax");
+    expect(pdf.toString("latin1")).not.toContain("20% tax");
   });
 });

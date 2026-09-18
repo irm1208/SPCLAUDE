@@ -1,4 +1,4 @@
-import { jsonb, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, jsonb, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { ordersTable } from "./orders";
 
 export const orderInvoicesTable = pgTable("order_invoices", {
@@ -14,6 +14,7 @@ export const orderInvoicesTable = pgTable("order_invoices", {
   notes: text("notes").notNull().default(""),
   terms: text("terms").notNull().default(""),
   shippingCost: numeric("shipping_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  showTax: boolean("show_tax").notNull().default(true),
   subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull().default("0"),
   totalTax: numeric("total_tax", { precision: 12, scale: 2 }).notNull().default("0"),
   total: numeric("total", { precision: 12, scale: 2 }).notNull().default("0"),

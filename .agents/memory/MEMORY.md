@@ -125,3 +125,4 @@
 - [Shared-order active membership invariant](shared-order-active-membership-invariant.md) — an active wholesale_shared order must have a member row pointing to its exact order ID; removal and FS3 must enforce this.
 - [GB reshipper routing field consistency](gb-reshipper-routing-field-consistency.md) — assigned reshipper wins over stale routingType; manual assign/clear must update both fields together.
 - [Reshipper fulfilment manifest scope](reshipper-fulfilment-manifest-scope.md) — mixed assigned/unclaimed order feeds must be narrowed before calculating a reshipper’s incoming items.
+- [Invoice PDF binary assets](invoice-pdf-binary-assets.md) — assemble PDF streams as buffers with exact lengths; resolve bundled assets from both workspace and artifact working directories.

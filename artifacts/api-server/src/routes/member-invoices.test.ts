@@ -9,6 +9,7 @@ describe("member invoice API contract", () => {
     expect(accountSource).toMatch(/router\.get\("\/account\/orders\/:id\/invoice", requireAccount/);
     expect(accountSource).toMatch(/router\.put\("\/account\/orders\/:id\/invoice", requireAccount/);
     expect(accountSource).toMatch(/router\.get\("\/account\/orders\/:id\/invoice-pdf", requireAccount/);
+    expect(accountSource).toMatch(/router\.post\("\/account\/orders\/:id\/invoice-pdf", requireAccount/);
   });
 
   it("uses the same shared persistence service as admin", () => {

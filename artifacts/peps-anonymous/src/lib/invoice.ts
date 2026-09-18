@@ -35,6 +35,7 @@ export interface InvoiceDocument {
   notes: string;
   terms: string;
   shippingCost: string;
+  showTax: boolean;
   subtotal: string;
   totalTax: string;
   total: string;
@@ -42,7 +43,7 @@ export interface InvoiceDocument {
   updatedAt?: string;
 }
 
-export function calculateInvoiceTotals(invoice: Pick<InvoiceDocument, "lineItems" | "shippingCost">) {
+export function calculateInvoiceTotals(invoice: Pick<InvoiceDocument, "lineItems" | "shippingCost"> & Pick<InvoiceDocument, "showTax">) {
   let subtotalCents = 0;
   let taxCents = 0;
   for (const item of invoice.lineItems) {
@@ -52,7 +53,7 @@ export function calculateInvoiceTotals(invoice: Pick<InvoiceDocument, "lineItems
     const taxRate = Math.min(100, Math.max(0, Number(item.taxRate) || 0));
     const netCents = Math.round(quantity * unitPriceCents * (1 - discount / 100));
     subtotalCents += netCents;
-    taxCents += Math.round(netCents * taxRate / 100);
+    if (invoice.showTax) taxCents += Math.round(netCents * taxRate / 100);
   }
   const shippingCents = Math.max(0, Math.round((Number(invoice.shippingCost) || 0) * 100));
   return {

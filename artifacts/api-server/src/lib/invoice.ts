@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const invoiceCurrencies = ["GBP", "EUR", "USD"] as const;
 export const invoiceStatuses = ["draft", "sent", "paid", "void"] as const;
+export const DEFAULT_INVOICE_LOGO = "/brand/salt-peps-logo.svg";
 
 export type InvoiceCurrency = (typeof invoiceCurrencies)[number];
 export type InvoiceStatus = (typeof invoiceStatuses)[number];
@@ -44,6 +45,7 @@ export interface InvoiceDocument {
   notes: string;
   terms: string;
   shippingCost: string;
+  showTax: boolean;
   subtotal: string;
   totalTax: string;
   total: string;
@@ -87,6 +89,7 @@ export const invoiceDocumentSchema = z.object({
   notes: z.string().max(2000).default(""),
   terms: z.string().max(2000).default(""),
   shippingCost: z.string().trim().min(1).max(30),
+  showTax: z.boolean().default(true),
 });
 
 function decimalToCents(value: string, field: string): number {
@@ -114,7 +117,7 @@ export function calculateInvoiceLineItemTotal(item: Pick<InvoiceLineItem, "quant
   return centsToDecimal(Math.round(quantity * unitPriceCents * (1 - discount / 100)));
 }
 
-export function calculateInvoiceTotals(input: Pick<InvoiceDocument, "lineItems" | "shippingCost" | "currency">): InvoiceTotals {
+export function calculateInvoiceTotals(input: Pick<InvoiceDocument, "lineItems" | "shippingCost" | "currency"> & Partial<Pick<InvoiceDocument, "showTax">>): InvoiceTotals {
   let subtotalCents = 0;
   let taxCents = 0;
   for (const item of input.lineItems) {
@@ -128,7 +131,7 @@ export function calculateInvoiceTotals(input: Pick<InvoiceDocument, "lineItems" 
     const grossCents = Math.round(quantity * unitPriceCents);
     const netCents = Math.round(grossCents * (1 - discount / 100));
     subtotalCents += netCents;
-    taxCents += Math.round(netCents * (taxRate / 100));
+    if (input.showTax !== false) taxCents += Math.round(netCents * (taxRate / 100));
   }
   const shippingCents = decimalToCents(input.shippingCost, "shippingCost");
   return {
@@ -166,7 +169,7 @@ export function seedInvoiceFromOrder(order: {
     discount: "0",
   }));
   const shippingCost = (Number(order.deliveryPrice ?? 0) + Number(order.vendorShipping ?? 0)).toFixed(2);
-  const totals = calculateInvoiceTotals({ currency: "GBP", shippingCost, lineItems: items });
+  const totals = calculateInvoiceTotals({ currency: "GBP", shippingCost, lineItems: items, showTax: true });
   return {
     orderId: order.id,
     invoiceNumber: order.code,
@@ -174,7 +177,7 @@ export function seedInvoiceFromOrder(order: {
     dueDate: null,
     currency: "GBP",
     status: "draft",
-    seller: { name: "Salt & Peps", addressLines: [], email: "", phone: "", taxId: "", logoUrl: "" },
+    seller: { name: "Salt & Peps", addressLines: [], email: "", phone: "", taxId: "", logoUrl: DEFAULT_INVOICE_LOGO },
     customer: {
       name: order.shippingName ?? order.telegramUsername ?? "Customer",
       addressLines: (order.shippingAddress ?? "").split("\n").filter(Boolean),
@@ -185,6 +188,7 @@ export function seedInvoiceFromOrder(order: {
     notes: order.notes ?? "",
     terms: "",
     shippingCost,
+    showTax: true,
     ...totals,
   };
 }

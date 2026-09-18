@@ -4,6 +4,7 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./InvoiceEditor.tsx", import.meta.url), "utf8");
 const invoiceLib = readFileSync(new URL("../../lib/invoice.ts", import.meta.url), "utf8");
+const previewSource = readFileSync(new URL("./InvoicePreview.tsx", import.meta.url), "utf8");
 
 test("invoice editor supports a member access mode", () => {
   assert.match(source, /kind:\s*"member"/);
@@ -21,4 +22,12 @@ test("invoice editor keeps the shared currency selector", () => {
 test("admin invoice editor transport remains supported", () => {
   assert.match(source, /\/api\/admin\/orders/);
   assert.match(source, /x-admin-secret/);
+});
+
+test("invoice editor persists tax visibility and uses the built-in S&P logo by default", () => {
+  assert.match(source, /showTax/);
+  assert.match(source, /salt-peps-logo\.svg/);
+  assert.match(invoiceLib, /showTax:\s*boolean/);
+  assert.match(previewSource, /salt-peps-logo\.svg/);
+  assert.match(previewSource, /invoice\.showTax/);
 });
