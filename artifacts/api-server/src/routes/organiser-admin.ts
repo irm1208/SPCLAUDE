@@ -335,7 +335,6 @@ router.get("/admin/organiser-group-buys", async (req, res): Promise<void> => {
       qrUploadCouriers: groupBuysTable.qrUploadCouriers,
     })
     .from(groupBuysTable)
-    .where(isNotNull(groupBuysTable.organiserId))
     .orderBy(desc(groupBuysTable.createdAt));
 
   let filtered = rows;
@@ -346,6 +345,107 @@ router.get("/admin/organiser-group-buys", async (req, res): Promise<void> => {
     ...r,
     organiserPayments: r.organiserPayments ?? null,
   })));
+});
+
+// ── PATCH /admin/organiser-group-buys/:id/organiser — transfer ownership ────
+router.patch("/admin/organiser-group-buys/:id/organiser", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const id = String(req.params["id"]);
+  const requestedOrganiserUsername = req.body?.organiserUsername;
+  if (requestedOrganiserUsername !== null && typeof requestedOrganiserUsername !== "string") {
+    res.status(400).json({ error: "organiserUsername must be an approved username or null" });
+    return;
+  }
+
+  let nextOrganiserUsername = typeof requestedOrganiserUsername === "string"
+    ? requestedOrganiserUsername.trim().replace(/^@/, "").toLowerCase()
+    : null;
+  if (requestedOrganiserUsername !== null && !nextOrganiserUsername) {
+    res.status(400).json({ error: "organiserUsername must be an approved username or null" });
+    return;
+  }
+
+  const [groupBuy] = await db
+    .select({
+      id: groupBuysTable.id,
+      name: groupBuysTable.name,
+      organiserId: groupBuysTable.organiserId,
+    })
+    .from(groupBuysTable)
+    .where(eq(groupBuysTable.id, id));
+
+  if (!groupBuy) {
+    res.status(404).json({ error: "Group buy not found" });
+    return;
+  }
+
+  if (nextOrganiserUsername !== null) {
+    const [organiser] = await db
+      .select({
+        telegramUsername: accountsTable.telegramUsername,
+        organiserStatus: accountsTable.organiserStatus,
+      })
+      .from(accountsTable)
+      .where(sql`lower(${accountsTable.telegramUsername}) = ${nextOrganiserUsername}`)
+      .limit(1);
+
+    if (!organiser) {
+      res.status(400).json({ error: "Organiser account not found" });
+      return;
+    }
+    if (organiser.organiserStatus !== "approved") {
+      res.status(400).json({ error: "Organiser must be approved before they can own a group buy" });
+      return;
+    }
+    nextOrganiserUsername = organiser.telegramUsername;
+  }
+
+  if (groupBuy.organiserId === nextOrganiserUsername) {
+    res.json({
+      ok: true,
+      id: groupBuy.id,
+      name: groupBuy.name,
+      organiserUsername: groupBuy.organiserId,
+    });
+    return;
+  }
+
+  const auditOrganiserUsername = nextOrganiserUsername ?? groupBuy.organiserId;
+  if (!auditOrganiserUsername) {
+    res.status(400).json({ error: "No ownership change requested" });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(groupBuysTable)
+      .set({ organiserId: nextOrganiserUsername })
+      .where(eq(groupBuysTable.id, id));
+
+    await tx.insert(organiserAuditLogTable).values({
+      adminUsername: getAdminUsername(res),
+      organiserUsername: auditOrganiserUsername,
+      actionType: "organiser_ownership_changed",
+      previousValue: groupBuy.organiserId,
+      newValue: nextOrganiserUsername,
+    });
+  });
+
+  writeLog(
+    "change",
+    "info",
+    "organiser_gb_ownership_changed",
+    `Admin changed group buy ${id} organiser from ${groupBuy.organiserId ? `@${groupBuy.organiserId}` : "Admin"} to ${nextOrganiserUsername ? `@${nextOrganiserUsername}` : "Admin"}`,
+    { gbId: id, previousOrganiser: groupBuy.organiserId, organiserId: nextOrganiserUsername },
+  ).catch(() => {});
+
+  res.json({
+    ok: true,
+    id: groupBuy.id,
+    name: groupBuy.name,
+    organiserUsername: nextOrganiserUsername,
+  });
 });
 
 // ── GET /admin/organiser-group-buys/:id — full detail ───────────────────────

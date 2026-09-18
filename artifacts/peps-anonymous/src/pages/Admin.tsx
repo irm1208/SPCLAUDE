@@ -26314,6 +26314,8 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
   const [gbQrNewCourier, setGbQrNewCourier] = useState("");
   const [savingGbQr, setSavingGbQr] = useState(false);
   const [gbQrMsg, setGbQrMsg] = useState<Record<string, string>>({});
+  const [savingGbOrganiser, setSavingGbOrganiser] = useState<string | null>(null);
+  const [gbOrganiserMsg, setGbOrganiserMsg] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -26414,6 +26416,37 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
       }
     } catch { setGbAnonPayMsg(prev => ({ ...prev, [gbId]: "Connection error" })); }
     setSavingGbAnonPay(false);
+  };
+
+  const saveGbOrganiser = async (gbId: string, selectedOrganiser: string | null) => {
+    setSavingGbOrganiser(gbId);
+    setGbOrganiserMsg(prev => ({ ...prev, [gbId]: "" }));
+    try {
+      const res = await fetch(apiUrl(`/admin/organiser-group-buys/${gbId}/organiser`), {
+        method: "PATCH",
+        headers: { "x-admin-secret": secret, "Content-Type": "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ organiserUsername: selectedOrganiser }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        setGbOrganiserMsg(prev => ({ ...prev, [gbId]: d.error || "Failed to change organiser" }));
+        return;
+      }
+      setGbs(prev => prev.map(g => g.id === gbId
+        ? { ...g, organiserId: d.organiserUsername ?? null }
+        : g));
+      setGbOrganiserMsg(prev => ({ ...prev, [gbId]: "Saved!" }));
+      setTimeout(() => setGbOrganiserMsg(prev => {
+        const next = { ...prev };
+        delete next[gbId];
+        return next;
+      }), 3000);
+    } catch {
+      setGbOrganiserMsg(prev => ({ ...prev, [gbId]: "Connection error" }));
+    } finally {
+      setSavingGbOrganiser(null);
+    }
   };
 
   const saveGbQr = async (gbId: string) => {
@@ -26553,6 +26586,7 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
 
   const applications = organisers.filter(o => o.organiserStatus === "applied");
   const approved = organisers.filter(o => o.organiserStatus === "approved" || o.organiserStatus === "suspended");
+  const assignableOrganisers = organisers.filter(o => o.organiserStatus === "approved");
   const pendingGbs = gbs.filter(g => g.approvalStatus === "pending_approval");
   const pendingLabTests = labTests.filter(t => t.pending);
   const filteredGbs = gbFilter === "all" ? gbs : gbs.filter(g => g.approvalStatus === gbFilter);
@@ -26978,13 +27012,38 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
                     <span className="font-mono text-[10px] text-muted-foreground bg-slate-100 px-1.5 py-0.5 rounded">#{gb.id}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-[10px] text-muted-foreground">@{gb.organiserId}</span>
+                    <span className="text-[10px] text-muted-foreground">{gb.organiserId ? `@${gb.organiserId}` : "Admin-owned"}</span>
                     <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full", { "bg-slate-100 text-slate-600": gb.status === "draft", "bg-green-100 text-green-700": gb.status === "active", "bg-blue-100 text-blue-700": gb.status === "closed", "bg-gray-100 text-gray-600": gb.status === "archived" })}>{gb.status}</span>
                     {gbApprovalPill(gb.approvalStatus)}
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">{gb.currency}{gb.closeDate ? ` · Closes ${new Date(gb.closeDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}` : ""}</p>
                 </div>
               </div>
+              <div className="flex items-center gap-2 border-t border-border pt-3">
+                <label htmlFor={`gb-organiser-${gb.id}`} className="text-[11px] font-semibold text-muted-foreground shrink-0">
+                  Organiser
+                </label>
+                <select
+                  id={`gb-organiser-${gb.id}`}
+                  value={gb.organiserId ?? ""}
+                  onChange={e => saveGbOrganiser(gb.id, e.target.value || null)}
+                  disabled={savingGbOrganiser === gb.id}
+                  className="min-w-0 flex-1 h-8 rounded-lg border border-border bg-slate-50 text-xs px-2 outline-none focus:ring-1 focus:ring-orange-400/50 disabled:opacity-60"
+                >
+                  <option value="">Admin (unassigned)</option>
+                  {assignableOrganisers.map(org => (
+                    <option key={org.telegramUsername} value={org.telegramUsername}>
+                      @{org.telegramUsername}
+                    </option>
+                  ))}
+                </select>
+                {savingGbOrganiser === gb.id && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground shrink-0" />}
+              </div>
+              {gbOrganiserMsg[gb.id] && (
+                <p className={cn("text-xs", gbOrganiserMsg[gb.id] === "Saved!" ? "text-green-600" : "text-red-600")}>
+                  {gbOrganiserMsg[gb.id]}
+                </p>
+              )}
               {gb.approvalStatus === "pending_approval" && (
                 <div className="flex gap-2">
                   <button onClick={() => actionGb(gb.id, "approve")} disabled={!!actioning} className="flex-1 h-9 rounded-xl text-xs font-bold text-white bg-green-600 flex items-center justify-center gap-1.5 disabled:opacity-50">
