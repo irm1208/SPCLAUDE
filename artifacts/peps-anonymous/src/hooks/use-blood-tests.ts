@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { buildSageDiscussRequestBody } from "@/lib/sage-discuss-request";
 
 export interface BloodTestValue {
   id: string;
@@ -183,7 +184,7 @@ export function useBloodTestDiscuss() {
       apiFetchDiscuss("/api/blood-tests/discuss", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, sessionId, history }),
+        body: JSON.stringify(buildSageDiscussRequestBody({ message, sessionId, history })),
       }),
   });
 }

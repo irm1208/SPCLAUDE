@@ -4,6 +4,7 @@ import { SageChat } from "@/components/SageChat";
 import { useThemeStore } from "@/hooks/use-theme";
 import { DashboardShell, palette, ACCENT } from "@/components/DashboardShell";
 import { useAccount, useLogout } from "@/hooks/use-account";
+import { useBloodTests } from "@/hooks/use-blood-tests";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 
 export default function SagePage() {
@@ -16,6 +17,7 @@ export default function SagePage() {
   const openHistory = params.get("history") === "1";
   const { account } = useAccount();
   const { mutate: logout } = useLogout();
+  const { data: bloodTests = [] } = useBloodTests(Boolean(account));
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
 
   const goSection = useCallback((s: string) => {
@@ -51,6 +53,7 @@ export default function SagePage() {
         <SageChat
           open={true}
           onClose={() => { if (window.history.length > 1) window.history.back(); else navigate("/account"); }}
+          sessionId={bloodTests[0]?.id}
           seed={seedQ || undefined}
           openToHistory={openHistory}
           t={T}

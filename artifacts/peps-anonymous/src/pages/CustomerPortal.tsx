@@ -5871,7 +5871,7 @@ function BtDiscussTab({ sessions, username, prefillInput, onClearPrefill, noBann
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ sessionId: latestSession?.id }),
       });
       if (r.ok) {
         const data = await r.json() as { response: string };
@@ -5917,7 +5917,7 @@ function BtDiscussTab({ sessions, username, prefillInput, onClearPrefill, noBann
       convId = id;
       setSending(true);
       try {
-        const resp = await discussMut.mutateAsync({ message: apiMsg, history: [] });
+        const resp = await discussMut.mutateAsync({ message: apiMsg, sessionId: latestSession?.id, history: [] });
         setDiscussUsed(resp.used);
         setDiscussLimit(resp.limit);
         const assistantMsg: DiscussMessage = { id: Math.random().toString(36), role: "assistant", content: resp.response, contextSession: resp.contextSession, timestamp: new Date(), chips: resp.chips, sources: resp.sources };
@@ -5948,7 +5948,7 @@ function BtDiscussTab({ sessions, username, prefillInput, onClearPrefill, noBann
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, messages: [...c.messages, userMsg], title: updTitle } : c));
     setSending(true);
     try {
-      const resp = await discussMut.mutateAsync({ message: apiMsg, history });
+      const resp = await discussMut.mutateAsync({ message: apiMsg, sessionId: latestSession?.id, history });
       setDiscussUsed(resp.used);
       setDiscussLimit(resp.limit);
       const assistantMsg: DiscussMessage = { id: Math.random().toString(36), role: "assistant", content: resp.response, contextSession: resp.contextSession, timestamp: new Date(), chips: resp.chips, sources: resp.sources };

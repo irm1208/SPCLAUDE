@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, ArrowUp, X, Loader2, History, Plus, MessageSquare, Trash2, CheckCircle2, Search, SquarePen, Activity, FlaskConical, BookMarked } from "lucide-react";
 import { type DiscussMessage, type DiscussChart, type DiscussSource } from "@/hooks/use-blood-tests";
 import { SageTrendChart } from "@/components/SageTrendChart";
+import { buildSageDiscussRequestBody } from "@/lib/sage-discuss-request";
 
 const ACCENT = "#0176D3";
 
@@ -34,6 +35,8 @@ interface StoredConversation {
 interface SageChatProps {
   open: boolean;
   onClose: () => void;
+  /** The blood-test session whose results should ground this chat. */
+  sessionId?: string;
   /** A question to auto-send when the panel opens. */
   seed?: string;
   /** Open directly to the history panel instead of a new chat. */
@@ -188,7 +191,7 @@ function formatSessionDate(iso: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCENT, fullPage = false }: SageChatProps) {
+export function SageChat({ open, onClose, sessionId, seed, openToHistory, t, accent = ACCENT, fullPage = false }: SageChatProps) {
   const [messages, setMessages] = useState<SageMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -268,7 +271,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: q, history }),
+          body: JSON.stringify(buildSageDiscussRequestBody({ message: q, sessionId, history })),
           signal: AbortSignal.timeout(65_000),
         });
 
@@ -359,7 +362,7 @@ export function SageChat({ open, onClose, seed, openToHistory, t, accent = ACCEN
         if (!isStale()) setSending(false);
       }
     },
-    [sending, limitReached, persistConversation],
+    [sending, limitReached, persistConversation, sessionId],
   );
 
   const startNewChat = useCallback(() => {

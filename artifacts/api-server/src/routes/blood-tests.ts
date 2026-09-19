@@ -11,6 +11,7 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { fetchPepPediaContext } from "../lib/pep-pedia";
 import { searchPeppysArticles } from "../lib/peppys-search";
 import { isWebSearchEnabled, getSageSystemPromptTemplate } from "./admin-sage-settings";
+import { removeStaleNoDataAssistantMessages } from "../lib/sage-history";
 
 const router: IRouter = Router();
 
@@ -2075,6 +2076,9 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
   let responseSources: DiscussSource[] = [];
   let responseCharts: ChartSeries[] = [];
   try {
+    const effectiveHistory = biomarkers.length > 0
+      ? removeStaleNoDataAssistantMessages(history)
+      : history;
     const cacheTopics = extractTopicsForCache(message, biomarkers);
     const [cachedKnowledge, labTests, glp1Rows] = await Promise.all([
       lookupKnowledgeCache(cacheTopics),
@@ -2098,7 +2102,7 @@ router.post("/blood-tests/discuss", requireAccount, async (req, res): Promise<vo
       calories: r.calories != null ? parseFloat(String(r.calories)) : null,
       proteinG: r.proteinG != null ? parseFloat(String(r.proteinG)) : null,
     }));
-    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, history, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs, (text) => sseWrite({ type: "token", text }), (msg) => sseWrite({ type: "status", text: msg }));
+    const result = await callGeminiDiscuss(message, sessionDisplayName, session.testDate, biomarkers, effectiveHistory, activeCompounds, historicalSessions, cachedKnowledge, labTests, allCompoundsWithStatus, true, glp1Logs, (text) => sseWrite({ type: "token", text }), (msg) => sseWrite({ type: "status", text: msg }));
     responseText = result.text;
     responseChips = result.chips;
     responseSources = result.sources;

@@ -1238,7 +1238,7 @@ function DiscussView({ sessions }: { sessions: BloodTestSession[] }) {
       setActiveConvId(id);
       setSending(true);
       try {
-        const resp = await discussMut.mutateAsync({ message: msg, history: [] });
+        const resp = await discussMut.mutateAsync({ message: msg, sessionId: latestSession?.id, history: [] });
         const assistantMsg: DiscussMessage = {
           id: Math.random().toString(36),
           role: "assistant",
@@ -1274,7 +1274,7 @@ function DiscussView({ sessions }: { sessions: BloodTestSession[] }) {
     setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, messages: [...c.messages, userMsg], title: newTitle } : c));
     setSending(true);
     try {
-      const resp = await discussMut.mutateAsync({ message: msg, history });
+      const resp = await discussMut.mutateAsync({ message: msg, sessionId: latestSession?.id, history });
       const assistantMsg: DiscussMessage = {
         id: Math.random().toString(36),
         role: "assistant",
