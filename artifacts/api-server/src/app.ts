@@ -129,6 +129,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.get("/_health", (_req: Request, res: Response) => {
   res.status(200).json({ ok: true });
 });
+// Replit's artifact router probes the service mount path itself (`/api`)
+// during publish, before the application bootstrap has completed.
+app.get("/api", (_req: Request, res: Response) => {
+  res.status(200).json({ status: "ok" });
+});
 app.get("/api/healthz", (_req: Request, res: Response) => {
   res.status(200).json({ status: "ok" });
 });

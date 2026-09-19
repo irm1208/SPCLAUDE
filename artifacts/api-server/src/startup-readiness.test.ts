@@ -10,9 +10,13 @@ describe("production startup readiness", () => {
     );
   });
 
-  it("keeps the deployment health endpoint outside the readiness gate", () => {
+  it("keeps both deployment health endpoints outside the readiness gate", () => {
     const source = readFileSync(new URL("./app.ts", import.meta.url), "utf8");
 
+    expect(source).toContain('app.get("/api"');
+    expect(source.indexOf('app.get("/api"')).toBeLessThan(
+      source.indexOf('app.use("/api", requireApplicationReady)'),
+    );
     expect(source).toContain('app.get("/api/healthz"');
     expect(source.indexOf('app.get("/api/healthz"')).toBeLessThan(
       source.indexOf('app.use("/api", requireApplicationReady)'),
