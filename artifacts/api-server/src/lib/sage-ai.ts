@@ -487,8 +487,9 @@ async function callModel(
 
 /**
  * Streaming + tools hybrid for the discuss endpoint.
- * 1. Tool loop (non-streaming): Sage searches, results fed back.
- * 2. Final response: streamed token-by-token.
+ * The tool loop returns a completed final response. Deliver that exact response
+ * to the caller rather than asking the model to generate a second answer with
+ * no new user turn.
  */
 export async function callSageAIStreamWithTools({
   system, messages, maxTokens = 1200, model, apiKey: apiKeyOverride,
@@ -506,11 +507,8 @@ export async function callSageAIStreamWithTools({
     const tryWithTools = async (mdl: string): Promise<string> => {
       try {
         const result = await runToolLoop(mdl, key, url, system, messages, maxTokens, temperature, onStatus);
-        // Stream the final answer
-        const oaiMsgs = buildOaiMessages(system, result.augmentedMessages);
-        const streamed = await streamOai(mdl, key, url, oaiMsgs, maxTokens, temperature, onToken);
-        if (!streamed && result.finalText) { onToken(result.finalText); return result.finalText; }
-        return streamed;
+        if (result.finalText) onToken(result.finalText);
+        return result.finalText;
       } catch (toolErr) {
         const msg = toolErr instanceof Error ? toolErr.message : String(toolErr);
         if (msg.includes("no_stream_body") || msg.includes("400") || msg.includes("tool")) {

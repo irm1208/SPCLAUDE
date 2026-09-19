@@ -11,7 +11,10 @@ import { logCustomerActivity } from "../lib/activity-log";
 import { fetchPepPediaContext } from "../lib/pep-pedia";
 import { searchPeppysArticles } from "../lib/peppys-search";
 import { isWebSearchEnabled, getSageSystemPromptTemplate } from "./admin-sage-settings";
-import { removeStaleNoDataAssistantMessages } from "../lib/sage-history";
+import {
+  isBloodDataUnavailableResponse,
+  removeStaleNoDataAssistantMessages,
+} from "../lib/sage-history";
 
 const router: IRouter = Router();
 
@@ -1082,9 +1085,40 @@ async function callGeminiDiscuss(
 
   console.log(`[discuss] Calling Sage AI with ${messages.length} turn(s), ${biomarkers.length} biomarkers, ${cachedKnowledge.length} cached topic(s)`);
 
-  const raw = onToken
-    ? await callSageAIStreamWithTools({ system: systemPrompt, messages, maxTokens: 1200, onToken, onStatus })
-    : await callSageAI({ system: systemPrompt, messages, maxTokens: 1200, enableWebSearch: true });
+  const callBuffered = async (
+    requestMessages: typeof messages,
+    statusCallback?: (msg: string) => void,
+  ): Promise<string> => (
+    onToken
+      ? callSageAIStreamWithTools({
+          system: systemPrompt,
+          messages: requestMessages,
+          maxTokens: 1200,
+          onToken: () => {},
+          onStatus: statusCallback,
+        })
+      : callSageAI({
+          system: systemPrompt,
+          messages: requestMessages,
+          maxTokens: 1200,
+          enableWebSearch: true,
+        })
+  );
+
+  let raw = await callBuffered(messages, onStatus);
+  if (hasBloodTest && biomarkers.length > 0 && isBloodDataUnavailableResponse(raw)) {
+    console.warn(`[discuss] Rejected no-data response despite ${biomarkers.length} loaded biomarkers; retrying once`);
+    onStatus?.("Checking your blood results...");
+    raw = await callBuffered([
+      ...messages,
+      { role: "assistant" as const, content: raw },
+      {
+        role: "user" as const,
+        content: "That draft is incorrect: my blood-test data is already present in the system context. Answer my original question now using the supplied biomarker names, values, units, and reference ranges. Do not ask me to upload or paste results.",
+      },
+    ]);
+  }
+  if (onToken) onToken(raw);
   console.log(`[discuss] Sage AI responded with ${raw.length} chars`);
 
   const filtered = filterSageOutput(raw);
