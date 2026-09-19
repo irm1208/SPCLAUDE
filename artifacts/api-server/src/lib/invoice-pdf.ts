@@ -1,8 +1,6 @@
 import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import path from "node:path";
-import sharp from "sharp";
 import {
   calculateInvoiceLineItemTotal,
   calculateInvoiceTotals,
@@ -21,10 +19,10 @@ async function loadLogo(): Promise<LogoImage | null> {
         path.resolve(process.cwd(), "artifacts/peps-anonymous/public/brand/salt-peps-logo-1440.png"),
         path.resolve(process.cwd(), "../peps-anonymous/public/brand/salt-peps-logo-1440.png"),
         path.resolve(process.cwd(), "artifacts/peps-anonymous/dist/public/brand/salt-peps-logo-1440.png"),
-        path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../peps-anonymous/public/brand/salt-peps-logo-1440.png"),
       ];
       const logoPath = candidates.find((candidate) => existsSync(candidate));
       if (!logoPath) return null;
+      const { default: sharp } = await import("sharp");
       const result = await sharp(logoPath)
         .resize({ width: 180, height: 40, fit: "inside" })
         .flatten({ background: "#ffffff" })
