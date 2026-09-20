@@ -10,7 +10,6 @@ export function InvoicePreview({ invoice }: { invoice: InvoiceDocument }) {
         <header className="flex items-start justify-between gap-6 border-b border-slate-200 pb-6">
           <div className="min-w-0">
             <img src={logoUrl} alt="Salt & Peps" className="mb-3 h-9 max-w-40 object-contain object-left" />
-            <h3 className="truncate text-xl font-bold tracking-tight">{invoice.seller.name || "Seller"}</h3>
             <div className="mt-2 space-y-0.5 text-slate-500">
               {invoice.seller.addressLines.filter(Boolean).map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}
               {invoice.seller.email && <p>{invoice.seller.email}</p>}

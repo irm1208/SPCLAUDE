@@ -163,8 +163,7 @@ export async function buildInvoicePdf(invoice: InvoiceDocument): Promise<Buffer>
   lines.push(`0.945 0.961 0.976 rg ${roundedRect(right - pillWidth, pillY, pillWidth, 18, 9)} f`);
   lines.push(rightText("F2", 7.5, right - 10, pillY + 5.7, status, muted));
 
-  lines.push(pdfText("F2", 18, margin, sellerNameY, invoice.seller.name || "Seller"));
-  let sellerY = sellerNameY - 21;
+  let sellerY = sellerNameY;
   const sellerDetails = [
     ...invoice.seller.addressLines,
     invoice.seller.email,
