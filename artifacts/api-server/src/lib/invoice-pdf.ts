@@ -8,7 +8,7 @@ import {
   type InvoiceDocument,
 } from "./invoice";
 
-type LogoImage = { data: Buffer; width: number; height: number };
+type LogoImage = { data: Buffer; width: number; height: number; displayWidth: number; displayHeight: number };
 
 let logoPromise: Promise<LogoImage | null> | undefined;
 
@@ -24,12 +24,18 @@ async function loadLogo(): Promise<LogoImage | null> {
       if (!logoPath) return null;
       const { default: sharp } = await import("sharp");
       const result = await sharp(logoPath)
-        .resize({ width: 180, height: 40, fit: "inside" })
+        .resize({ width: 160, height: 36, fit: "inside" })
         .flatten({ background: "#ffffff" })
         .removeAlpha()
         .raw()
         .toBuffer({ resolveWithObject: true });
-      return { data: deflateSync(result.data), width: result.info.width, height: result.info.height };
+      return {
+        data: deflateSync(result.data),
+        width: result.info.width,
+        height: result.info.height,
+        displayWidth: result.info.width * (595 / 620),
+        displayHeight: result.info.height * (595 / 620),
+      };
     })().catch((error) => {
       console.warn("[invoice] logo embedding failed", error);
       return null;
@@ -45,29 +51,72 @@ function escapePdfText(value: string): string {
     .replace(/[^\x20-\x7e\x80-\xff]/g, "?");
 }
 
-function wrap(value: string, maxLength: number): string[] {
+function textWidth(value: string, size: number, bold = false): number {
+  let units = 0;
+  for (const character of value) {
+    if ("ilI.,'`!:;|".includes(character)) units += 0.25;
+    else if ("mwMW@%&".includes(character)) units += 0.82;
+    else if (character === " ") units += 0.28;
+    else if (/[A-Z0-9]/.test(character)) units += 0.61;
+    else units += 0.51;
+  }
+  return units * size * (bold ? 1.035 : 1);
+}
+
+function wrap(value: string, maxWidth: number, size: number, bold = false): string[] {
   const words = value.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [""];
   const lines: string[] = [];
   let current = "";
-  for (const word of words) {
-    if (current && current.length + word.length + 1 > maxLength) {
+  const addWord = (word: string) => {
+    if (current && textWidth(`${current} ${word}`, size, bold) > maxWidth) {
       lines.push(current);
       current = word;
     } else {
       current = current ? `${current} ${word}` : word;
     }
+  };
+  for (const originalWord of words) {
+    let word = originalWord;
+    while (textWidth(word, size, bold) > maxWidth) {
+      let splitAt = 1;
+      while (splitAt < word.length && textWidth(word.slice(0, splitAt + 1), size, bold) <= maxWidth) splitAt += 1;
+      addWord(word.slice(0, splitAt));
+      lines.push(current);
+      current = "";
+      word = word.slice(splitAt);
+    }
+    if (word) addWord(word);
   }
   if (current) lines.push(current);
   return lines;
 }
 
-function pdfText(font: string, size: number, x: number, y: number, value: string): string {
-  return `BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${escapePdfText(value)}) Tj ET`;
+function wrappedParagraphs(value: string, maxWidth: number, size: number): string[] {
+  return value.split(/\r?\n/).flatMap((paragraph) => wrap(paragraph, maxWidth, size));
 }
 
-function rightText(font: string, size: number, right: number, y: number, value: string): string {
-  return pdfText(font, size, right - value.length * size * 0.52, y, value);
+function pdfText(font: string, size: number, x: number, y: number, value: string, color = "0.059 0.09 0.165"): string {
+  return `${color} rg BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${escapePdfText(value)}) Tj ET`;
+}
+
+function rightText(font: string, size: number, right: number, y: number, value: string, color?: string): string {
+  return pdfText(font, size, right - textWidth(value, size, font === "F2"), y, value, color);
+}
+
+function roundedRect(x: number, y: number, width: number, height: number, radius: number): string {
+  const k = radius * 0.55228475;
+  return [
+    `${(x + radius).toFixed(2)} ${y.toFixed(2)} m`,
+    `${(x + width - radius).toFixed(2)} ${y.toFixed(2)} l`,
+    `${(x + width - radius + k).toFixed(2)} ${y.toFixed(2)} ${(x + width).toFixed(2)} ${(y + radius - k).toFixed(2)} ${(x + width).toFixed(2)} ${(y + radius).toFixed(2)} c`,
+    `${(x + width).toFixed(2)} ${(y + height - radius).toFixed(2)} l`,
+    `${(x + width).toFixed(2)} ${(y + height - radius + k).toFixed(2)} ${(x + width - radius + k).toFixed(2)} ${(y + height).toFixed(2)} ${(x + width - radius).toFixed(2)} ${(y + height).toFixed(2)} c`,
+    `${(x + radius).toFixed(2)} ${(y + height).toFixed(2)} l`,
+    `${(x + radius - k).toFixed(2)} ${(y + height).toFixed(2)} ${x.toFixed(2)} ${(y + height - radius + k).toFixed(2)} ${x.toFixed(2)} ${(y + height - radius).toFixed(2)} c`,
+    `${x.toFixed(2)} ${(y + radius).toFixed(2)} l`,
+    `${x.toFixed(2)} ${(y + radius - k).toFixed(2)} ${(x + radius - k).toFixed(2)} ${y.toFixed(2)} ${(x + radius).toFixed(2)} ${y.toFixed(2)} c h`,
+  ].join(" ");
 }
 
 function pdfMoney(value: string, currency: InvoiceDocument["currency"]): string {
@@ -78,99 +127,149 @@ export async function buildInvoicePdf(invoice: InvoiceDocument): Promise<Buffer>
   const logo = await loadLogo();
   const totals = calculateInvoiceTotals(invoice);
   const lines: string[] = [];
-  const margin = 48;
-  const right = 547;
+  const scale = 595 / 620;
+  const margin = 40 * scale;
+  const right = 595 - margin;
+  const muted = "0.392 0.455 0.545";
+  const subtle = "0.58 0.639 0.722";
+  const rule = "0.886 0.91 0.941";
+  const top = 842 - margin;
 
-  if (logo) lines.push(`q ${logo.width} 0 0 ${logo.height} ${margin} 758 cm /Im1 Do Q`);
+  if (logo) {
+    lines.push(`q ${logo.displayWidth.toFixed(2)} 0 0 ${logo.displayHeight.toFixed(2)} ${margin.toFixed(2)} ${(top - logo.displayHeight).toFixed(2)} cm /Im1 Do Q`);
+  }
   else {
-    lines.push(pdfText("F2", 18, margin, 774, "Salt &"));
-    lines.push(pdfText("F2", 18, margin + 58, 774, "Peps"));
+    const logoY = top - 24;
+    lines.push(pdfText("F2", 19, margin, logoY, "Salt "));
+    const saltWidth = textWidth("Salt ", 19, true);
+    lines.push(pdfText("F2", 19, margin + saltWidth, logoY, "&", "0.145 0.388 0.922"));
+    lines.push(pdfText("F2", 19, margin + saltWidth + textWidth("&", 19, true), logoY, " Peps"));
   }
+  const logoHeight = logo?.displayHeight ?? 34.5;
+  const sellerNameY = top - logoHeight - 16;
   lines.push(
-    rightText("F2", 25, right, 782, "INVOICE"),
-    rightText("F2", 10, right, 754, `#${invoice.invoiceNumber || "—"}`),
-    rightText("F1", 9, right, 738, `Issued ${invoice.issueDate || "—"}`),
+    rightText("F2", 23, right, top - 23, "INVOICE", "0.008 0.023 0.071"),
+    rightText("F2", 10, right, top - 50, `#${invoice.invoiceNumber || "—"}`),
+    rightText("F1", 8.5, right, top - 67, `Issued ${invoice.issueDate || "—"}`, muted),
   );
-  if (invoice.dueDate) lines.push(rightText("F1", 9, right, 723, `Due ${invoice.dueDate}`));
-  lines.push(rightText("F1", 9, right, 708, invoice.status.toUpperCase()));
-  let sellerY = 744;
-  if (invoice.seller.name) lines.push(pdfText("F2", 10, margin, sellerY, invoice.seller.name));
-  sellerY -= 14;
-  for (const value of [...invoice.seller.addressLines, invoice.seller.email, invoice.seller.phone].filter((value): value is string => Boolean(value))) {
-    lines.push(pdfText("F1", 8, margin, sellerY, value));
-    sellerY -= 12;
+  let lastMetaY = top - 67;
+  if (invoice.dueDate) {
+    lastMetaY -= 14;
+    lines.push(rightText("F1", 8.5, right, lastMetaY, `Due ${invoice.dueDate}`, muted));
   }
-  lines.push("0.85 0.88 0.92 RG 0.6 w 48 694 m 547 694 l S");
+  const status = invoice.status.toUpperCase();
+  const pillWidth = textWidth(status, 7.5, true) + 20;
+  const pillY = lastMetaY - 28;
+  lines.push(`0.945 0.961 0.976 rg ${roundedRect(right - pillWidth, pillY, pillWidth, 18, 9)} f`);
+  lines.push(rightText("F2", 7.5, right - 10, pillY + 5.7, status, muted));
 
-  lines.push(
-    pdfText("F2", 8, margin, 668, "BILL TO"),
-    pdfText("F2", 10, margin, 649, invoice.customer.name || "Customer"),
-    rightText("F2", 8, right, 668, "CURRENCY"),
-    rightText("F2", 10, right, 649, invoice.currency),
-  );
-  let customerY = 634;
-  for (const value of [...invoice.customer.addressLines, invoice.customer.email, invoice.customer.phone].filter((value): value is string => Boolean(value))) {
-    lines.push(pdfText("F1", 8, margin, customerY, value));
-    customerY -= 12;
+  lines.push(pdfText("F2", 18, margin, sellerNameY, invoice.seller.name || "Seller"));
+  let sellerY = sellerNameY - 21;
+  const sellerDetails = [
+    ...invoice.seller.addressLines,
+    invoice.seller.email,
+    invoice.seller.phone,
+    invoice.seller.taxId ? `Tax ID: ${invoice.seller.taxId}` : "",
+  ].filter((value): value is string => Boolean(value));
+  for (const value of sellerDetails) {
+    lines.push(pdfText("F1", 8, margin, sellerY, value, muted));
+    sellerY -= 11;
   }
+  const sellerBottom = sellerDetails.length ? sellerY + 8 : sellerNameY - 4;
+  const headerBottom = Math.min(sellerBottom, pillY) - 23;
+  lines.push(`${rule} RG 0.6 w ${margin.toFixed(2)} ${headerBottom.toFixed(2)} m ${right.toFixed(2)} ${headerBottom.toFixed(2)} l S`);
+
+  const billTitleY = headerBottom - 30;
+  const customerNameY = billTitleY - 20;
   lines.push(
-    rightText("F1", 8, right, 634, `${invoice.lineItems.length} line item${invoice.lineItems.length === 1 ? "" : "s"}`),
-    "0.85 0.88 0.92 RG 0.6 w 48 580 m 547 580 l S",
-    pdfText("F2", 7, margin, 558, "DESCRIPTION"),
-    rightText("F2", 7, 389, 558, "QTY"),
-    rightText("F2", 7, 461, 558, "UNIT"),
-    rightText("F2", 7, right, 558, "AMOUNT"),
-    "0.85 0.88 0.92 RG 0.6 w 48 548 m 547 548 l S",
+    pdfText("F2", 7, margin, billTitleY, "BILL TO", subtle),
+    pdfText("F2", 10, margin, customerNameY, invoice.customer.name || "Customer"),
+    rightText("F2", 7, right, billTitleY, "CURRENCY", subtle),
+    rightText("F2", 10, right, customerNameY, invoice.currency),
+  );
+  let customerY = customerNameY - 15;
+  const customerDetails = [...invoice.customer.addressLines, invoice.customer.email, invoice.customer.phone]
+    .filter((value): value is string => Boolean(value));
+  for (const value of customerDetails) {
+    lines.push(pdfText("F1", 8, margin, customerY, value, muted));
+    customerY -= 11;
+  }
+  lines.push(rightText("F1", 8, right, customerNameY - 15, `${invoice.lineItems.length} line item${invoice.lineItems.length === 1 ? "" : "s"}`, muted));
+  const customerBottom = customerDetails.length ? customerY + 8 : customerNameY - 3;
+  const billBottom = Math.min(customerBottom, customerNameY - 18) - 23;
+  const tableHeaderY = billBottom - 29;
+  const qtyRight = margin + 352;
+  const unitRight = margin + 425;
+  lines.push(
+    `${rule} RG 0.6 w ${margin.toFixed(2)} ${billBottom.toFixed(2)} m ${right.toFixed(2)} ${billBottom.toFixed(2)} l S`,
+    pdfText("F2", 7, margin, tableHeaderY, "DESCRIPTION", subtle),
+    rightText("F2", 7, qtyRight, tableHeaderY, "QTY", subtle),
+    rightText("F2", 7, unitRight, tableHeaderY, "UNIT", subtle),
+    rightText("F2", 7, right, tableHeaderY, "AMOUNT", subtle),
+    `${rule} RG 0.6 w ${margin.toFixed(2)} ${(tableHeaderY - 10).toFixed(2)} m ${right.toFixed(2)} ${(tableHeaderY - 10).toFixed(2)} l S`,
   );
 
-  let itemY = 530;
+  let itemY = tableHeaderY - 29;
+  const descriptionWidth = 304;
   for (const item of invoice.lineItems) {
-    const detail = [
-      ...wrap(item.description || "Untitled item", 43),
-      ...(invoice.showTax ? [`${Number(item.taxRate) || 0}% tax`] : []),
-      ...(Number(item.discount) > 0 ? [`${invoice.showTax ? " · " : ""}${item.discount}% discount`] : []),
-    ];
-    const detailLines = detail.slice(0, 3);
-    detailLines.forEach((line, index) => lines.push(pdfText(index === 0 ? "F2" : "F1", index === 0 ? 8 : 7, margin, itemY - index * 11, line)));
+    const descriptionLines = wrap(item.description || "Untitled item", descriptionWidth, 8, true);
+    descriptionLines.forEach((line, index) => lines.push(pdfText("F2", 8, margin, itemY - index * 11, line)));
+    const metadata = [
+      invoice.showTax ? `${Number(item.taxRate) || 0}% tax` : "",
+      Number(item.discount) > 0 ? `${item.discount}% discount` : "",
+    ].filter(Boolean).join(" · ");
+    const metadataY = itemY - descriptionLines.length * 11;
+    if (metadata) lines.push(pdfText("F1", 7, margin, metadataY, metadata, subtle));
     lines.push(
-      rightText("F1", 8, 389, itemY, item.quantity || "0"),
-      rightText("F1", 8, 461, itemY, pdfMoney(item.unitPrice, invoice.currency)),
+      rightText("F1", 8, qtyRight, itemY, item.quantity || "0", muted),
+      rightText("F1", 8, unitRight, itemY, pdfMoney(item.unitPrice, invoice.currency), muted),
       rightText("F2", 8, right, itemY, pdfMoney(calculateInvoiceLineItemTotal(item), invoice.currency)),
-      "0.91 0.92 0.94 RG 0.4 w 48 " + (itemY - 32 - (detailLines.length - 1) * 11).toFixed(2) + " m 547 " + (itemY - 32 - (detailLines.length - 1) * 11).toFixed(2) + " l S",
     );
-    itemY -= 46 + (detailLines.length - 1) * 11;
+    const rowBottom = (metadata ? metadataY : itemY - (descriptionLines.length - 1) * 11) - 13;
+    lines.push(`0.945 0.961 0.976 RG 0.4 w ${margin.toFixed(2)} ${rowBottom.toFixed(2)} m ${right.toFixed(2)} ${rowBottom.toFixed(2)} l S`);
+    itemY = rowBottom - 16;
   }
 
-  const summaryY = Math.max(245, itemY - 4);
+  const summaryY = itemY - 16;
+  const summaryLeft = right - 230;
   lines.push(
-    rightText("F1", 9, 455, summaryY, "Subtotal"),
-    rightText("F1", 9, right, summaryY, pdfMoney(totals.subtotal, invoice.currency)),
+    pdfText("F1", 8.5, summaryLeft, summaryY, "Subtotal", muted),
+    rightText("F1", 8.5, right, summaryY, pdfMoney(totals.subtotal, invoice.currency), muted),
   );
-  let totalY = summaryY - 20;
+  let totalY = summaryY - 19;
   if (invoice.showTax) {
     lines.push(
-      rightText("F1", 9, 455, totalY, "Tax"),
-      rightText("F1", 9, right, totalY, pdfMoney(totals.totalTax, invoice.currency)),
+      pdfText("F1", 8.5, summaryLeft, totalY, "Tax", muted),
+      rightText("F1", 8.5, right, totalY, pdfMoney(totals.totalTax, invoice.currency), muted),
     );
-    totalY -= 20;
+    totalY -= 19;
   }
   lines.push(
-    rightText("F1", 9, 455, totalY, "Shipping"),
-    rightText("F1", 9, right, totalY, pdfMoney(invoice.shippingCost, invoice.currency)),
-    "0.10 0.12 0.16 RG 1 w 350 " + (totalY - 13).toFixed(2) + " m 547 " + (totalY - 13).toFixed(2) + " l S",
-    rightText("F2", 12, 455, totalY - 34, "Total"),
-    rightText("F2", 12, right, totalY - 34, pdfMoney(totals.total, invoice.currency)),
+    pdfText("F1", 8.5, summaryLeft, totalY, "Shipping", muted),
+    rightText("F1", 8.5, right, totalY, pdfMoney(invoice.shippingCost, invoice.currency), muted),
+    `0.059 0.09 0.165 RG 1 w ${summaryLeft.toFixed(2)} ${(totalY - 13).toFixed(2)} m ${right.toFixed(2)} ${(totalY - 13).toFixed(2)} l S`,
+    pdfText("F2", 13, summaryLeft, totalY - 36, "Total"),
+    rightText("F2", 13, right, totalY - 36, pdfMoney(totals.total, invoice.currency)),
   );
 
-  let footerY = 105;
-  for (const [label, value] of [["Notes", invoice.notes], ["Terms", invoice.terms]] as const) {
-    if (!value) continue;
-    lines.push(pdfText("F2", 8, margin, footerY, label.toUpperCase()));
-    for (const line of wrap(value, 92).slice(0, 3)) {
+  const footerSections = ([["Notes", invoice.notes], ["Terms", invoice.terms]] as const)
+    .filter((section) => Boolean(section[1]))
+    .map(([label, value]) => ({ label, lines: wrappedParagraphs(value, right - margin, 8) }));
+  if (footerSections.length) {
+    const footerHeight = 20 + footerSections.reduce((height, section) => height + 14 + section.lines.length * 11 + 10, 0);
+    const preferredTop = margin + footerHeight;
+    let footerY = Math.min(totalY - 64, preferredTop);
+    lines.push(`${rule} RG 0.6 w ${margin.toFixed(2)} ${footerY.toFixed(2)} m ${right.toFixed(2)} ${footerY.toFixed(2)} l S`);
+    footerY -= 19;
+    for (const section of footerSections) {
+      lines.push(pdfText("F2", 8, margin, footerY, section.label, "0.2 0.255 0.333"));
       footerY -= 12;
-      lines.push(pdfText("F1", 8, margin, footerY, line));
+      for (const line of section.lines) {
+        lines.push(pdfText("F1", 8, margin, footerY, line, muted));
+        footerY -= 11;
+      }
+      footerY -= 10;
     }
-    footerY -= 18;
   }
 
   const content = Buffer.from(lines.join("\n"), "latin1");

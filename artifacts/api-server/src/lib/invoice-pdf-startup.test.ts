@@ -5,7 +5,7 @@ vi.mock("sharp", () => {
 });
 
 describe("invoice PDF startup isolation", () => {
-  it("loads the API module and renders a text-logo PDF when sharp is unavailable", async () => {
+  it("loads the API module and renders a branded text-logo PDF when sharp is unavailable", async () => {
     const { buildInvoicePdf } = await import("./invoice-pdf");
 
     const pdf = await buildInvoicePdf({
@@ -36,6 +36,11 @@ describe("invoice PDF startup isolation", () => {
 
     expect(pdf.subarray(0, 8).toString("latin1")).toBe("%PDF-1.4");
     expect(pdf.toString("latin1")).toContain("INV-STARTUP");
-    expect(pdf.toString("latin1")).not.toContain("/Im1 Do");
+    const source = pdf.toString("latin1");
+    expect(source).not.toContain("/Im1 Do");
+    expect(source).toContain("(Salt )");
+    expect(source).toContain("0.145 0.388 0.922 rg");
+    expect(source).toContain("(&)");
+    expect(source).toContain("( Peps)");
   });
 });

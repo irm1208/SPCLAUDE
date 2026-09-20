@@ -89,4 +89,28 @@ describe("invoice calculations", () => {
     expect(pdf.toString("latin1")).not.toContain("Tax");
     expect(pdf.toString("latin1")).not.toContain("20% tax");
   });
+
+  it("matches the preview page geometry and keeps every description line", async () => {
+    const description = [
+      "A deliberately long invoice description that must wrap naturally rather than being clipped",
+      "or limited to three lines because the browser preview displays the complete description",
+      "including this final unmistakable sentence.",
+    ].join(" ");
+    const pdf = await buildInvoicePdf({
+      orderId: "order-1", invoiceNumber: "INV-LAYOUT", issueDate: "2026-09-15", dueDate: "2026-09-30",
+      currency: "GBP", status: "sent", seller: {
+        name: "Salt & Peps", addressLines: ["Seller line one", "Seller line two"], email: "seller@example.test",
+      },
+      customer: { name: "Ada Buyer", addressLines: ["1 Example Road", "Example Town"], email: "ada@example.test" },
+      lineItems: [{ id: "item-1", description, quantity: "2", unitPrice: "12.50", taxRate: "20", discount: "5" }],
+      notes: "", terms: "", shippingCost: "2.50", subtotal: "23.75", totalTax: "4.75", total: "31.00", showTax: true,
+    });
+    const source = pdf.toString("latin1");
+
+    // The preview is 620px wide with 40px padding: the equivalent A4 margin is 38.39pt.
+    expect(source).toContain("38.39");
+    expect(source).toContain("final unmistakable sentence.");
+    expect(source).toContain("0.945 0.961 0.976 rg");
+    expect(source).toContain("(SENT)");
+  });
 });
