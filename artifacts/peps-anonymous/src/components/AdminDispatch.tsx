@@ -638,7 +638,7 @@ function PackingSlipsTab({
     setMarkingPending(true);
     setMarkPendingMsg(null);
     try {
-      const r = await cfg.dfetch(`/admin/dispatch/${selectedGb}/mark-orders-shipped`, {
+      const r = await cfg.dfetch(`${cfg.base}/${selectedGb}/mark-orders-shipped`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderIds: idsToMark }),

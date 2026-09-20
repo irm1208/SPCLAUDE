@@ -635,23 +635,40 @@ router.post(`${cfg.prefix}/:gbId/mark-shipped-by-reshipper`, async (req, res) =>
   }
 });
 
-// ─── POST /admin/dispatch/:gbId/mark-orders-shipped ─────────────────────────
+// ─── POST /<role>/dispatch/:gbId/mark-orders-shipped ─────────────────────────
 // Generic bulk "mark as Shipped" for specific order IDs — used to bypass the
 // parcel-matching Calculate flow when items have already been dispatched.
-router.post("/admin/dispatch/:gbId/mark-orders-shipped", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+router.post(`${cfg.prefix}/:gbId/mark-orders-shipped`, async (req, res) => {
   try {
     const { gbId } = req.params as { gbId: string };
     const { orderIds } = req.body as { orderIds?: string[] };
     if (!Array.isArray(orderIds) || orderIds.length === 0) {
       res.status(400).json({ error: "orderIds required" }); return;
     }
+    const requestedIds = [...new Set(orderIds.map(String).filter(Boolean))];
+    if (requestedIds.length === 0) {
+      res.status(400).json({ error: "orderIds required" }); return;
+    }
+
+    // Do not silently drop a forged order from a mixed batch. In particular,
+    // scoped routers must reject the whole request if an organiser does not own
+    // the order's GB or a reshipper does not own the order.
+    const access = await Promise.all(requestedIds.map(orderId => cfg.assertOrderAccess(req, orderId)));
+    if (access.some(allowed => !allowed)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
 
     // Validate orders belong to this GB and are not already Shipped/Cancelled
     const rows = await db
       .select({ id: ordersTable.id, status: ordersTable.status })
       .from(ordersTable)
-      .where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt), inArray(ordersTable.id, orderIds)));
+      .where(and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt), inArray(ordersTable.id, requestedIds)));
+
+    // Access to an order in another owned GB is not access through this GB URL.
+    // Fail the complete batch rather than partially updating matching rows.
+    if (rows.length !== requestedIds.length) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
 
     const toMark = rows
       .filter(o => !["Shipped", "Completed", "Cancelled"].includes(o.status ?? ""))

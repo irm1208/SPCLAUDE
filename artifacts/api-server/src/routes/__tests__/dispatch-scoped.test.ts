@@ -161,6 +161,35 @@ beforeEach(() => {
 });
 
 describe("reshipper dispatch scope lock", () => {
+  it("rejects a foreign order in /mark-orders-shipped without mutating any order", async () => {
+    mockState.state.selectImpl = (ctx) => {
+      if (ctx.table === "orders") {
+        return [{
+          id: "foreign-order",
+          groupBuyId: GB_ID,
+          reshipperUsername: "reshipperB",
+          dispatchedByReshipper: null,
+          status: "Processing",
+        }];
+      }
+      if (ctx.table === "gb_reshippers") return [{ id: GB_ID }];
+      return [];
+    };
+
+    const app = buildApp(reshipperDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/reshipper/dispatch/${GB_ID}/mark-orders-shipped`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-reshipper": "reshipperA" },
+        body: JSON.stringify({ orderIds: ["foreign-order"] }),
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockState.state.updateSpy).not.toHaveBeenCalled();
+    expect(mockState.state.transactionSpy).not.toHaveBeenCalled();
+  });
+
   it("strips another reshipper's parcelIds from /confirm so they cannot be mutated", async () => {
     // reshipperA is on the GB; the foreign parcel belongs to reshipperB.
     mockState.state.selectImpl = (ctx) => {
@@ -287,6 +316,39 @@ describe("organiser dispatch scope lock", () => {
     expect(res.status).toBe(403);
     expect(mockState.state.updateSpy).not.toHaveBeenCalled();
   });
+
+  it("rejects /mark-orders-shipped when an order belongs to another organiser's GB", async () => {
+    let gbOwnershipChecks = 0;
+    mockState.state.selectImpl = (ctx) => {
+      if (ctx.table === "group_buys") {
+        gbOwnershipChecks += 1;
+        return gbOwnershipChecks === 1 ? [{ id: GB_ID }] : [];
+      }
+      if (ctx.table === "orders") {
+        return [{
+          id: "foreign-order",
+          groupBuyId: "gb-foreign",
+          reshipperUsername: null,
+          dispatchedByReshipper: null,
+          status: "Processing",
+        }];
+      }
+      return [];
+    };
+
+    const app = buildApp(organiserDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/organiser/dispatch/${GB_ID}/mark-orders-shipped`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-organiser": "organiserA" },
+        body: JSON.stringify({ orderIds: ["foreign-order"] }),
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockState.state.updateSpy).not.toHaveBeenCalled();
+    expect(mockState.state.transactionSpy).not.toHaveBeenCalled();
+  });
 });
 
 // ─── happy paths ───────────────────────────────────────────────────────────────
@@ -294,6 +356,38 @@ describe("organiser dispatch scope lock", () => {
 // scope locks do NOT over-block: a reshipper acting on their OWN parcels/orders,
 // and an organiser acting on a GB they OWN, both succeed and the writes happen.
 describe("reshipper dispatch — legitimate actions succeed", () => {
+  it("marks the reshipper's own pending order shipped through the scoped route", async () => {
+    mockState.state.selectImpl = (ctx) => {
+      if (ctx.table === "gb_reshippers") return [{ id: GB_ID }];
+      if (ctx.table === "orders") {
+        return [{
+          id: "o1",
+          groupBuyId: GB_ID,
+          reshipperUsername: "reshipperA",
+          dispatchedByReshipper: null,
+          status: "Processing",
+        }];
+      }
+      return [];
+    };
+
+    const app = buildApp(reshipperDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/reshipper/dispatch/${GB_ID}/mark-orders-shipped`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-reshipper": "reshipperA" },
+        body: JSON.stringify({ orderIds: ["o1"] }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, marked: 1 });
+    expect(mockState.state.updateSpy).toHaveBeenCalledWith(expect.objectContaining({
+      table: "orders",
+      values: expect.objectContaining({ status: "Shipped" }),
+    }));
+  });
+
   it("confirms dispatch for the reshipper's own orders + parcels (writes happen)", async () => {
     // reshipperA is on the GB and owns both the order and the parcel.
     mockState.state.selectImpl = (ctx) => {
@@ -396,6 +490,55 @@ describe("organiser dispatch — legitimate actions succeed", () => {
     expect(orderShipped).toBe(true);
   });
 
+  it("marks an order in the organiser's owned GB shipped and preserves terminal orders", async () => {
+    owned((table) => {
+      if (table === "orders") {
+        return [
+          { id: "o1", groupBuyId: GB_ID, status: "Processing" },
+          { id: "o2", groupBuyId: GB_ID, status: "Completed" },
+        ];
+      }
+      return [];
+    });
+
+    const app = buildApp(organiserDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/organiser/dispatch/${GB_ID}/mark-orders-shipped`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-organiser": "organiserA" },
+        body: JSON.stringify({ orderIds: ["o1", "o2"] }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, marked: 1 });
+    expect(mockState.state.updateSpy).toHaveBeenCalledWith(expect.objectContaining({
+      table: "orders",
+      values: expect.objectContaining({ status: "Shipped" }),
+    }));
+  });
+
+  it("keeps the refund guard on scoped /mark-orders-shipped mutations", async () => {
+    owned((table) => {
+      if (table === "orders") return [{ id: "o1", groupBuyId: GB_ID, status: "Processing" }];
+      if (table === "group_buy_refunds") return [{ id: "r1", orderId: "o1", status: "requested" }];
+      return [];
+    });
+
+    const app = buildApp(organiserDispatchRouter);
+    const res = await withServer(app, (base) =>
+      fetch(`${base}/organiser/dispatch/${GB_ID}/mark-orders-shipped`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-test-organiser": "organiserA" },
+        body: JSON.stringify({ orderIds: ["o1"] }),
+      }),
+    );
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code?: string }).code).toBe("refund_active");
+    expect(mockState.state.updateSpy).not.toHaveBeenCalled();
+  });
+
   it("un-dispatches orders in a group buy it owns (order reset to Processing)", async () => {
     owned((table) => {
       switch (table) {
@@ -445,7 +588,7 @@ describe("organiser dispatch — legitimate actions succeed", () => {
     );
 
     expect(res.status).toBe(409);
-    expect((await res.json()).code).toBe("refund_active");
+    expect(((await res.json()) as { code?: string }).code).toBe("refund_active");
     expect(mockState.state.updateSpy).not.toHaveBeenCalled();
   });
 
@@ -470,7 +613,7 @@ describe("organiser dispatch — legitimate actions succeed", () => {
     );
 
     expect(res.status).toBe(409);
-    expect((await res.json()).code).toBe("refund_active");
+    expect(((await res.json()) as { code?: string }).code).toBe("refund_active");
     expect(mockState.state.updateSpy).not.toHaveBeenCalled();
   });
 });

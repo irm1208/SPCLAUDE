@@ -94,9 +94,17 @@ function reshipperBodyFilter(prefix: string): RequestHandler {
           })
           .from(ordersTable)
           .where(and(eq(ordersTable.groupBuyId, gbId), inArray(ordersTable.id, ids)));
-        (req.body as { orderIds: string[] }).orderIds = rows
+        const ownedIds = rows
           .filter((o) => norm(o.reshipperUsername) === u || norm(o.dispatchedByReshipper) === u)
           .map((o) => o.id);
+        // Mark Shipped is an explicit order-state transition. Unlike packing
+        // helpers, it must reject a mixed/foreign batch rather than silently
+        // narrowing it and reporting partial success.
+        if (req.path === `${prefix}/${gbId}/mark-orders-shipped` &&
+            (ownedIds.length !== new Set(ids).size || rows.length !== new Set(ids).size)) {
+          res.status(403).json({ error: "Forbidden" }); return;
+        }
+        (req.body as { orderIds: string[] }).orderIds = ownedIds;
       }
 
       // parcelIds array: intersect with the reshipper's own parcels in this GB.

@@ -7521,6 +7521,9 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [oosSelected, setOosSelected] = useState<Set<string>>(new Set());
   const [oosSubmitting, setOosSubmitting] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState("");
   const [oosResult, setOosResult] = useState<{ affectedLineItems: number; affectedOrders: number } | null>(null);
   const [oosError, setOosError] = useState("");
   const [unmkSelected, setUnmkSelected] = useState<Set<string>>(new Set());
@@ -7990,7 +7993,12 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
         method: "DELETE", credentials: "include",
       });
       if (res.ok) {
-        setGbOrders(prev => prev.filter(o => o.id !== orderId));
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        setSelectedOrderIds(prev => {
+          const next = new Set(prev);
+          next.delete(orderId);
+          return next;
+        });
         setConfirmDeleteOrgOrder(null);
         closeEdit(orderId);
       } else {
@@ -8002,6 +8010,56 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
     } finally {
       setDeletingOrgOrder(null);
     }
+  };
+
+  const deleteSelectedOrgOrders = async () => {
+    if (!gb.organiserCanDeleteOrders || selectedOrderIds.size === 0) return;
+    const orderIds = [...selectedOrderIds];
+    setBulkDeleting(true);
+    setBulkDeleteError("");
+
+    const deletedIds: string[] = [];
+    const failures: string[] = [];
+    for (const orderId of orderIds) {
+      try {
+        // Use the organiser-scoped per-order endpoint so every selected order
+        // receives the same ownership, permission, refund and soft-delete checks.
+        const res = await fetch(`/api/organiser/group-buys/${gb.id}/orders/${orderId}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        if (res.ok) {
+          deletedIds.push(orderId);
+        } else {
+          const data = await res.json().catch(() => ({})) as { error?: string };
+          failures.push(data.error ?? `Delete failed (${res.status})`);
+        }
+      } catch {
+        failures.push("Connection error");
+      }
+    }
+
+    if (deletedIds.length > 0) {
+      const deleted = new Set(deletedIds);
+      setOrders(prev => prev.filter(order => !deleted.has(order.id)));
+      setSelectedOrderIds(prev => {
+        const next = new Set(prev);
+        deletedIds.forEach(id => next.delete(id));
+        return next;
+      });
+      setEditOpen(prev => {
+        const next = new Set(prev);
+        deletedIds.forEach(id => next.delete(id));
+        return next;
+      });
+    }
+    if (failures.length > 0) {
+      const uniqueFailures = [...new Set(failures)];
+      setBulkDeleteError(`${failures.length} order${failures.length === 1 ? "" : "s"} could not be deleted: ${uniqueFailures.join("; ")}`);
+    } else {
+      setConfirmBulkDelete(false);
+    }
+    setBulkDeleting(false);
   };
 
   const saveEdit = async (o: OrgOrder) => {
@@ -9032,9 +9090,45 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
               >
                 <Plus className="w-3 h-3" /> Add Product to Selected
               </button>
+              {gb.organiserCanDeleteOrders && (
+                confirmBulkDelete ? (
+                  <>
+                    <button
+                      className="h-6 px-2.5 rounded-lg text-[11px] font-bold text-white flex items-center gap-1 disabled:opacity-50"
+                      style={{ background: "#DC2626" }}
+                      disabled={bulkDeleting}
+                      onClick={deleteSelectedOrgOrders}
+                    >
+                      {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      {bulkDeleting ? "Deleting…" : `Confirm delete ${selectedOrderIds.size}`}
+                    </button>
+                    <button
+                      className="h-6 px-2 text-[11px] font-semibold"
+                      style={{ color: "var(--t-muted)" }}
+                      disabled={bulkDeleting}
+                      onClick={() => { setConfirmBulkDelete(false); setBulkDeleteError(""); }}
+                    >
+                      Keep
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="h-6 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1"
+                    style={{ background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.2)", color: "#DC2626" }}
+                    onClick={() => { setConfirmBulkDelete(true); setBulkDeleteError(""); }}
+                  >
+                    <Trash2 className="w-3 h-3" /> Delete Selected
+                  </button>
+                )
+              )}
             </>
           )}
         </div>
+      )}
+      {bulkDeleteError && (
+        <p className="text-xs font-medium px-3 py-2 rounded-lg" style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.18)", color: "#DC2626" }}>
+          {bulkDeleteError}
+        </p>
       )}
       {bulkAddOpen && selectedOrderIds.size > 0 && (
         <div className="rounded-xl p-3 space-y-2.5" style={{ background: "var(--t-surface)", border: "1.5px solid var(--t-blue-15, rgba(27,58,122,0.2))" }}>
