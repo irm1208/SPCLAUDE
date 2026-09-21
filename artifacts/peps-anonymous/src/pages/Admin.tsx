@@ -21082,42 +21082,6 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     }
   };
 
-  const markAllPaid = async (row: AdminShareRow) => {
-    const unpaidCount = Math.max(0, row.memberCount - row.paidCount);
-    const warning = [
-      "MARK ENTIRE SHARED ORDER PAID — CONFIRM CAREFULLY",
-      "",
-      `This will mark the entire shared order as paid (#${row.id}) across all ${row.memberCount} materialised member orders.`,
-      unpaidCount > 0 ? `${unpaidCount} currently unpaid member order${unpaidCount === 1 ? "" : "s"} will be changed.` : "All member orders are already paid.",
-      "This does not confirm the organiser's separate platform payment.",
-      "",
-      "Continue?",
-    ].join("\n");
-    if (!window.confirm(warning)) return;
-
-    setAdminAction(`${row.id}:mark-all-paid`);
-    let mutationConfirmed = false;
-    try {
-      const response = await fetch(apiUrl(`/admin/wholesale-shares/${row.id}/mark-all-paid`), {
-        method: "POST",
-        headers: { "x-admin-secret": secret },
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        alert((result as { error?: string }).error ?? "Could not mark the whole shared order paid.");
-        return;
-      }
-      mutationConfirmed = true;
-      await Promise.all([refreshDetail(row.id), loadRows()]);
-    } catch (error) {
-      alert(mutationConfirmed
-        ? `Whole shared order was marked paid, but refreshing the order failed. ${error instanceof Error ? error.message : "refresh error"}`
-        : `Could not confirm whole shared-order payment; the outcome is unknown. ${error instanceof Error ? error.message : "network error"}`);
-    } finally {
-      setAdminAction(null);
-    }
-  };
-
   const refreshDetail = async (shareId: string) => {
     let r: Response;
     try {
@@ -21529,16 +21493,6 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                       </div>
                     </div>
                   </button>
-                  {["locked", "submitted"].includes(row.status) && !row.allPaid && (
-                    <button
-                      onClick={() => void markAllPaid(row)}
-                      disabled={!!adminAction}
-                      className="shrink-0 px-2.5 py-1.5 rounded-md text-xs font-semibold text-white disabled:opacity-40"
-                      style={{ background: "#16a34a" }}
-                    >
-                      {adminAction === `${row.id}:mark-all-paid` ? "Marking paid…" : "Mark all paid"}
-                    </button>
-                  )}
                 </div>
 
                 {open && (
@@ -21949,7 +21903,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                                   className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity"
                                   style={{ background: "#16a34a" }}
                                 >
-                                  {confirmingOrgPay === row.id ? "Confirming…" : "✓ Confirm Payment"}
+                                  {confirmingOrgPay === row.id ? "Confirming…" : "✓ Confirm platform payment"}
                                 </button>
                               )}
                             </div>
