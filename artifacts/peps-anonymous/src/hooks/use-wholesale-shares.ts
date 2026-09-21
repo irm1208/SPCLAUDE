@@ -33,6 +33,9 @@ export interface WholesaleShareMember {
   orderStatus: string | null;
   orderGrandTotal: number | null;
   orderOrganiserFee: number | null;
+  // Credits applied to this member's order. Visible to the organiser and the
+  // member themselves; null for other participants.
+  creditsApplied: number | null;
   amountDue: number;
   balancePaymentStatus: string | null;
   paymentStatus: string | null;
@@ -153,7 +156,8 @@ export interface WholesaleOrganiserPayment {
   currency: string | null;
   network: string | null;
   confirmedAt: string | null;
-  // Sum of all members' item subtotals + total vendor shipping (no tips, no organiser fees).
+  // Sum of all members' item subtotals + vendor shipping, less member-applied credits
+  // (no tips, no organiser fees).
   amountDue: number;
   // Platform wallet addresses the organiser can send to (same options as regular orders).
   cryptoOptions: Array<{ currency: string; network: string; walletAddress: string }>;

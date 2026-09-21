@@ -42,6 +42,7 @@ import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram"
 import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
 import { confirmWholesaleOrganiserPayment } from "../lib/wholesale-organiser-payment-confirmation";
+import { calculateWholesaleOrganiserAmountDue } from "../lib/wholesale-organiser-payment-amount";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
 import {
@@ -470,6 +471,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       orderStatus: order?.status ?? null,
       orderGrandTotal: order ? Number(order.grandTotal ?? 0) : null,
       orderOrganiserFee: order ? Number(order.organiserFee ?? 0) : null,
+      creditsApplied: order && (isCreatorViewer || isOwn) ? Number(order.creditsApplied ?? 0) : null,
       amountDue: order ? Number(order.amountDue ?? 0) : 0,
       balancePaymentStatus: order?.balancePaymentStatus ?? null,
       // Payment status is always sourced from the persisted member order. The
@@ -540,6 +542,13 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
   });
 
   const organiserFeeTotal = Number(memberPayloads.reduce((s, m) => s + m.organiserFee, 0).toFixed(2));
+  const organiserPaymentAmountDue = calculateWholesaleOrganiserAmountDue(
+    memberPayloads.map(member => ({
+      items: member.items,
+      creditsApplied: member.orderId ? orderById.get(member.orderId)?.creditsApplied : null,
+    })),
+    share.totalVendorShipping,
+  ) ?? 0;
 
   const allPaid = isLocked
     && memberPayloads.length > 0
@@ -698,9 +707,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
         confirmedAt: share.organiserPaymentConfirmedAt
           ? (share.organiserPaymentConfirmedAt as Date).toISOString()
           : null,
-        amountDue: Number(
-          (combinedSubtotal + (share.totalVendorShipping != null ? Number(share.totalVendorShipping) : 0)).toFixed(2)
-        ),
+        amountDue: organiserPaymentAmountDue,
         // Always include admin wallet options so the organiser can pay as soon as
         // all members have paid into their own wallet (not gated on "submitted").
         cryptoOptions: await getAdminCryptoOptions(),

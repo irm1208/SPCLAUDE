@@ -8,6 +8,7 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import { normalizeTg } from "./normalize";
 import { normalizeOrganiserWallets, OrganiserWalletValidationError } from "./wholesale-organiser-wallets";
+import { calculateWholesaleOrganiserAmountDue } from "./wholesale-organiser-payment-amount";
 import {
   assertNoActiveRefund,
   refundMutableOrderWhere,
@@ -50,46 +51,8 @@ type RejectionCode =
   | "missing_organiser_wallet"
   | "invalid_organiser_wallet";
 
-type PaymentItem = { quantity?: unknown; unitPrice?: unknown };
-
 function reject(code: RejectionCode, message: string): OrganiserPaymentConfirmationResult {
   return { kind: "rejected", code, message };
-}
-
-function finiteMoney(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  if (typeof value === "string" && !value.trim()) return null;
-  if (typeof value !== "number" && typeof value !== "string") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/** Match the existing wholesale amount calculation: round every line first. */
-function memberSubtotal(items: unknown): number | null {
-  if (!Array.isArray(items)) return null;
-
-  let subtotal = 0;
-  for (const item of items as PaymentItem[]) {
-    if (!item || typeof item !== "object") return null;
-    const quantity = finiteMoney(item.quantity);
-    const unitPrice = finiteMoney(item.unitPrice);
-    if (quantity === null || unitPrice === null || quantity < 0 || unitPrice < 0) return null;
-    subtotal += Number((quantity * unitPrice).toFixed(2));
-  }
-  return Number(subtotal.toFixed(2));
-}
-
-function amountDue(members: Array<{ items: unknown }>, shipping: unknown): number | null {
-  const vendorShipping = finiteMoney(shipping);
-  if (vendorShipping === null || vendorShipping < 0) return null;
-
-  let subtotal = 0;
-  for (const member of members) {
-    const memberTotal = memberSubtotal(member.items);
-    if (memberTotal === null) return null;
-    subtotal += memberTotal;
-  }
-  return Number((subtotal + vendorShipping).toFixed(2));
 }
 
 function isPaymentStatus(value: unknown): value is "pending" | "confirmed" {
@@ -217,11 +180,36 @@ export async function confirmWholesaleOrganiserPayment(input: {
     // This read is deliberately not locked: it supplies the existing combined
     // amount calculation. Only the creator candidate below is locked because
     // unrelated member rows must never be part of the state transition.
-    const memberItems = await tx
-      .select({ items: wholesaleShareMembersTable.items })
+    const memberRows = await tx
+      .select({
+        items: wholesaleShareMembersTable.items,
+        orderId: wholesaleShareMembersTable.orderId,
+      })
       .from(wholesaleShareMembersTable)
       .where(eq(wholesaleShareMembersTable.shareId, share.id));
-    const total = amountDue(memberItems, share.totalVendorShipping);
+    const memberOrderIds = memberRows
+      .map(member => member.orderId)
+      .filter((orderId): orderId is string => typeof orderId === "string" && orderId.length > 0);
+    const memberOrders = memberOrderIds.length > 0
+      ? await tx
+          .select({
+            id: ordersTable.id,
+            creditsApplied: ordersTable.creditsApplied,
+          })
+          .from(ordersTable)
+          .where(and(
+            eq(ordersTable.sharedOrderId, share.id),
+            inArray(ordersTable.id, memberOrderIds),
+          ))
+      : [];
+    const creditsByOrderId = new Map(memberOrders.map(order => [order.id, order.creditsApplied]));
+    const total = calculateWholesaleOrganiserAmountDue(
+      memberRows.map(member => ({
+        items: member.items,
+        creditsApplied: member.orderId ? creditsByOrderId.get(member.orderId) : null,
+      })),
+      share.totalVendorShipping,
+    );
     if (total === null || total <= 0) {
       return reject("invalid_amount", "The organiser payment amount must be positive.");
     }

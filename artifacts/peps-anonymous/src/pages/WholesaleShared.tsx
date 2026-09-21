@@ -1477,14 +1477,19 @@ export default function WholesaleShared() {
   // ── Organiser → platform payment section ─────────────────────────────────────
   // Shown whenever the organiser has their own wallet set (share.organiserPayment
   // is non-null). Members pay the organiser directly; the organiser then forwards
-  // the combined total (products + vendor shipping) to admin. Visible immediately —
-  // not gated on everyone having paid — so the organiser can pay admin in parallel.
+  // the combined total (products + vendor shipping, less member-applied credits)
+  // to admin. Visible immediately — not gated on everyone having paid — so the
+  // organiser can pay admin in parallel.
   const sectionOrganiserPayment = (share.isCreator && share.organiserPayment) ? (() => {
     const op = share.organiserPayment!;
     const opts = op.cryptoOptions;
     const pickedOpt = orgPayPickedIdx !== null ? opts[orgPayPickedIdx] ?? null : null;
     const productTotal = share.combinedSubtotal;
     const shippingTotal = share.totalVendorShipping ?? 0;
+    const creditsTotal = share.members.reduce(
+      (sum, member) => sum + (member.creditsApplied ?? 0),
+      0,
+    );
     const amountDue = op.amountDue;
 
     const statusBadge = op.status === "confirmed" ? (
@@ -1525,6 +1530,12 @@ export default function WholesaleShared() {
                 <span style={{ color: "var(--t-muted)" }}>Vendor shipping</span>
                 <span className="font-semibold" style={{ color: "var(--t-text)" }}>{money(shippingTotal)}</span>
               </div>
+              {creditsTotal > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: "var(--t-muted)" }}>Member credits applied</span>
+                  <span className="font-semibold" style={{ color: "#15803d" }}>−{money(creditsTotal)}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between pt-1.5 border-t text-sm" style={{ borderColor: "var(--t-border)" }}>
                 <span className="font-bold" style={{ color: "var(--t-text)" }}>Total to send</span>
                 <span className="text-lg font-bold" style={{ color: "var(--t-blue)" }}>{money(amountDue)}</span>

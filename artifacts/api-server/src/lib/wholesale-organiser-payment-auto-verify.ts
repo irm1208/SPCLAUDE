@@ -4,7 +4,8 @@
  *
  * When an organiser has their own crypto wallet (leadCryptoOptions), members pay
  * the organiser directly. The organiser then forwards the combined product subtotal
- * + vendor shipping to the Salt&Peps admin wallet. This scheduler picks up shares
+ * + vendor shipping, less member-applied credits, to the Salt&Peps admin wallet.
+ * This scheduler picks up shares
  * with organiserPaymentStatus="pending" + a stored tx hash, verifies the transfer
  * on-chain, and — on success — performs the same action as the admin
  * "confirm-organiser-payment" endpoint:
@@ -16,38 +17,48 @@
  */
 import {
   db,
+  ordersTable,
   wholesaleSharesTable,
   wholesaleShareMembersTable,
 } from "@workspace/db";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { verifyTransaction } from "./payment-verify";
 import { confirmWholesaleOrganiserPayment } from "./wholesale-organiser-payment-confirmation";
+import { calculateWholesaleOrganiserAmountDue } from "./wholesale-organiser-payment-amount";
 import { registerScheduler } from "./scheduler-registry";
 import { notifyUser } from "./telegram";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
-// ── Amount computation ─────────────────────────────────────────────────────────
-
-function memberSubtotal(items: Array<{ quantity?: unknown; unitPrice?: unknown }>): number {
-  return Number(
-    items
-      .reduce((s, i) => s + Number(((Number(i.quantity) || 0) * (Number(i.unitPrice) || 0)).toFixed(2)), 0)
-      .toFixed(2),
-  );
-}
-
 async function computeOrganiserAmountDue(shareId: string, totalVendorShipping: string | null): Promise<number> {
   const members = await db
-    .select({ items: wholesaleShareMembersTable.items })
+    .select({
+      items: wholesaleShareMembersTable.items,
+      orderId: wholesaleShareMembersTable.orderId,
+    })
     .from(wholesaleShareMembersTable)
     .where(eq(wholesaleShareMembersTable.shareId, shareId));
 
-  const combinedSubtotal = Number(
-    members.reduce((s, m) => s + memberSubtotal((m.items ?? []) as Array<{ quantity?: unknown; unitPrice?: unknown }>), 0).toFixed(2),
-  );
-  const shipping = totalVendorShipping != null ? Number(totalVendorShipping) : 0;
-  return Number((combinedSubtotal + shipping).toFixed(2));
+  const orderIds = members
+    .map(member => member.orderId)
+    .filter((orderId): orderId is string => typeof orderId === "string" && orderId.length > 0);
+  const orders = orderIds.length > 0
+    ? await db
+        .select({ id: ordersTable.id, creditsApplied: ordersTable.creditsApplied })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.sharedOrderId, shareId),
+          inArray(ordersTable.id, orderIds),
+        ))
+    : [];
+  const creditsByOrderId = new Map(orders.map(order => [order.id, order.creditsApplied]));
+  return calculateWholesaleOrganiserAmountDue(
+    members.map(member => ({
+      items: member.items,
+      creditsApplied: member.orderId ? creditsByOrderId.get(member.orderId) : null,
+    })),
+    totalVendorShipping,
+  ) ?? 0;
 }
 
 // ── Check a single share ───────────────────────────────────────────────────────
