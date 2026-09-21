@@ -21082,6 +21082,42 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
     }
   };
 
+  const markAllPaid = async (row: AdminShareRow) => {
+    const unpaidCount = Math.max(0, row.memberCount - row.paidCount);
+    const warning = [
+      "MARK ENTIRE SHARED ORDER PAID — CONFIRM CAREFULLY",
+      "",
+      `This will mark the entire shared order as paid (#${row.id}) across all ${row.memberCount} materialised member orders.`,
+      unpaidCount > 0 ? `${unpaidCount} currently unpaid member order${unpaidCount === 1 ? "" : "s"} will be changed.` : "All member orders are already paid.",
+      "This does not confirm the organiser's separate platform payment.",
+      "",
+      "Continue?",
+    ].join("\n");
+    if (!window.confirm(warning)) return;
+
+    setAdminAction(`${row.id}:mark-all-paid`);
+    let mutationConfirmed = false;
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${row.id}/mark-all-paid`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert((result as { error?: string }).error ?? "Could not mark the whole shared order paid.");
+        return;
+      }
+      mutationConfirmed = true;
+      await Promise.all([refreshDetail(row.id), loadRows()]);
+    } catch (error) {
+      alert(mutationConfirmed
+        ? `Whole shared order was marked paid, but refreshing the order failed. ${error instanceof Error ? error.message : "refresh error"}`
+        : `Could not confirm whole shared-order payment; the outcome is unknown. ${error instanceof Error ? error.message : "network error"}`);
+    } finally {
+      setAdminAction(null);
+    }
+  };
+
   const refreshDetail = async (shareId: string) => {
     let r: Response;
     try {
@@ -21465,33 +21501,45 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
             const walletEditable = detail ? ["open", "locked"].includes(detail.status) : false;
             return (
               <div key={row.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--adm-border)", background: "var(--adm-card)" }}>
-                <button onClick={() => toggle(row.id)} className="w-full text-left px-4 py-3 flex items-center gap-3">
-                  {open ? <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--adm-muted)" }} /> : <ChevronRight className="w-4 h-4 shrink-0" style={{ color: "var(--adm-muted)" }} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm" style={{ color: "var(--adm-text)" }}>#{row.id}</span>
-                      <ShareStatusBadge status={row.status} />
-                      {row.status !== "open" && (
-                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                          style={row.allPaid
-                            ? { background: "rgba(34,197,94,0.15)", color: "#22c55e" }
-                            : { background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>
-                          {row.paidCount}/{row.memberCount} paid
-                        </span>
-                      )}
-                      {(() => {
-                        const op = detailById[row.id]?.organiserPayment;
-                        if (!op || op.status === "unpaid") return null;
-                        if (op.status === "confirmed") return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Org paid ✓</span>;
-                        return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Org pay pending</span>;
-                      })()}
+                <div className="w-full px-4 py-3 flex items-center gap-3">
+                  <button onClick={() => toggle(row.id)} className="min-w-0 flex-1 text-left flex items-center gap-3">
+                    {open ? <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--adm-muted)" }} /> : <ChevronRight className="w-4 h-4 shrink-0" style={{ color: "var(--adm-muted)" }} />}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm" style={{ color: "var(--adm-text)" }}>#{row.id}</span>
+                        <ShareStatusBadge status={row.status} />
+                        {row.status !== "open" && (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                            style={row.allPaid
+                              ? { background: "rgba(34,197,94,0.15)", color: "#22c55e" }
+                              : { background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>
+                            {row.paidCount}/{row.memberCount} paid
+                          </span>
+                        )}
+                        {(() => {
+                          const op = detailById[row.id]?.organiserPayment;
+                          if (!op || op.status === "unpaid") return null;
+                          if (op.status === "confirmed") return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Org paid ✓</span>;
+                          return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Org pay pending</span>;
+                        })()}
+                      </div>
+                      <div className="text-xs mt-0.5 truncate" style={{ color: "var(--adm-muted)" }}>
+                        Organiser @{row.creatorUsername} · {row.memberCount} member{row.memberCount === 1 ? "" : "s"} · {row.combinedKits} kit{row.combinedKits === 1 ? "" : "s"} · {money(row.combinedSubtotal)}
+                        {row.deliveryCountry ? ` · → ${row.deliveryCountry}` : ""}
+                      </div>
                     </div>
-                    <div className="text-xs mt-0.5 truncate" style={{ color: "var(--adm-muted)" }}>
-                      Organiser @{row.creatorUsername} · {row.memberCount} member{row.memberCount === 1 ? "" : "s"} · {row.combinedKits} kit{row.combinedKits === 1 ? "" : "s"} · {money(row.combinedSubtotal)}
-                      {row.deliveryCountry ? ` · → ${row.deliveryCountry}` : ""}
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                  {["locked", "submitted"].includes(row.status) && !row.allPaid && (
+                    <button
+                      onClick={() => void markAllPaid(row)}
+                      disabled={!!adminAction}
+                      className="shrink-0 px-2.5 py-1.5 rounded-md text-xs font-semibold text-white disabled:opacity-40"
+                      style={{ background: "#16a34a" }}
+                    >
+                      {adminAction === `${row.id}:mark-all-paid` ? "Marking paid…" : "Mark all paid"}
+                    </button>
+                  )}
+                </div>
 
                 {open && (
                   <div className="px-4 pb-4 pt-1 border-t" style={{ borderColor: "var(--adm-border)" }}>
