@@ -6,6 +6,14 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const routeSource = fs.readFileSync(path.resolve(here, "../wholesale-shares.ts"), "utf8");
 const indexSource = fs.readFileSync(path.resolve(here, "../../index.ts"), "utf8");
+const autoVerifySource = fs.readFileSync(
+  path.resolve(here, "../../lib/wholesale-organiser-payment-auto-verify.ts"),
+  "utf8",
+);
+const autoPolicySource = fs.readFileSync(
+  path.resolve(here, "../../lib/wholesale-organiser-payment-auto-policy.ts"),
+  "utf8",
+);
 const schemaSource = fs.readFileSync(path.resolve(here, "../../../../../lib/db/src/schema/wholesale_shares.ts"), "utf8");
 const adminSource = fs.readFileSync(
   path.resolve(here, "../../../../peps-anonymous/src/pages/Admin.tsx"),
@@ -160,19 +168,29 @@ describe("shared wholesale order confirmations", () => {
     expect(adminSource).toContain("const repairOrphanOrders = async");
   });
 
-  it("keeps organiser platform payments pending until an admin confirms them manually", () => {
+  it("auto-confirms only full organiser payments without member credits", () => {
     const submissionHandler = routeSource.slice(
       routeSource.indexOf('router.post("/wholesale-shares/:id/organiser-payment"'),
       routeSource.indexOf("// Admin confirms the organiser's platform payment."),
     );
 
     expect(submissionHandler).toContain('organiserPaymentStatus: "pending"');
-    expect(submissionHandler).not.toContain("triggerWholesaleOrganiserPaymentCheck");
-    expect(routeSource).not.toContain("wholesale-organiser-payment-auto-verify");
-    expect(indexSource).not.toContain("startWholesaleOrganiserPaymentAutoVerify");
-    expect(indexSource).not.toContain("wholesale-organiser-payment-auto-verify");
+    expect(submissionHandler).toContain("triggerWholesaleOrganiserPaymentCheck");
+    expect(routeSource).toContain("wholesale-organiser-payment-auto-verify");
+    expect(indexSource).toContain("startWholesaleOrganiserPaymentAutoVerify");
+    expect(indexSource).toContain("wholesale-organiser-payment-auto-verify");
+    expect(autoVerifySource).toContain("creditsApplied");
+    expect(autoPolicySource).toContain("totalCreditsApplied > 0");
+    expect(autoVerifySource).toContain("requires manual admin confirmation");
+    expect(autoVerifySource).toContain("verifyTransaction");
+    expect(autoVerifySource).toContain('source: "automatic"');
+    expect(autoVerifySource).toContain("verifiedAmount: verification.verified ? verification.amountUsdt : null");
+    expect(autoVerifySource).toContain("expectedAmountDue: amountDue");
+    expect(autoVerifySource).toContain("requireNoCredits: true");
+    expect(schemaSource).toContain("wholesale_shares_organiser_payment_identity_uq");
+    expect(submissionHandler).toContain("payment_transaction_reused");
     expect(wholesaleSharedSource).toContain(
-      "We've received your tx hash. An administrator will confirm your payment.",
+      "Full payments are checked automatically; partial or credit-adjusted payments require administrator confirmation.",
     );
   });
 

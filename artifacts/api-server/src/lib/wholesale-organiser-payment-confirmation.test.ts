@@ -27,6 +27,7 @@ const harness = vi.hoisted(() => {
       sharedOrderId: "sharedOrderId",
       telegramUsername: "telegramUsername",
       paymentStatus: "paymentStatus",
+      creditsApplied: "creditsApplied",
     },
     refunds: {
       id: "id",
@@ -313,29 +314,30 @@ describe("confirmWholesaleOrganiserPayment", () => {
     expect(harness.state.updates).toHaveLength(0);
   });
 
-  it("locks the share, filtered creator candidate, and organiser order only", async () => {
+  it("locks the share, member payment snapshot, filtered creator candidate, and organiser order", async () => {
     await confirmWholesaleOrganiserPayment(pendingInput);
 
     expect(harness.state.locks.map(lock => lock.table)).toEqual([
       harness.tables.shares,
+      harness.tables.orders,
       harness.tables.members,
       harness.tables.orders,
       harness.tables.members,
       expect.anything(),
     ]);
-    expect(harness.state.locks[1].predicates[0]).toMatchObject({
+    expect(harness.state.locks[2].predicates[0]).toMatchObject({
       kind: "and",
       predicates: expect.arrayContaining([
         { kind: "eq", column: "shareId", value: "SHARE1" },
         { kind: "eq", column: "isCreator", value: true },
       ]),
     });
-    expect(harness.state.locks[2].predicates[0]).toMatchObject({
+    expect(harness.state.locks[3].predicates[0]).toMatchObject({
       kind: "eq",
       column: "id",
       value: "creator-order",
     });
-    expect(harness.state.locks[3].predicates[0]).toMatchObject({
+    expect(harness.state.locks[4].predicates[0]).toMatchObject({
       kind: "and",
       predicates: expect.arrayContaining([
         { kind: "eq", column: "shareId", value: "SHARE1" },
@@ -435,6 +437,87 @@ describe("confirmWholesaleOrganiserPayment", () => {
     expect(result).toMatchObject({ kind: "rejected", code: "invalid_share_status" });
     expect(harness.state.updates).toHaveLength(0);
     expect(harness.state.audits).toHaveLength(0);
+  });
+
+  it("rejects an automatic verification whose transaction identity changed before the share lock", async () => {
+    harness.state.share.organiserPaymentTxHash = "0xtransaction-b";
+
+    const result = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      source: "automatic",
+      expectedPaymentIdentity: {
+        txHash: "0xtransaction-a",
+        currency: "USDT",
+        network: "ERC-20",
+      },
+      expectedAmountDue: 28,
+      requireNoCredits: true,
+    });
+
+    expect(result).toMatchObject({ kind: "rejected", code: "payment_identity_mismatch" });
+    expect(harness.state.share.organiserPaymentStatus).toBe("pending");
+    expect(harness.state.orders[0].paymentStatus).toBe("pending");
+    expect(harness.state.updates).toHaveLength(0);
+    expect(harness.state.audits).toHaveLength(0);
+  });
+
+  it("automatically confirms when the locked amount still matches and no credits were applied", async () => {
+    const result = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      source: "automatic",
+      expectedPaymentIdentity: {
+        txHash: "0xhash",
+        currency: "USDT",
+        network: "ERC-20",
+      },
+      expectedAmountDue: 28,
+      requireNoCredits: true,
+    });
+
+    expect(result).toMatchObject({ kind: "confirmed", organiserPaymentStatus: "confirmed" });
+    expect(harness.state.orders[0].paymentStatus).toBe("confirmed");
+    expect(harness.state.orders[1].paymentStatus).toBe("unpaid");
+  });
+
+  it("keeps an automatically verified payment pending when credits were applied", async () => {
+    harness.state.orders[1].creditsApplied = "3.00";
+
+    const result = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      source: "automatic",
+      expectedPaymentIdentity: {
+        txHash: "0xhash",
+        currency: "USDT",
+        network: "ERC-20",
+      },
+      expectedAmountDue: 25,
+      requireNoCredits: true,
+    });
+
+    expect(result).toMatchObject({
+      kind: "rejected",
+      code: "automatic_manual_review_required",
+    });
+    expect(harness.state.share.organiserPaymentStatus).toBe("pending");
+    expect(harness.state.orders[0].paymentStatus).toBe("pending");
+  });
+
+  it("keeps an automatically verified payment pending when the amount changes during verification", async () => {
+    const result = await confirmWholesaleOrganiserPayment({
+      ...pendingInput,
+      source: "automatic",
+      expectedPaymentIdentity: {
+        txHash: "0xhash",
+        currency: "USDT",
+        network: "ERC-20",
+      },
+      expectedAmountDue: 27,
+      requireNoCredits: true,
+    });
+
+    expect(result).toMatchObject({ kind: "rejected", code: "automatic_amount_changed" });
+    expect(harness.state.share.organiserPaymentStatus).toBe("pending");
+    expect(harness.state.orders[0].paymentStatus).toBe("pending");
   });
 
   it("rejects confirmation when the share has no organiser-owned wallet", async () => {

@@ -40,7 +40,9 @@ import { fetchOnwardTracking } from "../lib/tracking-auto-refresh";
 import { nullableTrackingCarrierMatch } from "../lib/tracking-carrier-cas";
 import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram";
 import { getAdminCryptoOptions } from "./payments";
+import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
 import { confirmWholesaleOrganiserPayment } from "../lib/wholesale-organiser-payment-confirmation";
+import { normalizeWholesaleOrganiserPaymentIdentity } from "../lib/wholesale-organiser-payment-identity";
 import { calculateWholesaleOrganiserAmountDue } from "../lib/wholesale-organiser-payment-amount";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
@@ -3681,10 +3683,17 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
     return;
   }
 
-  const submittedTxHash = txHash.trim();
-  const submittedCurrency = String(currency).trim();
-  const submittedNetwork = String(network).trim();
-  const updateResult = await db.transaction(async (tx) => {
+  const submittedIdentity = normalizeWholesaleOrganiserPaymentIdentity({
+    txHash,
+    currency: String(currency),
+    network: String(network),
+  });
+  const submittedTxHash = submittedIdentity.txHash;
+  const submittedCurrency = submittedIdentity.currency;
+  const submittedNetwork = submittedIdentity.network;
+  let updateResult;
+  try {
+    updateResult = await db.transaction(async (tx) => {
     const [lockedShare] = await tx.select().from(wholesaleSharesTable)
       .where(eq(wholesaleSharesTable.id, share.id))
       .for("update");
@@ -3750,8 +3759,21 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
         id: wholesaleSharesTable.id,
         creatorUsername: wholesaleSharesTable.creatorUsername,
       });
-    return updated ?? null;
-  });
+      return updated ?? null;
+    });
+  } catch (error: any) {
+    if (
+      error?.code === "23505"
+      && error?.constraint === "wholesale_shares_organiser_payment_identity_uq"
+    ) {
+      res.status(409).json({
+        error: "This blockchain transaction has already been submitted for another shared order.",
+        code: "payment_transaction_reused",
+      });
+      return;
+    }
+    throw error;
+  }
   if (!updateResult) {
     res.status(409).json({ error: "The shared order changed before this payment could be submitted." });
     return;
@@ -3768,6 +3790,8 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
     `Currency: ${escHtml(submittedCurrency)} (${escHtml(submittedNetwork)})`,
     `Tx hash: <code>${escHtml(submittedTxHash)}</code>`,
   ].join("\n")).catch(() => {});
+
+  triggerWholesaleOrganiserPaymentCheck(share.id);
 
   res.json({ ok: true });
 });

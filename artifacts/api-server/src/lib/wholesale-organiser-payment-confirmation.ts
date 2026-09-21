@@ -9,13 +9,14 @@ import { and, eq, inArray } from "drizzle-orm";
 import { normalizeTg } from "./normalize";
 import { normalizeOrganiserWallets, OrganiserWalletValidationError } from "./wholesale-organiser-wallets";
 import { calculateWholesaleOrganiserAmountDue } from "./wholesale-organiser-payment-amount";
+import { normalizeWholesaleOrganiserPaymentIdentity } from "./wholesale-organiser-payment-identity";
 import {
   assertNoActiveRefund,
   refundMutableOrderWhere,
   RefundMutationBlockedError,
 } from "./refund-mutation-guard";
 
-export type OrganiserPaymentConfirmationSource = "admin" | "backfill";
+export type OrganiserPaymentConfirmationSource = "automatic" | "admin" | "backfill";
 
 export type OrganiserPaymentConfirmationResult =
   | {
@@ -43,6 +44,9 @@ type RejectionCode =
   | "invalid_share_status"
   | "invalid_parent_status"
   | "missing_transaction_identity"
+  | "payment_identity_mismatch"
+  | "automatic_manual_review_required"
+  | "automatic_amount_changed"
   | "invalid_amount"
   | "invalid_creator_member"
   | "invalid_creator_order"
@@ -71,12 +75,14 @@ function normalizePaymentIdentity(input: {
   const txHash = input.txHash.trim();
   const currency = input.currency.trim().toUpperCase();
   const network = input.network.trim().toLowerCase();
-  return txHash && currency && network ? { txHash, currency, network } : null;
+  return txHash && currency && network
+    ? normalizeWholesaleOrganiserPaymentIdentity({ txHash, currency, network })
+    : null;
 }
 
 /**
  * Confirm the organiser's platform payment and the organiser's linked order in
- * one transaction. The share lock serialises repeated admin/backfill calls;
+ * one transaction. The share lock serialises repeated automatic/admin/backfill calls;
  * the candidate and order locks prevent unrelated member orders from being
  * changed and make the audit transition exactly once.
  */
@@ -84,10 +90,17 @@ export async function confirmWholesaleOrganiserPayment(input: {
   shareId: string;
   source: OrganiserPaymentConfirmationSource;
   expectedCurrentParentStatus?: "pending" | "confirmed";
+  expectedPaymentIdentity?: {
+    txHash: string;
+    currency: string;
+    network: string;
+  };
+  expectedAmountDue?: number;
+  requireNoCredits?: boolean;
 }): Promise<OrganiserPaymentConfirmationResult> {
   const shareId = typeof input?.shareId === "string" ? input.shareId.trim() : "";
   const source = input?.source;
-  if (!shareId || (source !== "admin" && source !== "backfill")) {
+  if (!shareId || (source !== "automatic" && source !== "admin" && source !== "backfill")) {
     return reject("invalid_input", "A share ID and valid confirmation source are required.");
   }
 
@@ -98,6 +111,15 @@ export async function confirmWholesaleOrganiserPayment(input: {
       : requestedCurrentParentStatus ?? "pending";
   if (!isPaymentStatus(expectedCurrentParentStatus)) {
     return reject("invalid_input", "The expected current parent payment status is invalid.");
+  }
+  if (source === "automatic" && !normalizePaymentIdentity(input.expectedPaymentIdentity ?? {})) {
+    return reject("invalid_input", "Automatic confirmation requires the verified payment identity.");
+  }
+  if (
+    source === "automatic"
+    && (!Number.isFinite(input.expectedAmountDue) || Number(input.expectedAmountDue) <= 0)
+  ) {
+    return reject("invalid_input", "Automatic confirmation requires the verified amount due.");
   }
   return db.transaction(async (tx) => {
     const [share] = await tx
@@ -120,6 +142,20 @@ export async function confirmWholesaleOrganiserPayment(input: {
         "missing_transaction_identity",
         "Stored organiser transaction hash, currency, and network are required.",
       );
+    }
+    if (source === "automatic") {
+      const expectedIdentity = normalizePaymentIdentity(input.expectedPaymentIdentity ?? {});
+      if (
+        !expectedIdentity ||
+        expectedIdentity.txHash !== storedIdentity.txHash ||
+        expectedIdentity.currency !== storedIdentity.currency ||
+        expectedIdentity.network !== storedIdentity.network
+      ) {
+        return reject(
+          "payment_identity_mismatch",
+          "The stored organiser payment identity changed during verification.",
+        );
+      }
     }
     let organiserWallets;
     try {
@@ -176,17 +212,39 @@ export async function confirmWholesaleOrganiserPayment(input: {
             eq(ordersTable.sharedOrderId, share.id),
             inArray(ordersTable.id, memberOrderIds),
           ))
+          .for("update")
       : [];
     const creditsByOrderId = new Map(memberOrders.map(order => [order.id, order.creditsApplied]));
-    const total = calculateWholesaleOrganiserAmountDue(
-      memberRows.map(member => ({
+    const paymentMembers = memberRows.map(member => ({
         items: member.items,
         creditsApplied: member.orderId ? creditsByOrderId.get(member.orderId) : null,
-      })),
+      }));
+    const totalCreditsApplied = Number(paymentMembers.reduce((sum, member) => {
+      const creditsApplied = Number(member.creditsApplied ?? 0);
+      return Number.isFinite(creditsApplied) && creditsApplied > 0
+        ? sum + creditsApplied
+        : sum;
+    }, 0).toFixed(2));
+    const total = calculateWholesaleOrganiserAmountDue(
+      paymentMembers,
       share.totalVendorShipping,
     );
     if (total === null || total <= 0) {
       return reject("invalid_amount", "The organiser payment amount must be positive.");
+    }
+    if (source === "automatic") {
+      if (input.requireNoCredits && totalCreditsApplied > 0) {
+        return reject(
+          "automatic_manual_review_required",
+          "Member credits require manual administrator confirmation.",
+        );
+      }
+      if (Math.abs(total - Number(input.expectedAmountDue)) > 0.005) {
+        return reject(
+          "automatic_amount_changed",
+          "The organiser payment amount changed during blockchain verification.",
+        );
+      }
     }
 
     const creatorMembers = await tx

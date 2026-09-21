@@ -1517,7 +1517,7 @@ export default function WholesaleShared() {
               {op.status === "confirmed"
                 ? "You've sent the group payment — we'll process the order."
                 : op.status === "pending"
-                  ? "We've received your tx hash. An administrator will confirm your payment."
+                  ? "Full payments are checked automatically; partial or credit-adjusted payments require administrator confirmation."
                   : "Everyone has paid — now send the combined group payment to us."}
             </p>
 

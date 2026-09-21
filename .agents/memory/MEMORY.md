@@ -102,7 +102,7 @@
 - [Shared-order payment transaction privacy](shared-order-payment-transaction-privacy.md) — member transaction IDs and received amounts belong only in organiser-gated responses, never merely hidden in UI.
 - [Shared-order payment routing](shared-order-payment-routing.md) — shared wholesale methods are organiser-only; absent organiser wallets disable methods and never fall back to admin/global destinations.
 - [Shared-order organiser credit offset](shared-order-organiser-credit-offset.md) — organiser forwards products+shipping less persisted member credits; tips and organiser fees stay excluded.
-- [Shared organiser payment confirmation](shared-organiser-payment-confirmation.md) — organiser-to-platform payments are manual-admin confirmation only; never auto-confirm submitted transactions.
+- [Shared organiser payment confirmation](shared-organiser-payment-confirmation.md) — full no-credit stablecoin payments auto-confirm; partial, credited, or unsupported payments require Admin confirmation.
 - [Shared-order confirmation commitment](shared-order-confirmation-commitment.md) — confirmation binds a current draft; mutations and reopening invalidate it, while lock/removal must serialize it.
 - [AnonPay pages cannot be embedded](anonpay-no-iframe.md) — Trocador sends X-Frame-Options: DENY; launch AnonPay as a top-level page and restore only genuinely pending sessions.
 - [Publish image size and local backups](publish-image-size-backups.md) — `.gitignore` does not keep local SQL/backups out of Repl layers; mirror dev-only bulk in `.replitignore`.
