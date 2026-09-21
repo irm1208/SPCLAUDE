@@ -34,3 +34,10 @@ test("remaining admin mutations distinguish unknown outcomes from refresh failur
   assert.match(source, /Could not confirm adjustment; the outcome is unknown/);
   assert.match(source, /Adjustment succeeded, but refreshing/);
 });
+
+test("orders shared-order grouping exposes organiser platform-payment confirmation", () => {
+  assert.match(source, /confirmSharedOrganiserPayment/);
+  assert.match(source, /organiserPaymentStatus === "pending"/);
+  assert.match(source, /Confirm platform payment/);
+  assert.match(source, /setConfirmingSharePayment/);
+});

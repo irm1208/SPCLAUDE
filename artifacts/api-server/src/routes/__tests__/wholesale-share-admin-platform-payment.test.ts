@@ -16,6 +16,7 @@ describe("admin shared-order platform payment", () => {
       'router.post("/admin/wholesale-shares/:id/confirm-organiser-payment"',
     );
     expect(routeSource).toContain("confirmWholesaleOrganiserPayment");
+    expect(routeSource).toContain('organiserPaymentStatus: s.organiserPaymentStatus ?? "unpaid"');
     expect(routeSource).not.toContain(
       'router.post("/admin/wholesale-shares/:id/mark-all-paid"',
     );

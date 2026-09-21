@@ -7037,7 +7037,7 @@ interface Fs3Totals {
 interface Fs3GroupBuy { id: string; name: string; vendorShippingAmount: number | null; vendorShippingKits: number | null; vendorShippingMaxKitsPerPackage: number | null; }
 interface Fs3GbMember { telegramUsername: string; email: string | null; accountStatus: string | null; hasPassword: boolean; hasTelegram: boolean; joinedAt: string | null; tags: string[]; countryLegId: string | null; }
 interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; sharedOrderId?: string | null; }
-interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; }
+interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; organiserPaymentStatus?: "unpaid" | "pending" | "confirmed"; }
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
 interface PnlOrder {
@@ -7200,6 +7200,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [bulkStatusApplying, setBulkStatusApplying] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [shareMeta, setShareMeta] = useState<Map<string, Fs3ShareMeta>>(new Map());
+  const [confirmingSharePayment, setConfirmingSharePayment] = useState<string | null>(null);
 
 
   // Cost prices (fetched from server — never in the JS bundle)
@@ -7421,6 +7422,41 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       .catch(() => setRoutingOrders([]))
       .finally(() => setRoutingOrdersLoading(false));
   }, [filterRouting, filterGroupBuy, filterVendor, secret]);
+
+  const confirmSharedOrganiserPayment = async (shareId: string) => {
+    const meta = shareMeta.get(shareId);
+    if (meta?.organiserPaymentStatus !== "pending") return;
+    if (!window.confirm(`Confirm the organiser's platform payment for shared order #${shareId}? This cannot be undone.`)) return;
+
+    setConfirmingSharePayment(shareId);
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}/confirm-organiser-payment`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+        credentials: "omit",
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string; organiserPaymentStatus?: Fs3ShareMeta["organiserPaymentStatus"] };
+      if (!response.ok) {
+        alert(result.error ?? "Could not confirm organiser payment.");
+        return;
+      }
+      setShareMeta(prev => {
+        const next = new Map(prev);
+        const current = next.get(shareId);
+        if (current) {
+          next.set(shareId, {
+            ...current,
+            organiserPaymentStatus: result.organiserPaymentStatus ?? "confirmed",
+          });
+        }
+        return next;
+      });
+    } catch (error) {
+      alert(`Could not confirm organiser payment: ${error instanceof Error ? error.message : "network error"}`);
+    } finally {
+      setConfirmingSharePayment(null);
+    }
+  };
 
   // ── Price editor handlers ──
   const handleSaveCost = async (productName: string, unitCost: number, id?: number) => {
@@ -8823,6 +8859,16 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${allPaid ? "bg-green-100 text-green-700" : paidCount > 0 ? "bg-amber-100 text-amber-700" : "bg-red-50 text-red-500"}`}>{paidCount}/{g.orders.length} paid</span>
                       <span className="text-xs font-mono font-semibold shrink-0">${combinedTotal.toFixed(2)}</span>
                       <span className="text-[10px] font-mono text-muted-foreground shrink-0">#{g.shareId}</span>
+                      {filterRouting === "shared" && meta?.organiserPaymentStatus === "pending" && (
+                        <button
+                          type="button"
+                          onClick={() => void confirmSharedOrganiserPayment(g.shareId!)}
+                          disabled={confirmingSharePayment === g.shareId}
+                          className="shrink-0 rounded-md bg-green-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {confirmingSharePayment === g.shareId ? "Confirming…" : "Confirm platform payment"}
+                        </button>
+                      )}
                     </div>
                     <div className="p-1.5 space-y-1">
                       {g.orders.map(o => renderWsRow(o, sameUser(o.telegramUsername, meta?.creatorUsername)))}
