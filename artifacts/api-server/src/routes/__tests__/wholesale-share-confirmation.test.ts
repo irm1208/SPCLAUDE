@@ -5,10 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const routeSource = fs.readFileSync(path.resolve(here, "../wholesale-shares.ts"), "utf8");
-const autoVerifySource = fs.readFileSync(
-  path.resolve(here, "../../lib/wholesale-organiser-payment-auto-verify.ts"),
-  "utf8",
-);
+const indexSource = fs.readFileSync(path.resolve(here, "../../index.ts"), "utf8");
 const schemaSource = fs.readFileSync(path.resolve(here, "../../../../../lib/db/src/schema/wholesale_shares.ts"), "utf8");
 const adminSource = fs.readFileSync(
   path.resolve(here, "../../../../peps-anonymous/src/pages/Admin.tsx"),
@@ -163,43 +160,20 @@ describe("shared wholesale order confirmations", () => {
     expect(adminSource).toContain("const repairOrphanOrders = async");
   });
 
-  it("routes automatic verification through the confirmation service and notifies only confirmed results", () => {
-    const checkShare = autoVerifySource.slice(
-      autoVerifySource.indexOf("async function checkShare"),
-      autoVerifySource.indexOf("// ── Scheduler run"),
-    );
-    const verificationIndex = checkShare.indexOf("const verification = await verifyTransaction");
-    const unverifiedGuardIndex = checkShare.indexOf("if (!verification.verified)");
-    const unverifiedReturnIndex = checkShare.indexOf("return;", unverifiedGuardIndex);
-    const confirmationIndex = checkShare.indexOf("const confirmation = await confirmWholesaleOrganiserPayment");
-    const confirmedBranchIndex = checkShare.indexOf('if (confirmation.kind === "confirmed")');
-    const notificationIndex = checkShare.indexOf("notifyUser(", confirmedBranchIndex);
-    const optionSelection = checkShare.slice(
-      checkShare.indexOf("const opt ="),
-      checkShare.indexOf("if (!opt?.walletAddress)"),
+  it("keeps organiser platform payments pending until an admin confirms them manually", () => {
+    const submissionHandler = routeSource.slice(
+      routeSource.indexOf('router.post("/wholesale-shares/:id/organiser-payment"'),
+      routeSource.indexOf("// Admin confirms the organiser's platform payment."),
     );
 
-    expect(verificationIndex).toBeGreaterThanOrEqual(0);
-    expect(unverifiedGuardIndex).toBeGreaterThan(verificationIndex);
-    expect(unverifiedReturnIndex).toBeGreaterThan(unverifiedGuardIndex);
-    expect(confirmationIndex).toBeGreaterThan(unverifiedReturnIndex);
-    expect(confirmedBranchIndex).toBeGreaterThan(confirmationIndex);
-    expect(notificationIndex).toBeGreaterThan(confirmedBranchIndex);
-    expect(checkShare).toContain('source: "automatic"');
-    expect(checkShare).toContain("expectedPaymentIdentity");
-    expect(checkShare).toContain("txHash");
-    expect(checkShare).toContain("currency");
-    expect(checkShare).toContain("network");
-    expect(checkShare).toContain("network, 0.01");
-    expect(optionSelection).toContain("options.find");
-    expect(optionSelection).toContain("network.toLowerCase()");
-    expect(optionSelection).not.toContain("options[0]");
-    expect(optionSelection).not.toContain('o.currency.toUpperCase() === currency)');
-    expect(checkShare).toContain("No exact admin wallet");
-    expect(checkShare.slice(confirmationIndex)).not.toContain("else");
-    expect(checkShare.slice(confirmationIndex)).not.toContain("Confirmation result for share");
-    expect(autoVerifySource).not.toContain(".update(wholesaleSharesTable)");
-    expect(autoVerifySource).not.toContain("wholesale_share_organiser_payment_auto_confirmed");
+    expect(submissionHandler).toContain('organiserPaymentStatus: "pending"');
+    expect(submissionHandler).not.toContain("triggerWholesaleOrganiserPaymentCheck");
+    expect(routeSource).not.toContain("wholesale-organiser-payment-auto-verify");
+    expect(indexSource).not.toContain("startWholesaleOrganiserPaymentAutoVerify");
+    expect(indexSource).not.toContain("wholesale-organiser-payment-auto-verify");
+    expect(wholesaleSharedSource).toContain(
+      "We've received your tx hash. An administrator will confirm your payment.",
+    );
   });
 
   it("uses the shared confirmation service for admin confirmation and makes repeats idempotent", () => {

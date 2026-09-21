@@ -40,7 +40,6 @@ import { fetchOnwardTracking } from "../lib/tracking-auto-refresh";
 import { nullableTrackingCarrierMatch } from "../lib/tracking-carrier-cas";
 import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram";
 import { getAdminCryptoOptions } from "./payments";
-import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
 import { confirmWholesaleOrganiserPayment } from "../lib/wholesale-organiser-payment-confirmation";
 import { calculateWholesaleOrganiserAmountDue } from "../lib/wholesale-organiser-payment-amount";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
@@ -3769,10 +3768,6 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
     `Currency: ${escHtml(submittedCurrency)} (${escHtml(submittedNetwork)})`,
     `Tx hash: <code>${escHtml(submittedTxHash)}</code>`,
   ].join("\n")).catch(() => {});
-
-  // Kick off an immediate on-chain verification attempt — no need to wait for
-  // the 10-minute scheduler cycle.
-  triggerWholesaleOrganiserPaymentCheck(share.id);
 
   res.json({ ok: true });
 });

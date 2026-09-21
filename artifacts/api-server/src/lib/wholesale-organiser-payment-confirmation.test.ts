@@ -249,13 +249,8 @@ import { confirmWholesaleOrganiserPayment } from "./wholesale-organiser-payment-
 
 const pendingInput = {
   shareId: "SHARE1",
-  source: "automatic" as const,
+  source: "admin" as const,
   expectedCurrentParentStatus: "pending" as const,
-  expectedPaymentIdentity: {
-    txHash: "0xhash",
-    currency: "USDT",
-    network: "ERC-20",
-  },
 };
 
 describe("confirmWholesaleOrganiserPayment", () => {
@@ -289,7 +284,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
     expect(harness.state.audits[0]).toMatchObject({
       action: "wholesale_share_organiser_order_payment_confirmed",
       metadata: {
-        source: "automatic",
+        source: "admin",
         reason: "organiser_platform_payment_confirmed",
         shareId: "SHARE1",
         organiserOrderId: "creator-order",
@@ -438,25 +433,6 @@ describe("confirmWholesaleOrganiserPayment", () => {
     const result = await confirmWholesaleOrganiserPayment(pendingInput);
 
     expect(result).toMatchObject({ kind: "rejected", code: "invalid_share_status" });
-    expect(harness.state.updates).toHaveLength(0);
-    expect(harness.state.audits).toHaveLength(0);
-  });
-
-  it("rejects an automatic verification whose transaction identity changed before the share lock", async () => {
-    harness.state.share.organiserPaymentTxHash = "0xtransaction-b";
-
-    const result = await confirmWholesaleOrganiserPayment({
-      ...pendingInput,
-      expectedPaymentIdentity: {
-        txHash: "0xtransaction-a",
-        currency: "USDT",
-        network: "ERC-20",
-      },
-    });
-
-    expect(result).toMatchObject({ kind: "rejected", code: "payment_identity_mismatch" });
-    expect(harness.state.share.organiserPaymentStatus).toBe("pending");
-    expect(harness.state.orders[0].paymentStatus).toBe("pending");
     expect(harness.state.updates).toHaveLength(0);
     expect(harness.state.audits).toHaveLength(0);
   });
