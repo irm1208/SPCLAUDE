@@ -1,5 +1,4 @@
-import { pgTable, text, numeric, integer, timestamp, boolean, jsonb, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { pgTable, text, numeric, integer, timestamp, boolean, jsonb, index, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -108,6 +107,7 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   organiserPaymentTxHash: text("organiser_payment_tx_hash"),
   organiserPaymentCurrency: text("organiser_payment_currency"),
   organiserPaymentNetwork: text("organiser_payment_network"),
+  organiserPaymentIdentity: text("organiser_payment_identity"),
   organiserPaymentConfirmedAt: timestamp("organiser_payment_confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
@@ -118,29 +118,7 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   index("wholesale_shares_creator_idx").on(t.creatorUsername),
   index("wholesale_shares_status_idx").on(t.status),
   index("wholesale_shares_public_idx").on(t.isPublic, t.status),
-  uniqueIndex("wholesale_shares_organiser_payment_identity_uq")
-    .on(
-      sql`upper(trim(${t.organiserPaymentCurrency}))`,
-      sql`CASE
-        WHEN lower(trim(${t.organiserPaymentNetwork})) ~ 'arbitrum' THEN 'arbitrum'
-        WHEN lower(trim(${t.organiserPaymentNetwork})) ~ 'polygon' THEN 'polygon'
-        WHEN lower(trim(${t.organiserPaymentNetwork})) ~ '(bep.?20|bsc|binance)' THEN 'bsc'
-        WHEN lower(trim(${t.organiserPaymentNetwork})) ~ '(tron|trc)' THEN 'tron'
-        WHEN lower(trim(${t.organiserPaymentNetwork})) ~ 'solana' THEN 'solana'
-        WHEN upper(trim(${t.organiserPaymentCurrency})) = 'BTC'
-          AND lower(trim(${t.organiserPaymentNetwork})) ~ '(mainnet|bitcoin)' THEN 'bitcoin'
-        WHEN upper(trim(${t.organiserPaymentCurrency})) = 'ETH'
-          OR lower(trim(${t.organiserPaymentNetwork})) ~ '(erc.?20|ethereum)' THEN 'ethereum'
-        ELSE lower(trim(${t.organiserPaymentNetwork}))
-      END`,
-      sql`CASE
-        WHEN upper(trim(${t.organiserPaymentCurrency})) IN ('BTC', 'ETH')
-          OR lower(trim(${t.organiserPaymentNetwork})) ~ '(erc.?20|ethereum|arbitrum|polygon|bep.?20|bsc|binance|tron|trc)'
-        THEN lower(regexp_replace(trim(${t.organiserPaymentTxHash}), '^0x', '', 'i'))
-        ELSE trim(${t.organiserPaymentTxHash})
-      END`,
-    )
-    .where(sql`${t.organiserPaymentTxHash} IS NOT NULL`),
+  unique("wholesale_shares_organiser_payment_identity_uq").on(t.organiserPaymentIdentity),
 ]);
 
 export type WholesaleShare = typeof wholesaleSharesTable.$inferSelect;

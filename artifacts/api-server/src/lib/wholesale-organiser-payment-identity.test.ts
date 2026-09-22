@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { normalizeWholesaleOrganiserPaymentIdentity } from "./wholesale-organiser-payment-identity";
+import {
+  normalizeWholesaleOrganiserPaymentIdentity,
+  wholesaleOrganiserPaymentIdentityKey,
+} from "./wholesale-organiser-payment-identity";
 
 describe("wholesale organiser payment identity", () => {
   it("normalizes prefixed and unprefixed EVM hashes to the same identity", () => {
@@ -59,5 +62,17 @@ describe("wholesale organiser payment identity", () => {
       currency: "USDC",
       network: "solana",
     });
+  });
+
+  it("builds the same unique key for equivalent chain aliases and hash formats", () => {
+    expect(wholesaleOrganiserPaymentIdentityKey({
+      txHash: "0xABC123",
+      currency: "usdt",
+      network: "ERC-20",
+    })).toBe(wholesaleOrganiserPaymentIdentityKey({
+      txHash: "abc123",
+      currency: "USDT",
+      network: "ethereum",
+    }));
   });
 });

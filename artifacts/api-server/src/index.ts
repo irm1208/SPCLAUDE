@@ -469,52 +469,32 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_shares_creator_idx ON wholesale_shares(creator_username)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_shares_status_idx ON wholesale_shares(status)`);
     await db.execute(sql`
+      ALTER TABLE wholesale_shares
+      ADD COLUMN IF NOT EXISTS organiser_payment_identity text
+    `);
+    await db.execute(sql`
       DO $$ BEGIN
         IF EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'wholesale_shares' AND column_name = 'organiser_payment_tx_hash'
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'wholesale_shares_organiser_payment_identity_uq'
+            AND pg_get_constraintdef(oid) NOT LIKE '%organiser_payment_identity%'
         ) THEN
           ALTER TABLE wholesale_shares
-          DROP CONSTRAINT IF EXISTS wholesale_shares_organiser_payment_identity_uq;
-          IF EXISTS (
-            SELECT 1
-            FROM wholesale_shares
-            WHERE organiser_payment_tx_hash IS NOT NULL
-              AND organiser_payment_currency IS NOT NULL
-              AND organiser_payment_network IS NOT NULL
-            GROUP BY
-              upper(trim(organiser_payment_currency)),
-              CASE
-                WHEN lower(trim(organiser_payment_network)) ~ 'arbitrum' THEN 'arbitrum'
-                WHEN lower(trim(organiser_payment_network)) ~ 'polygon' THEN 'polygon'
-                WHEN lower(trim(organiser_payment_network)) ~ '(bep.?20|bsc|binance)' THEN 'bsc'
-                WHEN lower(trim(organiser_payment_network)) ~ '(tron|trc)' THEN 'tron'
-                WHEN lower(trim(organiser_payment_network)) ~ 'solana' THEN 'solana'
-                WHEN upper(trim(organiser_payment_currency)) = 'BTC'
-                  AND lower(trim(organiser_payment_network)) ~ '(mainnet|bitcoin)' THEN 'bitcoin'
-                WHEN upper(trim(organiser_payment_currency)) = 'ETH'
-                  OR lower(trim(organiser_payment_network)) ~ '(erc.?20|ethereum)' THEN 'ethereum'
-                ELSE lower(trim(organiser_payment_network))
-              END,
-              CASE
-                WHEN upper(trim(organiser_payment_currency)) IN ('BTC', 'ETH')
-                  OR lower(trim(organiser_payment_network)) ~ '(erc.?20|ethereum|arbitrum|polygon|bep.?20|bsc|binance|tron|trc)'
-                THEN lower(regexp_replace(trim(organiser_payment_tx_hash), '^0x', '', 'i'))
-                ELSE trim(organiser_payment_tx_hash)
-              END
-            HAVING count(*) > 1
-          ) THEN
-            RAISE EXCEPTION
-              'Duplicate organiser payment transaction identities must be reviewed before startup';
-          END IF;
+          DROP CONSTRAINT wholesale_shares_organiser_payment_identity_uq;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'wholesale_shares_organiser_payment_identity_uq'
+        ) THEN
+          DROP INDEX IF EXISTS wholesale_shares_organiser_payment_identity_uq;
         END IF;
       END $$
     `);
     await db.execute(sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS wholesale_shares_organiser_payment_identity_uq
-      ON wholesale_shares (
-        upper(trim(organiser_payment_currency)),
-        (
+      UPDATE wholesale_shares
+      SET organiser_payment_identity =
+        upper(trim(organiser_payment_currency))
+        || ':' ||
           CASE
             WHEN lower(trim(organiser_payment_network)) ~ 'arbitrum' THEN 'arbitrum'
             WHEN lower(trim(organiser_payment_network)) ~ 'polygon' THEN 'polygon'
@@ -527,17 +507,38 @@ async function runStartupMigrations(): Promise<void> {
               OR lower(trim(organiser_payment_network)) ~ '(erc.?20|ethereum)' THEN 'ethereum'
             ELSE lower(trim(organiser_payment_network))
           END
-        ),
-        (
+        || ':' ||
           CASE
             WHEN upper(trim(organiser_payment_currency)) IN ('BTC', 'ETH')
               OR lower(trim(organiser_payment_network)) ~ '(erc.?20|ethereum|arbitrum|polygon|bep.?20|bsc|binance|tron|trc)'
             THEN lower(regexp_replace(trim(organiser_payment_tx_hash), '^0x', '', 'i'))
             ELSE trim(organiser_payment_tx_hash)
           END
-        )
-      )
       WHERE organiser_payment_tx_hash IS NOT NULL
+        AND organiser_payment_currency IS NOT NULL
+        AND organiser_payment_network IS NOT NULL
+    `);
+    await db.execute(sql`
+      DO $$ BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM wholesale_shares
+          WHERE organiser_payment_identity IS NOT NULL
+          GROUP BY organiser_payment_identity
+          HAVING count(*) > 1
+        ) THEN
+          RAISE EXCEPTION
+            'Duplicate organiser payment transaction identities must be reviewed before startup';
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'wholesale_shares_organiser_payment_identity_uq'
+        ) THEN
+          ALTER TABLE wholesale_shares
+          ADD CONSTRAINT wholesale_shares_organiser_payment_identity_uq
+          UNIQUE (organiser_payment_identity);
+        END IF;
+      END $$
     `);
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS wholesale_share_members (

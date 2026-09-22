@@ -26,3 +26,12 @@ export function normalizeWholesaleOrganiserPaymentIdentity(input: {
 
   return { txHash, currency, network };
 }
+
+export function wholesaleOrganiserPaymentIdentityKey(input: {
+  txHash: string;
+  currency: string;
+  network: string;
+}): string {
+  const identity = normalizeWholesaleOrganiserPaymentIdentity(input);
+  return `${identity.currency}:${identity.network}:${identity.txHash}`;
+}

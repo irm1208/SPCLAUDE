@@ -188,6 +188,8 @@ describe("shared wholesale order confirmations", () => {
     expect(autoVerifySource).toContain("expectedAmountDue: amountDue");
     expect(autoVerifySource).toContain("requireNoCredits: true");
     expect(schemaSource).toContain("wholesale_shares_organiser_payment_identity_uq");
+    expect(schemaSource).toContain('organiserPaymentIdentity: text("organiser_payment_identity")');
+    expect(submissionHandler).toContain("organiserPaymentIdentity: submittedPaymentIdentity");
     expect(submissionHandler).toContain("payment_transaction_reused");
     expect(wholesaleSharedSource).toContain(
       "Full payments are checked automatically; partial or credit-adjusted payments require administrator confirmation.",

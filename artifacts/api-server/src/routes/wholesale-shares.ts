@@ -42,7 +42,10 @@ import { announcePublicWholesaleGroup, sendAdminMessage } from "../lib/telegram"
 import { getAdminCryptoOptions } from "./payments";
 import { triggerWholesaleOrganiserPaymentCheck } from "../lib/wholesale-organiser-payment-auto-verify";
 import { confirmWholesaleOrganiserPayment } from "../lib/wholesale-organiser-payment-confirmation";
-import { normalizeWholesaleOrganiserPaymentIdentity } from "../lib/wholesale-organiser-payment-identity";
+import {
+  normalizeWholesaleOrganiserPaymentIdentity,
+  wholesaleOrganiserPaymentIdentityKey,
+} from "../lib/wholesale-organiser-payment-identity";
 import { calculateWholesaleOrganiserAmountDue } from "../lib/wholesale-organiser-payment-amount";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
@@ -3691,6 +3694,7 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
   const submittedTxHash = submittedIdentity.txHash;
   const submittedCurrency = submittedIdentity.currency;
   const submittedNetwork = submittedIdentity.network;
+  const submittedPaymentIdentity = wholesaleOrganiserPaymentIdentityKey(submittedIdentity);
   let updateResult;
   try {
     updateResult = await db.transaction(async (tx) => {
@@ -3748,6 +3752,7 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
         organiserPaymentTxHash: submittedTxHash,
         organiserPaymentCurrency: submittedCurrency,
         organiserPaymentNetwork: submittedNetwork,
+        organiserPaymentIdentity: submittedPaymentIdentity,
       })
       .where(and(
         eq(wholesaleSharesTable.id, share.id),
