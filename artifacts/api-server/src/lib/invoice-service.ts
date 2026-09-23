@@ -1,12 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { groupBuysTable, orderInvoicesTable, orderLineItemsTable, ordersTable } from "@workspace/db";
 import { assertNoActiveRefund } from "./refund-mutation-guard";
 import { z } from "zod";
 import {
   calculateInvoiceTotals,
-  calculateInvoiceLineItemTotal,
   invoiceDocumentSchema,
   invoiceCurrencyForGroupBuy,
   seedInvoiceFromOrder,
@@ -123,25 +121,6 @@ export async function saveInvoice(orderId: string, invoice: InvoiceInput): Promi
         updatedAt: new Date(),
       },
     }).returning();
-
-    await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
-    await tx.insert(orderLineItemsTable).values(invoice.lineItems.map((item) => ({
-      id: randomUUID(),
-      orderId,
-      productId: "",
-      productName: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      lineTotal: calculateInvoiceLineItemTotal(item),
-    })));
-
-    await tx.update(ordersTable).set({
-      productSubtotal: totals.subtotal,
-      grandTotal: totals.total,
-      deliveryPrice: invoice.shippingCost,
-      vendorShipping: "0.00",
-      notes: invoice.notes || null,
-    }).where(and(eq(ordersTable.id, orderId)));
 
     return saved ? { ...asDocument(saved), ...totals, orderId } : null;
   });

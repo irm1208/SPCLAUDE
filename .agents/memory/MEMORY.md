@@ -129,3 +129,4 @@
 - [Reshipper fulfilment manifest scope](reshipper-fulfilment-manifest-scope.md) — mixed assigned/unclaimed order feeds must be narrowed before calculating a reshipper’s incoming items.
 - [Invoice PDF binary assets](invoice-pdf-binary-assets.md) — assemble PDF streams as buffers with exact lengths; resolve bundled assets from both workspace and artifact working directories.
 - [Publish-safe unique identities](publish-safe-unique-identities.md) — Replit publish mangles expression indexes; persist a canonical identity and use a plain unique constraint.
+- [Invoice edit isolation](invoice-edit-isolation.md) — invoice saves are PDF-document overrides only; never write invoice lines, totals, shipping, or notes back to orders.

@@ -2011,10 +2011,10 @@ function OrdersTab({ secret }: { secret: string }) {
         <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-950/50 p-3 sm:p-6">
           <div className="mx-auto min-h-full max-w-[1440px] rounded-lg bg-background p-4 shadow-2xl sm:p-6">
             <div className="mb-5 flex items-center justify-between gap-3">
-              <div><p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Order invoice</p><p className="text-sm text-muted-foreground">Changes update the order's editable financial document.</p></div>
+              <div><p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Order invoice</p><p className="text-sm text-muted-foreground">Changes affect only this invoice and its PDF. The order will not be changed.</p></div>
               <button type="button" title="Close invoice editor" onClick={() => setInvoiceOrderId(null)} className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-4 w-4" /></button>
             </div>
-            <InvoiceEditor orderId={invoiceOrderId} adminSecret={secret} onSaved={() => { load(); }} />
+            <InvoiceEditor orderId={invoiceOrderId} adminSecret={secret} />
           </div>
         </div>
       )}

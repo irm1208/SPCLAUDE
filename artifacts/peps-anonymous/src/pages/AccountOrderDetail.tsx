@@ -2242,7 +2242,7 @@ export default function AccountOrderDetail() {
               <div className="mb-5 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Order invoice</p>
-                  <p className="text-sm text-muted-foreground">Changes update the order&apos;s editable financial document.</p>
+                  <p className="text-sm text-muted-foreground">Changes affect only this invoice and its PDF. The order will not be changed.</p>
                 </div>
                 <button
                   type="button"
@@ -2256,14 +2256,7 @@ export default function AccountOrderDetail() {
               <InvoiceEditor
                 orderId={order.id}
                 access={{ kind: "member" }}
-                onSaved={(saved) => {
-                  setOrder(prev => prev ? {
-                    ...prev,
-                    productSubtotal: Number(saved.subtotal),
-                    grandTotal: Number(saved.total),
-                    deliveryPrice: Number(saved.shippingCost),
-                    notes: saved.notes || null,
-                  } : prev);
+                onSaved={() => {
                   setInvoiceEditing(false);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
