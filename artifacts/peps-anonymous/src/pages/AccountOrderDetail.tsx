@@ -29,6 +29,7 @@ import CustomerRefundPanel from "@/components/CustomerRefundPanel";
 import type { CustomerRefund } from "@/hooks/use-account";
 import type { TrackingPackageView } from "@workspace/shipping/tracking";
 import { safeAddMoney, safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
+import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -2031,6 +2032,7 @@ export default function AccountOrderDetail() {
   const [accountCredits, setAccountCredits] = useState(0);
   const [applyingCredits, setApplyingCredits] = useState(false);
   const [creditsError, setCreditsError] = useState<string | null>(null);
+  const [invoiceEditing, setInvoiceEditing] = useState(false);
   const creditOperationKeys = useRef(new Map<string, string>());
 
   const isPaidOrder = order?.paymentStatus === "confirmed" || order?.paymentStatus === "test_confirmed";
@@ -3094,6 +3096,15 @@ export default function AccountOrderDetail() {
                     >
                       <Download className="w-4 h-4" /> Download PDF Receipt
                     </button>
+                    {isPaidOrder && !refundActive && !isAdminPreview && (
+                      <button
+                        onClick={() => setInvoiceEditing(true)}
+                        className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border"
+                        style={{ background: "var(--t-surface2)", color: "var(--t-blue)", borderColor: "var(--t-border)", padding: "10px 16px" }}
+                      >
+                        <FileText className="w-4 h-4" /> Edit invoice
+                      </button>
+                    )}
                   </div>
 
                   {/* Delete order — only for Draft/Submitted, unpaid, and when GB allows self-delete */}
@@ -3116,6 +3127,18 @@ export default function AccountOrderDetail() {
           </motion.div>
         </main>
       </div>
+
+      <Dialog open={invoiceEditing} onOpenChange={setInvoiceEditing}>
+        <DialogContent className="max-w-[96vw] h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Custom invoice</DialogTitle>
+            <DialogDescription>
+              Customize and download this invoice. Changes here do not alter your order.
+            </DialogDescription>
+          </DialogHeader>
+          {order && <InvoiceEditor orderId={order.id} access={{ kind: "member" }} />}
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel order confirmation modal */}
       <AnimatePresence>

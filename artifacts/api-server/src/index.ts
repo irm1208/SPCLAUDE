@@ -22,6 +22,7 @@ import { startDbBackupSchedule } from "./lib/db-backup";
 import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
+import { repairOrder11688InvoiceDamage } from "./lib/order-11688-invoice-damage-repair";
 import { registerRefundNotificationScheduler } from "./lib/refund-notifications";
 import { stopAllSchedulers } from "./lib/scheduler-registry";
 import { db, ordersTable } from "@workspace/db";
@@ -1223,6 +1224,7 @@ runStartupMigrations()
   .then(() => ensureSystemEmailTemplates())
   .then(() => purgeExpiredDeletedOrders())
   .then(() => runSecurityIncidentRemediation())
+  .then(() => repairOrder11688InvoiceDamage())
   .then(() => {
     markApplicationReady();
     startBackgroundServices();

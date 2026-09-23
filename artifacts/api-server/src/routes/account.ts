@@ -32,6 +32,9 @@ import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayme
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
 import { getWholesaleAccessOutstandingAmount } from "../lib/wholesale-access-payment";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
+import { invoiceDocumentSchema, calculateInvoiceTotals } from "../lib/invoice";
+import { buildInvoicePdf } from "../lib/invoice-pdf";
+import { invoiceFilename, loadOrSeedInvoice, saveInvoice } from "../lib/invoice-service";
 import {
   getOrderTrackingStatus,
   getTrackingPackages,
@@ -69,6 +72,27 @@ async function getSiteConfig(key: string): Promise<string | null> {
 }
 
 const router: IRouter = Router();
+
+async function requireOwnedInvoiceOrder(req: Request, res: Response): Promise<string | null> {
+  const orderId = String(req.params["id"]);
+  const tgBare = req.account!.telegramUsername.replace(/^@/, "").toLowerCase();
+  const tgWithAt = `@${tgBare}`;
+  const [order] = await db
+    .select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.id, orderId),
+      isNull(ordersTable.deletedAt),
+      inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
+      sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`,
+    ))
+    .limit(1);
+  if (!order) {
+    res.status(404).json({ error: "Paid order not found" });
+    return null;
+  }
+  return order.id;
+}
 
 /**
  * When the parent group buy is in status "closed", returns true if the named
@@ -2070,6 +2094,61 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
       isOos: li.isOos ?? false,
     })),
   });
+});
+
+// Custom invoice documents are independent snapshots. These member routes must
+// never use invoice fields to update the underlying order or its line items.
+router.get("/account/orders/:id/invoice", requireAccount, async (req, res): Promise<void> => {
+  const orderId = await requireOwnedInvoiceOrder(req, res);
+  if (!orderId) return;
+  try {
+    const invoice = await loadOrSeedInvoice(orderId);
+    if (!invoice) { res.status(404).json({ error: "Order not found" }); return; }
+    res.json(invoice);
+  } catch (error) {
+    console.error("[account] invoice load failed", error);
+    res.status(500).json({ error: "Failed to load invoice" });
+  }
+});
+
+router.put("/account/orders/:id/invoice", requireAccount, async (req, res): Promise<void> => {
+  const orderId = await requireOwnedInvoiceOrder(req, res);
+  if (!orderId) return;
+  const parsed = invoiceDocumentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid invoice" });
+    return;
+  }
+  try {
+    const invoice = await saveInvoice(orderId, parsed.data);
+    if (!invoice) { res.status(404).json({ error: "Order not found" }); return; }
+    res.json(invoice);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to save invoice";
+    res.status(/refund/i.test(message) ? 409 : 400).json({ error: message });
+  }
+});
+
+router.post("/account/orders/:id/invoice-pdf", requireAccount, async (req, res): Promise<void> => {
+  const orderId = await requireOwnedInvoiceOrder(req, res);
+  if (!orderId) return;
+  const parsed = invoiceDocumentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid invoice" });
+    return;
+  }
+  try {
+    const invoice = { orderId, ...parsed.data, ...calculateInvoiceTotals(parsed.data) };
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="invoice-${invoiceFilename(invoice.invoiceNumber)}.pdf"`,
+    );
+    res.send(await buildInvoicePdf(invoice));
+  } catch (error) {
+    console.error("[account] draft invoice PDF failed", error);
+    res.status(500).json({ error: "Failed to generate invoice PDF" });
+  }
 });
 
 // GET /api/account/orders/:id — fetch a single order by UUID for the logged-in account

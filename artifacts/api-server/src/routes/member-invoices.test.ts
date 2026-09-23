@@ -10,26 +10,30 @@ const accountOrderDetailSource = await readFile(
 );
 
 describe("member invoice API contract", () => {
-  it("does not expose invoice document routes to members", () => {
-    expect(accountSource).not.toMatch(/router\.(?:get|put|post)\("\/account\/orders\/:id\/invoice/);
+  it("exposes authenticated invoice document routes to the owning member", () => {
+    expect(accountSource).toMatch(/router\.get\("\/account\/orders\/:id\/invoice", requireAccount/);
+    expect(accountSource).toMatch(/router\.put\("\/account\/orders\/:id\/invoice", requireAccount/);
+    expect(accountSource).toMatch(/router\.post\("\/account\/orders\/:id\/invoice-pdf", requireAccount/);
+    expect(accountSource).toMatch(/requireOwnedInvoiceOrder/);
   });
 
-  it("reserves invoice persistence for admin routes", () => {
-    expect(accountSource).not.toMatch(/\bloadOrSeedInvoice\b/);
-    expect(accountSource).not.toMatch(/\bsaveInvoice\b/);
+  it("shares isolated invoice persistence with member and admin routes", () => {
+    expect(accountSource).toMatch(/\bloadOrSeedInvoice\b/);
+    expect(accountSource).toMatch(/\bsaveInvoice\b/);
     expect(adminSource).toMatch(/from "\.\.\/lib\/invoice-service"/);
     expect(adminSource).toMatch(/\bsaveInvoice\b/);
   });
 
-  it("reserves invoice PDF generation for admin routes", () => {
-    expect(accountSource).not.toMatch(/\bbuildInvoicePdf\b/);
+  it("allows members and admins to generate custom invoice PDFs", () => {
+    expect(accountSource).toMatch(/\bbuildInvoicePdf\b/);
     expect(adminSource).toMatch(/\bbuildInvoicePdf\b/);
   });
 
-  it("does not expose an invoice editor to members", () => {
-    expect(accountOrderDetailSource).not.toMatch(/<InvoiceEditor/);
-    expect(accountOrderDetailSource).not.toMatch(/Edit invoice/);
-    expect(accountOrderDetailSource).not.toMatch(/setInvoiceEditing/);
+  it("exposes the custom invoice editor for paid orders", () => {
+    expect(accountOrderDetailSource).toMatch(/<InvoiceEditor/);
+    expect(accountOrderDetailSource).toMatch(/Edit invoice/);
+    expect(accountOrderDetailSource).toMatch(/setInvoiceEditing/);
+    expect(accountOrderDetailSource).toMatch(/access=\{\{\s*kind:\s*"member"\s*\}\}/);
   });
 
   it("keeps invoice edits isolated from the underlying order", () => {
