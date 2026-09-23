@@ -10,33 +10,26 @@ const accountOrderDetailSource = await readFile(
 );
 
 describe("member invoice API contract", () => {
-  it("requires account authentication for member invoice routes", () => {
-    expect(accountSource).toMatch(/router\.get\("\/account\/orders\/:id\/invoice", requireAccount/);
-    expect(accountSource).toMatch(/router\.put\("\/account\/orders\/:id\/invoice", requireAccount/);
-    expect(accountSource).toMatch(/router\.get\("\/account\/orders\/:id\/invoice-pdf", requireAccount/);
-    expect(accountSource).toMatch(/router\.post\("\/account\/orders\/:id\/invoice-pdf", requireAccount/);
+  it("does not expose invoice document routes to members", () => {
+    expect(accountSource).not.toMatch(/router\.(?:get|put|post)\("\/account\/orders\/:id\/invoice/);
   });
 
-  it("uses the same shared persistence service as admin", () => {
-    expect(accountSource).toMatch(/loadOrSeedInvoice/);
-    expect(accountSource).toMatch(/saveInvoice/);
+  it("reserves invoice persistence for admin routes", () => {
+    expect(accountSource).not.toMatch(/\bloadOrSeedInvoice\b/);
+    expect(accountSource).not.toMatch(/\bsaveInvoice\b/);
     expect(adminSource).toMatch(/from "\.\.\/lib\/invoice-service"/);
+    expect(adminSource).toMatch(/\bsaveInvoice\b/);
   });
 
-  it("checks legacy username forms and deleted-order filtering", () => {
-    expect(accountSource).toMatch(/ordersTable\.telegramUsername/);
-    expect(accountSource).toMatch(/ordersTable\.deletedAt/);
-    expect(accountSource).toMatch(/tgBare/);
-    expect(accountSource).toMatch(/tgWithAt/);
+  it("reserves invoice PDF generation for admin routes", () => {
+    expect(accountSource).not.toMatch(/\bbuildInvoicePdf\b/);
+    expect(adminSource).toMatch(/\bbuildInvoicePdf\b/);
   });
 
-  it("validates the invoice document before saving", () => {
-    expect(accountSource).toMatch(/invoiceDocumentSchema\.safeParse\(req\.body\)/);
-  });
-
-  it("builds a PDF from the member invoice route", () => {
-    expect(accountSource).toMatch(/buildInvoicePdf/);
-    expect(accountSource).toMatch(/Content-Type", "application\/pdf"/);
+  it("does not expose an invoice editor to members", () => {
+    expect(accountOrderDetailSource).not.toMatch(/<InvoiceEditor/);
+    expect(accountOrderDetailSource).not.toMatch(/Edit invoice/);
+    expect(accountOrderDetailSource).not.toMatch(/setInvoiceEditing/);
   });
 
   it("keeps invoice edits isolated from the underlying order", () => {
