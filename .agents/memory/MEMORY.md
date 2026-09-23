@@ -97,7 +97,7 @@
 - [Shared-order admin override](shared-order-admin-override.md) — admin controls must reuse creator workflows after admin-secret validation, never bypass transactional order safeguards with direct writes.
 - [Locked-order payment protection](locked-order-payment-protection.md) — every post-lock reconciliation must protect all non-unpaid orders from decreases or payment-lock resets.
 - [Orderless reopened-member item guard](orderless-reopened-member-item-guard.md) — never interpolate a nullable order ID into `$n IS NULL`; use a constant SQL gate for orderless members.
-- [Deployment foreign-key action drift](deployment-foreign-key-action-drift.md) — direct deploy SQL can override Drizzle FK actions; keep it aligned with the schema or migration previews remain stale.
+- [Deployment foreign-key action drift](deployment-foreign-key-action-drift.md) — never rename or recreate constraints from the deploy build; managed publish owns production schema changes.
 - [Shared-order organiser wallet edit access](shared-order-organiser-wallet-edit-access.md) — a configured lead wallet is a member payment destination, not proof the organiser has paid or cannot add items while open.
 - [Shared-order payment transaction privacy](shared-order-payment-transaction-privacy.md) — member transaction IDs and received amounts belong only in organiser-gated responses, never merely hidden in UI.
 - [Shared-order payment routing](shared-order-payment-routing.md) — shared wholesale methods are organiser-only; absent organiser wallets disable methods and never fall back to admin/global destinations.
