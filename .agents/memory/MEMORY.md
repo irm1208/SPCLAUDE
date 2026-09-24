@@ -130,3 +130,4 @@
 - [Invoice PDF binary assets](invoice-pdf-binary-assets.md) — assemble PDF streams as buffers with exact lengths; resolve bundled assets from both workspace and artifact working directories.
 - [Publish-safe unique identities](publish-safe-unique-identities.md) — Replit publish mangles expression indexes; persist a canonical identity and use a plain unique constraint.
 - [Invoice edit isolation](invoice-edit-isolation.md) — invoice saves are PDF-document overrides only; never write invoice lines, totals, shipping, or notes back to orders.
+- [App Storage bucket readiness](app-storage-bucket-readiness.md) — constructing the SDK client does not prove a default bucket exists; await a storage operation before claiming uploads work.
