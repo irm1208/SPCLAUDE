@@ -3018,6 +3018,42 @@ Rules:
   }
 });
 
+// ─── DELETE /api/admin/products ──────────────────────────────
+router.delete("/admin/products", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const rawIds = req.body?.ids;
+  if (
+    !Array.isArray(rawIds) ||
+    rawIds.length === 0 ||
+    rawIds.some((id: unknown) => typeof id !== "string" || id.trim().length === 0)
+  ) {
+    res.status(400).json({ error: "ids must be a non-empty array of non-empty strings" });
+    return;
+  }
+
+  const ids = [...new Set(rawIds.map((id: string) => id.trim()))];
+  try {
+    await db.transaction(async (tx) => {
+      const deleted = await tx
+        .delete(productsTable)
+        .where(inArray(productsTable.id, ids))
+        .returning({ id: productsTable.id });
+      if (deleted.length !== ids.length) {
+        throw new Error("STALE_PRODUCT_SELECTION");
+      }
+    });
+    res.json({ ok: true, deletedIds: ids });
+  } catch (err) {
+    if (err instanceof Error && err.message === "STALE_PRODUCT_SELECTION") {
+      res.status(409).json({ error: "One or more products no longer exist" });
+      return;
+    }
+    console.error("[admin/products] Bulk delete failed:", err);
+    res.status(500).json({ error: "Failed to delete products" });
+  }
+});
+
 // ─── DELETE /api/admin/products/:id ──────────────────────────
 router.delete("/admin/products/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
