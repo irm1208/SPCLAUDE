@@ -131,3 +131,4 @@
 - [Publish-safe unique identities](publish-safe-unique-identities.md) — Replit publish mangles expression indexes; persist a canonical identity and use a plain unique constraint.
 - [Invoice edit isolation](invoice-edit-isolation.md) — invoice saves are PDF-document overrides only; never write invoice lines, totals, shipping, or notes back to orders.
 - [App Storage bucket readiness](app-storage-bucket-readiness.md) — constructing the SDK client does not prove a default bucket exists; await a storage operation before claiming uploads work.
+- [Worktree dependency links](worktree-dependency-links.md) — an isolated worktree may lack package-level workspace symlinks even while the main workspace's node_modules is populated.
