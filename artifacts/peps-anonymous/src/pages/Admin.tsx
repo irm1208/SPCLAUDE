@@ -65,6 +65,7 @@ import {
 } from "@/lib/admin-auth";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 import { getCreditAdjustedTotal, hasAppliedCredit } from "@/lib/credit-payment";
+import { getSelectedProducts, toggleProductSelection, toggleVisibleSelection } from "./admin-product-selection";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -4817,10 +4818,11 @@ function GroupSummaryTab({ secret }: { secret: string }) {
 // ─── Draggable Product Row ────────────────────────────────────
 function DraggableProductRow({
   product, isDragOver, onEdit, onToggle, onDelete, categories,
+  isSelected, onSelect,
   editingId, editVals, setEditVals, onSaveEdit, onCancelEdit, saving,
   onDragStart, onDragOver, onDrop,
 }: {
-  product: Product; isDragOver: boolean;
+  product: Product; isDragOver: boolean; isSelected: boolean; onSelect: (id: string) => void;
   onEdit: (p: Product) => void; onToggle: (p: Product) => void; onDelete: (p: Product) => void;
   categories: string[];
   editingId: string | null;
@@ -4844,6 +4846,20 @@ function DraggableProductRow({
       <Card className={cn("p-3 overflow-hidden border-2 transition-colors",
         isDragOver ? "border-primary/50 bg-primary/5" : isLowStock ? "border-amber-300" : "border-transparent",
         !product.active && "opacity-50")}>
+        <label
+          className="flex items-center gap-2 mb-2 text-xs text-muted-foreground cursor-pointer w-fit"
+          onClick={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
+          onDragStart={e => e.preventDefault()}
+        >
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onSelect(product.id)}
+            aria-label={`Select ${product.name}`}
+          />
+          Select product
+        </label>
         {isEditing ? (
           <div className="space-y-2">
             <div className="flex gap-2 flex-wrap items-center">
@@ -4958,6 +4974,9 @@ function ProductsTab({ secret }: { secret: string }) {
   const [addMode, setAddMode] = useState(false);
   const [newProduct, setNewProduct] = useState({ name: "", price: "", category: "", vendor: "" });
   const [msg, setMsg] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [vendorFilter, setVendorFilter] = useState("");
   const [deduping, setDeduping] = useState(false);
   type DupeGroup = { keep: { id: string; name: string; vendor: string | null; price: number }; remove: { id: string; name: string; vendor: string | null; price: number; orderCount: number }[] };
@@ -5178,7 +5197,9 @@ function ProductsTab({ secret }: { secret: string }) {
     try {
       const res = await fetch(apiUrl("/admin/products"), { headers: { "x-admin-secret": secret } });
       const data = await res.json();
-      setProducts(Array.isArray(data) ? data : []);
+      const nextProducts = Array.isArray(data) ? data : [];
+      setProducts(nextProducts);
+      setSelectedIds(prev => new Set([...prev].filter(id => nextProducts.some((p: Product) => p.id === id))));
       if (!res.ok) setMsg((data as { error?: string }).error ?? "Failed to load products");
     } catch {
       setMsg("Network error loading products");
@@ -5349,10 +5370,45 @@ function ProductsTab({ secret }: { secret: string }) {
         return;
       }
       setProducts(prev => prev.filter(p => p.id !== product.id));
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(product.id);
+        return next;
+      });
       setMsg("Deleted ✓"); setTimeout(() => setMsg(""), 2000);
     } catch {
       setMsg("Error: Network error — product was not deleted");
       setTimeout(() => setMsg(""), 5000);
+    }
+  };
+
+  const selectedProducts = getSelectedProducts(products, selectedIds);
+  const selectedCount = selectedIds.size;
+  const toggleSelection = (id: string) => setSelectedIds(prev => toggleProductSelection(prev, id));
+  const toggleVisible = () => setSelectedIds(prev => toggleVisibleSelection(prev, filtered.map(p => p.id)));
+  const confirmBulkDelete = async () => {
+    if (!selectedIds.size || bulkDeleting) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch(apiUrl("/admin/products"), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        body: JSON.stringify({ ids: [...selectedIds] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok !== true) {
+        setMsg(`Error: ${data.error ?? `Server returned ${res.status}`}`);
+        return;
+      }
+      const deletedIds = Array.isArray(data.deletedIds) ? data.deletedIds : [];
+      setProducts(prev => prev.filter(p => !deletedIds.includes(p.id)));
+      setSelectedIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      setMsg(`Deleted ${deletedIds.length} product${deletedIds.length !== 1 ? "s" : ""} ✓`);
+    } catch {
+      setMsg("Error: Network error — products were not deleted");
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -5431,6 +5487,16 @@ function ProductsTab({ secret }: { secret: string }) {
           </select>
         )}
         <Button variant="outline" size="icon" onClick={load} title="Refresh"><RefreshCw className="w-4 h-4" /></Button>
+        <Button variant="outline" onClick={toggleVisible} disabled={!filtered.length}>Select visible</Button>
+        {selectedCount > 0 && (
+          <>
+            <span className="text-sm font-medium">{selectedCount} selected</span>
+            <Button variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear selection</Button>
+          </>
+        )}
+        <Button variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)} disabled={!selectedCount}>
+          Delete selected
+        </Button>
         <Button variant="outline" className="gap-2" onClick={exportCsv} title="Export all products as CSV">
           <Download className="w-4 h-4" />Export CSV
         </Button>
@@ -5781,11 +5847,13 @@ function ProductsTab({ secret }: { secret: string }) {
         {vendorFilter ? ` · ${vendorFilter}` : ""}
         {" — hold & drag to reorder"}
       </div>
+      {msg && <div className={cn("text-sm px-1", msg.startsWith("Error:") ? "text-red-600" : "text-green-600")}>{msg}</div>}
       <div className="space-y-1.5" onDragLeave={() => setDragOverId(null)}>
         {filtered.map((product) => (
           <DraggableProductRow
             key={product.id}
             product={product} isDragOver={dragOverId === product.id}
+            isSelected={selectedIds.has(product.id)} onSelect={toggleSelection}
             onEdit={startEdit} onToggle={toggleActive} onDelete={deleteProduct}
             categories={categories}
             editingId={editingId} editVals={editVals} setEditVals={setEditVals}
@@ -5794,6 +5862,28 @@ function ProductsTab({ secret }: { secret: string }) {
           />
         ))}
       </div>
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <Card className="w-full max-w-lg p-5 space-y-4">
+            <h2 className="text-lg font-semibold">Delete selected products?</h2>
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {selectedProducts.map(selectedProduct => (
+                <div key={selectedProduct.id} className="text-sm">
+                  <strong>{selectedProduct.name}</strong>
+                  <span className="text-muted-foreground"> · {selectedProduct.vendor}</span>
+                </div>
+              ))}
+            </div>
+            {msg.startsWith("Error:") && <p className="text-sm text-red-600">{msg}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowBulkDeleteConfirm(false)} disabled={bulkDeleting}>Cancel</Button>
+              <Button variant="destructive" onClick={confirmBulkDelete} disabled={bulkDeleting}>
+                {bulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm delete"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
