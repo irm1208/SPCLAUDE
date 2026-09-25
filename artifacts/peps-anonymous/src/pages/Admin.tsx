@@ -5506,7 +5506,7 @@ function ProductsTab({ secret }: { secret: string }) {
             <Button variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear selection</Button>
           </>
         )}
-        <Button variant="destructive" onClick={() => { setBulkDeleteError(""); setShowBulkDeleteConfirm(true); }} disabled={!selectedCount}>
+        <Button variant="destructive" onClick={() => { setBulkDeleteError(""); setMsg(""); setShowBulkDeleteConfirm(true); }} disabled={!selectedCount}>
           Delete selected
         </Button>
         {msg && <div className={cn("text-sm px-1", msg.startsWith("Error:") ? "text-red-600" : "text-green-600")}>{msg}</div>}

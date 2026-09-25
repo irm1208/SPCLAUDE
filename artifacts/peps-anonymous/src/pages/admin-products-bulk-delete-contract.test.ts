@@ -36,6 +36,10 @@ test("bulk confirmation owns failures and cancellation only closes the dialog", 
   assert.doesNotMatch(source, /onClick=\{\(\) => \{ setShowBulkDeleteConfirm\(false\); setSelectedIds/);
 });
 
+test("opening bulk confirmation clears stale page messaging", () => {
+  assert.match(source, /setBulkDeleteError\(""\);\s*setMsg\(""\);\s*setShowBulkDeleteConfirm\(true\)/);
+});
+
 test("bulk success validates the complete deleted ID response", () => {
   assert.match(source, /data\.ok === true/);
   assert.match(source, /deletedIds\.every/);
