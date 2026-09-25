@@ -4977,6 +4977,7 @@ function ProductsTab({ secret }: { secret: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState("");
   const [vendorFilter, setVendorFilter] = useState("");
   const [deduping, setDeduping] = useState(false);
   type DupeGroup = { keep: { id: string; name: string; vendor: string | null; price: number }; remove: { id: string; name: string; vendor: string | null; price: number; orderCount: number }[] };
@@ -5388,25 +5389,32 @@ function ProductsTab({ secret }: { secret: string }) {
   const toggleVisible = () => setSelectedIds(prev => toggleVisibleSelection(prev, filtered.map(p => p.id)));
   const confirmBulkDelete = async () => {
     if (!selectedIds.size || bulkDeleting) return;
+    const requestedIds = [...selectedIds];
     setBulkDeleting(true);
     try {
       const res = await fetch(apiUrl("/admin/products"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ ids: [...selectedIds] }),
+        body: JSON.stringify({ ids: requestedIds }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.ok !== true) {
-        setMsg(`Error: ${data.error ?? `Server returned ${res.status}`}`);
+      const deletedIds = data?.deletedIds;
+      const completeResponse = data.ok === true
+        && Array.isArray(deletedIds)
+        && deletedIds.length === requestedIds.length
+        && deletedIds.every((id: unknown) => typeof id === "string")
+        && requestedIds.every(id => deletedIds.includes(id));
+      if (!res.ok || !completeResponse) {
+        setBulkDeleteError(data?.error ?? "Bulk delete failed: the server returned an incomplete response");
         return;
       }
-      const deletedIds = Array.isArray(data.deletedIds) ? data.deletedIds : [];
       setProducts(prev => prev.filter(p => !deletedIds.includes(p.id)));
       setSelectedIds(new Set());
       setShowBulkDeleteConfirm(false);
+      setBulkDeleteError("");
       setMsg(`Deleted ${deletedIds.length} product${deletedIds.length !== 1 ? "s" : ""} ✓`);
     } catch {
-      setMsg("Error: Network error — products were not deleted");
+      setBulkDeleteError("Network error — products were not deleted");
     } finally {
       setBulkDeleting(false);
     }
@@ -5449,6 +5457,8 @@ function ProductsTab({ secret }: { secret: string }) {
     p.name.toLowerCase().includes(search.toLowerCase()) &&
     (!vendorFilter || p.vendor === vendorFilter)
   );
+  const visibleIds = filtered.map(p => p.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
 
@@ -5487,16 +5497,19 @@ function ProductsTab({ secret }: { secret: string }) {
           </select>
         )}
         <Button variant="outline" size="icon" onClick={load} title="Refresh"><RefreshCw className="w-4 h-4" /></Button>
-        <Button variant="outline" onClick={toggleVisible} disabled={!filtered.length}>Select visible</Button>
+        <Button variant="outline" onClick={toggleVisible} disabled={!filtered.length}>
+          {allVisibleSelected ? "Clear visible" : "Select visible"}
+        </Button>
         {selectedCount > 0 && (
           <>
             <span className="text-sm font-medium">{selectedCount} selected</span>
             <Button variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear selection</Button>
           </>
         )}
-        <Button variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)} disabled={!selectedCount}>
+        <Button variant="destructive" onClick={() => { setBulkDeleteError(""); setShowBulkDeleteConfirm(true); }} disabled={!selectedCount}>
           Delete selected
         </Button>
+        {msg && <div className={cn("text-sm px-1", msg.startsWith("Error:") ? "text-red-600" : "text-green-600")}>{msg}</div>}
         <Button variant="outline" className="gap-2" onClick={exportCsv} title="Export all products as CSV">
           <Download className="w-4 h-4" />Export CSV
         </Button>
@@ -5847,7 +5860,6 @@ function ProductsTab({ secret }: { secret: string }) {
         {vendorFilter ? ` · ${vendorFilter}` : ""}
         {" — hold & drag to reorder"}
       </div>
-      {msg && <div className={cn("text-sm px-1", msg.startsWith("Error:") ? "text-red-600" : "text-green-600")}>{msg}</div>}
       <div className="space-y-1.5" onDragLeave={() => setDragOverId(null)}>
         {filtered.map((product) => (
           <DraggableProductRow
@@ -5874,7 +5886,7 @@ function ProductsTab({ secret }: { secret: string }) {
                 </div>
               ))}
             </div>
-            {msg.startsWith("Error:") && <p className="text-sm text-red-600">{msg}</p>}
+            {bulkDeleteError && <p className="text-sm text-red-600">{bulkDeleteError}</p>}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowBulkDeleteConfirm(false)} disabled={bulkDeleting}>Cancel</Button>
               <Button variant="destructive" onClick={confirmBulkDelete} disabled={bulkDeleting}>
