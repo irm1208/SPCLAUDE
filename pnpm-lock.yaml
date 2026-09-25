@@ -155,9 +155,6 @@ importers:
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3
-      mammoth:
-        specifier: ^1.12.0
-        version: 1.12.0
       multer:
         specifier: ^2.1.1
         version: 2.1.1
