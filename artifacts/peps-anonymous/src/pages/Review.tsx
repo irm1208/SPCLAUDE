@@ -154,7 +154,7 @@ export default function Review() {
       : (draft.adminFeeLabel ?? null);
   // Additions (top-ups) ride along with the parent's shipment — the server always saves
   // vendor shipping as 0, so it must never be shown, marked TBD, or added to any total here.
-  const vendorShippingIsKnown = isTopUp ? false : (isWholesale ? true : (vendorShippingEnabled && vendorShippingAmount != null));
+  const vendorShippingIsKnown = isTopUp ? false : (isWholesale ? true : (vendorShippingEnabled && vendorShippingAmount != null && vendorShippingAmount > 0));
   const vendorShippingIsTbd = isTopUp ? false : (isWholesale ? false : (vendorShippingEnabled && vendorShippingAmount == null));
   const paymentMessageEnabled = activeGb ? activeGb.paymentMessageEnabled : false;
   const paymentMessageText = activeGb?.paymentMessage ?? null;
@@ -272,6 +272,7 @@ export default function Review() {
       amountDue?: number;
       balancePaymentStatus?: string | null;
       deliveryPrice?: number; vendorShipping?: number; productSubtotal?: number;
+      vendorShippingIsTbd?: boolean | null;
       tip?: number; testingContribution?: number; grandTotal?: number;
       creditsApplied?: number; adminFee?: number; adminFeeLabel?: string | null;
       notes?: string | null;
@@ -291,11 +292,13 @@ export default function Review() {
       const serverGrandTotal = data.grandTotal ?? grandTotal;
       const serverCreditsApplied = data.creditsApplied ?? creditsApplied;
       const serverAdminFee = data.adminFee ?? adminFeeAmount;
-      // Note: the server always coerces vendorShipping to a number (0 when unset), so it can
-      // never signal TBD on its own — TBD-ness stays a purely local/display concern based on the
-      // draft's own GB config, while the actual dollar figure (when known) prefers the server's
-      // freshly recomputed value.
-      const serverVendorShipping = vendorShippingIsTbd ? null : (data.vendorShipping ?? (vendorShippingIsKnown ? vendorShippingAmount : null));
+      // The order response snapshots TBD-ness from the server-side group-buy configuration;
+      // use it for the saved receipt, while the server's recomputed amount remains authoritative.
+      const receivedVendorShipping = data.vendorShipping ?? (vendorShippingIsKnown ? vendorShippingAmount : null);
+      const serverVendorShippingIsTbd = data.vendorShippingIsTbd ?? vendorShippingIsTbd;
+      const serverVendorShipping = serverVendorShippingIsTbd || receivedVendorShipping == null || receivedVendorShipping <= 0
+        ? null
+        : receivedVendorShipping;
       localStorage.setItem("peps:lastReceipt", JSON.stringify({
         code: data.code,
         telegramUsername: draft.telegramUsername,
@@ -322,7 +325,7 @@ export default function Review() {
               : (activeGb.paymentsEnabled !== false))
           : undefined,
         vendorShippingAmount: serverVendorShipping,
-        vendorShippingIsTbd: isWholesale ? false : vendorShippingIsTbd,
+        vendorShippingIsTbd: serverVendorShippingIsTbd,
         isWholesale: isWholesale,
         hidePrices: activeGb?.hidePricesOnInvoice ?? false,
         adminFeeAmount: serverAdminFee > 0 ? serverAdminFee : null,

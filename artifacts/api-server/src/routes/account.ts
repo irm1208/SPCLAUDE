@@ -27,6 +27,7 @@ import { sendTemplatedEmail } from "../lib/email";
 import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getCustomerRefundView, getCustomerRefundViews } from "../lib/customer-refund-view";
+import { resolveOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
 import { centsToUsdString, usdToCents } from "../lib/refund-money";
 import { getOrCreateEntryFeePayment, grantEntryFeeMembership, shapeEntryFeePayment } from "../lib/gb-entry-fee";
 import { triggerWholesaleAccessCheck, confirmWholesaleAccess } from "../lib/wholesale-access-auto-verify";
@@ -2019,13 +2020,27 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     .where(eq(orderLineItemsTable.orderId, order.id));
   const refundView = await getCustomerRefundView(order.id, tg);
   let obcCurrency: string | null = null;
+  let obcVendorShippingAmount: string | null = null;
   if (order.groupBuyId) {
     const [gbRow] = await db
-      .select({ currency: groupBuysTable.currency })
+      .select({
+        currency: groupBuysTable.currency,
+        vendorShippingAmount: groupBuysTable.vendorShippingAmount,
+      })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
     obcCurrency = gbRow?.currency ?? null;
+    obcVendorShippingAmount = gbRow?.vendorShippingAmount ?? null;
   }
+  const vendorShippingIsTbd = resolveOrderVendorShippingIsTbd({
+    savedState: order.vendorShippingIsTbd,
+    vendorShipping: order.vendorShipping,
+    groupBuyId: order.groupBuyId,
+    orderType: order.orderType,
+    directShippingRequested: order.directShippingRequested,
+    isAddition: Boolean(order.additionOfOrderId),
+    configuredAmount: obcVendorShippingAmount,
+  });
 
   // Whether the customer's self-delete is locked by the group buy "Delete Order" setting
   const obcDeleteLocked = await isCustomerActionLockedByGb(order.groupBuyId, "delete");
@@ -2038,6 +2053,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     deliveryMethodId: order.deliveryMethodId ?? null,
     deliveryPrice: parseFloat(String(order.deliveryPrice ?? "0")),
     vendorShipping: parseFloat(String(order.vendorShipping ?? "0")),
+    vendorShippingIsTbd,
     productSubtotal: parseFloat(String(order.productSubtotal)),
     tip: parseFloat(String(order.tip ?? "0")),
     organiserFee: parseFloat(String(order.organiserFee ?? "0")),
@@ -2235,6 +2251,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
   let groupBuyQrUploadMessage: string | null = null;
   let groupBuyQrUploadCouriers: string[] | null = null;
   let groupBuyCurrency: string | null = null;
+  let groupBuyVendorShippingAmount: string | null = null;
   let groupBuyCryptoRefundsEnabled = false;
   if (order.groupBuyId) {
     const [gb] = await db
@@ -2246,6 +2263,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
         qrUploadMessage: groupBuysTable.qrUploadMessage,
         qrUploadCouriers: groupBuysTable.qrUploadCouriers,
         currency: groupBuysTable.currency,
+        vendorShippingAmount: groupBuysTable.vendorShippingAmount,
         cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled,
         allowOrderAddons: groupBuysTable.allowOrderAddons,
         shippingOptions: groupBuysTable.shippingOptions,
@@ -2270,6 +2288,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     groupBuyQrUploadRoyalMailEnabled = gb?.qrUploadRoyalMailEnabled ?? false;
     groupBuyQrUploadMessage = gb?.qrUploadMessage ?? null;
     groupBuyCurrency = gb?.currency ?? null;
+    groupBuyVendorShippingAmount = gb?.vendorShippingAmount ?? null;
     groupBuyCryptoRefundsEnabled = gb?.cryptoRefundsEnabled ?? false;
     // Prefer the new couriers list; fall back to old boolean fields for backward compat
     if (gb?.qrUploadCouriers && (gb.qrUploadCouriers as string[]).length > 0) {
@@ -2281,6 +2300,16 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
       groupBuyQrUploadCouriers = derived.length > 0 ? derived : null;
     }
   }
+
+  const vendorShippingIsTbd = resolveOrderVendorShippingIsTbd({
+    savedState: order.vendorShippingIsTbd,
+    vendorShipping: order.vendorShipping,
+    groupBuyId: order.groupBuyId,
+    orderType: order.orderType,
+    directShippingRequested: order.directShippingRequested,
+    isAddition: Boolean(order.additionOfOrderId),
+    configuredAmount: groupBuyVendorShippingAmount,
+  });
 
   // Admin per-order override takes precedence over the shipping option's defaults.
   if ((order as any).requiresAddressOverride != null) customShippingRequiresAddress = (order as any).requiresAddressOverride;
@@ -2345,6 +2374,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     deliveryMethodId: order.deliveryMethodId ?? null,
     deliveryPrice: parseFloat(String(order.deliveryPrice ?? "0")),
     vendorShipping: parseFloat(String(order.vendorShipping ?? "0")),
+    vendorShippingIsTbd,
     productSubtotal: parseFloat(String(order.productSubtotal)),
     tip: parseFloat(String(order.tip ?? "0")),
     testingContribution: parseFloat(String(order.testingContribution ?? "0")),

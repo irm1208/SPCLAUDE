@@ -34,3 +34,15 @@ does NOT suppress it (Express 5 uses module-based types, not the global `Express
 `lib/api-zod/src/generated/types/index.ts` must NOT re-export names that `api.ts` already exports
 as Zod schemas (currently removed: adminAddLabTestBody, adminUpdateLabTestBody, adminUpdateTicketStatusBody).
 If `pnpm codegen` is re-run, these 3 lines will be re-added — remove them again.
+
+### Orval / Zod runtime compatibility
+Orval 8.27 can emit Zod 4 root validators (`zod.int()` and `zod.url()`) even though the workspace
+runtime is Zod 3.25; importing the generated API then throws before the server starts. Keep codegen
+post-processing that converts them to `zod.number().int()` and `zod.string().url()`, and removes the
+three duplicate type-barrel exports above.
+
+**Why:** The mismatch only appears on a fresh API-server import after codegen, so a previously running
+dev server can hide it.
+
+**How to apply:** After changing the OpenAPI spec, run codegen and verify both the post-process checks
+and a clean API-server startup before relying on generated schemas.

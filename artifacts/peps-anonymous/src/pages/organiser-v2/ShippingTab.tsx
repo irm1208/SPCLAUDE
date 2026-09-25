@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { parseVendorShippingAmount } from "@/lib/vendor-shipping-settings";
 import { V2_CARD_BORDER } from "./theme";
 import { organiserApi } from "./api/organiser-api";
 import {
@@ -115,7 +116,7 @@ export default function ShippingTab({ selectedGbId }: ShippingTabProps = {}) {
     setSavingVendor(true);
     try {
       await organiserApi.updateGroupBuy(selectedGbId, {
-        vendorShippingAmount: parseFloat(vendorShipCost) || 0,
+        vendorShippingAmount: parseVendorShippingAmount(vendorShipCost),
       });
       setSavedVendor(true);
       setTimeout(() => setSavedVendor(false), 2000);
@@ -354,11 +355,14 @@ export default function ShippingTab({ selectedGbId }: ShippingTabProps = {}) {
                       step="0.01"
                       value={vendorShipCost}
                       onChange={(e) => setVendorShipCost(e.target.value)}
-                      placeholder="e.g. 120.00"
+                      placeholder="0 = included; blank = TBD"
                       className="flex-1 bg-transparent text-[14px] outline-none"
                       style={{ color: "var(--t-text)" }}
                     />
                   </div>
+                  <p className="mt-1 text-xs" style={{ color: "var(--t-subtle)" }}>
+                    Enter 0 to include vendor shipping in other fees; leave blank if the amount is still TBD.
+                  </p>
                 </div>
 
                 <div>

@@ -139,7 +139,7 @@ export function generateReceiptPDF(receipt: Receipt): jsPDF {
     if (!receipt.isWholesale) {
       row(`Delivery (${receipt.deliveryMethod})`, `${pdfSym}${receipt.deliveryPrice.toFixed(2)}`);
     }
-    if (receipt.vendorShippingAmount != null) {
+    if (receipt.vendorShippingAmount != null && receipt.vendorShippingAmount > 0) {
       row("Vendor Shipping", `${pdfSym}${receipt.vendorShippingAmount.toFixed(2)}`);
     } else if (receipt.vendorShippingIsTbd) {
       row("Vendor Shipping", "TBD", true, [217, 119, 6]);

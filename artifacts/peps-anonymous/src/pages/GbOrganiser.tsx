@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { parseVendorShippingAmount } from "@/lib/vendor-shipping-settings";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -4366,7 +4367,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
         paymentMessageEnabled: form.paymentMessageEnabled,
         vendorShippingEnabled: form.vendorShippingEnabled,
         vendorShippingMessage: form.vendorShippingMessage.trim() || null,
-        vendorShippingAmount: form.vendorShippingAmount.trim() ? parseFloat(form.vendorShippingAmount) : null,
+        vendorShippingAmount: parseVendorShippingAmount(form.vendorShippingAmount),
         adminFeeEnabled: form.adminFeeEnabled,
         adminFeeType: form.adminFeeType,
         adminFeeAmount: form.adminFeeAmount.trim() ? parseFloat(form.adminFeeAmount) : null,
@@ -5027,13 +5028,13 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
             {form.vendorShippingEnabled ? (
               <div className="space-y-2">
                 <p className="text-xs" style={{ color: "var(--t-subtle)" }}>This notice appears on the order review page to warn members that vendor shipping will be added later.</p>
-                <Field label="Vendor shipping amount" icon={DollarSign} hint="Leave blank to show as TBD">
-                  <input value={form.vendorShippingAmount} onChange={e => set("vendorShippingAmount", e.target.value)} type="number" min="0" step="0.01" placeholder="e.g. 5.00 (leave blank = TBD)" className={inputCls} style={inputStyle} />
+                <Field label="Vendor shipping amount" icon={DollarSign} hint="0 = no separate charge; blank = TBD">
+                  <input value={form.vendorShippingAmount} onChange={e => set("vendorShippingAmount", e.target.value)} type="number" min="0" step="0.01" placeholder="0 = included; blank = TBD" className={inputCls} style={inputStyle} />
                 </Field>
                 <textarea value={form.vendorShippingMessage} onChange={e => set("vendorShippingMessage", e.target.value)} rows={3} placeholder="This is not your final total. Vendor shipping is calculated after orders close and will be added separately. You will be notified of your final amount via Telegram before payment is taken." className={`${inputCls} resize-y`} style={inputStyle} />
               </div>
             ) : (
-              <p className="text-xs" style={{ color: "var(--t-subtle)" }}>When disabled, the order review shows <strong>Vendor Shipping: TBD</strong> as a plain line item with no extra notice.</p>
+              <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Leave the amount blank to show <strong>Vendor Shipping: TBD</strong>. Set it to 0 when shipping is included in other fees to remove the line.</p>
             )}
           </SectionCard>
 

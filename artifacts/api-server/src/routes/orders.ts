@@ -30,6 +30,7 @@ import { eq, and, or, ne, sql, desc, count, inArray, isNull, isNotNull } from "d
 import { randomUUID } from "crypto";
 import { writeLog } from "../lib/audit-log";
 import { createAlert } from "../lib/create-alert";
+import { resolveNewOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { getJwtSecret, requireAccount } from "../middleware/account-auth";
 import { logCustomerActivity } from "../lib/activity-log";
@@ -233,6 +234,7 @@ function formatOrderResponse(order: Record<string, unknown>, lineItems: Record<s
     deliveryMethod: order.deliveryMethod,
     deliveryPrice: parseFloat((order.deliveryPrice as string) ?? "0"),
     vendorShipping: parseFloat((order.vendorShipping as string) ?? "0"),
+    vendorShippingIsTbd: typeof order.vendorShippingIsTbd === "boolean" ? order.vendorShippingIsTbd : null,
     productSubtotal: parseFloat(order.productSubtotal as string),
     tip: parseFloat((order.tip as string) ?? "0"),
     testingContribution: parseFloat((order.testingContribution as string) ?? "0"),
@@ -627,6 +629,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   let gbAdminFeeRaw: number | null = null;
   let gbAdminFeeCountries: unknown = null;
   let gbKitFees = 0;
+  let vendorShippingIsTbdForOrder = false;
   let memberDeliveryCountry: string | null = null;
 
   // Validate group buy membership if a groupBuyId is provided
@@ -688,6 +691,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         adminFeeAmount: groupBuysTable.adminFeeAmount,
         adminFeeLabel: groupBuysTable.adminFeeLabel,
         adminFeeCountries: groupBuysTable.adminFeeCountries,
+        vendorShippingAmount: groupBuysTable.vendorShippingAmount,
       })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, normalizedGroupBuyId));
@@ -696,6 +700,14 @@ router.post("/orders", async (req, res): Promise<void> => {
       res.status(403).json({ error: "This group buy is not currently accepting orders" });
       return;
     }
+    vendorShippingIsTbdForOrder = resolveNewOrderVendorShippingIsTbd({
+      groupBuyId: normalizedGroupBuyId,
+      orderType: typeof clientOrderType === "string" ? clientOrderType : null,
+      directShippingRequested: clientDirectShippingRequested === true,
+      isAddition: Boolean(additionParent),
+      configuredAmount: gb.vendorShippingAmount,
+      vendorShipping,
+    });
 
     const canonicalProducts = await db
       .select({
@@ -1382,6 +1394,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       deliveryMethodId: deliveryMethodRecord.id,
       deliveryPrice: deliveryPrice.toFixed(2),
       vendorShipping: vendorShipping.toFixed(2),
+      vendorShippingIsTbd: vendorShippingIsTbdForOrder,
       productSubtotal: productSubtotal.toFixed(2),
       tip: tip.toFixed(2),
       testingContribution: normalizedContribution.toFixed(2),

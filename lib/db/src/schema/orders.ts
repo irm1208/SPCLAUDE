@@ -22,6 +22,7 @@ export const ordersTable = pgTable("orders", {
   deliveryMethodId: text("delivery_method_id").notNull().default(""),
   deliveryPrice: numeric("delivery_price", { precision: 10, scale: 2 }).notNull().default("0"),
   vendorShipping: numeric("vendor_shipping", { precision: 10, scale: 2 }).notNull().default("0"),
+  vendorShippingIsTbd: boolean("vendor_shipping_is_tbd"),
   productSubtotal: numeric("product_subtotal", { precision: 10, scale: 2 }).notNull(),
   tip: numeric("tip", { precision: 10, scale: 2 }).notNull().default("0"),
   grandTotal: numeric("grand_total", { precision: 10, scale: 2 }).notNull(),

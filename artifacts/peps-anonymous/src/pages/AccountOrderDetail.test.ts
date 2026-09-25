@@ -17,3 +17,10 @@ test("invoice editing is blocked while a refund is active", () => {
   assert.match(actions, /refundActive/);
   assert.match(actions, /Refund request active/);
 });
+
+test("known zero vendor shipping is omitted from order details and receipt PDFs", () => {
+  assert.match(source, /vendorShippingIsTbd:\s*boolean/);
+  assert.match(source, /const vendorShippingIsTbd = order\?\.vendorShippingIsTbd === true/);
+  assert.match(source, /showVendorShipping/);
+  assert.match(source, /vendorShippingAmount:\s*vendorShippingIsTbd\s*\?\s*null/);
+});

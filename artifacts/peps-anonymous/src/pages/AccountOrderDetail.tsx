@@ -157,6 +157,7 @@ interface OrderDetail {
   deliveryMethodId: string | null;
   deliveryPrice: number;
   vendorShipping: number;
+  vendorShippingIsTbd: boolean;
   productSubtotal: number;
   tip: number;
   organiserFee?: number;
@@ -2022,6 +2023,8 @@ export default function AccountOrderDetail() {
     : "";
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const vendorShippingIsTbd = order?.vendorShippingIsTbd === true;
+  const showVendorShipping = vendorShippingIsTbd || (order?.vendorShipping ?? 0) > 0;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -2196,7 +2199,6 @@ export default function AccountOrderDetail() {
 
   const handleDownloadReceipt = () => {
     if (!order) return;
-    const vendorShippingIsTbd = order.vendorShipping === 0 && !!order.groupBuyId && order.orderType !== "wholesale";
     const doc = generateReceiptPDF({
       code: order.code,
       telegramUsername: order.telegramUsername,
@@ -2217,7 +2219,7 @@ export default function AccountOrderDetail() {
       createdAt: order.createdAt,
       groupBuyId: order.groupBuyId,
       currency: order.currency,
-      vendorShippingAmount: order.vendorShipping > 0 ? order.vendorShipping : null,
+      vendorShippingAmount: vendorShippingIsTbd ? null : order.vendorShipping > 0 ? order.vendorShipping : null,
       vendorShippingIsTbd,
       isWholesale: order.orderType === "wholesale",
       adminFeeAmount: (order as any).adminFee > 0 ? (order as any).adminFee : null,
@@ -2483,14 +2485,14 @@ export default function AccountOrderDetail() {
                               <span className="font-medium flex items-center gap-1.5"><Home className="w-3.5 h-3.5 shrink-0" /> Direct Shipping</span>
                               <span className="font-medium">{fmtC(order.directShippingCost!, order.currency)}</span>
                             </div>
-                          ) : (
+                          ) : showVendorShipping ? (
                             <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
                               <span>Vendor Shipping</span>
-                              <span className={order.vendorShipping > 0 ? "font-medium" : "font-semibold"} style={{ color: order.vendorShipping > 0 ? "var(--t-text)" : "var(--t-blue)" }}>
-                                {order.vendorShipping > 0 ? fmtC(order.vendorShipping, order.currency) : "TBD"}
+                              <span className={vendorShippingIsTbd ? "font-semibold" : "font-medium"} style={{ color: vendorShippingIsTbd ? "var(--t-blue)" : "var(--t-text)" }}>
+                                {vendorShippingIsTbd ? "TBD" : fmtC(order.vendorShipping, order.currency)}
                               </span>
                             </div>
-                          )}
+                          ) : null}
                           {order.tip > 0 && (
                             <div className="flex justify-between" style={{ color: "var(--t-muted)" }}>
                               <span>Tip</span><span>{fmtC(order.tip, order.currency)}</span>
@@ -2513,7 +2515,7 @@ export default function AccountOrderDetail() {
                             </div>
                           )}
                           <div className="flex items-center justify-between rounded-lg px-4 py-3 mt-2" style={{ background: "var(--warm-ink)", border: "1px solid var(--warm-ink)", boxShadow: "0 10px 24px -14px rgba(26,43,86,0.55)" }}>
-                            <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.78)" }}>{paymentSummary.hasOutstandingAddOn ? "Original order paid" : (order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : (order.vendorShipping > 0 || (order.directShippingCost ?? 0) > 0) ? "Grand Total" : "Estimated Total"}</span>
+                            <span className="text-sm font-bold" style={{ color: "rgba(255,255,255,0.78)" }}>{paymentSummary.hasOutstandingAddOn ? "Original order paid" : (order.creditsApplied ?? 0) > 0 && order.currency !== "GBP" ? "Amount Due" : vendorShippingIsTbd ? "Estimated Total" : "Grand Total"}</span>
                             <span className="text-lg font-extrabold" style={{ color: "var(--t-blue)" }}>
                               {paymentSummary.hasOutstandingAddOn
                                 ? fmtC(paymentSummary.paidAmount, order.currency)

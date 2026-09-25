@@ -60,6 +60,7 @@ import {
 import { eq, inArray, notInArray, desc, asc, and, sql, or, ilike, like, gte, lte, isNotNull, isNull, lt, gt } from "drizzle-orm";
 import { GoogleGenAI } from "../lib/google-genai";
 import { writeLog } from "../lib/audit-log";
+import { resolveOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
 import { createAdminOrganiserSession } from "../lib/admin-organiser-sessions";
 import { issueAccountCookieForAccount } from "../middleware/account-auth";
 import { enrichLogsWithGeo, enrichIps, enrichIpsFromCache } from "../lib/ip-geo";
@@ -10167,6 +10168,7 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
   let groupBuyQrUploadMessage: string | null = null;
   let groupBuyQrUploadCouriers: string[] | null = null;
   let groupBuyCurrency: string | null = null;
+  let groupBuyVendorShippingAmount: string | null = null;
   if (order.groupBuyId) {
     const [gb] = await db
       .select({
@@ -10176,6 +10178,7 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
         qrUploadMessage: groupBuysTable.qrUploadMessage,
         qrUploadCouriers: groupBuysTable.qrUploadCouriers,
         currency: groupBuysTable.currency,
+        vendorShippingAmount: groupBuysTable.vendorShippingAmount,
         allowOrderAddons: groupBuysTable.allowOrderAddons,
         shippingOptions: groupBuysTable.shippingOptions,
       })
@@ -10197,6 +10200,7 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
     groupBuyQrUploadRoyalMailEnabled = gb?.qrUploadRoyalMailEnabled ?? false;
     groupBuyQrUploadMessage = gb?.qrUploadMessage ?? null;
     groupBuyCurrency = gb?.currency ?? null;
+    groupBuyVendorShippingAmount = gb?.vendorShippingAmount ?? null;
     if (gb?.qrUploadCouriers && (gb.qrUploadCouriers as string[]).length > 0) {
       groupBuyQrUploadCouriers = gb.qrUploadCouriers as string[];
     } else {
@@ -10215,6 +10219,16 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
   if (order.inpostQrCode && !qrCodes["inpost"]) qrCodes["inpost"] = order.inpostQrCode;
   if (order.royalMailQrCode && !qrCodes["royal-mail"]) qrCodes["royal-mail"] = order.royalMailQrCode;
 
+  const vendorShippingIsTbd = resolveOrderVendorShippingIsTbd({
+    savedState: order.vendorShippingIsTbd,
+    vendorShipping: order.vendorShipping,
+    groupBuyId: order.groupBuyId,
+    orderType: order.orderType,
+    directShippingRequested: order.directShippingRequested,
+    isAddition: Boolean(order.additionOfOrderId),
+    configuredAmount: groupBuyVendorShippingAmount,
+  });
+
   res.json({
     id: order.id,
     code: order.code,
@@ -10223,6 +10237,7 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
     deliveryMethodId: order.deliveryMethodId ?? null,
     deliveryPrice: parseFloat(String(order.deliveryPrice ?? "0")),
     vendorShipping: parseFloat(String(order.vendorShipping ?? "0")),
+    vendorShippingIsTbd,
     productSubtotal: parseFloat(String(order.productSubtotal)),
     tip: parseFloat(String(order.tip ?? "0")),
     testingContribution: parseFloat(String(order.testingContribution ?? "0")),
