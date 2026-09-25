@@ -11,6 +11,7 @@ const mockState = vi.hoisted(() => ({
   transactionCommits: 0,
   transactionRollbacks: 0,
   deleteCalls: 0,
+  deleteFailure: false,
 }));
 
 vi.mock("@workspace/db", async () => {
@@ -22,6 +23,13 @@ vi.mock("@workspace/db", async () => {
         delete: (table: unknown) => ({
           where: () => {
             mockState.deleteCalls++;
+            if (mockState.deleteFailure) {
+              const failedResult = Promise.reject(new Error("database delete failed"));
+              return Object.assign(failedResult, {
+                returning: () => failedResult,
+                table: getTableName(table as never),
+              });
+            }
             const result = Promise.resolve(mockState.returnedRows);
             return Object.assign(result, {
               returning: () => result,
@@ -100,6 +108,7 @@ beforeEach(() => {
   mockState.transactionCommits = 0;
   mockState.transactionRollbacks = 0;
   mockState.deleteCalls = 0;
+  mockState.deleteFailure = false;
 });
 
 describe("admin product bulk delete route", () => {
@@ -125,6 +134,14 @@ describe("admin product bulk delete route", () => {
     mockState.returnedRows = [{ id: "product-1" }];
     const response = await request("/admin/products", "DELETE", { ids: ["product-1", "product-2"] });
     expect(response.status).toBe(409);
+    expect(mockState.transactionRollbacks).toBe(1);
+    expect(mockState.transactionCommits).toBe(0);
+  });
+
+  it("returns 500 and rolls back when the database delete fails", async () => {
+    mockState.deleteFailure = true;
+    const response = await request("/admin/products", "DELETE", { ids: ["product-1"] });
+    expect(response.status).toBe(500);
     expect(mockState.transactionRollbacks).toBe(1);
     expect(mockState.transactionCommits).toBe(0);
   });
