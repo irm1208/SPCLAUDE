@@ -142,7 +142,7 @@ test("visible selection preserves products hidden by the current filter", () => 
 Run from `artifacts/peps-anonymous`:
 
 ```bash
-node --experimental-strip-types --test src/pages/admin-product-selection.test.ts
+pnpm --filter @workspace/peps-anonymous exec tsx --test src/pages/admin-product-selection.test.ts
 ```
 
 Expected before implementation: module import fails because the selection helper does not exist.
@@ -156,7 +156,7 @@ Export `toggleProductSelection(selectedIds, id)`, `toggleVisibleSelection(select
 Run:
 
 ```bash
-node --experimental-strip-types --test src/pages/admin-product-selection.test.ts
+pnpm --filter @workspace/peps-anonymous exec tsx --test src/pages/admin-product-selection.test.ts
 ```
 
 Expected: all selection-model tests pass.
@@ -183,7 +183,7 @@ Add a Node test that reads `Admin.tsx` and asserts that the product row renders 
 Run from `artifacts/peps-anonymous`:
 
 ```bash
-node --experimental-strip-types --test src/pages/admin-products-bulk-delete-contract.test.ts
+pnpm --filter @workspace/peps-anonymous exec tsx --test src/pages/admin-products-bulk-delete-contract.test.ts
 ```
 
 Expected before implementation: the expected checkbox, selection action, and bulk endpoint wiring are absent.
@@ -213,7 +213,7 @@ On success, remove only the response's `deletedIds` from local products, clear s
 Run:
 
 ```bash
-node --experimental-strip-types --test src/pages/admin-product-selection.test.ts src/pages/admin-products-bulk-delete-contract.test.ts
+pnpm --filter @workspace/peps-anonymous exec tsx --test src/pages/admin-product-selection.test.ts src/pages/admin-products-bulk-delete-contract.test.ts
 ```
 
 Expected: selection behavior and page wiring tests pass.
@@ -235,7 +235,7 @@ Run from the workspace root:
 
 ```bash
 pnpm --filter @workspace/api-server exec vitest run src/routes/__tests__/admin-products-bulk-delete.test.ts
-node --experimental-strip-types --test artifacts/peps-anonymous/src/pages/admin-product-selection.test.ts artifacts/peps-anonymous/src/pages/admin-products-bulk-delete-contract.test.ts
+pnpm --filter @workspace/peps-anonymous exec tsx --test src/pages/admin-product-selection.test.ts src/pages/admin-products-bulk-delete-contract.test.ts
 ```
 
 Expected: all focused tests pass.
