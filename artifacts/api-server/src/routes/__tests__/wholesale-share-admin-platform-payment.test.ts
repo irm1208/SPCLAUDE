@@ -30,4 +30,13 @@ describe("admin shared-order platform payment", () => {
     expect(adminSource).not.toContain("mark-all-paid");
     expect(adminSource).not.toContain("Mark all paid");
   });
+
+  it("includes organiser payment details in the admin detail response without exposing them to members", () => {
+    const adminDetailRoute = routeSource
+      .split('router.get("/admin/wholesale-shares/:id"')[1]
+      ?.split('router.post("/admin/wholesale-shares/:id/repair-orphan-orders"')[0];
+    expect(adminDetailRoute).toContain('buildShareResponse(share, "", { includeOrganiserPaymentForAdmin: true })');
+    expect(routeSource).toContain("!isCreatorViewer && !includeOrganiserPaymentForAdmin");
+    expect(routeSource.match(/includeOrganiserPaymentForAdmin: true/g)).toHaveLength(1);
+  });
 });

@@ -364,7 +364,11 @@ async function reconcileShareOrganiserFees(
 
 // Build the full client-facing share payload, computing a live shipping estimate
 // and split preview while the share is open, and reading snapshots once locked.
-async function buildShareResponse(share: ShareRow, currentUsername: string) {
+async function buildShareResponse(
+  share: ShareRow,
+  currentUsername: string,
+  { includeOrganiserPaymentForAdmin = false }: { includeOrganiserPaymentForAdmin?: boolean } = {},
+) {
   const members = await db
     .select()
     .from(wholesaleShareMembersTable)
@@ -693,7 +697,8 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     members: memberPayloads,
     memberCount: members.length,
     allPaid,
-    // Organiser → platform payment block (organiser-only). null for other members.
+    // Organiser → platform payment block. Also available in the admin-only detail response;
+    // never exposed to other members.
     // Shown only when the organiser has set their own wallet: members pay the organiser
     // directly, so the organiser then needs to forward (products + vendor shipping) to
     // the admin wallet. When no organiser wallet is set, members already pay the admin
@@ -702,7 +707,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
     // Tips and organiser fees are retained by the organiser and are not forwarded.
     organiserPayment: await (async () => {
       const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && share.leadCryptoOptions.length > 0;
-      if (!isCreatorViewer || !hasOwnWallet) return null;
+      if ((!isCreatorViewer && !includeOrganiserPaymentForAdmin) || !hasOwnWallet) return null;
       return {
         status: (share.organiserPaymentStatus ?? "unpaid") as "unpaid" | "pending" | "confirmed",
         txHash: share.organiserPaymentTxHash ?? null,
@@ -3228,7 +3233,7 @@ router.get("/admin/wholesale-shares/:id", async (req, res): Promise<void> => {
       orphanedSharedOrderMembershipWhere(),
     ));
   res.json({
-    ...await buildShareResponse(share, ""),
+    ...await buildShareResponse(share, "", { includeOrganiserPaymentForAdmin: true }),
     orphanOrderCount: orphanOrders.length,
     availableProducts: products.map(product => ({
       id: product.id,
