@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const allowlist = [
   "@google/generative-ai",
   "@replit/connectors-sdk",
+  "@replit/object-storage",
   "axios",
   "bcryptjs",
   "connect-pg-simple",
@@ -24,6 +25,7 @@ const allowlist = [
   "express",
   "express-rate-limit",
   "express-session",
+  "file-type",
   "helmet",
   "http-proxy-middleware",
   "jsonwebtoken",
