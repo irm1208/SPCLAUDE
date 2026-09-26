@@ -104,7 +104,7 @@ const harness = vi.hoisted(() => {
         telegramUsername: "@member",
         orderType: "wholesale_shared",
         sharedOrderId: "SHARE1",
-        paymentStatus: "unpaid",
+        paymentStatus: "confirmed",
         paymentTxHash: "0xmember-payment",
         paymentTxHashes: ["0xmember-payment"],
         paymentTestAmount: "0.02",
@@ -274,7 +274,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
     });
     expect(harness.state.share.organiserPaymentStatus).toBe("confirmed");
     expect(harness.state.orders[0].paymentStatus).toBe("confirmed");
-    expect(harness.state.orders[1].paymentStatus).toBe("unpaid");
+    expect(harness.state.orders[1].paymentStatus).toBe("confirmed");
     expect(harness.state.orders[0]).toEqual({
       ...creatorOrderBefore,
       paymentStatus: "confirmed",
@@ -310,7 +310,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
     expect(result).toMatchObject({ kind: "rejected", code: "refund_active" });
     expect(harness.state.share.organiserPaymentStatus).toBe("pending");
     expect(harness.state.orders[0].paymentStatus).toBe("pending");
-    expect(harness.state.orders[1].paymentStatus).toBe("unpaid");
+    expect(harness.state.orders[1].paymentStatus).toBe("confirmed");
     expect(harness.state.updates).toHaveLength(0);
   });
 
@@ -476,7 +476,7 @@ describe("confirmWholesaleOrganiserPayment", () => {
 
     expect(result).toMatchObject({ kind: "confirmed", organiserPaymentStatus: "confirmed" });
     expect(harness.state.orders[0].paymentStatus).toBe("confirmed");
-    expect(harness.state.orders[1].paymentStatus).toBe("unpaid");
+    expect(harness.state.orders[1].paymentStatus).toBe("confirmed");
   });
 
   it("keeps an automatically verified payment pending when credits were applied", async () => {
@@ -598,6 +598,29 @@ describe("confirmWholesaleOrganiserPayment", () => {
     const result = await confirmWholesaleOrganiserPayment(pendingInput);
 
     expect(result.kind).toBe("confirmed");
+  });
+
+  it.each(["unpaid", "test_confirmed", "pending"] as const)(
+    "does not confirm the platform payment while a non-creator member is %s",
+    async (paymentStatus) => {
+      harness.state.orders[1].paymentStatus = paymentStatus;
+
+      const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+      expect(result).toMatchObject({ kind: "rejected", code: "member_payments_incomplete" });
+      expect(harness.state.share.organiserPaymentStatus).toBe("pending");
+      expect(harness.state.orders[0].paymentStatus).toBe("pending");
+      expect(harness.state.updates).toHaveLength(0);
+    },
+  );
+
+  it("does not confirm when an active non-creator member has no linked order", async () => {
+    delete harness.state.members[1].orderId;
+
+    const result = await confirmWholesaleOrganiserPayment(pendingInput);
+
+    expect(result).toMatchObject({ kind: "rejected", code: "member_payments_incomplete" });
+    expect(harness.state.updates).toHaveLength(0);
   });
 
   const mismatches = [

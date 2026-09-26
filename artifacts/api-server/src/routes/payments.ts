@@ -4,7 +4,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import { siteConfigTable, ordersTable, groupBuysTable, gbReshippersTable, gbCountryLegsTable, accountsTable, wholesaleSharesTable } from "@workspace/db";
-import { eq, or, and, sql } from "drizzle-orm";
+import { eq, ne, or, and, sql } from "drizzle-orm";
 import { logCustomerActivity } from "../lib/activity-log";
 import { writeLog } from "../lib/audit-log";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
@@ -1409,8 +1409,15 @@ router.post("/orders/:id/generate-test", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(ordersTable)
     .set({ paymentTestAmount: String(testAmount), paymentStatus: "test_ready" })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
+    .where(refundMutableOrderWhere(and(
+      eq(ordersTable.id, req.params.id),
+      ne(ordersTable.paymentStatus, "confirmed"),
+    )))
     .returning();
+  if (!updated) {
+    res.status(409).json({ error: "Payment status changed. Refresh and try again." });
+    return;
+  }
 
   res.json({
     paymentTestAmount: parseFloat(String(updated.paymentTestAmount)),
@@ -1457,6 +1464,10 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
     writeLog("payment", "warn", "payment_test_rejected_not_found", `Order not found for test payment: ${req.params.id}`, { orderId: req.params.id, txHash: cleanHash, reason: "order not found" }, req.ip).catch(() => {});
     res.status(404).json({ error: "Order not found" }); return;
   }
+  if (order.paymentStatus === "confirmed") {
+    res.status(409).json({ error: "Payment already confirmed" });
+    return;
+  }
   if (!order.paymentTestAmount) {
     writeLog("payment", "warn", "payment_test_rejected_no_amount", `No test payment amount for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, reason: "no test amount generated" }, req.ip).catch(() => {});
     res.status(400).json({ error: "No test payment generated for this order" });
@@ -1488,8 +1499,15 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(ordersTable)
     .set({ testPaymentTxHash: cleanHash, paymentStatus: "test_confirmed" })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)))
+    .where(refundMutableOrderWhere(and(
+      eq(ordersTable.id, req.params.id),
+      ne(ordersTable.paymentStatus, "confirmed"),
+    )))
     .returning();
+  if (!updated) {
+    res.status(409).json({ error: "Payment status changed. Refresh and try again." });
+    return;
+  }
 
   writeLog("payment", "info", "payment_test_submitted", `Test payment confirmed for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, amountUsdt: result.amountUsdt, currency, network }, req.ip).catch(() => {});
   await logCustomerActivity({

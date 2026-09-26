@@ -19,4 +19,11 @@ describe("calculateWholesaleOrganiserAmountDue", () => {
       "5.00",
     )).toBe(0);
   });
+
+  it("does not treat unknown vendor shipping as free shipping", () => {
+    expect(calculateWholesaleOrganiserAmountDue(
+      [{ items: [{ quantity: 1, unitPrice: "995.00" }], creditsApplied: 0 }],
+      null,
+    )).toBeNull();
+  });
 });

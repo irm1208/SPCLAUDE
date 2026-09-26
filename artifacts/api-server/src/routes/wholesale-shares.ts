@@ -552,7 +552,7 @@ async function buildShareResponse(share: ShareRow, currentUsername: string) {
       creditsApplied: member.orderId ? orderById.get(member.orderId)?.creditsApplied : null,
     })),
     share.totalVendorShipping,
-  ) ?? 0;
+  );
 
   const allPaid = isLocked
     && memberPayloads.length > 0
@@ -3035,60 +3035,94 @@ router.post("/wholesale-shares/:id/members/mark-payment", requireWholesale, asyn
   }
 
   const newPaymentStatus = paid ? "confirmed" : "unpaid";
-  await db.transaction(async tx => {
-    await assertNoActiveRefunds(tx, [member.orderId!]);
+  const markResult = await db.transaction(async tx => {
+    const [lockedShare] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, share.id))
+      .for("update");
+    if (
+      !lockedShare ||
+      normalizeTg(lockedShare.creatorUsername) !== normalizeTg(me) ||
+      !["locked", "submitted"].includes(lockedShare.status)
+    ) return "changed" as const;
+    if (!paid && (lockedShare.organiserPaymentStatus ?? "unpaid") !== "unpaid") {
+      return "platform_payment_started" as const;
+    }
+
+    const [lockedMember] = await tx.select().from(wholesaleShareMembersTable)
+      .where(and(
+        eq(wholesaleShareMembersTable.id, member.id),
+        eq(wholesaleShareMembersTable.shareId, lockedShare.id),
+      ))
+      .for("update");
+    if (!lockedMember?.orderId) return "changed" as const;
+    const orderId = lockedMember.orderId;
+    const creatorUsesPlatformPayment = lockedMember.isCreator &&
+      Array.isArray(lockedShare.leadCryptoOptions) &&
+      lockedShare.leadCryptoOptions.length > 0;
+    if (creatorUsesPlatformPayment) return "creator_platform_payment" as const;
+
+    await assertNoActiveRefunds(tx, [orderId]);
     const [changed] = await tx.update(ordersTable)
       .set({
         paymentStatus: newPaymentStatus,
         ...(paid ? { paymentConfirmedAt: new Date() } : {}),
       })
-      .where(refundMutableOrderWhere(eq(ordersTable.id, member.orderId!)))
+      .where(refundMutableOrderWhere(and(
+        eq(ordersTable.id, orderId),
+        eq(ordersTable.sharedOrderId, lockedShare.id),
+      )))
       .returning({ id: ordersTable.id });
-    if (!changed) throw new RefundMutationBlockedError(member.orderId!);
+    if (!changed) throw new RefundMutationBlockedError(orderId);
 
-  await writeLog("order", "info", "wholesale_share_member_payment_marked",
-    `Organiser @${me} marked payment ${paid ? "confirmed" : "unpaid"} for @${username} in share ${share.id}`,
-    { shareId: share.id, memberUsername: username, paid });
+    await writeLog("order", "info", "wholesale_share_member_payment_marked",
+      `Organiser @${me} marked payment ${paid ? "confirmed" : "unpaid"} for @${username} in share ${share.id}`,
+      { shareId: share.id, memberUsername: username, paid });
 
-  // If marking paid and share is still locked, check if all members are now paid.
-  // If so, transition the share to "submitted".
-  if (paid && share.status === "locked") {
-    const allMembers = await tx
-      .select({ orderId: wholesaleShareMembersTable.orderId, isCreator: wholesaleShareMembersTable.isCreator })
-      .from(wholesaleShareMembersTable)
-      .where(eq(wholesaleShareMembersTable.shareId, share.id));
-
-    // When the organiser has their own wallet (leadCryptoOptions), they keep the
-    // collected funds and forward the combined total to admin via organiser-payment.
-    // Their member order remains persisted as unpaid until the organiser payment
-    // confirmation service confirms that physical order. Exclude it from this
-    // pre-forwarding submitted transition check.
-    const hasOwnWallet = Array.isArray(share.leadCryptoOptions) && (share.leadCryptoOptions as unknown[]).length > 0;
-    const membersToCheck = hasOwnWallet ? allMembers.filter(m => !m.isCreator) : allMembers;
-
-    const allOrderIds = membersToCheck.map(m => m.orderId).filter((x): x is string => !!x);
-    if (allOrderIds.length > 0 && allOrderIds.length === membersToCheck.length) {
-      await assertNoActiveRefunds(tx, allOrderIds);
-      const memberOrders = await tx
-        .select({ paymentStatus: ordersTable.paymentStatus })
-        .from(ordersTable)
-        .where(sql`${ordersTable.id} IN (${sql.join(allOrderIds.map(id => sql`${id}`), sql`, `)})`);
-
-      const everyonePaid = memberOrders.every(o =>
-        o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed",
-      );
-
-      if (everyonePaid) {
-        await tx.update(wholesaleSharesTable)
-          .set({ status: "submitted", submittedAt: new Date() })
+    // A test-confirmed member has paid only a verification amount. Do not
+    // advance the parent until all non-exempt members have fully paid.
+    if (paid && lockedShare.status === "locked") {
+      const allMembers = await tx
+        .select({ orderId: wholesaleShareMembersTable.orderId, isCreator: wholesaleShareMembersTable.isCreator })
+        .from(wholesaleShareMembersTable)
+        .where(eq(wholesaleShareMembersTable.shareId, lockedShare.id));
+      const hasOwnWallet = Array.isArray(lockedShare.leadCryptoOptions) && lockedShare.leadCryptoOptions.length > 0;
+      const membersToCheck = hasOwnWallet ? allMembers.filter(m => !m.isCreator) : allMembers;
+      const allOrderIds = membersToCheck.map(m => m.orderId).filter((x): x is string => !!x);
+      if (allOrderIds.length > 0 && allOrderIds.length === membersToCheck.length) {
+        await assertNoActiveRefunds(tx, allOrderIds);
+        const memberOrders = await tx
+          .select({ paymentStatus: ordersTable.paymentStatus })
+          .from(ordersTable)
           .where(and(
-            eq(wholesaleSharesTable.id, share.id),
-            eq(wholesaleSharesTable.status, "locked"),
-          ));
+            inArray(ordersTable.id, allOrderIds),
+            eq(ordersTable.sharedOrderId, lockedShare.id),
+          ))
+          .for("update");
+        const everyonePaid = memberOrders.length === membersToCheck.length &&
+          memberOrders.every(o => o.paymentStatus === "confirmed");
+
+        if (everyonePaid) {
+          await tx.update(wholesaleSharesTable)
+            .set({ status: "submitted", submittedAt: new Date() })
+            .where(and(
+              eq(wholesaleSharesTable.id, lockedShare.id),
+              eq(wholesaleSharesTable.status, "locked"),
+            ));
+        }
       }
     }
-  }
+    return "ok" as const;
   });
+  if (markResult !== "ok") {
+    res.status(409).json({
+      error: markResult === "platform_payment_started"
+        ? "A platform payment is already in progress. This member payment cannot be reversed."
+        : markResult === "creator_platform_payment"
+          ? "The organiser's order is paid through the platform payment, not a manual member confirmation."
+        : "The shared order or member changed. Refresh and try again.",
+    });
+    return;
+  }
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
@@ -3712,37 +3746,51 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
       return null;
     }
 
-    if (lockedShare.status === "locked") {
-      const activeMembers = await tx
-        .select({
-          orderId: wholesaleShareMembersTable.orderId,
-          isCreator: wholesaleShareMembersTable.isCreator,
-        })
-        .from(wholesaleShareMembersTable)
-        .where(eq(wholesaleShareMembersTable.shareId, lockedShare.id));
-      const activeOrderIds = activeMembers
-        .map(member => member.orderId)
-        .filter((orderId): orderId is string => orderId != null);
-      if (activeMembers.length === 0 || activeOrderIds.length !== activeMembers.length) return null;
+    const activeMembers = await tx
+      .select({
+        orderId: wholesaleShareMembersTable.orderId,
+        isCreator: wholesaleShareMembersTable.isCreator,
+        items: wholesaleShareMembersTable.items,
+      })
+      .from(wholesaleShareMembersTable)
+      .where(eq(wholesaleShareMembersTable.shareId, lockedShare.id));
+    const activeOrderIds = activeMembers
+      .map(member => member.orderId)
+      .filter((orderId): orderId is string => orderId != null);
+    if (activeMembers.length === 0 || activeOrderIds.length !== activeMembers.length) return null;
 
-      const activeOrders = await tx
-        .select({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus })
-        .from(ordersTable)
-        .where(and(
-          inArray(ordersTable.id, activeOrderIds),
-          eq(ordersTable.sharedOrderId, lockedShare.id),
-        ));
-      const creatorOrderId = activeMembers.find(member => member.isCreator)?.orderId ?? null;
-      const hasOwnWallet = Array.isArray(lockedShare.leadCryptoOptions)
-        && lockedShare.leadCryptoOptions.length > 0;
-      const allActiveMembersPaid = activeOrders.length === activeMembers.length
-        && activeOrders.every(order =>
-          order.paymentStatus === "confirmed"
-          || order.paymentStatus === "test_confirmed"
-          || (hasOwnWallet && creatorOrderId != null && order.id === creatorOrderId),
-        );
-      if (!allActiveMembersPaid) return null;
-    }
+    const activeOrders = await tx
+      .select({
+        id: ordersTable.id,
+        paymentStatus: ordersTable.paymentStatus,
+        creditsApplied: ordersTable.creditsApplied,
+      })
+      .from(ordersTable)
+      .where(and(
+        inArray(ordersTable.id, activeOrderIds),
+        eq(ordersTable.sharedOrderId, lockedShare.id),
+      ))
+      .for("update");
+    if (activeOrders.length !== activeMembers.length) return null;
+
+    const activeOrderById = new Map(activeOrders.map(order => [order.id, order]));
+    const amountDue = calculateWholesaleOrganiserAmountDue(
+      activeMembers.map(member => ({
+        items: member.items,
+        creditsApplied: member.orderId ? activeOrderById.get(member.orderId)?.creditsApplied : null,
+      })),
+      lockedShare.totalVendorShipping,
+    );
+    if (amountDue === null || amountDue <= 0) return null;
+
+    const creatorOrderId = activeMembers.find(member => member.isCreator)?.orderId ?? null;
+    const hasOwnWallet = Array.isArray(lockedShare.leadCryptoOptions)
+      && lockedShare.leadCryptoOptions.length > 0;
+    const allActiveMembersPaid = creatorOrderId != null && activeOrders.every(order =>
+      order.paymentStatus === "confirmed"
+      || (hasOwnWallet && order.id === creatorOrderId),
+    );
+    if (!allActiveMembersPaid) return null;
 
     const [updated] = await tx.update(wholesaleSharesTable)
       .set({

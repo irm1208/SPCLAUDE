@@ -789,6 +789,10 @@ export default function WholesaleShared() {
   // Organiser submits their platform payment tx hash.
   const submitOrgPayment = async () => {
     if (!id || orgPayPickedIdx === null) return;
+    if (share.organiserPayment?.amountDue == null || share.organiserPayment.amountDue <= 0) {
+      setOrgPayError("The final platform payment amount is not available yet.");
+      return;
+    }
     const opts = share.organiserPayment?.cryptoOptions ?? [];
     const picked = opts[orgPayPickedIdx];
     if (!picked) return;
@@ -1491,6 +1495,16 @@ export default function WholesaleShared() {
       0,
     );
     const amountDue = op.amountDue;
+    const otherMembersPaid = share.members.length > 0 && share.members.every(member =>
+      !!member.orderId && (
+        member.isCreator ||
+        member.paymentStatus === "confirmed"
+      ),
+    );
+    const paymentReady = share.status !== "open" &&
+      (share.status === "locked" || share.status === "submitted") &&
+      amountDue !== null && amountDue > 0 &&
+      otherMembersPaid;
 
     const statusBadge = op.status === "confirmed" ? (
       <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#15803d" }}>
@@ -1518,7 +1532,15 @@ export default function WholesaleShared() {
                 ? "You've sent the group payment — we'll process the order."
                 : op.status === "pending"
                   ? "Full payments are checked automatically; partial or credit-adjusted payments require administrator confirmation."
-                  : "Everyone has paid — now send the combined group payment to us."}
+                  : share.status === "open"
+                    ? "The platform payment will be available after the shared order locks and shipping is final."
+                    : amountDue === null
+                      ? "Final vendor shipping is not available yet. Do not send a platform payment."
+                      : amountDue <= 0
+                        ? "No platform payment is due after member credits. Contact support to finalise this order."
+                        : !paymentReady
+                          ? "Wait for the other members to pay before sending the combined payment to Peps Anonymous."
+                          : "Other members have paid — now send the combined group payment to Peps Anonymous."}
             </p>
 
             <div className="rounded-xl p-3 space-y-1.5" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
@@ -1528,7 +1550,7 @@ export default function WholesaleShared() {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span style={{ color: "var(--t-muted)" }}>Vendor shipping</span>
-                <span className="font-semibold" style={{ color: "var(--t-text)" }}>{money(shippingTotal)}</span>
+                <span className="font-semibold" style={{ color: "var(--t-text)" }}>{amountDue === null ? "Pending" : money(shippingTotal)}</span>
               </div>
               {creditsTotal > 0 && (
                 <div className="flex items-center justify-between text-sm">
@@ -1538,7 +1560,7 @@ export default function WholesaleShared() {
               )}
               <div className="flex items-center justify-between pt-1.5 border-t text-sm" style={{ borderColor: "var(--t-border)" }}>
                 <span className="font-bold" style={{ color: "var(--t-text)" }}>Total to send</span>
-                <span className="text-lg font-bold" style={{ color: "var(--t-blue)" }}>{money(amountDue)}</span>
+                <span className="text-lg font-bold" style={{ color: "var(--t-blue)" }}>{amountDue === null ? "Pending" : money(amountDue)}</span>
               </div>
             </div>
             <p className="text-xs" style={{ color: "var(--t-muted)" }}>
@@ -1567,10 +1589,14 @@ export default function WholesaleShared() {
           )}
 
           {/* Payment form (only while unpaid) */}
-          {op.status === "unpaid" && opts.length > 0 && (
+          {op.status === "unpaid" && paymentReady && opts.length > 0 && (
             <div className="px-4 pb-4 space-y-3 border-t" style={{ borderColor: "rgba(45,107,204,0.15)" }}>
               <p className="text-xs font-semibold pt-3" style={{ color: "var(--t-muted)" }}>
-                Choose a wallet to send to
+                Choose a coin and platform wallet
+              </p>
+              <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+                These are Peps Anonymous receiving wallets, not the wallet you added for members to pay you.
+                USDT and USDC on ERC-20 may use the same address.
               </p>
 
               {/* Wallet option cards */}
@@ -2223,13 +2249,14 @@ export default function WholesaleShared() {
   // Organiser: manually mark each member's platform order payment as paid/unpaid.
   // Shown whenever the organiser can mark payments (locked or submitted share) and at least
   // one member has a materialised order. Intended for bank-transfer / direct-payment flows.
+  const manuallyPayableMembers = share.members.filter(m =>
+    !!m.orderId && (!share.organiserPayment || !m.isCreator)
+  );
   const showMemberPaymentRoster = (share.canMarkMemberPayments ?? false)
-    && share.members.some(m => !!m.orderId);
+    && manuallyPayableMembers.length > 0;
 
-  const memberPaymentPaidCount = share.members.filter(m =>
-    m.paymentStatus === "confirmed" || m.paymentStatus === "test_confirmed"
-  ).length;
-  const memberPaymentTotal = share.members.filter(m => !!m.orderId).length;
+  const memberPaymentPaidCount = manuallyPayableMembers.filter(m => m.paymentStatus === "confirmed").length;
+  const memberPaymentTotal = manuallyPayableMembers.length;
 
   const sectionMemberPaymentRoster = showMemberPaymentRoster ? (
     <section className="space-y-2">
@@ -2251,10 +2278,15 @@ export default function WholesaleShared() {
         className="rounded-xl overflow-hidden divide-y"
         style={{ border: "1px solid var(--t-border)" }}
       >
-        {share.members.filter(m => !!m.orderId).map(m => {
-          const isPaid = m.paymentStatus === "confirmed" || m.paymentStatus === "test_confirmed";
-          const isPending = m.paymentStatus === "pending_confirmation";
+        {manuallyPayableMembers.map(m => {
+          const isPaid = m.paymentStatus === "confirmed";
+          const isTestOnly = m.paymentStatus === "test_confirmed";
+          const isPending = m.paymentStatus === "pending_confirmation" || isTestOnly;
           const isBusy = busy === `memberpay:${m.username}`;
+          const cannotReverse = isPaid && (
+            share.organiserPayment?.status === "pending" ||
+            share.organiserPayment?.status === "confirmed"
+          );
           return (
             <div
               key={m.username}
@@ -2290,13 +2322,14 @@ export default function WholesaleShared() {
                     color: isPaid ? "#16a34a" : isPending ? "#d97706" : "var(--t-muted)",
                   }}>
                     {m.orderCode ? `Order ${m.orderCode} · ` : ""}
-                    {isPaid ? "Paid" : isPending ? "Pending confirmation" : "Unpaid"}
+                    {isPaid ? "Paid" : isTestOnly ? "Test payment only · balance due" : isPending ? "Pending confirmation" : "Unpaid"}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => toggleMemberPayment(m.username, !isPaid)}
-                disabled={isBusy}
+                disabled={isBusy || cannotReverse}
+                title={cannotReverse ? "Member payment cannot be reversed after a platform payment is submitted." : undefined}
                 className="shrink-0 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-bold disabled:opacity-50 transition-all"
                 style={isPaid
                   ? { background: "rgba(34,197,94,0.15)", color: "#15803d", border: "1px solid rgba(34,197,94,0.30)" }
@@ -2315,7 +2348,7 @@ export default function WholesaleShared() {
         })}
       </div>
       <p className="text-[11px] px-1" style={{ color: "var(--t-muted)" }}>
-        Confirm payments received by bank transfer or directly. Once all members are marked paid the order submits automatically.
+        Confirm payments received by bank transfer or directly. Once all required members have fully paid, the order submits automatically.
       </p>
     </section>
   ) : null;

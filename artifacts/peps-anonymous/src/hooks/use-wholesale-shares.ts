@@ -157,8 +157,8 @@ export interface WholesaleOrganiserPayment {
   network: string | null;
   confirmedAt: string | null;
   // Sum of all members' item subtotals + vendor shipping, less member-applied credits
-  // (no tips, no organiser fees).
-  amountDue: number;
+  // (no tips, no organiser fees). Null until final vendor shipping is known.
+  amountDue: number | null;
   // Platform wallet addresses the organiser can send to (same options as regular orders).
   cryptoOptions: Array<{ currency: string; network: string; walletAddress: string }>;
 }

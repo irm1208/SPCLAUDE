@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const routeSource = fs.readFileSync(path.resolve(here, "../wholesale-shares.ts"), "utf8");
+const paymentsSource = fs.readFileSync(path.resolve(here, "../payments.ts"), "utf8");
 const indexSource = fs.readFileSync(path.resolve(here, "../../index.ts"), "utf8");
 const autoVerifySource = fs.readFileSync(
   path.resolve(here, "../../lib/wholesale-organiser-payment-auto-verify.ts"),
@@ -264,13 +265,99 @@ describe("shared wholesale order confirmations", () => {
     expect(handler).toContain("wholesaleShareMembersTable.orderId");
     expect(handler).toContain("activeMembers.length");
     expect(handler).toContain('paymentStatus === "confirmed"');
-    expect(handler).toContain('paymentStatus === "test_confirmed"');
+    expect(handler).not.toContain('paymentStatus === "test_confirmed"');
     expect(handler).toContain('status: "submitted"');
     expect(handler).toContain('inArray(wholesaleSharesTable.status, ["locked", "submitted"])');
     expect(handler).toContain('inArray(wholesaleSharesTable.organiserPaymentStatus, ["unpaid", "pending"])');
     expect(handler).toContain(".returning(");
     expect(handler).toContain("The shared order changed before this payment could be submitted.");
     expect(handler).not.toContain(".where(eq(wholesaleSharesTable.id, share.id));");
+  });
+
+  it("keeps the organiser's platform payable unknown until vendor shipping is final", () => {
+    const start = routeSource.indexOf("const organiserPaymentAmountDue =");
+    const end = routeSource.indexOf("const allPaid =", start);
+    const calculation = routeSource.slice(start, end);
+    expect(calculation).toContain("share.totalVendorShipping");
+    expect(calculation).not.toMatch(/\?\?\s*0/);
+    expect(wholesaleHooksSource).toContain("amountDue: number | null");
+  });
+
+  it("does not record a platform payment when the final payable is missing or zero", () => {
+    const start = routeSource.indexOf('router.post("/wholesale-shares/:id/organiser-payment"');
+    const end = routeSource.indexOf("// Admin confirms the organiser's platform payment.", start);
+    const handler = routeSource.slice(start, end);
+    expect(handler).toContain("calculateWholesaleOrganiserAmountDue(");
+    expect(handler).toContain("lockedShare.totalVendorShipping");
+    expect(handler).toContain("if (amountDue === null || amountDue <= 0) return null;");
+    expect(handler.indexOf("amountDue <= 0")).toBeLessThan(handler.indexOf("tx.update(wholesaleSharesTable)"));
+  });
+
+  it("requires full member payments even when a share was already submitted", () => {
+    const start = routeSource.indexOf('router.post("/wholesale-shares/:id/organiser-payment"');
+    const end = routeSource.indexOf("// Admin confirms the organiser's platform payment.", start);
+    const handler = routeSource.slice(start, end);
+    const paidCheck = handler.indexOf("const allActiveMembersPaid =");
+    const paymentUpdate = handler.indexOf("tx.update(wholesaleSharesTable)");
+    expect(paidCheck).toBeGreaterThanOrEqual(0);
+    expect(paymentUpdate).toBeGreaterThan(paidCheck);
+    expect(handler).not.toContain('if (lockedShare.status === "locked")');
+    expect(handler).toContain("if (!allActiveMembersPaid) return null;");
+    expect(wholesaleSharedSource).not.toContain('member.paymentStatus === "test_confirmed"');
+    expect(wholesaleSharedSource).not.toContain('(share.status === "submitted" || otherMembersPaid)');
+  });
+
+  it("serializes manual payment reversals with platform submission and never treats test-only payments as full", () => {
+    const markStart = routeSource.indexOf('router.post("/wholesale-shares/:id/members/mark-payment"');
+    const markEnd = routeSource.indexOf("// ── Admin: grouped view", markStart);
+    const markHandler = routeSource.slice(markStart, markEnd);
+    expect(markHandler).toContain("const [lockedShare] = await tx");
+    expect(markHandler).toContain('if (!paid && (lockedShare.organiserPaymentStatus ?? "unpaid") !== "unpaid")');
+    expect(markHandler).toContain('if (creatorUsesPlatformPayment) return "creator_platform_payment" as const;');
+    expect(markHandler).not.toContain('o.paymentStatus === "test_confirmed"');
+
+    const submitStart = routeSource.indexOf('router.post("/wholesale-shares/:id/organiser-payment"');
+    const submitEnd = routeSource.indexOf("// Admin confirms the organiser's platform payment.", submitStart);
+    const submitHandler = routeSource.slice(submitStart, submitEnd);
+    const orderRead = submitHandler.slice(
+      submitHandler.indexOf("const activeOrders ="),
+      submitHandler.indexOf("const activeOrderById ="),
+    );
+    expect(orderRead).toContain('.for("update")');
+  });
+
+  it("does not count test-only payments as paid or let organisers manually pay their own forwarding order", () => {
+    const start = wholesaleSharedSource.indexOf("const manuallyPayableMembers =");
+    const end = wholesaleSharedSource.indexOf("const onwardModal =", start);
+    const roster = wholesaleSharedSource.slice(start, end);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(roster).toContain("const showMemberPaymentRoster =");
+    expect(roster).toContain("(!share.organiserPayment || !m.isCreator)");
+    expect(roster).toContain('const memberPaymentPaidCount = manuallyPayableMembers.filter(m => m.paymentStatus === "confirmed").length;');
+    expect(roster).toContain('const isPaid = m.paymentStatus === "confirmed";');
+    expect(roster).toContain("disabled={isBusy || cannotReverse}");
+  });
+
+  it("does not let a test-payment request downgrade an already confirmed order", () => {
+    const generateStart = paymentsSource.indexOf('router.post("/orders/:id/generate-test"');
+    const submitStart = paymentsSource.indexOf('router.post("/orders/:id/submit-test"', generateStart);
+    const payStart = paymentsSource.indexOf('router.post("/orders/:id/pay"', submitStart);
+    const generateHandler = paymentsSource.slice(generateStart, submitStart);
+    const submitHandler = paymentsSource.slice(submitStart, payStart);
+
+    expect(generateHandler).toContain('ne(ordersTable.paymentStatus, "confirmed")');
+    expect(generateHandler).toContain("if (!updated)");
+    expect(submitHandler).toContain('if (order.paymentStatus === "confirmed")');
+    expect(submitHandler).toContain('ne(ordersTable.paymentStatus, "confirmed")');
+    expect(submitHandler).toContain("if (!updated)");
+  });
+
+  it("withholds platform wallet instructions until a positive payment can be submitted", () => {
+    expect(wholesaleSharedSource).toContain("const paymentReady =");
+    expect(wholesaleSharedSource).toContain('share.status !== "open"');
+    expect(wholesaleSharedSource).toContain("amountDue !== null && amountDue > 0");
+    expect(wholesaleSharedSource).toContain('op.status === "unpaid" && paymentReady && opts.length > 0');
+    expect(wholesaleSharedSource).toContain("These are Peps Anonymous receiving wallets");
   });
 
   it("ignores historical orphan orders when auto-submitting a fully paid shared order", () => {

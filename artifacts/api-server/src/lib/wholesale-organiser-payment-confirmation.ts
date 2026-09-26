@@ -48,6 +48,7 @@ type RejectionCode =
   | "automatic_manual_review_required"
   | "automatic_amount_changed"
   | "invalid_amount"
+  | "member_payments_incomplete"
   | "invalid_creator_member"
   | "invalid_creator_order"
   | "refund_active"
@@ -188,13 +189,14 @@ export async function confirmWholesaleOrganiserPayment(input: {
       );
     }
 
-    // This read is deliberately not locked: it supplies the existing combined
-    // amount calculation. Only the creator candidate below is locked because
-    // unrelated member rows must never be part of the state transition.
+    // The parent share lock serialises membership changes. Linked order rows
+    // are locked below so their credits and payment statuses remain stable
+    // until the parent payment transition commits.
     const memberRows = await tx
       .select({
         items: wholesaleShareMembersTable.items,
         orderId: wholesaleShareMembersTable.orderId,
+        isCreator: wholesaleShareMembersTable.isCreator,
       })
       .from(wholesaleShareMembersTable)
       .where(eq(wholesaleShareMembersTable.shareId, share.id));
@@ -206,6 +208,7 @@ export async function confirmWholesaleOrganiserPayment(input: {
           .select({
             id: ordersTable.id,
             creditsApplied: ordersTable.creditsApplied,
+            paymentStatus: ordersTable.paymentStatus,
           })
           .from(ordersTable)
           .where(and(
@@ -301,6 +304,27 @@ export async function confirmWholesaleOrganiserPayment(input: {
         "invalid_creator_order",
         "The creator order is linked to another member of this shared wholesale order.",
       );
+    }
+
+    // A test-confirmed member has paid only the small verification transaction.
+    // Check every active non-creator order under the existing order locks before
+    // transitioning a pending platform payment. Historical confirmed parents
+    // retain their existing revalidation/backfill behavior.
+    if (share.organiserPaymentStatus === "pending") {
+      const ordersById = new Map(memberOrders.map(order => [order.id, order]));
+      if (
+        memberOrderIds.length !== memberRows.length ||
+        memberOrders.length !== memberRows.length ||
+        memberRows.some(member =>
+          !member.isCreator &&
+          ordersById.get(member.orderId ?? "")?.paymentStatus !== "confirmed"
+        )
+      ) {
+        return reject(
+          "member_payments_incomplete",
+          "Every non-organiser member must fully pay before the platform payment can be confirmed.",
+        );
+      }
     }
 
     // Payment confirmation changes the organiser's personal order only.  It
