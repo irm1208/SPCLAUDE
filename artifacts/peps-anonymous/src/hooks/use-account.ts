@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TrackingPackage, TrackingPackageView } from "@workspace/shipping/tracking";
+import { readAccountSessionResponse } from "@/lib/account-session";
 
 export interface AccountMe {
   telegramUsername: string;
@@ -44,25 +45,20 @@ async function fetchVerificationStatus(): Promise<AccountVerificationStatus | nu
 
 async function fetchMe(): Promise<AccountMe | null> {
   const res = await fetch("/api/account/me", { credentials: "include" });
-  if (res.status === 401) return null;
-  if (res.status === 403) {
-    const body = await res.json().catch(() => null) as { error?: string } | null;
-    if (body?.error === "verification_required") {
-      return {
-        telegramUsername: "",
-        verificationRequired: true,
-      };
-    }
-    return null;
-  }
-  if (!res.ok) return null;
-  return { ...await res.json(), verificationRequired: false };
+  const account = await readAccountSessionResponse<AccountMe>(res, {
+    telegramUsername: "",
+    verificationRequired: true,
+  });
+  if (!account || account.verificationRequired === true) return account;
+  return { ...account, verificationRequired: false };
 }
 
 export interface UseAccountResult {
   account: AccountMe | null;
   isLoading: boolean;
   isLoggedIn: boolean;
+  isSessionUnavailable: boolean;
+  retryAccountCheck: () => void;
 }
 
 // Discord-only accounts are stored with a synthetic `discord:<id>` identifier
@@ -80,16 +76,21 @@ export function getAccountHandle(account: Pick<AccountMe, "telegramUsername" | "
 }
 
 export function useAccount(): UseAccountResult {
-  const { data, isLoading, isFetching } = useQuery<AccountMe | null>({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery<AccountMe | null>({
     queryKey: ["account", "me"],
     queryFn: fetchMe,
     staleTime: 5 * 60 * 1000,
-    retry: false,
+    retry: 1,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
+  const isSessionUnavailable = isError && data === undefined;
   return {
     account: data ?? null,
-    isLoading: isLoading || isFetching,
+    isLoading: isLoading || isFetching || isSessionUnavailable,
     isLoggedIn: !!data && data.verificationRequired !== true,
+    isSessionUnavailable,
+    retryAccountCheck: () => { void refetch(); },
   };
 }
 

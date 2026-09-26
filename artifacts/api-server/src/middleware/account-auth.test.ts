@@ -111,6 +111,23 @@ describe("account session authorization", () => {
     expect(res.cookie.mock.calls[0][2]).toMatchObject({ maxAge: 24 * 60 * 60 * 1000 });
   });
 
+  it("rejects a still-valid legacy token after 24 hours without refreshed activity", async () => {
+    const issuedAt = Math.floor(Date.now() / 1000) - 25 * 60 * 60;
+    const token = jwt.sign({
+      telegramUsername: "inactive-user",
+      jti: "inactive-session-id",
+      verificationRequired: false,
+      iat: issuedAt,
+    }, accountAuth.getJwtSecret(), { expiresIn: 7 * 24 * 60 * 60 });
+    const req = { cookies: { account_session: token }, ip: "127.0.0.1" };
+    const res = response();
+
+    await requireAccountIdentity(req as never, res as never, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: "Session expired or invalid — please log in again" });
+  });
+
   it("provides a dedicated account-session activity refresh route", () => {
     const source = readFileSync(new URL("../routes/account.ts", import.meta.url), "utf8");
     expect(source).toMatch(/router\.post\(["']\/account\/session\/refresh["']/);

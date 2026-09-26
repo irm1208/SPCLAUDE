@@ -12,7 +12,7 @@ import { db } from "@workspace/db";
 import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
 import { eq, and, or, asc, desc, sql, isNull, isNotNull, gt, lt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
-import { requireAccount, issueAccountCookieForAccount, revokeToken, extractJtiFromCookie, getAccountCookieOptions } from "../middleware/account-auth";
+import { requireAccount, requireAccountIdentity, issueAccountCookieForAccount, refreshAccountCookie, revokeToken, extractJtiFromCookie, getAccountCookieOptions } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
 import { normalizeToCode as normalizeCountryToCode } from "../lib/country-utils";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
@@ -390,6 +390,11 @@ router.post("/account/login", async (req, res): Promise<void> => {
 });
 
 // POST /api/account/logout
+router.post("/account/session/refresh", requireAccountIdentity, (req, res): void => {
+  refreshAccountCookie(res, req.account!);
+  res.json({ ok: true });
+});
+
 router.post("/account/logout", async (req, res): Promise<void> => {
   // Revoke the current JWT so it cannot be replayed even before it expires
   const tokenInfo = extractJtiFromCookie(req);

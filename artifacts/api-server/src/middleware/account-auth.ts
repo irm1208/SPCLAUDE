@@ -27,6 +27,9 @@ export interface AccountJwtPayload {
   verificationRequired: boolean;
 }
 
+const ACCOUNT_SESSION_IDLE_MS = 24 * 60 * 60 * 1000;
+const ACCOUNT_SESSION_IDLE_SECONDS = ACCOUNT_SESSION_IDLE_MS / 1000;
+
 declare global {
   namespace Express {
     interface Request {
@@ -98,6 +101,12 @@ export async function requireAccountIdentity(req: Request, res: Response, next: 
     return;
   }
 
+  const issuedAt = (payload as AccountJwtPayload & { iat?: number }).iat;
+  if (typeof issuedAt !== "number" || Date.now() - issuedAt * 1000 >= ACCOUNT_SESSION_IDLE_MS) {
+    res.status(401).json({ error: "Session expired or invalid — please log in again" });
+    return;
+  }
+
   if (isBlockedAutomatedRegistrationName(payload.telegramUsername)) {
     writeLog("login", "warn", "automated_account_access_blocked",
       "Automated account access blocked",
@@ -143,8 +152,6 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
 
 // ── Cookie issuance ───────────────────────────────────────────────────────────
 
-const SESSION_DAYS = 7; // Reduced from 30d to 7d
-
 export function getAccountCookieOptions() {
   // REPL_ID is also present in published deployments. Partitioned cookies are
   // required only for the cross-site development preview iframe; applying them
@@ -168,13 +175,24 @@ export function issueAccountCookie(
   telegramUsername: string,
   options: { verificationRequired: boolean },
 ): void {
+  setAccountSessionCookie(res, {
+    telegramUsername,
+    jti: randomUUID(),
+    verificationRequired: options.verificationRequired,
+  });
+}
+
+/** Refreshes idle expiry while preserving the token ID used for logout revocation. */
+export function refreshAccountCookie(res: Response, account: AccountJwtPayload): void {
+  setAccountSessionCookie(res, account);
+}
+
+function setAccountSessionCookie(res: Response, payload: AccountJwtPayload): void {
   const secret = getJwtSecret();
-  const jti = randomUUID();
-  const expiresInSecs = SESSION_DAYS * 24 * 60 * 60;
-  const token = jwt.sign({ telegramUsername, jti, verificationRequired: options.verificationRequired }, secret, { expiresIn: expiresInSecs });
+  const token = jwt.sign(payload, secret, { expiresIn: ACCOUNT_SESSION_IDLE_SECONDS });
   res.cookie("account_session", token, {
     ...getAccountCookieOptions(),
-    maxAge: expiresInSecs * 1000,
+    maxAge: ACCOUNT_SESSION_IDLE_MS,
   });
 }
 

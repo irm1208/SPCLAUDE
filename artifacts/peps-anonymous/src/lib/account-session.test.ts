@@ -30,7 +30,7 @@ test("preserves the verification-required account response", async () => {
 });
 
 test("refreshes no more than once per activity interval", () => {
-  assert.equal(shouldRefreshAccountSession(0, 600_000), true);
+  assert.equal(shouldRefreshAccountSession(null, 1), true);
   assert.equal(shouldRefreshAccountSession(600_000, 600_001), false);
   assert.equal(shouldRefreshAccountSession(600_000, 900_000), true);
 });

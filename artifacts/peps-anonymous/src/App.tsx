@@ -1,10 +1,14 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import React, { useEffect, useRef } from "react";
 import { useAccount, useTelegramAutoLogin } from "@/hooks/use-account";
+import {
+  ACCOUNT_ACTIVITY_RETRY_INTERVAL_MS,
+  shouldRefreshAccountSession,
+} from "@/lib/account-session";
 
 // Pages
 import Home from "@/pages/Home";
@@ -224,11 +228,90 @@ function TelegramAutoLogin() {
   return null;
 }
 
+function AccountSessionActivity() {
+  const { account } = useAccount();
+  const queryClient = useQueryClient();
+  const hasAccountSession = !!account;
+
+  useEffect(() => {
+    if (!hasAccountSession) return;
+
+    let lastRefreshAt: number | null = null;
+    let lastAttemptAt: number | null = null;
+    let inFlight = false;
+
+    const handleActivity = () => {
+      const now = performance.now();
+      if (
+        inFlight
+        || !shouldRefreshAccountSession(lastRefreshAt, now)
+        || !shouldRefreshAccountSession(lastAttemptAt, now, ACCOUNT_ACTIVITY_RETRY_INTERVAL_MS)
+      ) {
+        return;
+      }
+
+      lastAttemptAt = now;
+      inFlight = true;
+      void fetch("/api/account/session/refresh", {
+        method: "POST",
+        credentials: "include",
+      }).then(async (response) => {
+        if (response.status === 401) {
+          queryClient.setQueryData(["account", "me"], null);
+          await queryClient.invalidateQueries({ queryKey: ["account"] });
+          return;
+        }
+        if (response.ok) lastRefreshAt = now;
+      }).catch(() => {
+        // Transient failures do not mean the user is signed out; retry on later activity.
+      }).finally(() => {
+        inFlight = false;
+      });
+    };
+
+    window.addEventListener("pointerdown", handleActivity, { passive: true });
+    window.addEventListener("keydown", handleActivity);
+    window.addEventListener("touchstart", handleActivity, { passive: true });
+    window.addEventListener("wheel", handleActivity, { passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", handleActivity);
+      window.removeEventListener("keydown", handleActivity);
+      window.removeEventListener("touchstart", handleActivity);
+      window.removeEventListener("wheel", handleActivity);
+    };
+  }, [hasAccountSession, queryClient]);
+
+  return null;
+}
+
+function AccountSessionRecoveryNotice() {
+  const { isSessionUnavailable, retryAccountCheck } = useAccount();
+  if (!isSessionUnavailable) return null;
+
+  return (
+    <div
+      role="alert"
+      className="fixed inset-x-3 bottom-4 z-[110] mx-auto flex max-w-xl items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-xl"
+    >
+      <span>Unable to check your account session. You have not been signed out.</span>
+      <button
+        type="button"
+        onClick={retryAccountCheck}
+        className="shrink-0 rounded-md border border-amber-700 px-3 py-1.5 font-semibold hover:bg-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TelegramAutoLogin />
+        <AccountSessionActivity />
+        <AccountSessionRecoveryNotice />
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Router />

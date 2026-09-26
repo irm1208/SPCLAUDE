@@ -159,6 +159,7 @@ vi.mock("../lib/account-verification", () => ({
 }));
 vi.mock("../middleware/account-auth", () => ({
   requireAccount: (_req: any, res: any) => res.status(401).json({ error: "unauthorized" }),
+  requireAccountIdentity: (_req: any, res: any) => res.status(401).json({ error: "unauthorized" }),
   issueAccountCookieForAccount: async (res: any, username: string) => {
     const account = state.rows.accounts?.find(row => row.telegramUsername === username);
     const restricted = !!account?.verificationRequiredAt && !account?.verifiedAt;
@@ -168,6 +169,7 @@ vi.mock("../middleware/account-auth", () => ({
   },
   revokeToken: async () => undefined,
   extractJtiFromCookie: () => null,
+  refreshAccountCookie: () => undefined,
 }));
 vi.mock("../lib/email", () => ({ sendTemplatedEmail: async () => ({ ok: true }) }));
 vi.mock("../lib/audit-log", () => ({ writeLog: async () => undefined }));
