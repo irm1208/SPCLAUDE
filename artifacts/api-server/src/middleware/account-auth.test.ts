@@ -12,6 +12,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
   return { ...actual, db };
 });
 
+import * as accountAuth from "./account-auth";
 import { getAccountCookieOptions, issueAccountCookie, requireAccount, requireAccountIdentity } from "./account-auth";
 
 function response() {
@@ -67,6 +68,52 @@ describe("account session authorization", () => {
     issueAccountCookie(res as never, "new-user", { verificationRequired: true });
     const token = res.cookie.mock.calls[0][1] as string;
     expect(jwt.decode(token)).toMatchObject({ telegramUsername: "new-user", verificationRequired: true });
+  });
+
+  it("sets a 24-hour inactivity expiry on new account sessions", () => {
+    const res = response();
+    issueAccountCookie(res as never, "active-user", { verificationRequired: false });
+    const token = res.cookie.mock.calls[0][1] as string;
+    const payload = jwt.decode(token) as jwt.JwtPayload;
+
+    expect(res.cookie.mock.calls[0][2]).toMatchObject({ maxAge: 24 * 60 * 60 * 1000 });
+    expect(payload.exp! - payload.iat!).toBe(24 * 60 * 60);
+  });
+
+  it("refreshes activity without changing the revocation identifier", () => {
+    const refreshAccountCookie = (accountAuth as unknown as {
+      refreshAccountCookie?: (
+        res: unknown,
+        account: { telegramUsername: string; jti: string; verificationRequired: boolean },
+      ) => void;
+    }).refreshAccountCookie;
+    expect(refreshAccountCookie).toBeTypeOf("function");
+
+    const res = response();
+    refreshAccountCookie!(res, {
+      telegramUsername: "active-user",
+      jti: "same-session-id",
+      verificationRequired: false,
+    });
+    const token = res.cookie.mock.calls[0][1] as string;
+    const payload = jwt.decode(token) as jwt.JwtPayload & {
+      telegramUsername: string;
+      jti: string;
+      verificationRequired: boolean;
+    };
+
+    expect(payload).toMatchObject({
+      telegramUsername: "active-user",
+      jti: "same-session-id",
+      verificationRequired: false,
+    });
+    expect(payload.exp! - payload.iat!).toBe(24 * 60 * 60);
+    expect(res.cookie.mock.calls[0][2]).toMatchObject({ maxAge: 24 * 60 * 60 * 1000 });
+  });
+
+  it("provides a dedicated account-session activity refresh route", () => {
+    const source = readFileSync(new URL("../routes/account.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/router\.post\(["']\/account\/session\/refresh["']/);
   });
 
   it("allows a restricted JWT to establish identity but rejects protected access", async () => {
