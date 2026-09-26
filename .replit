@@ -145,3 +145,6 @@ timeoutMs = 120000
 deploymentTarget = "autoscale"
 build = ["bash", "scripts/deploy.sh"]
 run = ["bash", "scripts/start-prod.sh"]
+
+[objectStorage]
+defaultBucketID = "replit-objstore-6572e576-beac-45ed-a207-d470e107c369"
