@@ -39,4 +39,10 @@ describe("admin shared-order platform payment", () => {
     expect(routeSource).toContain("!isCreatorViewer && !includeOrganiserPaymentForAdmin");
     expect(routeSource.match(/includeOrganiserPaymentForAdmin: true/g)).toHaveLength(1);
   });
+
+  it("distinguishes a required organiser transfer from direct member payments in the admin list", () => {
+    expect(routeSource).toContain(
+      "organiserHasWallet: Array.isArray(s.leadCryptoOptions) && s.leadCryptoOptions.length > 0",
+    );
+  });
 });

@@ -3201,6 +3201,7 @@ router.get("/admin/wholesale-shares", async (req, res): Promise<void> => {
       totalVendorShipping: s.totalVendorShipping != null ? Number(s.totalVendorShipping) : null,
       totalKits: s.totalKits != null ? Number(s.totalKits) : null,
       organiserPaymentStatus: s.organiserPaymentStatus ?? "unpaid",
+      organiserHasWallet: Array.isArray(s.leadCryptoOptions) && s.leadCryptoOptions.length > 0,
       createdAt: (s.createdAt as Date).toISOString(),
       lockedAt: s.lockedAt ? (s.lockedAt as Date).toISOString() : null,
       submittedAt: s.submittedAt ? (s.submittedAt as Date).toISOString() : null,

@@ -734,6 +734,12 @@ function OrdersTab({ secret }: { secret: string }) {
   const [directShippingFilter, setDirectShippingFilter] = useState(false);
   const [wholesaleFilter, setWholesaleFilter] = useState(false);
   const [orderView, setOrderView] = useState<"gb" | "wholesale" | "shared" | "all">("gb");
+  const [sharedPaymentSummaries, setSharedPaymentSummaries] = useState<Map<string, AdminShareRow>>(new Map());
+  const [sharedPaymentSummaryError, setSharedPaymentSummaryError] = useState(false);
+  const [sharedPaymentDetails, setSharedPaymentDetails] = useState<Record<string, AdminShareOrganiserPayment | null>>({});
+  const [sharedPaymentLoading, setSharedPaymentLoading] = useState<Record<string, boolean>>({});
+  const [sharedPaymentErrors, setSharedPaymentErrors] = useState<Record<string, string>>({});
+  const [confirmingSharedPayment, setConfirmingSharedPayment] = useState<string | null>(null);
   const [routingFilter, setRoutingFilter] = useState<"all" | "direct" | "reshipper" | "unrouted">("all");
   const [activeFilterPanel, setActiveFilterPanel] = useState<"payment" | "flags" | "scope" | "dates" | null>(null);
   const [clearBalanceEnabled, setClearBalanceEnabled] = useState(() => {
@@ -1142,6 +1148,35 @@ function OrdersTab({ secret }: { secret: string }) {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    if (orderView !== "shared" && orderView !== "all") return;
+    const visibleIds = new Set(orders
+      .filter(o => o.orderType === "wholesale_shared" && o.sharedOrderId)
+      .map(o => o.sharedOrderId!));
+    if (visibleIds.size === 0) {
+      setSharedPaymentSummaries(new Map());
+      return;
+    }
+    let active = true;
+    setSharedPaymentSummaryError(false);
+    fetch(apiUrl("/admin/wholesale-shares?status=all"), { headers: { "x-admin-secret": secret } })
+      .then(async response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json() as { shares?: AdminShareRow[] };
+        if (!Array.isArray(data.shares)) throw new Error("Invalid shared order response");
+        if (active) setSharedPaymentSummaries(new Map(data.shares
+          .filter(share => visibleIds.has(share.id))
+          .map(share => [share.id, share])));
+      })
+      .catch(() => {
+        if (active) {
+          setSharedPaymentSummaries(new Map());
+          setSharedPaymentSummaryError(true);
+        }
+      });
+    return () => { active = false; };
+  }, [orders, orderView, secret]);
+
+  useEffect(() => {
     fetch(apiUrl("/admin/products"), { headers: { "x-admin-secret": secret } })
       .then(r => r.json())
       .then(data => {
@@ -1259,7 +1294,7 @@ function OrdersTab({ secret }: { secret: string }) {
     const rows: OrderRow[] = [];
     for (const o of filtered) {
       const sid = o.sharedOrderId;
-      if (o.orderType === "wholesale_shared" && sid && (groups.get(sid)?.length ?? 0) > 1) {
+      if (o.orderType === "wholesale_shared" && sid && ((groups.get(sid)?.length ?? 0) > 1 || orderView === "shared")) {
         if (emitted.has(sid)) continue;
         emitted.add(sid);
         const members = groups.get(sid)!;
@@ -1273,8 +1308,75 @@ function OrdersTab({ secret }: { secret: string }) {
     return rows;
   }, [filtered, orderView]);
 
-  const toggleGroup = (id: string) =>
+  const loadSharedPayment = async (id: string) => {
+    setSharedPaymentLoading(prev => ({ ...prev, [id]: true }));
+    setSharedPaymentErrors(prev => ({ ...prev, [id]: "" }));
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${id}`), {
+        headers: { "x-admin-secret": secret },
+      });
+      const detail = await response.json().catch(() => null) as AdminShareDetail | { error?: string } | null;
+      if (!response.ok) throw new Error((detail as { error?: string } | null)?.error ?? `HTTP ${response.status}`);
+      if (!detail || !("organiserPayment" in detail)) throw new Error("Payment details unavailable");
+      const payment = detail.organiserPayment;
+      setSharedPaymentDetails(prev => ({ ...prev, [id]: payment }));
+      if (payment) setSharedPaymentSummaries(prev => {
+        const current = prev.get(id);
+        if (!current) return prev;
+        const next = new Map(prev);
+        next.set(id, { ...current, organiserPaymentStatus: payment.status });
+        return next;
+      });
+    } catch (error) {
+      setSharedPaymentErrors(prev => ({
+        ...prev,
+        [id]: error instanceof Error ? error.message : "Could not load payment details",
+      }));
+    } finally {
+      setSharedPaymentLoading(prev => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const toggleGroup = (id: string) => {
+    if (!expandedGroups.has(id)) void loadSharedPayment(id);
     setExpandedGroups(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  const confirmSharedPayment = async (id: string) => {
+    const payment = sharedPaymentDetails[id];
+    if (payment?.status !== "pending" || !payment.txHash) return;
+    if (!window.confirm(
+      `Confirm the organiser's platform payment for shared order #${id}?\n\n` +
+      `${payment.currency ?? "Unknown currency"} (${payment.network ?? "Unknown network"}) · ${payment.txHash}\n\n` +
+      "Verify the on-chain transfer and receiving wallet first. This cannot be undone.",
+    )) return;
+    setConfirmingSharedPayment(id);
+    try {
+      const response = await fetch(apiUrl(`/admin/wholesale-shares/${id}/confirm-organiser-payment`), {
+        method: "POST",
+        headers: { "x-admin-secret": secret },
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string; organiserPaymentStatus?: AdminShareOrganiserPayment["status"] };
+      if (!response.ok) throw new Error(result.error ?? "Could not confirm platform payment");
+      setSharedPaymentDetails(prev => ({
+        ...prev,
+        [id]: prev[id] ? { ...prev[id]!, status: result.organiserPaymentStatus ?? "confirmed" } : null,
+      }));
+      setSharedPaymentSummaries(prev => {
+        const current = prev.get(id);
+        if (!current) return prev;
+        const next = new Map(prev);
+        next.set(id, { ...current, organiserPaymentStatus: result.organiserPaymentStatus ?? "confirmed" });
+        return next;
+      });
+      void loadSharedPayment(id);
+      void load();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Could not confirm platform payment");
+    } finally {
+      setConfirmingSharedPayment(null);
+    }
+  };
 
   // A shared order ships to one address, but the vendor may split it into multiple
   // physical packages. Keep the same package identities on every member order.
@@ -1328,6 +1430,18 @@ function OrdersTab({ secret }: { secret: string }) {
   ) => {
     const { id, lead, recipient, members } = group;
     const isOpen = expandedGroups.has(id);
+    const paymentSummary = sharedPaymentSummaries.get(id);
+    const payment = sharedPaymentDetails[id];
+    const paymentStatus = paymentSummary?.organiserPaymentStatus ?? payment?.status;
+    const hasOrganiserWallet = payment != null || paymentSummary?.organiserHasWallet;
+    const platformPaymentLabel = paymentStatus === "confirmed" ? "Confirmed"
+      : paymentStatus === "pending" ? "Awaiting confirmation"
+      : hasOrganiserWallet === false ? "No organiser transfer"
+      : paymentStatus === "unpaid" ? "Not submitted"
+      : sharedPaymentSummaryError ? "Status unavailable" : "Checking…";
+    const platformPaymentTone = paymentStatus === "confirmed" ? "bg-green-100 text-green-700"
+      : paymentStatus === "pending" ? "bg-amber-100 text-amber-800"
+      : "bg-slate-100 text-slate-600";
     const memberIds = members.map(m => m.id);
     const allSel = memberIds.length > 0 && memberIds.every(mid => selected.has(mid));
     const someSel = memberIds.some(mid => selected.has(mid));
@@ -1393,6 +1507,13 @@ function OrdersTab({ secret }: { secret: string }) {
             </span>
             {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
           </button>
+        </div>
+        <div className="mx-4 mb-2 -mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs">
+          <span className="font-semibold text-slate-700">Organiser → Platform</span>
+          <span className={cn("rounded-full px-2 py-0.5 font-semibold", platformPaymentTone)}>
+            Platform payment: {platformPaymentLabel}
+          </span>
+          {paymentStatus === "pending" && <span className="text-slate-500">Expand to review and confirm</span>}
         </div>
         <div className="px-4 pb-3 -mt-1">
           {!editingSharedPackages ? (
@@ -1484,6 +1605,48 @@ function OrdersTab({ secret }: { secret: string }) {
               className="overflow-hidden"
             >
               <div className="border-t border-border divide-y divide-border bg-muted/20">
+                <div className="px-4 py-3">
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-slate-800">Organiser → Platform Payment</span>
+                      <span className={cn("rounded-full px-2 py-0.5 font-semibold", platformPaymentTone)}>
+                        {platformPaymentLabel}
+                      </span>
+                    </div>
+                    {sharedPaymentLoading[id] ? (
+                      <p className="mt-2 text-slate-600">Loading payment details…</p>
+                    ) : sharedPaymentErrors[id] ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-red-700">
+                        <span>{sharedPaymentErrors[id]}</span>
+                        <button className="font-semibold underline" onClick={() => void loadSharedPayment(id)}>Retry</button>
+                      </div>
+                    ) : payment ? (
+                      <div className="mt-2 space-y-1.5 text-slate-700">
+                        <p>Amount due: <span className="font-semibold">{payment.amountDue == null ? "Pending" : fmtC(payment.amountDue, "USD")}</span></p>
+                        {payment.txHash && (
+                          <>
+                            <p>Submitted: <span className="font-semibold">{payment.currency} · {payment.network}</span></p>
+                            <p>Transaction: <span className="break-all font-mono">{payment.txHash}</span></p>
+                          </>
+                        )}
+                        {payment.status === "pending" && paymentStatus === "pending" && (
+                          <button
+                            type="button"
+                            onClick={() => void confirmSharedPayment(id)}
+                            disabled={confirmingSharedPayment === id || !payment.txHash}
+                            className="mt-1 rounded-lg bg-green-600 px-3 py-2 font-bold text-white hover:bg-green-700 disabled:opacity-50"
+                          >
+                            {confirmingSharedPayment === id ? "Confirming…" : "✓ Confirm platform payment"}
+                          </button>
+                        )}
+                      </div>
+                    ) : payment === null && !paymentSummary?.organiserHasWallet ? (
+                      <p className="mt-2 text-slate-600">No organiser transfer required; members pay the platform directly.</p>
+                    ) : (
+                      <p className="mt-2 text-slate-600">Payment details unavailable. Close and reopen this order to retry.</p>
+                    )}
+                  </div>
+                </div>
                 {members.map(m => {
                   const manageOpen = expanded === m.id;
                   return (
@@ -20255,6 +20418,7 @@ type AdminShareRow = {
   memberCount: number; paidCount: number; allPaid: boolean;
   combinedKits: number; combinedSubtotal: number;
   totalVendorShipping: number | null; totalKits: number | null;
+  organiserPaymentStatus: "unpaid" | "pending" | "confirmed"; organiserHasWallet: boolean;
   createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
 };
 type AdminShareMember = {
