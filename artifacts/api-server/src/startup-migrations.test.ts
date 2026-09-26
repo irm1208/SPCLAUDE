@@ -31,6 +31,21 @@ describe("group-buy shipping product exclusion migrations", () => {
   });
 });
 
+describe("ticket message attachment startup migration", () => {
+  it("creates private attachment metadata with cascading message cleanup and indexes", () => {
+    expect(startupSource).toContain("CREATE TABLE IF NOT EXISTS ticket_message_attachments");
+    expect(startupSource).toMatch(
+      /ticket_message_id integer NOT NULL REFERENCES ticket_messages\(id\) ON DELETE CASCADE/,
+    );
+    expect(startupSource).toContain(
+      "CREATE UNIQUE INDEX IF NOT EXISTS ticket_message_attachments_storage_key_unique_idx",
+    );
+    expect(startupSource).toContain(
+      "CREATE INDEX IF NOT EXISTS ticket_message_attachments_message_id_idx",
+    );
+  });
+});
+
 describe("admin security startup migrations", () => {
   it("leaves admin security schema changes to the managed publish migration", () => {
     for (const table of ["admin_security_settings", "admin_users", "admin_recovery_codes", "admin_sessions", "admin_pending_challenges"]) {

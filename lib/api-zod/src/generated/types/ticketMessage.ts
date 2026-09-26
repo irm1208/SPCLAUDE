@@ -5,6 +5,7 @@
  * Salt&Peps Order API
  * OpenAPI spec version: 0.1.0
  */
+import type { TicketImageAttachment } from './ticketImageAttachment';
 import type { TicketMessageAuthorRole } from './ticketMessageAuthorRole';
 
 export interface TicketMessage {
@@ -14,4 +15,5 @@ export interface TicketMessage {
   authorUsername: string;
   body: string;
   createdAt: string;
+  attachments?: TicketImageAttachment[];
 }

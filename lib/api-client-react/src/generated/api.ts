@@ -21,6 +21,8 @@ import type {
 
 import type {
   AdminAddLabTestBody,
+  AdminCreateTicketMultipartRequest,
+  AdminCreateTicketRequest,
   AdminDeleteLabTest200,
   AdminListTickets200,
   AdminListTicketsParams,
@@ -29,6 +31,7 @@ import type {
   AdminUpdateTicketStatusBody,
   ApproveLabTest200,
   CreateOrderRequest,
+  CreateTicketMultipartRequest,
   CreateTicketRequest,
   DeliveryMethod,
   ErrorResponse,
@@ -49,6 +52,7 @@ import type {
   SubmitLabTest200,
   Ticket,
   TicketMessage,
+  TicketMessageMultipartRequest,
   TicketWithMessages,
   UpdateOrderRequest
 } from './api.schemas';
@@ -157,13 +161,6 @@ export function useListLabTests<TData = Awaited<ReturnType<typeof listLabTests>>
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-
 export const getGetLabTestMetricsUrl = () => {
 
 
@@ -1572,20 +1569,14 @@ export const getCreateTicketUrl = () => {
 /**
  * @summary Create a new support ticket (JWT auth)
  */
-export const createTicket = async (createTicketRequest: CreateTicketRequest, options?: Parameters<typeof customFetch>[1]): Promise<Ticket> => {
+export const createTicket = async (createTicketBody: CreateTicketRequest | CreateTicketMultipartRequest, options?: Parameters<typeof customFetch>[1]): Promise<Ticket> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-return customFetch<Ticket>(getCreateTicketUrl(),
+  return customFetch<Ticket>(getCreateTicketUrl(),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createTicketRequest)
+    method: 'POST'
+    ,
+    body: JSON.stringify(createTicketBody)
   }
 );}
 
@@ -1623,9 +1614,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CreateTicketMutationResult = NonNullable<Awaited<ReturnType<typeof createTicket>>>
-    export type CreateTicketMutationBody = BodyType<CreateTicketRequest>
+    export type CreateTicketMutationBody = BodyType<CreateTicketRequest | CreateTicketMultipartRequest>
     export type CreateTicketMutationError = ErrorType<unknown>
-    export type CreateTicketMutationVariables = {data: BodyType<CreateTicketRequest>}
+    export type CreateTicketMutationVariables = {data: BodyType<CreateTicketRequest | CreateTicketMultipartRequest>}
 
     /**
  * @summary Create a new support ticket (JWT auth)
@@ -1807,20 +1798,14 @@ export const getPostTicketMessageUrl = (id: string,) => {
  * @summary Post a reply on a ticket (JWT auth)
  */
 export const postTicketMessage = async (id: string,
-    postTicketMessageRequest: PostTicketMessageRequest, options?: Parameters<typeof customFetch>[1]): Promise<TicketMessage> => {
+    postTicketMessageBody: PostTicketMessageRequest | TicketMessageMultipartRequest, options?: Parameters<typeof customFetch>[1]): Promise<TicketMessage> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-return customFetch<TicketMessage>(getPostTicketMessageUrl(id),
+  return customFetch<TicketMessage>(getPostTicketMessageUrl(id),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(postTicketMessageRequest)
+    method: 'POST'
+    ,
+    body: JSON.stringify(postTicketMessageBody)
   }
 );}
 
@@ -1858,9 +1843,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type PostTicketMessageMutationResult = NonNullable<Awaited<ReturnType<typeof postTicketMessage>>>
-    export type PostTicketMessageMutationBody = BodyType<PostTicketMessageRequest>
+    export type PostTicketMessageMutationBody = BodyType<PostTicketMessageRequest | TicketMessageMultipartRequest>
     export type PostTicketMessageMutationError = ErrorType<unknown>
-    export type PostTicketMessageMutationVariables = {id: string;data: BodyType<PostTicketMessageRequest>}
+    export type PostTicketMessageMutationVariables = {id: string;data: BodyType<PostTicketMessageRequest | TicketMessageMultipartRequest>}
 
     /**
  * @summary Post a reply on a ticket (JWT auth)
@@ -1874,6 +1859,162 @@ export const usePostTicketMessage = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getPostTicketMessageMutationOptions(options));
+    }
+
+export const getGetMyTicketAttachmentUrl = (id: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/api/account/tickets/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * @summary Retrieve an image attached to one of the current user's tickets
+ */
+export const getMyTicketAttachment = async (id: string,
+    attachmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetMyTicketAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMyTicketAttachmentQueryKey = (id: string,
+    attachmentId: string,) => {
+    return [
+    `/api/account/tickets/${id}/attachments/${attachmentId}`
+    ] as const;
+    }
+
+
+export const getGetMyTicketAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof getMyTicketAttachment>>, TError = ErrorType<void>>(id: string,
+    attachmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyTicketAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyTicketAttachmentQueryKey(id,attachmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyTicketAttachment>>> = ({ signal }) => getMyTicketAttachment(id,attachmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && attachmentId !== null && attachmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyTicketAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMyTicketAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof getMyTicketAttachment>>>
+export type GetMyTicketAttachmentQueryError = ErrorType<void>
+
+
+/**
+ * @summary Retrieve an image attached to one of the current user's tickets
+ */
+
+export function useGetMyTicketAttachment<TData = Awaited<ReturnType<typeof getMyTicketAttachment>>, TError = ErrorType<void>>(
+ id: string,
+    attachmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMyTicketAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMyTicketAttachmentQueryOptions(id,attachmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminCreateTicketUrl = () => {
+
+
+
+
+  return `/api/admin/tickets`
+}
+
+/**
+ * @summary Start a support conversation with a user (admin)
+ */
+export const adminCreateTicket = async (adminCreateTicketBody: AdminCreateTicketRequest | AdminCreateTicketMultipartRequest, options?: Parameters<typeof customFetch>[1]): Promise<Ticket> => {
+
+  return customFetch<Ticket>(getAdminCreateTicketUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: JSON.stringify(adminCreateTicketBody)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateTicketMutationKey = () => ['adminCreateTicket'] as const;
+
+export const getAdminCreateTicketMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateTicket>>, TError,AdminCreateTicketMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateTicket>>, TError,AdminCreateTicketMutationVariables, TContext> => {
+
+const mutationKey = getAdminCreateTicketMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateTicket>>, AdminCreateTicketMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateTicket(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateTicketMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateTicket>>>
+    export type AdminCreateTicketMutationBody = BodyType<AdminCreateTicketRequest | AdminCreateTicketMultipartRequest>
+    export type AdminCreateTicketMutationError = ErrorType<unknown>
+    export type AdminCreateTicketMutationVariables = {data: BodyType<AdminCreateTicketRequest | AdminCreateTicketMultipartRequest>}
+
+    /**
+ * @summary Start a support conversation with a user (admin)
+ */
+export const useAdminCreateTicket = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateTicket>>, TError,AdminCreateTicketMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateTicket>>,
+        TError,
+        AdminCreateTicketMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAdminCreateTicketMutationOptions(options));
     }
 
 export const getAdminListTicketsUrl = (params?: AdminListTicketsParams,) => {
@@ -2130,20 +2271,14 @@ export const getAdminPostTicketMessageUrl = (id: string,) => {
  * @summary Post an admin reply on a ticket
  */
 export const adminPostTicketMessage = async (id: string,
-    postTicketMessageRequest: PostTicketMessageRequest, options?: Parameters<typeof customFetch>[1]): Promise<TicketMessage> => {
+    adminPostTicketMessageBody: PostTicketMessageRequest | TicketMessageMultipartRequest, options?: Parameters<typeof customFetch>[1]): Promise<TicketMessage> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-return customFetch<TicketMessage>(getAdminPostTicketMessageUrl(id),
+  return customFetch<TicketMessage>(getAdminPostTicketMessageUrl(id),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(postTicketMessageRequest)
+    method: 'POST'
+    ,
+    body: JSON.stringify(adminPostTicketMessageBody)
   }
 );}
 
@@ -2181,9 +2316,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminPostTicketMessageMutationResult = NonNullable<Awaited<ReturnType<typeof adminPostTicketMessage>>>
-    export type AdminPostTicketMessageMutationBody = BodyType<PostTicketMessageRequest>
+    export type AdminPostTicketMessageMutationBody = BodyType<PostTicketMessageRequest | TicketMessageMultipartRequest>
     export type AdminPostTicketMessageMutationError = ErrorType<unknown>
-    export type AdminPostTicketMessageMutationVariables = {id: string;data: BodyType<PostTicketMessageRequest>}
+    export type AdminPostTicketMessageMutationVariables = {id: string;data: BodyType<PostTicketMessageRequest | TicketMessageMultipartRequest>}
 
     /**
  * @summary Post an admin reply on a ticket
@@ -2199,3 +2334,235 @@ export const useAdminPostTicketMessage = <TError = ErrorType<unknown>,
       return useMutation(getAdminPostTicketMessageMutationOptions(options));
     }
 
+export const getAdminGetTicketAttachmentUrl = (id: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/api/admin/tickets/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * @summary Retrieve an image attached to a ticket (admin)
+ */
+export const adminGetTicketAttachment = async (id: string,
+    attachmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getAdminGetTicketAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetTicketAttachmentQueryKey = (id: string,
+    attachmentId: string,) => {
+    return [
+    `/api/admin/tickets/${id}/attachments/${attachmentId}`
+    ] as const;
+    }
+
+
+export const getAdminGetTicketAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof adminGetTicketAttachment>>, TError = ErrorType<void>>(id: string,
+    attachmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetTicketAttachmentQueryKey(id,attachmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetTicketAttachment>>> = ({ signal }) => adminGetTicketAttachment(id,attachmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && attachmentId !== null && attachmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetTicketAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetTicketAttachment>>>
+export type AdminGetTicketAttachmentQueryError = ErrorType<void>
+
+
+/**
+ * @summary Retrieve an image attached to a ticket (admin)
+ */
+
+export function useAdminGetTicketAttachment<TData = Awaited<ReturnType<typeof adminGetTicketAttachment>>, TError = ErrorType<void>>(
+ id: string,
+    attachmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetTicketAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetTicketAttachmentQueryOptions(id,attachmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOrganiserPostTicketMessageUrl = (id: string,) => {
+
+
+
+
+  return `/api/organiser/tickets/${id}/messages`
+}
+
+/**
+ * @summary Post an organiser reply on a ticket
+ */
+export const organiserPostTicketMessage = async (id: string,
+    organiserPostTicketMessageBody: PostTicketMessageRequest | TicketMessageMultipartRequest, options?: Parameters<typeof customFetch>[1]): Promise<TicketMessage> => {
+
+  return customFetch<TicketMessage>(getOrganiserPostTicketMessageUrl(id),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: JSON.stringify(organiserPostTicketMessageBody)
+  }
+);}
+
+
+
+
+
+export const getOrganiserPostTicketMessageMutationKey = () => ['organiserPostTicketMessage'] as const;
+
+export const getOrganiserPostTicketMessageMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof organiserPostTicketMessage>>, TError,OrganiserPostTicketMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof organiserPostTicketMessage>>, TError,OrganiserPostTicketMessageMutationVariables, TContext> => {
+
+const mutationKey = getOrganiserPostTicketMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof organiserPostTicketMessage>>, OrganiserPostTicketMessageMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  organiserPostTicketMessage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OrganiserPostTicketMessageMutationResult = NonNullable<Awaited<ReturnType<typeof organiserPostTicketMessage>>>
+    export type OrganiserPostTicketMessageMutationBody = BodyType<PostTicketMessageRequest | TicketMessageMultipartRequest>
+    export type OrganiserPostTicketMessageMutationError = ErrorType<unknown>
+    export type OrganiserPostTicketMessageMutationVariables = {id: string;data: BodyType<PostTicketMessageRequest | TicketMessageMultipartRequest>}
+
+    /**
+ * @summary Post an organiser reply on a ticket
+ */
+export const useOrganiserPostTicketMessage = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof organiserPostTicketMessage>>, TError,OrganiserPostTicketMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof organiserPostTicketMessage>>,
+        TError,
+        OrganiserPostTicketMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getOrganiserPostTicketMessageMutationOptions(options));
+    }
+
+export const getOrganiserGetTicketAttachmentUrl = (id: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/api/organiser/tickets/${id}/attachments/${attachmentId}`
+}
+
+/**
+ * @summary Retrieve an image attached to an organiser's Group Buy ticket
+ */
+export const organiserGetTicketAttachment = async (id: string,
+    attachmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getOrganiserGetTicketAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOrganiserGetTicketAttachmentQueryKey = (id: string,
+    attachmentId: string,) => {
+    return [
+    `/api/organiser/tickets/${id}/attachments/${attachmentId}`
+    ] as const;
+    }
+
+
+export const getOrganiserGetTicketAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof organiserGetTicketAttachment>>, TError = ErrorType<void>>(id: string,
+    attachmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof organiserGetTicketAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOrganiserGetTicketAttachmentQueryKey(id,attachmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof organiserGetTicketAttachment>>> = ({ signal }) => organiserGetTicketAttachment(id,attachmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && attachmentId !== null && attachmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof organiserGetTicketAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OrganiserGetTicketAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof organiserGetTicketAttachment>>>
+export type OrganiserGetTicketAttachmentQueryError = ErrorType<void>
+
+
+/**
+ * @summary Retrieve an image attached to an organiser's Group Buy ticket
+ */
+
+export function useOrganiserGetTicketAttachment<TData = Awaited<ReturnType<typeof organiserGetTicketAttachment>>, TError = ErrorType<void>>(
+ id: string,
+    attachmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof organiserGetTicketAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOrganiserGetTicketAttachmentQueryOptions(id,attachmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

@@ -2,6 +2,11 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { V2_CARD_BORDER } from "./theme";
 import { organiserApi, type ApiTicket, type ApiTicketMessage, type ApiTicketFull } from "./api/organiser-api";
 import {
+  buildTicketMessageFormData,
+  TicketAttachmentPicker,
+  TicketMessageAttachments,
+} from "@/components/TicketAttachments";
+import {
   MessageSquare, Search, Send, ArrowLeft, Check, CheckCheck,
   ChevronDown, CircleDot, Loader2, X, RefreshCw,
 } from "lucide-react";
@@ -83,6 +88,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
   const [activeTicketFull, setActiveTicketFull] = useState<ApiTicketFull | null>(null);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingThread, setLoadingThread] = useState(false);
@@ -118,6 +124,7 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
   const openChat = (id: string) => {
     setActiveId(id);
     setDraft("");
+    setSelectedFiles([]);
     setStatusMenuOpen(false);
     loadThread(id);
   };
@@ -127,7 +134,10 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
   }, [highlightId]);
 
   useEffect(() => {
-    if (activeId) loadThread(activeId);
+    if (activeId) {
+      setSelectedFiles([]);
+      loadThread(activeId);
+    }
   }, [activeId, loadThread]);
 
   useEffect(() => {
@@ -138,9 +148,13 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
     if (!activeId || !draft.trim() || sending) return;
     setSending(true);
     try {
-      const msg = await organiserApi.replyTicket(activeId, draft.trim());
+      const msg = await organiserApi.replyTicket(
+        activeId,
+        buildTicketMessageFormData("body", draft.trim(), selectedFiles),
+      );
       setMessages(prev => [...prev, msg]);
       setDraft("");
+      setSelectedFiles([]);
       inputRef.current?.focus();
       // Optimistically update ticket status + updated time
       const now = new Date().toISOString();
@@ -399,6 +413,12 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
                               }}
                             >
                               {msg.body}
+                              <TicketMessageAttachments
+                                attachments={msg.attachments}
+                                attachmentUrl={attachmentId =>
+                                  `/api/organiser/tickets/${encodeURIComponent(activeId ?? "")}/attachments/${encodeURIComponent(attachmentId)}`
+                                }
+                              />
                               <span className="flex items-center gap-1 justify-end mt-1">
                                 <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>{fmtTime(msg.createdAt)}</span>
                                 {isOut && <CheckCheck className="w-3 h-3" style={{ color: TICK }} />}
@@ -415,27 +435,30 @@ export default function TicketsTab({ selectedGbId, highlightId }: TicketsTabProp
             </div>
 
             {/* Reply box */}
-            <div className="p-3 flex items-end gap-2" style={{ borderTop: `1px solid ${V2_CARD_BORDER}`, background: "#fff" }}>
-              <textarea
-                ref={inputRef}
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); }
-                }}
-                placeholder="Type a reply… (Enter to send, Shift+Enter for new line)"
-                rows={1}
-                className="flex-1 px-3 py-2 rounded-xl text-[13px] outline-none resize-none"
-                style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", maxHeight: 120, overflowY: "auto" }}
-              />
-              <button
-                onClick={sendReply}
-                disabled={sending || !draft.trim()}
-                className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 disabled:opacity-40 transition-colors"
-                style={{ background: "var(--t-blue)", color: "#fff" }}
-              >
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+            <div className="p-3 space-y-2" style={{ borderTop: `1px solid ${V2_CARD_BORDER}`, background: "#fff" }}>
+              <TicketAttachmentPicker files={selectedFiles} onChange={setSelectedFiles} disabled={sending} uploading={sending} />
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={inputRef}
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); }
+                  }}
+                  placeholder="Type a reply… (Enter to send, Shift+Enter for new line)"
+                  rows={1}
+                  className="flex-1 px-3 py-2 rounded-xl text-[13px] outline-none resize-none"
+                  style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)", maxHeight: 120, overflowY: "auto" }}
+                />
+                <button
+                  onClick={sendReply}
+                  disabled={sending || !draft.trim()}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 disabled:opacity-40 transition-colors"
+                  style={{ background: "var(--t-blue)", color: "#fff" }}
+                >
+                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
           </div>
         ) : (

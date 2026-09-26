@@ -12,5 +12,7 @@ export type CreateTicketRequestCategory = typeof CreateTicketRequestCategory[key
 export const CreateTicketRequestCategory = {
   order_issue: 'order_issue',
   general_support: 'general_support',
-  billing_refund: 'billing_refund',
+  group_buy: 'group_buy',
+  wholesale: 'wholesale',
+  testing_pool: 'testing_pool',
 } as const;

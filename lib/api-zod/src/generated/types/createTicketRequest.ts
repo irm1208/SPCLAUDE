@@ -13,4 +13,7 @@ export interface CreateTicketRequest {
   subject: string;
   /** @maxLength 4000 */
   description: string;
+  groupBuyId?: string;
+  issueType?: string;
+  orderId?: string;
 }

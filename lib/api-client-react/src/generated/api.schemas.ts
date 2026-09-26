@@ -42,6 +42,24 @@ export const TicketMessageAuthorRole = {
   admin: 'admin',
 } as const;
 
+export type TicketImageAttachmentMimeType = typeof TicketImageAttachmentMimeType[keyof typeof TicketImageAttachmentMimeType];
+
+
+export const TicketImageAttachmentMimeType = {
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+  'image/gif': 'image/gif',
+} as const;
+
+export interface TicketImageAttachment {
+  id: string;
+  fileName: string;
+  mimeType: TicketImageAttachmentMimeType;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 export interface TicketMessage {
   id: number;
   ticketId: string;
@@ -49,6 +67,7 @@ export interface TicketMessage {
   authorUsername: string;
   body: string;
   createdAt: string;
+  attachments?: TicketImageAttachment[];
 }
 
 export interface TicketWithMessages {
@@ -62,7 +81,9 @@ export type CreateTicketRequestCategory = typeof CreateTicketRequestCategory[key
 export const CreateTicketRequestCategory = {
   order_issue: 'order_issue',
   general_support: 'general_support',
-  billing_refund: 'billing_refund',
+  group_buy: 'group_buy',
+  wholesale: 'wholesale',
+  testing_pool: 'testing_pool',
 } as const;
 
 export interface CreateTicketRequest {
@@ -71,12 +92,52 @@ export interface CreateTicketRequest {
   subject: string;
   /** @maxLength 4000 */
   description: string;
+  groupBuyId?: string;
+  issueType?: string;
+  orderId?: string;
 }
+
+export type CreateTicketMultipartRequest = CreateTicketRequest & {
+  /** @maxItems 5 */
+  files?: Blob[];
+};
 
 export interface PostTicketMessageRequest {
   /** @maxLength 4000 */
   body: string;
 }
+
+export interface TicketMessageMultipartRequest {
+  /** @maxLength 4000 */
+  body: string;
+  /** @maxItems 5 */
+  files?: Blob[];
+}
+
+export type AdminCreateTicketRequestCategory = typeof AdminCreateTicketRequestCategory[keyof typeof AdminCreateTicketRequestCategory];
+
+
+export const AdminCreateTicketRequestCategory = {
+  order_issue: 'order_issue',
+  general_support: 'general_support',
+  group_buy: 'group_buy',
+  wholesale: 'wholesale',
+  testing_pool: 'testing_pool',
+} as const;
+
+export interface AdminCreateTicketRequest {
+  username: string;
+  category: AdminCreateTicketRequestCategory;
+  /** @maxLength 200 */
+  subject: string;
+  /** @maxLength 4000 */
+  message: string;
+}
+
+export type AdminCreateTicketMultipartRequest = AdminCreateTicketRequest & {
+  /** @maxItems 5 */
+  files?: Blob[];
+};
 
 export interface HealthStatus {
   status: string;

@@ -43,6 +43,12 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { RulesetModal } from "@/components/RulesetModal";
 import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
+import {
+  buildTicketMessageFormData,
+  TicketAttachmentPicker,
+  TicketMessageAttachments,
+  type TicketAttachmentMetadata,
+} from "@/components/TicketAttachments";
 import { toast } from "@/hooks/use-toast";
 import {
   useAccount, useLogout, useAccountOrders, useTestingLateOptIn, useTestingActivePools, useTestingGbPools,
@@ -6679,6 +6685,7 @@ interface SupportTicketMessage {
   authorUsername: string;
   body: string;
   createdAt: string;
+  attachments?: TicketAttachmentMetadata[];
 }
 
 const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
@@ -6719,6 +6726,7 @@ function TicketDetail({ ticket, username, onBack }: { ticket: SupportTicket; use
   const [currentTicket, setCurrentTicket] = useState<SupportTicket>(ticket);
   const [loading, setLoading] = useState(true);
   const [replyBody, setReplyBody] = useState("");
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [replyError, setReplyError] = useState("");
   const msgEndRef = useRef<HTMLDivElement>(null);
@@ -6753,14 +6761,14 @@ function TicketDetail({ ticket, username, onBack }: { ticket: SupportTicket; use
     try {
       const res = await fetch(`/api/account/tickets/${ticket.id}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ body: replyBody.trim() }),
+        body: buildTicketMessageFormData("body", replyBody.trim(), replyFiles),
       });
       if (res.ok) {
         const msg = await res.json() as SupportTicketMessage;
         setMessages(prev => [...prev, msg]);
         setReplyBody("");
+        setReplyFiles([]);
       } else {
         const err = await res.json().catch(() => ({})) as { error?: string };
         setReplyError(err.error ?? "Failed to send");
@@ -6836,6 +6844,12 @@ function TicketDetail({ ticket, username, onBack }: { ticket: SupportTicket; use
                         {isCustomer ? `@${msg.authorUsername}` : "Support Team"}
                       </p>
                       <p className="text-xs whitespace-pre-wrap break-words">{msg.body}</p>
+                      <TicketMessageAttachments
+                        attachments={msg.attachments}
+                        attachmentUrl={attachmentId =>
+                          `/api/account/tickets/${encodeURIComponent(ticket.id)}/attachments/${encodeURIComponent(attachmentId)}`
+                        }
+                      />
                       <p className="text-[9px] mt-1 text-right" style={{ opacity: 0.55 }}>
                         {new Date(msg.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
                       </p>
@@ -6862,6 +6876,7 @@ function TicketDetail({ ticket, username, onBack }: { ticket: SupportTicket; use
                 style={{ background: "transparent", color: "var(--t-text)" }}
                 onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendReply(); }}
               />
+              <TicketAttachmentPicker files={replyFiles} onChange={setReplyFiles} disabled={sending} uploading={sending} />
               {replyError && <p className="text-xs text-red-500">{replyError}</p>}
               <div className="flex justify-end">
                 <button onClick={sendReply} disabled={!replyBody.trim() || sending}
@@ -6887,6 +6902,7 @@ function SupportSection({ username, onBack, initialTicketId }: { username: strin
   const [category, setCategory] = useState<TicketCategory>("general_support");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  const [newTicketFiles, setNewTicketFiles] = useState<File[]>([]);
   const [issueType, setIssueType] = useState("");
   const [groupBuyId, setGroupBuyId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -6929,25 +6945,23 @@ function SupportSection({ username, onBack, initialTicketId }: { username: strin
     setSubmitting(true);
     setSubmitError("");
     try {
-      const body: Record<string, string> = {
-        category,
-        subject: subject.trim(),
-        description: description.trim(),
-      };
-      if (issueType) body.issueType = issueType;
-      if (groupBuyId) body.groupBuyId = groupBuyId;
+      const body = buildTicketMessageFormData("description", description.trim(), newTicketFiles);
+      body.append("category", category);
+      body.append("subject", subject.trim());
+      if (issueType) body.append("issueType", issueType);
+      if (groupBuyId) body.append("groupBuyId", groupBuyId);
 
       const res = await fetch("/api/account/tickets", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(body),
+        body,
       });
       if (res.ok) {
         const ticket = await res.json() as SupportTicket;
         setTickets(prev => [ticket, ...prev]);
         setSubject("");
         setDescription("");
+        setNewTicketFiles([]);
         setCategory("general_support");
         setIssueType("");
         setGroupBuyId("");
@@ -6988,7 +7002,7 @@ function SupportSection({ username, onBack, initialTicketId }: { username: strin
               </button>
             )}
             {view === "new" && (
-              <button onClick={() => { setView("list"); setSubmitError(""); }}
+              <button onClick={() => { setView("list"); setSubmitError(""); setNewTicketFiles([]); }}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold"
                 style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.8)" }}>
                 Cancel
@@ -7096,6 +7110,13 @@ function SupportSection({ username, onBack, initialTicketId }: { username: strin
                   style={{ background: "var(--t-input-bg, var(--t-surface))", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
                 />
               </div>
+
+              <TicketAttachmentPicker
+                files={newTicketFiles}
+                onChange={setNewTicketFiles}
+                disabled={submitting}
+                uploading={submitting}
+              />
 
               {submitError && <p className="text-xs text-red-500">{submitError}</p>}
               <button

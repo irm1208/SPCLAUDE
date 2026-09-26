@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, index, serial, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, index, uniqueIndex, serial, boolean, integer } from "drizzle-orm/pg-core";
 import { accountsTable } from "./accounts";
 
 export const TICKET_CATEGORIES = [
@@ -44,7 +44,23 @@ export const ticketMessagesTable = pgTable("ticket_messages", {
   index("ticket_messages_ticket_id_idx").on(t.ticketId),
 ]);
 
+export const ticketMessageAttachmentsTable = pgTable("ticket_message_attachments", {
+  id: text("id").primaryKey(),
+  ticketMessageId: integer("ticket_message_id").notNull()
+    .references(() => ticketMessagesTable.id, { onDelete: "cascade" }),
+  storageKey: text("storage_key").notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("ticket_message_attachments_storage_key_unique_idx").on(t.storageKey),
+  index("ticket_message_attachments_message_id_idx").on(t.ticketMessageId),
+]);
+
 export type Ticket = typeof ticketsTable.$inferSelect;
 export type NewTicket = typeof ticketsTable.$inferInsert;
 export type TicketMessage = typeof ticketMessagesTable.$inferSelect;
 export type NewTicketMessage = typeof ticketMessagesTable.$inferInsert;
+export type TicketMessageAttachment = typeof ticketMessageAttachmentsTable.$inferSelect;
+export type NewTicketMessageAttachment = typeof ticketMessageAttachmentsTable.$inferInsert;

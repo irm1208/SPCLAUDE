@@ -833,6 +833,21 @@ async function runStartupMigrations(): Promise<void> {
       )
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_messages_ticket_id_idx ON ticket_messages (ticket_id)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS ticket_message_attachments (
+        id text PRIMARY KEY,
+        ticket_message_id integer NOT NULL REFERENCES ticket_messages(id) ON DELETE CASCADE,
+        storage_key text NOT NULL,
+        file_name text NOT NULL,
+        mime_type text NOT NULL,
+        size_bytes integer NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS ticket_message_attachments_storage_key_unique_idx
+      ON ticket_message_attachments (storage_key)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS ticket_message_attachments_message_id_idx
+      ON ticket_message_attachments (ticket_message_id)`);
     // ticket_telegram_messages — links Telegram message IDs to tickets for admin reply routing
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS ticket_telegram_messages (

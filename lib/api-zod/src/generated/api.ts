@@ -514,9 +514,12 @@ export const createTicketBodyDescriptionMax = 4000;
 
 
 export const CreateTicketBody = zod.object({
-  "category": zod.enum(['order_issue', 'general_support', 'billing_refund']),
+  "category": zod.enum(['order_issue', 'general_support', 'group_buy', 'wholesale', 'testing_pool']),
   "subject": zod.string().max(createTicketBodySubjectMax),
-  "description": zod.string().max(createTicketBodyDescriptionMax)
+  "description": zod.string().max(createTicketBodyDescriptionMax),
+  "groupBuyId": zod.string().optional(),
+  "issueType": zod.string().optional(),
+  "orderId": zod.string().optional()
 })
 
 export const CreateTicketResponse = zod.object({
@@ -569,7 +572,14 @@ export const GetMyTicketResponse = zod.object({
   "authorRole": zod.enum(['customer', 'admin']),
   "authorUsername": zod.string(),
   "body": zod.string(),
+  "createdAt": zod.string(),
+  "attachments": zod.array(zod.object({
+  "id": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+  "sizeBytes": zod.number().int(),
   "createdAt": zod.string()
+})).optional()
 }))
 })
 
@@ -595,7 +605,52 @@ export const PostTicketMessageResponse = zod.object({
   "authorRole": zod.enum(['customer', 'admin']),
   "authorUsername": zod.string(),
   "body": zod.string(),
+  "createdAt": zod.string(),
+  "attachments": zod.array(zod.object({
+  "id": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+  "sizeBytes": zod.number().int(),
   "createdAt": zod.string()
+})).optional()
+})
+
+
+/**
+ * @summary Retrieve an image attached to one of the current user's tickets
+ */
+export const GetMyTicketAttachmentParams = zod.object({
+  "id": zod.coerce.string(),
+  "attachmentId": zod.coerce.string()
+})
+
+export const GetMyTicketAttachmentResponse = zod.unknown()
+
+
+/**
+ * @summary Start a support conversation with a user (admin)
+ */
+export const adminCreateTicketBodySubjectMax = 200;
+
+export const adminCreateTicketBodyMessageMax = 4000;
+
+
+
+export const AdminCreateTicketBody = zod.object({
+  "username": zod.string(),
+  "category": zod.enum(['order_issue', 'general_support', 'group_buy', 'wholesale', 'testing_pool']),
+  "subject": zod.string().max(adminCreateTicketBodySubjectMax),
+  "message": zod.string().max(adminCreateTicketBodyMessageMax)
+})
+
+export const AdminCreateTicketResponse = zod.object({
+  "id": zod.string(),
+  "accountUsername": zod.string(),
+  "category": zod.enum(['order_issue', 'general_support', 'billing_refund']),
+  "subject": zod.string(),
+  "status": zod.enum(['open', 'in_progress', 'resolved', 'closed']),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
 })
 
 
@@ -643,7 +698,14 @@ export const AdminGetTicketResponse = zod.object({
   "authorRole": zod.enum(['customer', 'admin']),
   "authorUsername": zod.string(),
   "body": zod.string(),
+  "createdAt": zod.string(),
+  "attachments": zod.array(zod.object({
+  "id": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+  "sizeBytes": zod.number().int(),
   "createdAt": zod.string()
+})).optional()
 }))
 })
 
@@ -687,7 +749,68 @@ export const AdminPostTicketMessageResponse = zod.object({
   "authorRole": zod.enum(['customer', 'admin']),
   "authorUsername": zod.string(),
   "body": zod.string(),
+  "createdAt": zod.string(),
+  "attachments": zod.array(zod.object({
+  "id": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+  "sizeBytes": zod.number().int(),
   "createdAt": zod.string()
+})).optional()
 })
+
+
+/**
+ * @summary Retrieve an image attached to a ticket (admin)
+ */
+export const AdminGetTicketAttachmentParams = zod.object({
+  "id": zod.coerce.string(),
+  "attachmentId": zod.coerce.string()
+})
+
+export const AdminGetTicketAttachmentResponse = zod.unknown()
+
+
+/**
+ * @summary Post an organiser reply on a ticket
+ */
+export const OrganiserPostTicketMessageParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const organiserPostTicketMessageBodyBodyMax = 4000;
+
+
+
+export const OrganiserPostTicketMessageBody = zod.object({
+  "body": zod.string().max(organiserPostTicketMessageBodyBodyMax)
+})
+
+export const OrganiserPostTicketMessageResponse = zod.object({
+  "id": zod.number().int(),
+  "ticketId": zod.string(),
+  "authorRole": zod.enum(['customer', 'admin']),
+  "authorUsername": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.string(),
+  "attachments": zod.array(zod.object({
+  "id": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+  "sizeBytes": zod.number().int(),
+  "createdAt": zod.string()
+})).optional()
+})
+
+
+/**
+ * @summary Retrieve an image attached to an organiser's Group Buy ticket
+ */
+export const OrganiserGetTicketAttachmentParams = zod.object({
+  "id": zod.coerce.string(),
+  "attachmentId": zod.coerce.string()
+})
+
+export const OrganiserGetTicketAttachmentResponse = zod.unknown()
 
 

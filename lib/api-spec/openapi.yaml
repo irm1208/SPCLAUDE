@@ -573,6 +573,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateTicketRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateTicketMultipartRequest"
       responses:
         "201":
           description: Created ticket
@@ -639,6 +642,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/PostTicketMessageRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TicketMessageMultipartRequest"
       responses:
         "201":
           description: Created message
@@ -647,7 +653,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/TicketMessage"
 
+  /account/tickets/{id}/attachments/{attachmentId}:
+    get:
+      operationId: getMyTicketAttachment
+      tags: [tickets]
+      summary: Retrieve an image attached to one of the current user's tickets
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: attachmentId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Private ticket image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Ticket image not found
+
   /admin/tickets:
+    post:
+      operationId: adminCreateTicket
+      tags: [tickets]
+      summary: Start a support conversation with a user (admin)
+      security:
+        - adminSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreateTicketRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AdminCreateTicketMultipartRequest"
+      responses:
+        "201":
+          description: Created ticket and opening message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
     get:
       operationId: adminListTickets
       tags: [tickets]
@@ -758,6 +827,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/PostTicketMessageRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TicketMessageMultipartRequest"
       responses:
         "201":
           description: Created message
@@ -765,6 +837,118 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TicketMessage"
+
+  /admin/tickets/{id}/attachments/{attachmentId}:
+    get:
+      operationId: adminGetTicketAttachment
+      tags: [tickets]
+      summary: Retrieve an image attached to a ticket (admin)
+      security:
+        - adminSecret: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: attachmentId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Private ticket image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Ticket image not found
+
+  /organiser/tickets/{id}/messages:
+    post:
+      operationId: organiserPostTicketMessage
+      tags: [tickets]
+      summary: Post an organiser reply on a ticket
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostTicketMessageRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TicketMessageMultipartRequest"
+      responses:
+        "201":
+          description: Created message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketMessage"
+
+  /organiser/tickets/{id}/attachments/{attachmentId}:
+    get:
+      operationId: organiserGetTicketAttachment
+      tags: [tickets]
+      summary: Retrieve an image attached to an organiser's Group Buy ticket
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: attachmentId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Private ticket image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Ticket image not found
 
 
 components:
@@ -826,6 +1010,10 @@ components:
           type: string
         createdAt:
           type: string
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketImageAttachment"
       required:
         - id
         - ticketId
@@ -852,17 +1040,35 @@ components:
       properties:
         category:
           type: string
-          enum: [order_issue, general_support, billing_refund]
+          enum: [order_issue, general_support, group_buy, wholesale, testing_pool]
         subject:
           type: string
           maxLength: 200
         description:
           type: string
           maxLength: 4000
+        groupBuyId:
+          type: string
+        issueType:
+          type: string
+        orderId:
+          type: string
       required:
         - category
         - subject
         - description
+
+    CreateTicketMultipartRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateTicketRequest"
+        - type: object
+          properties:
+            files:
+              type: array
+              maxItems: 5
+              items:
+                type: string
+                format: binary
 
     PostTicketMessageRequest:
       type: object
@@ -872,6 +1078,74 @@ components:
           maxLength: 4000
       required:
         - body
+
+    TicketMessageMultipartRequest:
+      type: object
+      properties:
+        body:
+          type: string
+          maxLength: 4000
+        files:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: binary
+      required:
+        - body
+
+    AdminCreateTicketRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        category:
+          type: string
+          enum: [order_issue, general_support, group_buy, wholesale, testing_pool]
+        subject:
+          type: string
+          maxLength: 200
+        message:
+          type: string
+          maxLength: 4000
+      required:
+        - username
+        - category
+        - subject
+        - message
+
+    AdminCreateTicketMultipartRequest:
+      allOf:
+        - $ref: "#/components/schemas/AdminCreateTicketRequest"
+        - type: object
+          properties:
+            files:
+              type: array
+              maxItems: 5
+              items:
+                type: string
+                format: binary
+
+    TicketImageAttachment:
+      type: object
+      properties:
+        id:
+          type: string
+        fileName:
+          type: string
+        mimeType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp, image/gif]
+        sizeBytes:
+          type: integer
+        createdAt:
+          type: string
+      required:
+        - id
+        - fileName
+        - mimeType
+        - sizeBytes
+        - createdAt
 
     HealthStatus:
       type: object

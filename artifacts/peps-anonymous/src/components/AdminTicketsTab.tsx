@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Loader2, MessageSquare, ChevronRight, ArrowLeft, Send, RefreshCw, Filter, X, Plus } from "lucide-react";
+import {
+  buildTicketMessageFormData,
+  TicketAttachmentPicker,
+  TicketMessageAttachments,
+  type TicketAttachmentMetadata,
+} from "./TicketAttachments";
 
 function apiUrl(path: string) { return `/api${path}`; }
 
@@ -26,6 +32,7 @@ interface TicketMessage {
   authorUsername: string;
   body: string;
   createdAt: string;
+  attachments?: TicketAttachmentMetadata[];
 }
 
 const CATEGORY_LABELS: Record<TicketCategory, string> = {
@@ -87,6 +94,7 @@ function TicketDetail({ ticketId, secret, onBack }: { ticketId: string; secret: 
   const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [replyBody, setReplyBody] = useState("");
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [replyError, setReplyError] = useState("");
   const [statusChanging, setStatusChanging] = useState(false);
@@ -135,14 +143,15 @@ function TicketDetail({ ticketId, secret, onBack }: { ticketId: string; secret: 
     try {
       const res = await fetch(apiUrl(`/admin/tickets/${ticketId}/messages`), {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        headers: { "x-admin-secret": secret },
         credentials: "omit",
-        body: JSON.stringify({ body: replyBody.trim() }),
+        body: buildTicketMessageFormData("body", replyBody.trim(), replyFiles),
       });
       if (res.ok) {
         const msg = await res.json() as TicketMessage;
         setMessages(prev => [...prev, msg]);
         setReplyBody("");
+        setReplyFiles([]);
         setTicket(t => t ? { ...t, status: t.status === "open" ? "in_progress" : t.status } : t);
       } else {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -226,6 +235,13 @@ function TicketDetail({ ticketId, secret, onBack }: { ticketId: string; secret: 
                 {msg.authorRole === "admin" ? `Admin (@${msg.authorUsername})` : `@${msg.authorUsername}`}
               </p>
               <p className="text-xs whitespace-pre-wrap break-words">{msg.body}</p>
+              <TicketMessageAttachments
+                attachments={msg.attachments}
+                attachmentUrl={attachmentId =>
+                  apiUrl(`/admin/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}`)
+                }
+                headers={{ "x-admin-secret": secret }}
+              />
               <p className={`text-[9px] mt-1 text-right ${msg.authorRole === "admin" ? "text-blue-100" : "text-muted-foreground"}`}>
                 {fmtDate(msg.createdAt)}
               </p>
@@ -246,6 +262,7 @@ function TicketDetail({ ticketId, secret, onBack }: { ticketId: string; secret: 
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendReply();
           }}
         />
+        <TicketAttachmentPicker files={replyFiles} onChange={setReplyFiles} disabled={sending} uploading={sending} />
         {replyError && <p className="text-xs text-red-500">{replyError}</p>}
         <div className="flex justify-end">
           <button onClick={sendReply} disabled={!replyBody.trim() || sending}
@@ -272,6 +289,7 @@ function NewConversationForm({ secret, onCancel, onCreated }: NewConvFormProps) 
   const [category, setCategory] = useState<TicketCategory>("general_support");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -281,16 +299,15 @@ function NewConversationForm({ secret, onCancel, onCreated }: NewConvFormProps) 
     setSubmitting(true);
     setError("");
     try {
+      const body = buildTicketMessageFormData("message", message.trim(), files);
+      body.append("username", username.trim().replace(/^@/, ""));
+      body.append("category", category);
+      body.append("subject", subject.trim());
       const res = await fetch(apiUrl("/admin/tickets"), {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-secret": secret },
+        headers: { "x-admin-secret": secret },
         credentials: "omit",
-        body: JSON.stringify({
-          username: username.trim().replace(/^@/, ""),
-          category,
-          subject: subject.trim(),
-          message: message.trim(),
-        }),
+        body,
       });
       if (res.ok) {
         const ticket = await res.json() as Ticket;
@@ -389,6 +406,8 @@ function NewConversationForm({ secret, onCancel, onCreated }: NewConvFormProps) 
             This will be sent as the first admin message. The user will receive a Telegram notification.
           </p>
         </div>
+
+        <TicketAttachmentPicker files={files} onChange={setFiles} disabled={submitting} uploading={submitting} />
 
         {error && (
           <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2">

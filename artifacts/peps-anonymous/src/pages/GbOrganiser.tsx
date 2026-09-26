@@ -16,6 +16,12 @@ import {
 } from "lucide-react";
 import ShippingSplitTab from "./ShippingSplitTab";
 import { PageLayout } from "@/components/PageLayout";
+import {
+  buildTicketMessageFormData,
+  TicketAttachmentPicker,
+  TicketMessageAttachments,
+  type TicketAttachmentMetadata,
+} from "@/components/TicketAttachments";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
@@ -13419,6 +13425,7 @@ interface OrgTicketMessage {
   authorUsername: string;
   body: string;
   createdAt: string;
+  attachments?: TicketAttachmentMetadata[];
 }
 
 const TICKET_STATUS_STYLE: Record<string, { text: string; bg: string }> = {
@@ -13436,6 +13443,7 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
   const [thread, setThread] = useState<{ ticket: OrgTicket; messages: OrgTicketMessage[] } | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [reply, setReply] = useState("");
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
@@ -13456,6 +13464,7 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
     setThreadLoading(true);
     setThread(null);
     setReply("");
+    setReplyFiles([]);
     setSendError(null);
     const r = await fetch(`/api/organiser/tickets/${ticketId}`, { credentials: "include" });
     const d = await r.json();
@@ -13471,22 +13480,27 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
     if (!selectedId || !reply.trim() || sending) return;
     setSending(true);
     setSendError(null);
-    const r = await fetch(`/api/organiser/tickets/${selectedId}/messages`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: reply.trim() }),
-    });
-    if (r.ok) {
-      const msg: OrgTicketMessage = await r.json();
-      setThread(prev => prev ? { ...prev, ticket: { ...prev.ticket, status: prev.ticket.status === "open" ? "in_progress" : prev.ticket.status }, messages: [...prev.messages, msg] } : prev);
-      setTickets(prev => prev.map(t => t.id === selectedId ? { ...t, status: t.status === "open" ? "in_progress" : t.status, updatedAt: new Date().toISOString() } : t));
-      setReply("");
-    } else {
-      const d = await r.json().catch(() => ({}));
-      setSendError((d as { error?: string }).error ?? "Failed to send reply");
+    try {
+      const r = await fetch(`/api/organiser/tickets/${selectedId}/messages`, {
+        method: "POST",
+        credentials: "include",
+        body: buildTicketMessageFormData("body", reply.trim(), replyFiles),
+      });
+      if (r.ok) {
+        const msg: OrgTicketMessage = await r.json();
+        setThread(prev => prev ? { ...prev, ticket: { ...prev.ticket, status: prev.ticket.status === "open" ? "in_progress" : prev.ticket.status }, messages: [...prev.messages, msg] } : prev);
+        setTickets(prev => prev.map(t => t.id === selectedId ? { ...t, status: t.status === "open" ? "in_progress" : t.status, updatedAt: new Date().toISOString() } : t));
+        setReply("");
+        setReplyFiles([]);
+      } else {
+        const d = await r.json().catch(() => ({}));
+        setSendError((d as { error?: string }).error ?? "Failed to send reply");
+      }
+    } catch {
+      setSendError("Network error — please try again");
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   };
 
   if (selectedId) {
@@ -13532,6 +13546,12 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
                       @{msg.authorUsername} · {new Date(msg.createdAt).toLocaleString()}
                     </p>
                     <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{msg.body}</p>
+                      <TicketMessageAttachments
+                        attachments={msg.attachments}
+                        attachmentUrl={attachmentId =>
+                          `/api/organiser/tickets/${encodeURIComponent(selectedId)}/attachments/${encodeURIComponent(attachmentId)}`
+                        }
+                      />
                   </div>
                 </div>
               ))}
@@ -13539,24 +13559,27 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
             </div>
 
             {thread.ticket.status !== "closed" && (
-              <div className="flex gap-2 pt-2" style={{ borderTop: "1px solid var(--t-border)" }}>
-                <textarea
-                  value={reply}
-                  onChange={e => setReply(e.target.value)}
-                  placeholder="Type your reply…"
-                  rows={3}
-                  className="flex-1 rounded-xl px-3 py-2 text-sm resize-none outline-none"
-                  style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
-                  onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply(); }}
-                />
-                <button
-                  onClick={sendReply}
-                  disabled={sending || !reply.trim()}
-                  className="self-end px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
-                  style={{ background: "var(--t-blue)", color: "#fff" }}
-                >
-                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <SendHorizonal className="w-4 h-4" />}
-                </button>
+              <div className="space-y-2 pt-2" style={{ borderTop: "1px solid var(--t-border)" }}>
+                <TicketAttachmentPicker files={replyFiles} onChange={setReplyFiles} disabled={sending} uploading={sending} />
+                <div className="flex gap-2">
+                  <textarea
+                    value={reply}
+                    onChange={e => setReply(e.target.value)}
+                    placeholder="Type your reply…"
+                    rows={3}
+                    className="flex-1 rounded-xl px-3 py-2 text-sm resize-none outline-none"
+                    style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
+                    onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply(); }}
+                  />
+                  <button
+                    onClick={sendReply}
+                    disabled={sending || !reply.trim()}
+                    className="self-end px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
+                    style={{ background: "var(--t-blue)", color: "#fff" }}
+                  >
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <SendHorizonal className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             )}
             {sendError && <p className="text-xs text-red-500">{sendError}</p>}

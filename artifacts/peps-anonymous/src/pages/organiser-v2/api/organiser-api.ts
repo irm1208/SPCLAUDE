@@ -172,6 +172,13 @@ export interface ApiTicketMessage {
   authorUsername: string;
   body: string;
   createdAt: string;
+  attachments?: {
+    id: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    createdAt: string;
+  }[];
 }
 
 export interface ApiTicketFull extends ApiTicket {
@@ -267,13 +274,14 @@ export async function organiserRequest<T>(
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const headers = new Headers(options.headers);
   const hasBody = options.body !== undefined;
-  if (hasBody && !headers.has("content-type")) headers.set("content-type", "application/json");
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (hasBody && !isFormData && !headers.has("content-type")) headers.set("content-type", "application/json");
 
   const response = await fetcher(`/api${normalizedPath}`, {
     ...options,
     credentials: "include",
     headers,
-    body: hasBody ? JSON.stringify(options.body) : undefined,
+    body: hasBody ? isFormData ? options.body as FormData : JSON.stringify(options.body) : undefined,
   });
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -528,9 +536,9 @@ export function createOrganiserApi(fetcher: typeof fetch = fetch) {
   getTicket: (ticketId: string) => request<{ ticket: ApiTicketFull; messages: ApiTicketMessage[] }>(
     `/organiser/tickets/${encodeURIComponent(ticketId)}`,
   ),
-  replyTicket: (ticketId: string, body: string) => request<ApiTicketMessage>(
+  replyTicket: (ticketId: string, body: FormData) => request<ApiTicketMessage>(
     `/organiser/tickets/${encodeURIComponent(ticketId)}/messages`,
-    { method: "POST", body: { body } },
+    { method: "POST", body },
   ),
   generateReshippperInviteCode: (groupBuyId: string) => request<{ inviteCode: string }>(
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/reshipper-invite-code`,

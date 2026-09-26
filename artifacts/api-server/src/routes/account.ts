@@ -1,3 +1,4 @@
+import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
@@ -3941,6 +3942,8 @@ router.delete("/account", requireAccount, async (req: any, res: any): Promise<vo
         eq(sql`lower(${col})`, bare),
         eq(sql`lower(${col})`, withAt),
       );
+
+    await deleteTicketImagesForAccounts([username, bare, withAt]);
 
     // ── Step 1: Order-dependent records (orders have no FK to accounts) ───────
     const userOrders = await db

@@ -1,6 +1,9 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type RequestHandler } from "express";
 import jwt from "jsonwebtoken";
-import { db, ticketsTable, ticketMessagesTable, ticketTelegramMessagesTable, groupBuysTable, accountsTable, ordersTable } from "@workspace/db";
+import multer from "multer";
+import { readFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { db, ticketsTable, ticketMessagesTable, ticketMessageAttachmentsTable, ticketTelegramMessagesTable, groupBuysTable, accountsTable, ordersTable } from "@workspace/db";
 import { eq, and, desc, asc, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
@@ -18,6 +21,18 @@ import {
   AdminPostTicketMessageBody,
 } from "@workspace/api-zod";
 import { z } from "zod";
+import {
+  canViewTicketAttachment,
+  deleteTicketImage,
+  downloadTicketImage,
+  MAX_TICKET_IMAGE_BYTES,
+  MAX_TICKET_IMAGE_FILES,
+  sanitizeTicketImageFileName,
+  storeTicketImage,
+  TicketImageValidationError,
+  validateTicketImageBatch,
+  type StoredTicketImage,
+} from "../lib/ticket-attachments";
 
 const CreateTicketBody = _CreateTicketBody.extend({ groupBuyId: z.string().optional(), issueType: z.string().optional(), orderId: z.string().optional() } as any);
 
@@ -32,6 +47,235 @@ function getAccountFromCookie(req: import("express").Request): string | null {
   } catch {
     return null;
   }
+}
+
+function getTicketRouteParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+const ticketImageUpload = multer({
+  storage: multer.diskStorage({
+    destination: tmpdir(),
+    filename: (_req, _file, callback) => callback(null, `ticket-image-${randomUUID()}`),
+  }),
+  limits: {
+    files: MAX_TICKET_IMAGE_FILES,
+    fileSize: MAX_TICKET_IMAGE_BYTES,
+  },
+});
+
+function getTemporaryTicketFiles(req: import("express").Request): Express.Multer.File[] {
+  return (req.files as Express.Multer.File[] | undefined) ?? [];
+}
+
+async function removeTemporaryTicketFiles(req: import("express").Request): Promise<void> {
+  await Promise.all(getTemporaryTicketFiles(req).map(file =>
+    unlink(file.path).catch(error => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.warn("[tickets] Could not remove temporary image:", error);
+      }
+    }),
+  ));
+}
+
+const parseTicketImages: RequestHandler = (req, res, next) => {
+  ticketImageUpload.array("files", MAX_TICKET_IMAGE_FILES)(req, res, error => {
+    if (error) {
+      void removeTemporaryTicketFiles(req).finally(() => {
+        const isMulterError = error instanceof multer.MulterError;
+        const message = isMulterError && error.code === "LIMIT_FILE_SIZE"
+          ? "Each image must be 20 MB or smaller."
+          : isMulterError && ["LIMIT_FILE_COUNT", "LIMIT_UNEXPECTED_FILE"].includes(error.code)
+            ? `Attach no more than ${MAX_TICKET_IMAGE_FILES} images at a time.`
+            : "Could not read the uploaded images.";
+        res.status(400).json({ error: message });
+      });
+      return;
+    }
+
+    let temporaryFilesRemoved = false;
+    const cleanupTemporaryFiles = () => {
+      if (temporaryFilesRemoved) return;
+      temporaryFilesRemoved = true;
+      void removeTemporaryTicketFiles(req);
+    };
+    res.once("finish", cleanupTemporaryFiles);
+    res.once("close", cleanupTemporaryFiles);
+    next();
+  });
+};
+
+const requireTicketCustomer: RequestHandler = (req, res, next) => {
+  const username = getAccountFromCookie(req);
+  if (!username) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  res.locals.ticketCustomerUsername = username;
+  next();
+};
+
+const requireTicketAdmin: RequestHandler = (req, res, next) => {
+  if (requireAdmin(req, res)) next();
+};
+
+async function uploadRequestTicketImages(
+  ticketId: string,
+  files: Express.Multer.File[],
+): Promise<StoredTicketImage[]> {
+  const quickValidation = validateTicketImageBatch(files.map(file => ({
+    size: file.size,
+    reportedMimeType: file.mimetype,
+    detectedMimeType: file.mimetype,
+  })));
+  if (quickValidation) throw new TicketImageValidationError(quickValidation);
+
+  const uploaded: StoredTicketImage[] = [];
+  try {
+    for (const file of files) {
+      const buffer = await readFile(file.path);
+      uploaded.push(await storeTicketImage({
+        ticketId,
+        originalName: file.originalname,
+        reportedMimeType: file.mimetype,
+        buffer,
+      }));
+    }
+    return uploaded;
+  } catch (error) {
+    await Promise.all(uploaded.map(image =>
+      deleteTicketImage(image.storageKey).catch(cleanupError => {
+        console.error("[tickets] Could not clean up an uncommitted image:", cleanupError);
+      }),
+    ));
+    throw error;
+  }
+}
+
+async function cleanupUncommittedTicketImages(images: StoredTicketImage[]): Promise<void> {
+  await Promise.all(images.map(image =>
+    deleteTicketImage(image.storageKey).catch(error => {
+      console.error("[tickets] Could not clean up an uncommitted image:", error);
+    }),
+  ));
+}
+
+async function insertTicketImageMetadata(
+  tx: Pick<typeof db, "insert">,
+  messageId: number,
+  images: StoredTicketImage[],
+): Promise<void> {
+  if (images.length === 0) return;
+  await tx.insert(ticketMessageAttachmentsTable).values(images.map(image => ({
+    id: randomUUID(),
+    ticketMessageId: messageId,
+    storageKey: image.storageKey,
+    fileName: image.fileName,
+    mimeType: image.mimeType,
+    sizeBytes: image.sizeBytes,
+  })));
+}
+
+async function loadTicketMessagesWithAttachments(ticketId: string) {
+  const messages = await db.select()
+    .from(ticketMessagesTable)
+    .where(eq(ticketMessagesTable.ticketId, ticketId))
+    .orderBy(asc(ticketMessagesTable.createdAt));
+
+  if (messages.length === 0) return messages;
+  const messageIds = messages.map(message => message.id);
+  const attachments = await db.select({
+    id: ticketMessageAttachmentsTable.id,
+    ticketMessageId: ticketMessageAttachmentsTable.ticketMessageId,
+    fileName: ticketMessageAttachmentsTable.fileName,
+    mimeType: ticketMessageAttachmentsTable.mimeType,
+    sizeBytes: ticketMessageAttachmentsTable.sizeBytes,
+    createdAt: ticketMessageAttachmentsTable.createdAt,
+  })
+    .from(ticketMessageAttachmentsTable)
+    .where(inArray(ticketMessageAttachmentsTable.ticketMessageId, messageIds));
+
+  const byMessage = new Map<number, typeof attachments>();
+  for (const attachment of attachments) {
+    const list = byMessage.get(attachment.ticketMessageId) ?? [];
+    list.push(attachment);
+    byMessage.set(attachment.ticketMessageId, list);
+  }
+  return messages.map(message => ({
+    ...message,
+    attachments: byMessage.get(message.id) ?? [],
+  }));
+}
+
+async function loadTicketMessageWithAttachments(messageId: number) {
+  const [message] = await db.select()
+    .from(ticketMessagesTable)
+    .where(eq(ticketMessagesTable.id, messageId));
+  if (!message) return null;
+
+  const attachments = await db.select({
+    id: ticketMessageAttachmentsTable.id,
+    fileName: ticketMessageAttachmentsTable.fileName,
+    mimeType: ticketMessageAttachmentsTable.mimeType,
+    sizeBytes: ticketMessageAttachmentsTable.sizeBytes,
+    createdAt: ticketMessageAttachmentsTable.createdAt,
+  })
+    .from(ticketMessageAttachmentsTable)
+    .where(eq(ticketMessageAttachmentsTable.ticketMessageId, messageId));
+  return { ...message, attachments };
+}
+
+async function findTicketAttachment(ticketId: string, attachmentId: string) {
+  const [row] = await db.select({
+    id: ticketMessageAttachmentsTable.id,
+    storageKey: ticketMessageAttachmentsTable.storageKey,
+    fileName: ticketMessageAttachmentsTable.fileName,
+    mimeType: ticketMessageAttachmentsTable.mimeType,
+    sizeBytes: ticketMessageAttachmentsTable.sizeBytes,
+    accountUsername: ticketsTable.accountUsername,
+    groupBuyOrganiserUsername: groupBuysTable.organiserId,
+  })
+    .from(ticketMessageAttachmentsTable)
+    .innerJoin(ticketMessagesTable, eq(ticketMessageAttachmentsTable.ticketMessageId, ticketMessagesTable.id))
+    .innerJoin(ticketsTable, eq(ticketMessagesTable.ticketId, ticketsTable.id))
+    .leftJoin(groupBuysTable, eq(ticketsTable.groupBuyId, groupBuysTable.id))
+    .where(and(
+      eq(ticketMessageAttachmentsTable.id, attachmentId),
+      eq(ticketsTable.id, ticketId),
+    ));
+  return row;
+}
+
+async function sendTicketAttachment(
+  res: import("express").Response,
+  attachment: { storageKey: string; fileName: string; mimeType: string },
+): Promise<void> {
+  try {
+    const bytes = await downloadTicketImage(attachment.storageKey);
+    const safeName = sanitizeTicketImageFileName(attachment.fileName);
+    const asciiName = safeName.replace(/[^\x20-\x7e]|["\\]/g, "_");
+    const encodedName = encodeURIComponent(safeName).replace(/['()*]/g, char =>
+      `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
+    res.set({
+      "Content-Type": attachment.mimeType,
+      "Content-Disposition": `inline; filename="${asciiName}"; filename*=UTF-8''${encodedName}`,
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "private, no-store",
+    }).send(bytes);
+  } catch (error) {
+    console.error("[tickets] Could not retrieve a ticket image:", error);
+    res.status(503).json({ error: "Image is temporarily unavailable" });
+  }
+}
+
+function respondTicketAttachmentFailure(res: import("express").Response, error: unknown): void {
+  if (error instanceof TicketImageValidationError) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+  console.error("[tickets] Could not save ticket images:", error);
+  res.status(500).json({ error: "Could not save ticket images" });
 }
 
 function categoryLabel(cat: string): string {
@@ -58,10 +302,9 @@ const VALID_CATEGORIES = [
 // ─────────────────────────────────────────────────────────────
 
 // POST /api/account/tickets — create a new ticket
-router.post("/account/tickets", async (req, res): Promise<void> => {
+router.post("/account/tickets", requireTicketCustomer, parseTicketImages, async (req, res): Promise<void> => {
   try {
-  const username = getAccountFromCookie(req);
-  if (!username) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const username = res.locals.ticketCustomerUsername as string;
 
   const parsed = CreateTicketBody.safeParse(req.body);
   if (!parsed.success) {
@@ -73,25 +316,34 @@ router.post("/account/tickets", async (req, res): Promise<void> => {
   const ticketId = randomUUID();
   const now = new Date();
 
-  await db.insert(ticketsTable).values({
-    id: ticketId,
-    accountUsername: username,
-    category: category as TicketCategory,
-    subject: subject.trim(),
-    status: "open",
-    groupBuyId: groupBuyId ?? null,
-    issueType: issueType ?? null,
-    createdAt: now,
-    updatedAt: now,
-  });
+  const uploadedImages = await uploadRequestTicketImages(ticketId, getTemporaryTicketFiles(req));
+  try {
+    await db.transaction(async tx => {
+      await tx.insert(ticketsTable).values({
+        id: ticketId,
+        accountUsername: username,
+        category: category as TicketCategory,
+        subject: subject.trim(),
+        status: "open",
+        groupBuyId: groupBuyId ?? null,
+        issueType: issueType ?? null,
+        createdAt: now,
+        updatedAt: now,
+      });
 
-  await db.insert(ticketMessagesTable).values({
-    ticketId,
-    authorRole: "customer",
-    authorUsername: username,
-    body: description.trim(),
-    createdAt: now,
-  });
+      const [message] = await tx.insert(ticketMessagesTable).values({
+        ticketId,
+        authorRole: "customer",
+        authorUsername: username,
+        body: description.trim(),
+        createdAt: now,
+      }).returning();
+      await insertTicketImageMetadata(tx, message.id, uploadedImages);
+    });
+  } catch (error) {
+    await cleanupUncommittedTicketImages(uploadedImages);
+    throw error;
+  }
 
   // ── Notify admin and track the message ID for reply routing ──────────────
   let notifText =
@@ -270,6 +522,10 @@ router.post("/account/tickets", async (req, res): Promise<void> => {
     updatedAt: now.toISOString(),
   });
   } catch (err) {
+    if (err instanceof TicketImageValidationError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
     console.error("[tickets:POST /account/tickets] Error:", err);
     res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
@@ -293,7 +549,7 @@ router.get("/account/tickets/:id", async (req, res): Promise<void> => {
   const username = getAccountFromCookie(req);
   if (!username) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-  const { id } = req.params;
+  const id = getTicketRouteParam(req.params.id);
 
   let [ticket] = await db.select()
     .from(ticketsTable)
@@ -308,20 +564,30 @@ router.get("/account/tickets/:id", async (req, res): Promise<void> => {
     ticket = { ...ticket, customerUnread: false };
   }
 
-  const messages = await db.select()
-    .from(ticketMessagesTable)
-    .where(eq(ticketMessagesTable.ticketId, id))
-    .orderBy(asc(ticketMessagesTable.createdAt));
+  const messages = await loadTicketMessagesWithAttachments(id);
 
   res.json({ ticket, messages });
 });
 
-// POST /api/account/tickets/:id/messages — post a reply
-router.post("/account/tickets/:id/messages", async (req, res): Promise<void> => {
+router.get("/account/tickets/:id/attachments/:attachmentId", async (req, res): Promise<void> => {
   const username = getAccountFromCookie(req);
   if (!username) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const attachment = await findTicketAttachment(
+    getTicketRouteParam(req.params.id),
+    getTicketRouteParam(req.params.attachmentId),
+  );
+  if (!attachment || !canViewTicketAttachment({ role: "customer", username }, attachment)) {
+    res.status(404).json({ error: "Ticket image not found" });
+    return;
+  }
+  await sendTicketAttachment(res, attachment);
+});
 
-  const { id } = req.params;
+// POST /api/account/tickets/:id/messages — post a reply
+router.post("/account/tickets/:id/messages", requireTicketCustomer, parseTicketImages, async (req, res): Promise<void> => {
+  const username = res.locals.ticketCustomerUsername as string;
+
+  const id = getTicketRouteParam(req.params.id);
 
   const parsed = PostTicketMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -339,18 +605,31 @@ router.post("/account/tickets/:id/messages", async (req, res): Promise<void> => 
     res.status(400).json({ error: "Cannot reply to a closed ticket" }); return;
   }
 
+  let uploadedImages: StoredTicketImage[] = [];
+  let messageId: number;
   const now = new Date();
-  const [msg] = await db.insert(ticketMessagesTable).values({
-    ticketId: id,
-    authorRole: "customer",
-    authorUsername: username,
-    body: body.trim(),
-    createdAt: now,
-  }).returning();
-
-  await db.update(ticketsTable)
-    .set({ updatedAt: now, status: ticket.status === "resolved" ? "open" : ticket.status })
-    .where(eq(ticketsTable.id, id));
+  try {
+    uploadedImages = await uploadRequestTicketImages(id, getTemporaryTicketFiles(req));
+    const message = await db.transaction(async tx => {
+      const [inserted] = await tx.insert(ticketMessagesTable).values({
+        ticketId: id,
+        authorRole: "customer",
+        authorUsername: username,
+        body: body.trim(),
+        createdAt: now,
+      }).returning();
+      await insertTicketImageMetadata(tx, inserted.id, uploadedImages);
+      await tx.update(ticketsTable)
+        .set({ updatedAt: now, status: ticket.status === "resolved" ? "open" : ticket.status })
+        .where(eq(ticketsTable.id, id));
+      return inserted;
+    });
+    messageId = message.id;
+  } catch (error) {
+    await cleanupUncommittedTicketImages(uploadedImages);
+    respondTicketAttachmentFailure(res, error);
+    return;
+  }
 
   // Notify admin and track message ID for reply routing
   const replyNotif =
@@ -370,7 +649,7 @@ router.post("/account/tickets/:id/messages", async (req, res): Promise<void> => 
     }
   }).catch(() => {});
 
-  res.status(201).json(msg);
+  res.status(201).json(await loadTicketMessageWithAttachments(messageId));
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -378,8 +657,7 @@ router.post("/account/tickets/:id/messages", async (req, res): Promise<void> => 
 // ─────────────────────────────────────────────────────────────
 
 // POST /api/admin/tickets — admin initiates a new conversation with a user
-router.post("/admin/tickets", async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+router.post("/admin/tickets", requireTicketAdmin, parseTicketImages, async (req, res): Promise<void> => {
   const adminUsername = getAdminUsername(res);
 
   const { username, category, subject, message } = req.body as Record<string, unknown>;
@@ -401,30 +679,41 @@ router.post("/admin/tickets", async (req, res): Promise<void> => {
   const ticketId = randomUUID();
   const now = new Date();
 
-  // Ensure the account exists — FK on tickets.account_username requires it.
-  // If the user has no account yet, create a minimal one so admin can open a ticket for any Telegram user.
-  await db.insert(accountsTable).values({
-    telegramUsername: targetUsername,
-  }).onConflictDoNothing();
+  let uploadedImages: StoredTicketImage[] = [];
+  try {
+    uploadedImages = await uploadRequestTicketImages(ticketId, getTemporaryTicketFiles(req));
+    await db.transaction(async tx => {
+      // Ensure the account exists — FK on tickets.account_username requires it.
+      // If the user has no account yet, create a minimal account for this conversation.
+      await tx.insert(accountsTable).values({
+        telegramUsername: targetUsername,
+      }).onConflictDoNothing();
 
-  await db.insert(ticketsTable).values({
-    id: ticketId,
-    accountUsername: targetUsername,
-    category: category as TicketCategory,
-    subject: subject.trim(),
-    status: "open",
-    customerUnread: true,
-    createdAt: now,
-    updatedAt: now,
-  });
+      await tx.insert(ticketsTable).values({
+        id: ticketId,
+        accountUsername: targetUsername,
+        category: category as TicketCategory,
+        subject: subject.trim(),
+        status: "open",
+        customerUnread: true,
+        createdAt: now,
+        updatedAt: now,
+      });
 
-  await db.insert(ticketMessagesTable).values({
-    ticketId,
-    authorRole: "admin",
-    authorUsername: adminUsername,
-    body: message.trim(),
-    createdAt: now,
-  });
+      const [createdMessage] = await tx.insert(ticketMessagesTable).values({
+        ticketId,
+        authorRole: "admin",
+        authorUsername: adminUsername,
+        body: message.trim(),
+        createdAt: now,
+      }).returning();
+      await insertTicketImageMetadata(tx, createdMessage.id, uploadedImages);
+    });
+  } catch (error) {
+    await cleanupUncommittedTicketImages(uploadedImages);
+    respondTicketAttachmentFailure(res, error);
+    return;
+  }
 
   notifyUserTicket(
     targetUsername,
@@ -477,7 +766,7 @@ router.get("/admin/tickets", async (req, res): Promise<void> => {
 router.get("/admin/tickets/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { id } = req.params;
+  const id = getTicketRouteParam(req.params.id);
 
   const [row] = await db.select({ ticket: ticketsTable, gbName: groupBuysTable.name })
     .from(ticketsTable)
@@ -488,19 +777,26 @@ router.get("/admin/tickets/:id", async (req, res): Promise<void> => {
 
   const ticket = { ...row.ticket, groupBuyName: row.gbName ?? null };
 
-  const messages = await db.select()
-    .from(ticketMessagesTable)
-    .where(eq(ticketMessagesTable.ticketId, id))
-    .orderBy(asc(ticketMessagesTable.createdAt));
+  const messages = await loadTicketMessagesWithAttachments(id);
 
   res.json({ ticket, messages });
+});
+
+router.get("/admin/tickets/:id/attachments/:attachmentId", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const attachment = await findTicketAttachment(
+    getTicketRouteParam(req.params.id),
+    getTicketRouteParam(req.params.attachmentId),
+  );
+  if (!attachment) { res.status(404).json({ error: "Ticket image not found" }); return; }
+  await sendTicketAttachment(res, attachment);
 });
 
 // PUT /api/admin/tickets/:id/status — change ticket status
 router.put("/admin/tickets/:id/status", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
-  const { id } = req.params;
+  const id = getTicketRouteParam(req.params.id);
 
   const parsed = AdminUpdateTicketStatusBody.safeParse(req.body);
   if (!parsed.success) {
@@ -524,11 +820,10 @@ router.put("/admin/tickets/:id/status", async (req, res): Promise<void> => {
 });
 
 // POST /api/admin/tickets/:id/messages — admin reply
-router.post("/admin/tickets/:id/messages", async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+router.post("/admin/tickets/:id/messages", requireTicketAdmin, parseTicketImages, async (req, res): Promise<void> => {
   const adminUsername = getAdminUsername(res);
 
-  const { id } = req.params;
+  const id = getTicketRouteParam(req.params.id);
 
   const parsed = AdminPostTicketMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -543,22 +838,35 @@ router.post("/admin/tickets/:id/messages", async (req, res): Promise<void> => {
 
   if (!ticket) { res.status(404).json({ error: "Ticket not found" }); return; }
 
+  let uploadedImages: StoredTicketImage[] = [];
+  let messageId: number;
   const now = new Date();
-  const [msg] = await db.insert(ticketMessagesTable).values({
-    ticketId: id,
-    authorRole: "admin",
-    authorUsername: adminUsername,
-    body: body.trim(),
-    createdAt: now,
-  }).returning();
-
-  await db.update(ticketsTable)
-    .set({
-      updatedAt: now,
-      status: ticket.status === "open" ? "in_progress" : ticket.status,
-      customerUnread: true,
-    })
-    .where(eq(ticketsTable.id, id));
+  try {
+    uploadedImages = await uploadRequestTicketImages(id, getTemporaryTicketFiles(req));
+    const message = await db.transaction(async tx => {
+      const [inserted] = await tx.insert(ticketMessagesTable).values({
+        ticketId: id,
+        authorRole: "admin",
+        authorUsername: adminUsername,
+        body: body.trim(),
+        createdAt: now,
+      }).returning();
+      await insertTicketImageMetadata(tx, inserted.id, uploadedImages);
+      await tx.update(ticketsTable)
+        .set({
+          updatedAt: now,
+          status: ticket.status === "open" ? "in_progress" : ticket.status,
+          customerUnread: true,
+        })
+        .where(eq(ticketsTable.id, id));
+      return inserted;
+    });
+    messageId = message.id;
+  } catch (error) {
+    await cleanupUncommittedTicketImages(uploadedImages);
+    respondTicketAttachmentFailure(res, error);
+    return;
+  }
 
   // Notify the customer via Telegram (silent — never blocks the response)
   const excerpt = body.trim().slice(0, 300) + (body.trim().length > 300 ? "…" : "");
@@ -590,7 +898,7 @@ router.post("/admin/tickets/:id/messages", async (req, res): Promise<void> => {
     } catch {}
   })().catch(() => {});
 
-  res.status(201).json(msg);
+  res.status(201).json(await loadTicketMessageWithAttachments(messageId));
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -637,16 +945,32 @@ router.get("/organiser/tickets/:id", requireAccount, requireOrganiser, async (re
   if (!row) { res.status(404).json({ error: "Ticket not found" }); return; }
   if (row.gbOrganiserId !== username) { res.status(403).json({ error: "This ticket is not for one of your Group Buys" }); return; }
 
-  const messages = await db.select()
-    .from(ticketMessagesTable)
-    .where(eq(ticketMessagesTable.ticketId, id))
-    .orderBy(asc(ticketMessagesTable.createdAt));
+  const messages = await loadTicketMessagesWithAttachments(id);
 
   res.json({ ticket: { ...row.ticket, groupBuyName: row.gbName ?? null }, messages });
 });
 
+router.get(
+  "/organiser/tickets/:id/attachments/:attachmentId",
+  requireAccount,
+  requireOrganiser,
+  async (req, res): Promise<void> => {
+    const username = req.organiser!.telegramUsername;
+    const attachment = await findTicketAttachment(
+      getTicketRouteParam(req.params.id),
+      getTicketRouteParam(req.params.attachmentId),
+    );
+    if (!attachment) { res.status(404).json({ error: "Ticket image not found" }); return; }
+    if (!canViewTicketAttachment({ role: "organiser", username }, attachment)) {
+      res.status(403).json({ error: "This ticket is not for one of your Group Buys" });
+      return;
+    }
+    await sendTicketAttachment(res, attachment);
+  },
+);
+
 // POST /api/organiser/tickets/:id/messages — organiser reply
-router.post("/organiser/tickets/:id/messages", requireAccount, requireOrganiser, async (req, res): Promise<void> => {
+router.post("/organiser/tickets/:id/messages", requireAccount, requireOrganiser, parseTicketImages, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = req.params.id as string;
   const { body } = req.body as { body?: string };
@@ -663,18 +987,31 @@ router.post("/organiser/tickets/:id/messages", requireAccount, requireOrganiser,
   if (row.gbOrganiserId !== username) { res.status(403).json({ error: "This ticket is not for one of your Group Buys" }); return; }
   if (row.ticket.status === "closed") { res.status(400).json({ error: "Cannot reply to a closed ticket" }); return; }
 
+  let uploadedImages: StoredTicketImage[] = [];
+  let messageId: number;
   const now = new Date();
-  const [msg] = await db.insert(ticketMessagesTable).values({
-    ticketId: id,
-    authorRole: "admin",
-    authorUsername: username,
-    body: body.trim(),
-    createdAt: now,
-  }).returning();
-
-  await db.update(ticketsTable)
-    .set({ updatedAt: now, status: row.ticket.status === "open" ? "in_progress" : row.ticket.status, customerUnread: true })
-    .where(eq(ticketsTable.id, id));
+  try {
+    uploadedImages = await uploadRequestTicketImages(id, getTemporaryTicketFiles(req));
+    const message = await db.transaction(async tx => {
+      const [inserted] = await tx.insert(ticketMessagesTable).values({
+        ticketId: id,
+        authorRole: "admin",
+        authorUsername: username,
+        body: body.trim(),
+        createdAt: now,
+      }).returning();
+      await insertTicketImageMetadata(tx, inserted.id, uploadedImages);
+      await tx.update(ticketsTable)
+        .set({ updatedAt: now, status: row.ticket.status === "open" ? "in_progress" : row.ticket.status, customerUnread: true })
+        .where(eq(ticketsTable.id, id));
+      return inserted;
+    });
+    messageId = message.id;
+  } catch (error) {
+    await cleanupUncommittedTicketImages(uploadedImages);
+    respondTicketAttachmentFailure(res, error);
+    return;
+  }
 
   notifyUserTicket(
     row.ticket.accountUsername,
@@ -686,7 +1023,7 @@ router.post("/organiser/tickets/:id/messages", requireAccount, requireOrganiser,
     `<i>Or reply directly here in Telegram.</i>`,
   ).catch(() => {});
 
-  res.status(201).json(msg);
+  res.status(201).json(await loadTicketMessageWithAttachments(messageId));
 });
 
 export default router;

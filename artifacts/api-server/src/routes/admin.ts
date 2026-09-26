@@ -1,3 +1,4 @@
+import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
@@ -4883,6 +4884,7 @@ router.delete("/admin/customers", async (req: any, res: any): Promise<void> => {
     const allVariants = Array.from(new Set(
       safe.flatMap(u => [u, u.startsWith("@") ? u.slice(1) : `@${u}`])
     ));
+    await deleteTicketImagesForAccounts(allVariants);
     // accountsTable cascade-deletes accountGroupBuys, gbWaitlist, organiserAuditLog
     await db.delete(accountsTable).where(inArray(accountsTable.telegramUsername, allVariants));
     await db.delete(customersTable).where(inArray(customersTable.telegramUsername, allVariants));
@@ -8252,6 +8254,8 @@ router.delete("/admin/accounts/:username", async (req: any, res: any): Promise<v
       return;
     }
 
+    await deleteTicketImagesForAccounts([existing.telegramUsername, bare, withAt]);
+
     // accountsTable has cascade deletes for accountGroupBuys, gbWaitlist, organiserAuditLog
     await db.delete(accountsTable).where(
       or(
@@ -8311,6 +8315,7 @@ router.post("/admin/accounts/merge", async (req: any, res: any): Promise<void> =
   await db.update(compoundLogsTableImport).set({ telegramUsername: targetUsername }).where(eq(compoundLogsTableImport.telegramUsername, sourceUsername));
 
   // Delete source account
+  await deleteTicketImagesForAccounts([sourceUsername]);
   await db.delete(accountsTable).where(eq(accountsTable.telegramUsername, sourceUsername));
 
   writeLog("change", "warn", "accounts_merged",

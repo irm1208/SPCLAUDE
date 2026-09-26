@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './adminCreateTicketMultipartRequest';
+export * from './adminCreateTicketRequest';
+export * from './adminCreateTicketRequestCategory';
 export * from './adminDeleteLabTest200';
 export * from './adminListTickets200';
 export * from './adminListTicketsCategory';
@@ -16,6 +19,7 @@ export * from './adminUpdateTicketStatusBodyStatus';
 export * from './approveLabTest200';
 export * from './createOrderLineItem';
 export * from './createOrderRequest';
+export * from './createTicketMultipartRequest';
 export * from './createTicketRequest';
 export * from './createTicketRequestCategory';
 export * from './deliveryMethod';
@@ -48,8 +52,11 @@ export * from './siteConfig';
 export * from './submitLabTest200';
 export * from './ticket';
 export * from './ticketCategory';
+export * from './ticketImageAttachment';
+export * from './ticketImageAttachmentMimeType';
 export * from './ticketMessage';
 export * from './ticketMessageAuthorRole';
+export * from './ticketMessageMultipartRequest';
 export * from './ticketStatus';
 export * from './ticketWithMessages';
 export * from './updateOrderRequest';
