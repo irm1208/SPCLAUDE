@@ -1,20 +1,23 @@
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { Loader2, ArrowRight, Users, Share2, Clock, Globe, ShieldAlert, Package, MapPin } from "lucide-react";
+import { Loader2, ArrowRight, Users, Share2, Clock, Globe, ShieldAlert, Package, MapPin, EyeOff, RotateCcw } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { useAccount } from "@/hooks/use-account";
-import { useWholesaleShares, useWholesalePublicGroups, createWholesaleShare, joinWholesaleShare } from "@/hooks/use-wholesale-shares";
+import { useWholesaleShares, useWholesalePublicGroups, createWholesaleShare, joinWholesaleShare, setWholesaleShareHidden } from "@/hooks/use-wholesale-shares";
 
 export default function WholesaleShareEntry() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { account, isLoading: accountLoading } = useAccount();
   const { data: shares } = useWholesaleShares();
   const { data: publicGroups } = useWholesalePublicGroups();
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [visibilityBusyId, setVisibilityBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [comingSoon, setComingSoon] = useState(false);
   const [comingSoonMsg, setComingSoonMsg] = useState("Coming soon");
@@ -38,7 +41,21 @@ export default function WholesaleShareEntry() {
       .finally(() => setConfigLoaded(true));
   }, []);
 
-  const activeShares = (shares ?? []).filter(s => s.status !== "cancelled");
+  const activeShares = (shares ?? []).filter(s => s.status !== "cancelled" && !s.hidden);
+  const hiddenShares = (shares ?? []).filter(s => s.status !== "cancelled" && s.hidden);
+
+  const changeVisibility = async (id: string, hidden: boolean) => {
+    setError("");
+    setVisibilityBusyId(id);
+    try {
+      await setWholesaleShareHidden(id, hidden);
+      await queryClient.invalidateQueries({ queryKey: ["wholesale-shares"] });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setVisibilityBusyId(null);
+    }
+  };
 
   const startShare = async () => {
     setError(""); setBusy(true);
@@ -66,7 +83,8 @@ export default function WholesaleShareEntry() {
     }
   };
 
-  const openGroups = (publicGroups ?? []);
+  const hiddenIds = new Set(hiddenShares.map(s => s.id));
+  const openGroups = (publicGroups ?? []).filter(g => !(g.isMember && hiddenIds.has(g.id)));
 
   if (accountLoading) {
     return (
@@ -163,25 +181,77 @@ export default function WholesaleShareEntry() {
                   <div className="space-y-0.5">
                     <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Your shared orders</p>
                     <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Pick up where you left off — your saved items and delivery details are kept.</p>
+                    <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Hiding only clears your list; it does not cancel an order or affect its members.</p>
                   </div>
                   {activeShares.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setLocation(`/wholesale/shared/${s.id}`)}
-                      className="w-full flex items-center justify-between gap-2 px-3 h-10 rounded-lg text-sm"
-                      style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <span className="font-mono font-bold tracking-widest" style={{ color: "var(--t-blue)" }}>{s.id}</span>
-                        <span style={{ color: "var(--t-muted)" }}>{s.memberCount}{s.maxMembers != null ? `/${s.maxMembers}` : ""} · {s.isCreator ? "organiser" : "member"}</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="text-xs capitalize" style={{ color: "var(--t-muted)" }}>{s.status}</span>
-                        <ArrowRight className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
-                      </span>
-                    </button>
+                    <div key={s.id} className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setLocation(`/wholesale/shared/${s.id}`)}
+                        className="min-w-0 flex-1 flex items-center justify-between gap-2 px-3 h-10 rounded-lg text-sm"
+                        style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
+                      >
+                        <span className="min-w-0 inline-flex items-center gap-2">
+                          <span className="font-mono font-bold tracking-widest" style={{ color: "var(--t-blue)" }}>{s.id}</span>
+                          <span className="truncate" style={{ color: "var(--t-muted)" }}>{s.memberCount}{s.maxMembers != null ? `/${s.maxMembers}` : ""} · {s.isCreator ? "organiser" : "member"}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 shrink-0">
+                          <span className="text-xs capitalize" style={{ color: "var(--t-muted)" }}>{s.status}</span>
+                          <ArrowRight className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => changeVisibility(s.id, true)}
+                        disabled={visibilityBusyId !== null}
+                        aria-label={`Hide shared order ${s.id}`}
+                        className="h-10 px-2 sm:px-3 inline-flex items-center gap-1 rounded-lg text-xs font-semibold disabled:opacity-50"
+                        style={{ color: "var(--t-muted)", border: "1px solid var(--t-border)" }}
+                      >
+                        {visibilityBusyId === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        Hide
+                      </button>
+                    </div>
                   ))}
                 </div>
+              )}
+
+              {hiddenShares.length > 0 && (
+                <details className="rounded-xl p-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                  <summary className="cursor-pointer text-xs font-semibold" style={{ color: "var(--t-text)" }}>
+                    Hidden shared orders ({hiddenShares.length})
+                  </summary>
+                  <p className="text-[11px] mt-2 mb-3" style={{ color: "var(--t-muted)" }}>
+                    These orders are still active unless cancelled separately. Restore one to return it to your list.
+                  </p>
+                  <div className="space-y-1.5">
+                    {hiddenShares.map(s => (
+                      <div key={s.id} className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setLocation(`/wholesale/shared/${s.id}`)}
+                          className="min-w-0 flex-1 flex items-center justify-between gap-2 px-3 h-10 rounded-lg text-sm"
+                          style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}
+                        >
+                          <span className="min-w-0 inline-flex items-center gap-2">
+                            <span className="font-mono font-bold tracking-widest" style={{ color: "var(--t-blue)" }}>{s.id}</span>
+                            <span className="truncate" style={{ color: "var(--t-muted)" }}>{s.isCreator ? "organiser" : "member"}</span>
+                          </span>
+                          <span className="text-xs capitalize shrink-0" style={{ color: "var(--t-muted)" }}>{s.status} <ArrowRight className="inline w-3.5 h-3.5" /></span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => changeVisibility(s.id, false)}
+                          disabled={visibilityBusyId !== null}
+                          aria-label={`Restore shared order ${s.id}`}
+                          className="h-10 px-2 sm:px-3 inline-flex items-center gap-1 rounded-lg text-xs font-semibold disabled:opacity-50"
+                          style={{ color: "var(--t-blue)", border: "1px solid var(--t-border)" }}
+                        >
+                          {visibilityBusyId === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </details>
               )}
 
               {openGroups.length > 0 && (

@@ -129,6 +129,8 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   shareId: text("share_id").notNull().references(() => wholesaleSharesTable.id, { onDelete: "cascade" }),
   username: text("username").notNull(),
   isCreator: boolean("is_creator").notNull().default(false),
+  // Personal list visibility only; hiding never changes the shared order itself.
+  hiddenAt: timestamp("hidden_at", { withTimezone: true }),
   // Draft items + tip held here while the share is open; materialised into a real order at lock.
   items: jsonb("items").$type<WholesaleShareItem[]>().notNull().default([]),
   tip: numeric("tip", { precision: 10, scale: 2 }).notNull().default("0"),

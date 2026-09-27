@@ -792,19 +792,31 @@ async function loadMember(shareId: string, username: string): Promise<MemberRow 
 router.get("/wholesale-shares", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
   const myMemberships = await db
-    .select({ shareId: wholesaleShareMembersTable.shareId })
+    .select({ shareId: wholesaleShareMembersTable.shareId, hiddenAt: wholesaleShareMembersTable.hiddenAt })
     .from(wholesaleShareMembersTable)
     .where(sql`lower(${wholesaleShareMembersTable.username}) = ${me.toLowerCase()}`);
 
   // Self-heal any membership stranded under a since-renamed username (see
   // healStaleMemberUsernames) before falling back to an empty/incomplete list.
   // Single set-based UPDATE across all shares for this user — not per-row/per-share.
-  const knownShareIds = new Set(myMemberships.map(m => m.shareId));
+  const membershipByShareId = new Map(myMemberships.map(m => [m.shareId, m]));
   const healedShareIds = await healStaleMemberUsernames(me);
-  for (const id of healedShareIds) knownShareIds.add(id);
+  if (healedShareIds.length > 0) {
+    const healedMemberships = await db
+      .select({ shareId: wholesaleShareMembersTable.shareId, hiddenAt: wholesaleShareMembersTable.hiddenAt })
+      .from(wholesaleShareMembersTable)
+      .where(and(
+        inArray(wholesaleShareMembersTable.shareId, healedShareIds),
+        sql`lower(${wholesaleShareMembersTable.username}) = ${me.toLowerCase()}`,
+      ));
+    for (const membership of healedMemberships) membershipByShareId.set(membership.shareId, membership);
+  }
 
-  const shareIds = Array.from(knownShareIds);
+  const shareIds = Array.from(membershipByShareId.keys());
   if (shareIds.length === 0) { res.json([]); return; }
+  const hiddenShareIds = new Set(
+    Array.from(membershipByShareId.values()).filter(m => m.hiddenAt != null).map(m => m.shareId),
+  );
 
   const shares = await db
     .select()
@@ -825,10 +837,24 @@ router.get("/wholesale-shares", requireWholesale, async (req, res): Promise<void
     status: s.status,
     splitMode: s.splitMode,
     isCreator: s.creatorUsername.toLowerCase() === me.toLowerCase(),
+    hidden: hiddenShareIds.has(s.id),
     memberCount: countMap.get(s.id) ?? 0,
     maxMembers: s.maxMembers,
     createdAt: (s.createdAt as Date).toISOString(),
   })));
+});
+
+// PATCH /api/wholesale-shares/:id/visibility — personal hide/restore, not cancellation.
+router.patch("/wholesale-shares/:id/visibility", requireWholesale, async (req, res): Promise<void> => {
+  const me = req.wholesale!.telegramUsername;
+  const hidden = req.body?.hidden;
+  if (typeof hidden !== "boolean") { res.status(400).json({ error: "hidden must be a boolean" }); return; }
+  const member = await loadMember(String(req.params.id), me);
+  if (!member) { res.status(404).json({ error: "Shared order not found" }); return; }
+  await db.update(wholesaleShareMembersTable)
+    .set({ hiddenAt: hidden ? new Date() : null })
+    .where(eq(wholesaleShareMembersTable.id, member.id));
+  res.json({ hidden });
 });
 
 // GET /api/wholesale-shares/public — browse open PUBLIC shared orders (cards).

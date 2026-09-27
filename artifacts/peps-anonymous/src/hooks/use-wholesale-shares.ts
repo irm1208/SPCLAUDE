@@ -217,6 +217,7 @@ export interface WholesaleShareSummary {
   status: WholesaleShareStatus;
   splitMode: WholesaleSplitMode;
   isCreator: boolean;
+  hidden: boolean;
   memberCount: number;
   maxMembers: number | null;
   createdAt: string;
@@ -320,6 +321,13 @@ export function useWholesaleShare(id: string | null) {
 }
 
 // ── Mutations (plain async fns — call then invalidate) ──────────────────────────
+
+export function setWholesaleShareHidden(id: string, hidden: boolean) {
+  return request<{ hidden: boolean }>(`/api/wholesale-shares/${encodeURIComponent(id)}/visibility`, {
+    method: "PATCH",
+    body: JSON.stringify({ hidden }),
+  });
+}
 
 export function createWholesaleShare(splitMode: WholesaleSplitMode = "even") {
   return request<WholesaleShareDetail>("/api/wholesale-shares", {

@@ -1001,6 +1001,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS organiser_fee_paid boolean NOT NULL DEFAULT false`);
     // wholesale_share_members — member commitment to their current pre-lock draft
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS confirmed_at timestamptz`);
+    // Per-member shared-order list visibility; no change to the share's status.
+    await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS hidden_at timestamptz`);
     // wholesale_share_members — onward shipping address fields (recipient's delivery details)
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_name text`);
     await db.execute(sql`ALTER TABLE wholesale_share_members ADD COLUMN IF NOT EXISTS onward_phone text`);
