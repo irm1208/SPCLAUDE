@@ -128,7 +128,8 @@ export async function storeTicketImage(
   const storageKey = `ticket-attachments/${image.ticketId}/${randomUUID()}.${IMAGE_EXTENSIONS[mimeType]}`;
   const uploaded = await store.uploadFromBytes(storageKey, image.buffer, { compress: false });
   if (!uploaded.ok) {
-    throw new Error(`Could not store ticket image: ${String(uploaded.error)}`);
+    const status = uploaded.error.statusCode != null ? ` (${uploaded.error.statusCode})` : "";
+    throw new Error(`Could not store ticket image${status}: ${uploaded.error.message}`);
   }
 
   return {
@@ -145,7 +146,8 @@ export async function downloadTicketImage(
 ): Promise<Buffer> {
   const result = await store.downloadAsBytes(storageKey);
   if (!result.ok) {
-    throw new Error(`Could not load ticket image: ${String(result.error)}`);
+    const status = result.error.statusCode != null ? ` (${result.error.statusCode})` : "";
+    throw new Error(`Could not load ticket image${status}: ${result.error.message}`);
   }
   return result.value[0];
 }
@@ -156,6 +158,7 @@ export async function deleteTicketImage(
 ): Promise<void> {
   const result = await store.delete(storageKey, { ignoreNotFound: true });
   if (!result.ok) {
-    throw new Error(`Could not delete ticket image: ${String(result.error)}`);
+    const status = result.error.statusCode != null ? ` (${result.error.statusCode})` : "";
+    throw new Error(`Could not delete ticket image${status}: ${result.error.message}`);
   }
 }

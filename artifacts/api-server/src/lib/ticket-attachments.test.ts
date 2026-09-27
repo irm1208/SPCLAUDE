@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canViewTicketAttachment,
   MAX_TICKET_IMAGE_BYTES,
+  storeTicketImage,
   validateTicketImageBatch,
 } from "./ticket-attachments";
 
@@ -64,5 +65,23 @@ describe("canViewTicketAttachment", () => {
     expect(canViewTicketAttachment({ role: "organiser", username: "organiser-a" }, ticket)).toBe(true);
     expect(canViewTicketAttachment({ role: "customer", username: "other" }, ticket)).toBe(false);
     expect(canViewTicketAttachment({ role: "organiser", username: "organiser-b" }, ticket)).toBe(false);
+  });
+});
+
+describe("storeTicketImage", () => {
+  it("preserves the storage service's error status and message for diagnosis", async () => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const store = {
+      uploadFromBytes: async () => ({ ok: false as const, error: { statusCode: 403, message: "Access denied" } }),
+    };
+    await expect(storeTicketImage({
+      ticketId: "sample",
+      originalName: "sample.png",
+      reportedMimeType: "image/png",
+      buffer: png,
+    }, store as any)).rejects.toThrow("Could not store ticket image (403): Access denied");
   });
 });
