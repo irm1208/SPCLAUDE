@@ -6,6 +6,8 @@ import {
   AdminAuthController,
   AdminSessionExpiredError,
   initializeAdminRequestAuth,
+  isAdminAuthRejection,
+  retryAdminAvailability,
 } from "./admin-auth.ts";
 
 function json(body: unknown, status = 200): Response {
@@ -23,6 +25,59 @@ test("status is fetched before disabled shared-secret authentication", async () 
   assert.equal(calls[0]?.url, "/api/admin/security/status");
   assert.equal(new Headers(calls[1]?.init?.headers).get("x-admin-secret"), "bootstrap");
   assert.equal(calls[1]?.init?.credentials, "omit");
+});
+
+test("admin startup 503s retry and retain the enabled session", async () => {
+  let statusCalls = 0;
+  let sessionCalls = 0;
+  const auth = new AdminAuthController(async input => {
+    if (String(input).endsWith("/security/status")) {
+      statusCalls++;
+      return statusCalls < 3 ? json({ error: "Application is starting" }, 503) : json({ twoFactorEnabled: true });
+    }
+    sessionCalls++;
+    return sessionCalls === 1 ? json({ error: "Application is starting" }, 503) : json({ username: "alice", csrfToken: "still-valid" });
+  });
+  const status = await retryAdminAvailability(() => auth.initialize(), undefined, 0);
+  const identity = await retryAdminAvailability(() => auth.restoreSession(), undefined, 0);
+  assert.equal(status.twoFactorEnabled, true);
+  assert.equal(identity.username, "alice");
+  assert.equal(auth.csrfToken, "still-valid");
+  assert.equal(statusCalls, 3);
+  assert.equal(sessionCalls, 2);
+});
+
+test("a genuine expired session is not retried, but temporary errors do not clear credentials", async () => {
+  let calls = 0;
+  const auth = new AdminAuthController(async () => {
+    calls++;
+    return json({ error: "admin_session_expired" }, 401);
+  });
+  auth.setMode(true);
+  await assert.rejects(retryAdminAvailability(() => auth.restoreSession(), undefined, 0), AdminSessionExpiredError);
+  assert.equal(calls, 1);
+  assert.equal(isAdminAuthRejection(401), true);
+  assert.equal(isAdminAuthRejection(403), true);
+  assert.equal(isAdminAuthRejection(503), false);
+});
+
+test("a 503 during a session recheck does not expire the admin or discard CSRF", async () => {
+  const auth = new AdminAuthController(async () => json({ error: "Application is starting" }, 503));
+  auth.setMode(true);
+  auth.setCsrfToken("existing-csrf");
+  let expired = false;
+  auth.onSessionExpired = () => { expired = true; };
+  await assert.rejects(auth.restoreSession(), AdminApiError);
+  assert.equal(expired, false);
+  assert.equal(auth.csrfToken, "existing-csrf");
+});
+
+test("admin page does not log out on a temporary visibility-check failure", async () => {
+  const source = await readFile(new URL("../pages/Admin.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /adminAuth\.restoreSession\(\)\.catch\(doLogout\)/);
+  assert.doesNotMatch(source, /if \(!r\.ok\) doLogout\(\)/);
+  assert.match(source, /retryAdminAvailability\(\(\) => adminAuth\.initialize\(\)/);
+  assert.match(source, /isAdminAuthRejection\(r\.status\)/);
 });
 
 test("enabled login completes password challenge with TOTP or recovery code", async () => {

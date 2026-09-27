@@ -118,6 +118,7 @@
 - [Admin fetch interceptor recursion](admin-fetch-interceptor-recursion.md) — capture native fetch before monkey-patching global fetch, or enabled-mode admin requests recurse until the browser crashes.
 - [Admin 2FA standalone pages](admin-2fa-standalone-pages.md) — separate admin tabs do not inherit the main tab’s fetch interceptor; restore session and route mutations through AdminAuthController.
 - [Admin step-up scope](admin-step-up-scope.md) — after login, extra TOTP is only for admin security and money destinations; routine operations rely on session+CSRF.
+- [Admin startup outages vs authentication](admin-startup-auth-resilience.md) — 503 during production bootstrap is not a rejected admin session; retry bootstrap and never log out on transient rechecks.
 - [Tracking refresh coordination](tracking-refresh-coordination.md) — provider work is six-hour DB-first, terminal/cooldown gated, identity-deduped, and all delayed writes require full-identity CAS.
 - [Order code allocation](order-code-allocation.md) — shared-order locks serialize max-code allocation, but ordinary orders do not; a global DB sequence/counter is needed to prevent cross-flow duplicates.
 - [Publish startup readiness](publish-startup-readiness.md) — bind the API port before database bootstrap; keep normal API traffic gated until bootstrap succeeds.

@@ -53,6 +53,44 @@ export class AdminApiError extends Error {
   }
 }
 
+export function isAdminAuthRejection(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+function isTemporaryAdminUnavailable(error: unknown): boolean {
+  return (error instanceof AdminApiError && [502, 503, 504].includes(error.response.status)) ||
+    error instanceof TypeError;
+}
+
+/** Startup and proxy outages must not be interpreted as expired admin credentials. */
+export async function retryAdminAvailability<T>(
+  operation: () => Promise<T>,
+  signal?: AbortSignal,
+  intervalMs = 2_000,
+  timeoutMs = 90_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if (signal?.aborted) throw new DOMException("Admin check cancelled", "AbortError");
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTemporaryAdminUnavailable(error) || Date.now() >= deadline || signal?.aborted) throw error;
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(new DOMException("Admin check cancelled", "AbortError"));
+        };
+        const timer = setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, intervalMs);
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    }
+  }
+}
+
 function errorMessage(body: unknown, status: number): string {
   if (body && typeof body === "object" && "error" in body && typeof body.error === "string") return body.error;
   return `Admin request failed (${status})`;

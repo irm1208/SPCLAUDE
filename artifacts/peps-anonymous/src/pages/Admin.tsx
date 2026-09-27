@@ -60,6 +60,9 @@ import { getTrackingPackages, type TrackingPackage, type TrackingPackageView } f
 import {
   adminAuth,
   AdminApiError,
+  AdminSessionExpiredError,
+  isAdminAuthRejection,
+  retryAdminAvailability,
   type AdminActionBinding,
   type AdminEnrolment,
 } from "@/lib/admin-auth";
@@ -27802,9 +27805,12 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rec
       if (now - lastVisibilityCheckRef.current < VISIBILITY_CHECK_COOLDOWN_MS) return;
       lastVisibilityCheckRef.current = now;
       if (!admin2fa && !secret) { doLogout(); return; }
-      if (admin2fa) adminAuth.restoreSession().catch(doLogout);
+      if (admin2fa) adminAuth.restoreSession().catch(error => {
+        if (error instanceof AdminSessionExpiredError) doLogout();
+      });
       else fetch(apiUrl("/admin/auth-check"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
-        .then(r => { if (!r.ok) doLogout(); });
+        .then(r => { if (isAdminAuthRejection(r.status)) doLogout(); })
+        .catch(() => { /* temporary network failure; check again on the next visit */ });
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
@@ -27825,13 +27831,10 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rec
 
   useEffect(() => {
     if (!secret) { setChecking(false); return; }
-    if (admin2fa) {
-      adminAuth.restoreSession().then(() => setAuthed(true)).catch(doLogout).finally(() => setChecking(false));
-    } else {
-      fetch(apiUrl("/admin/auth-check"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
-        .then(r => { if (r.ok) setAuthed(true); else doLogout(); })
-        .finally(() => setChecking(false));
-    }
+    // This shell mounts only after the outer gate has verified the session or secret.
+    // A second request here can hit a restarting API and incorrectly replace the admin UI with login.
+    setAuthed(true);
+    setChecking(false);
   }, []);
 
   useEffect(() => {
@@ -28467,6 +28470,7 @@ export default function Admin() {
 
   const [mode, setMode] = useState<boolean | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
+  const [retryVersion, setRetryVersion] = useState(0);
   const [authenticated, setAuthenticated] = useState(false);
   const [gateSecret, setGateSecret] = useState("");
   const [freshRecoveryCodes, setFreshRecoveryCodes] = useState<string[]>([]);
@@ -28511,17 +28515,40 @@ export default function Admin() {
 
   useEffect(() => {
     let active = true;
-    adminAuth.initialize().then(async status => {
-      if (!active) return;
-      setMode(status.twoFactorEnabled);
-      if (status.twoFactorEnabled) {
-        try { await adminAuth.restoreSession(); if (active) activateSession(); } catch { /* show login */ }
-      } else if (adminAuth.disabledModeSecret) {
-        try { await adminAuth.loginWithSecret(adminAuth.disabledModeSecret); if (active) { setGateSecret(adminAuth.disabledModeSecret); setAuthenticated(true); } } catch { adminAuth.clear(); }
+    const controller = new AbortController();
+    setStatusFailed(false);
+    const boot = async () => {
+      try {
+        const status = await retryAdminAvailability(() => adminAuth.initialize(), controller.signal);
+        if (!active) return;
+        if (status.twoFactorEnabled) {
+          try {
+            await retryAdminAvailability(() => adminAuth.restoreSession(), controller.signal);
+            if (active) { setMode(true); activateSession(); }
+          } catch (error) {
+            if (active && error instanceof AdminSessionExpiredError) setMode(true);
+            else throw error;
+          }
+        } else {
+          const savedSecret = adminAuth.disabledModeSecret;
+          if (savedSecret) {
+            try {
+              await retryAdminAvailability(() => adminAuth.loginWithSecret(savedSecret), controller.signal);
+              if (active) { setGateSecret(savedSecret); setAuthenticated(true); }
+            } catch (error) {
+              if (error instanceof AdminApiError && isAdminAuthRejection(error.response.status)) adminAuth.clear();
+              else throw error;
+            }
+          }
+          if (active) setMode(false);
+        }
+      } catch {
+        if (active) setStatusFailed(true);
       }
-    }).catch(() => { if (active) setStatusFailed(true); });
-    return () => { active = false; };
-  }, [activateSession]);
+    };
+    void boot();
+    return () => { active = false; controller.abort(); };
+  }, [activateSession, retryVersion]);
 
   useEffect(() => {
     adminAuth.setStepUpHandler(binding => new Promise(resolve => {
@@ -28576,7 +28603,7 @@ export default function Admin() {
       {statusFailed ? <>
         <AlertCircle className="w-7 h-7 text-red-500" />
         <p className="text-sm font-medium">Unable to determine the admin security mode.</p>
-        <Button variant="outline" onClick={() => location.reload()}>Try again</Button>
+        <Button variant="outline" onClick={() => setRetryVersion(v => v + 1)}>Try again</Button>
       </> : <Loader2 className="w-6 h-6 animate-spin text-orange-500" />}
     </div>
   );
