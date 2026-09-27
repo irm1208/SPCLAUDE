@@ -3,6 +3,7 @@ import { Check, CheckCircle2, Clock, CreditCard, Crown, Loader2, MapPin, Trash2,
 import type { WholesaleShareDetail, WholesaleShareMember } from "@/hooks/use-wholesale-shares";
 import { PriceWatermark } from "@/components/PriceWatermark";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
+import { buildBalanceAnonPayUrl } from "@/pages/balance-anonpay-url";
 
 interface GroupTrackerProps {
   share: WholesaleShareDetail;
@@ -60,25 +61,36 @@ function PaymentTransactionDetails({
 
   return (
     <div className="grid gap-2 pt-1 sm:grid-cols-2">
-      {stages.map(({ label, transaction, color }) => (
-        <div key={label} className="rounded-lg px-2.5 py-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold" style={{ color }}>{label}</p>
-            {transaction?.amount != null && (
-              <span className="text-[10px] font-semibold shrink-0" style={{ color }}>
-                Received {transaction.amount.toFixed(2)} {transaction.currency ?? "USD"}
-              </span>
+      {stages.map(({ label, transaction, color }) => {
+        const anonPayUrl = transaction?.id.startsWith("anonpay:")
+          ? buildBalanceAnonPayUrl(transaction.id.slice("anonpay:".length))
+          : null;
+        return (
+          <div key={label} className="rounded-lg px-2.5 py-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-bold" style={{ color }}>{label}</p>
+              {transaction?.amount != null && (
+                <span className="text-[10px] font-semibold shrink-0" style={{ color }}>
+                  Received {transaction.amount.toFixed(2)} {transaction.currency ?? "USD"}
+                </span>
+              )}
+            </div>
+            {transaction ? (
+              <p className="mt-1 text-[10px] font-mono break-all select-all" style={{ color: "var(--t-text)" }}>
+                {anonPayUrl ? (
+                  <a href={anonPayUrl} target="_blank" rel="noopener noreferrer"
+                    className="font-semibold underline underline-offset-2 hover:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{ color: "var(--t-blue)" }} title="View AnonPay transaction in a new tab">
+                    {transaction.id}
+                  </a>
+                ) : transaction.id}
+              </p>
+            ) : (
+              <p className="mt-1 text-[10px]" style={{ color: "var(--t-muted)" }}>Not submitted</p>
             )}
           </div>
-          {transaction ? (
-            <p className="mt-1 text-[10px] font-mono break-all select-all" style={{ color: "var(--t-text)" }}>
-              {transaction.id}
-            </p>
-          ) : (
-            <p className="mt-1 text-[10px]" style={{ color: "var(--t-muted)" }}>Not submitted</p>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
