@@ -17,6 +17,7 @@ const PLAIN_SQL_MIME_TYPE = "application/sql";
 const DRIVE_CONNECTOR = "google-drive";
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const MAX_UPLOAD_ATTEMPTS = 6;
+const PLAIN_SQL_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
 
 export interface DriveBackupFile {
   id: string;
@@ -118,6 +119,20 @@ function committedDriveUploadBytes(response: Response, totalSize: number): numbe
   return Number.isSafeInteger(end) && end >= 0 && end < totalSize ? end + 1 : 0;
 }
 
+function buildPlainDriveResumableChunkHeaders(
+  totalSize: number,
+  start: number,
+  endExclusive: number,
+  transportSize: number,
+): Record<string, string> {
+  return {
+    "Content-Type": PLAIN_SQL_MIME_TYPE,
+    "Content-Encoding": "gzip",
+    "Content-Length": String(transportSize),
+    "Content-Range": `bytes ${start}-${endExclusive - 1}/${totalSize}`,
+  };
+}
+
 export function isRetryableDriveUploadStatus(status: number): boolean {
   return [403, 408, 425, 429, 500, 502, 503, 504].includes(status);
 }
@@ -158,17 +173,18 @@ function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function createPlainSqlTransportFile(filePath: string): Promise<{
-  filePath: string;
-  size: number;
-}> {
+async function createPlainSqlChunkTransportFile(
+  filePath: string,
+  start: number,
+  endExclusive: number,
+): Promise<{ filePath: string; size: number }> {
   const transportPath = join(
     tmpdir(),
     `drive-backup-${process.pid}-${randomUUID()}.transport.gz`,
   );
   try {
     await pipeline(
-      createReadStream(filePath),
+      createReadStream(filePath, { start, end: endExclusive - 1 }),
       createGzip(),
       createWriteStream(transportPath, { flags: "wx", mode: 0o600 }),
     );
@@ -304,59 +320,40 @@ class GoogleDriveBackupStorage {
   private async uploadPlainSql(filePath: string, fileName: string): Promise<DriveBackupFile> {
     const folderId = await this.getFolderId();
     const fileStats = await stat(filePath);
-    const transport = await createPlainSqlTransportFile(filePath);
-    try {
-      const transportBlob = await openAsBlob(transport.filePath, { type: PLAIN_SQL_MIME_TYPE });
-      let uploadResponse: Response | null = null;
-      for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
-        const initResponse = await this.connectors.proxy(
-          DRIVE_CONNECTOR,
-          "/upload/drive/v3/files?uploadType=resumable",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json; charset=UTF-8",
-              "X-Upload-Content-Type": PLAIN_SQL_MIME_TYPE,
-              "X-Upload-Content-Length": String(fileStats.size),
-            },
-            body: JSON.stringify({
-              name: fileName,
-              mimeType: PLAIN_SQL_MIME_TYPE,
-              parents: [folderId],
-            }),
-          },
-        );
-        if (!initResponse.ok) {
-          return responseError(initResponse, "Starting the Google Drive backup upload");
-        }
-        const location = initResponse.headers.get("location");
-        if (!location) {
-          throw new Error("Google Drive did not return a resumable upload location");
-        }
-        const locationUrl = new URL(location);
-        const uploadPath = `${locationUrl.pathname}${locationUrl.search}`;
+    const initResponse = await this.connectors.proxy(
+      DRIVE_CONNECTOR,
+      "/upload/drive/v3/files?uploadType=resumable",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": PLAIN_SQL_MIME_TYPE,
+          "X-Upload-Content-Length": String(fileStats.size),
+        },
+        body: JSON.stringify({
+          name: fileName,
+          mimeType: PLAIN_SQL_MIME_TYPE,
+          parents: [folderId],
+        }),
+      },
+    );
+    if (!initResponse.ok) {
+      return responseError(initResponse, "Starting the Google Drive backup upload");
+    }
+    const location = initResponse.headers.get("location");
+    if (!location) {
+      throw new Error("Google Drive did not return a resumable upload location");
+    }
+    const locationUrl = new URL(location);
+    const uploadPath = `${locationUrl.pathname}${locationUrl.search}`;
+    let nextOffset = 0;
+    let uploadResponse: Response | null = null;
+    let completed = false;
+    let attemptsAtOffset = 0;
 
-        try {
-          uploadResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
-            method: "PUT",
-            headers: buildPlainDriveTransportHeaders(fileStats.size, transport.size),
-            body: transportBlob,
-          });
-        } catch (error) {
-          if (!isRetryableDriveUploadException(error)) {
-            throw new Error("Google Drive backup upload failed");
-          }
-          uploadResponse = null;
-        }
-        if (uploadResponse?.ok && (uploadResponse.status === 200 || uploadResponse.status === 201)) {
-          break;
-        }
-        if (uploadResponse && !isRetryableDriveUploadStatus(uploadResponse.status)) {
-          return responseError(uploadResponse, "Uploading the Google Drive backup");
-        }
-        await uploadResponse?.arrayBuffer().catch(() => new ArrayBuffer(0));
-
-        let statusResponse: Response | null = null;
+    while (!completed) {
+      let statusResponse: Response | null = null;
+      if (nextOffset >= fileStats.size) {
         try {
           statusResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
             method: "PUT",
@@ -368,47 +365,114 @@ class GoogleDriveBackupStorage {
         } catch {
           statusResponse = null;
         }
-        if (statusResponse?.ok && (statusResponse.status === 200 || statusResponse.status === 201)) {
+        if (statusResponse?.status === 200 || statusResponse?.status === 201) {
           uploadResponse = statusResponse;
-          break;
+          completed = true;
+          continue;
         }
-        if (
-          statusResponse &&
-          statusResponse.status !== 308 &&
-          !isRetryableDriveUploadStatus(statusResponse.status)
-        ) {
+        if (statusResponse && statusResponse.status !== 308 &&
+          !isRetryableDriveUploadStatus(statusResponse.status)) {
           return responseError(statusResponse, "Recovering the Google Drive backup upload");
         }
         await statusResponse?.arrayBuffer().catch(() => new ArrayBuffer(0));
-        if (attempt === MAX_UPLOAD_ATTEMPTS) {
-          throw new Error("Google Drive backup upload did not complete after retries");
+        attemptsAtOffset += 1;
+      } else {
+        const chunkEnd = Math.min(nextOffset + PLAIN_SQL_UPLOAD_CHUNK_SIZE, fileStats.size);
+        const transport = await createPlainSqlChunkTransportFile(filePath, nextOffset, chunkEnd);
+        try {
+          const transportBlob = await openAsBlob(transport.filePath, { type: PLAIN_SQL_MIME_TYPE });
+          try {
+            uploadResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
+              method: "PUT",
+              headers: buildPlainDriveResumableChunkHeaders(
+                fileStats.size,
+                nextOffset,
+                chunkEnd,
+                transport.size,
+              ),
+              body: transportBlob,
+            });
+          } catch (error) {
+            if (!isRetryableDriveUploadException(error)) {
+              throw new Error("Google Drive backup upload failed");
+            }
+            uploadResponse = null;
+          }
+        } finally {
+          await unlink(transport.filePath).catch(() => undefined);
         }
-        const delayMs = Math.min(1_000 * 2 ** (attempt - 1), 16_000);
-        console.warn(
-          `[db-backup] Plain SQL upload was not confirmed; starting a new session in ${delayMs} ms (${attempt}/${MAX_UPLOAD_ATTEMPTS})`,
-        );
-        await sleep(delayMs);
+
+        if (uploadResponse?.status === 200 || uploadResponse?.status === 201) {
+          completed = true;
+          continue;
+        }
+        if (uploadResponse?.status === 308) {
+          const committed = committedDriveUploadBytes(uploadResponse, fileStats.size);
+          if (committed > nextOffset) {
+            nextOffset = committed;
+            attemptsAtOffset = 0;
+            continue;
+          }
+          await uploadResponse.arrayBuffer().catch(() => new ArrayBuffer(0));
+          attemptsAtOffset += 1;
+        } else {
+          if (uploadResponse && !isRetryableDriveUploadStatus(uploadResponse.status)) {
+            return responseError(uploadResponse, "Uploading the Google Drive backup");
+          }
+          await uploadResponse?.arrayBuffer().catch(() => new ArrayBuffer(0));
+          try {
+            statusResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
+              method: "PUT",
+              headers: {
+                "Content-Length": "0",
+                "Content-Range": `bytes */${fileStats.size}`,
+              },
+            });
+          } catch {
+            statusResponse = null;
+          }
+          if (statusResponse?.status === 200 || statusResponse?.status === 201) {
+            uploadResponse = statusResponse;
+            completed = true;
+            continue;
+          }
+          if (statusResponse?.status === 308) {
+            const committed = committedDriveUploadBytes(statusResponse, fileStats.size);
+            if (committed > nextOffset) {
+              nextOffset = committed;
+              attemptsAtOffset = 0;
+              continue;
+            }
+          } else if (statusResponse && !isRetryableDriveUploadStatus(statusResponse.status)) {
+            return responseError(statusResponse, "Recovering the Google Drive backup upload");
+          }
+          await statusResponse?.arrayBuffer().catch(() => new ArrayBuffer(0));
+          attemptsAtOffset += 1;
+        }
       }
-      if (!uploadResponse) {
-        throw new Error("Google Drive upload did not produce a response");
+      if (attemptsAtOffset >= MAX_UPLOAD_ATTEMPTS) {
+        throw new Error("Google Drive backup upload did not complete after retries");
       }
-      if (!uploadResponse.ok || (uploadResponse.status !== 200 && uploadResponse.status !== 201)) {
-        return responseError(uploadResponse, "Uploading the Google Drive backup");
-      }
-      const uploaded = (await uploadResponse.json().catch(() => ({}))) as { id?: string };
-      if (!uploaded.id) {
-        throw new Error("Google Drive completed the upload without returning a file ID");
-      }
-      const verified = await this.getFile(uploaded.id);
-      if (Number(verified.size) !== fileStats.size || verified.name !== fileName) {
-        throw new Error(
-          `Google Drive verification failed for ${fileName}: expected ${fileStats.size} bytes, got ${verified.size ?? "unknown"}`,
-        );
-      }
-      return verified;
-    } finally {
-      await unlink(transport.filePath).catch(() => undefined);
+      const delayMs = Math.min(1_000 * 2 ** (attemptsAtOffset - 1), 16_000);
+      console.warn(
+        `[db-backup] Plain SQL upload was not confirmed; retrying in ${delayMs} ms (${attemptsAtOffset}/${MAX_UPLOAD_ATTEMPTS})`,
+      );
+      await sleep(delayMs);
     }
+    if (!uploadResponse) {
+      throw new Error("Google Drive upload did not produce a response");
+    }
+    const uploaded = (await uploadResponse.json().catch(() => ({}))) as { id?: string };
+    if (!uploaded.id) {
+      throw new Error("Google Drive completed the upload without returning a file ID");
+    }
+    const verified = await this.getFile(uploaded.id);
+    if (Number(verified.size) !== fileStats.size || verified.name !== fileName) {
+      throw new Error(
+        `Google Drive verification failed for ${fileName}: expected ${fileStats.size} bytes, got ${verified.size ?? "unknown"}`,
+      );
+    }
+    return verified;
   }
 
   async upload(filePath: string, fileName: string): Promise<DriveBackupFile> {

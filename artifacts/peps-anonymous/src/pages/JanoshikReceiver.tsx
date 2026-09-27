@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SaltPepsMark } from "@/components/SaltPepsMark";
 import { adminAuth, initializeAdminRequestAuth } from "@/lib/admin-auth";
+import { retryImportRequest } from "./janoshik-import-retry";
 
 // ── Janoshik browser-helper receiver ─────────────────────────────────────────
 // Opened in a new tab by the admin bookmarklet running on a Janoshik report
@@ -42,7 +43,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // ── Single-report mode (original one-click importer) ─────────────────────────
 
-type SingleStatus = "waiting" | "importing" | "success" | "error" | "duplicate";
+type SingleStatus = "waiting" | "importing" | "retrying" | "success" | "error" | "duplicate";
 
 interface HelperPayload {
   type: "janoshik-helper-payload";
@@ -81,32 +82,60 @@ function SingleReceiver() {
       if (p.supplier) fd.append("supplier", p.supplier);
       if (p.isThirdParty) fd.append("isThirdParty", "true");
 
+      let authReady: Promise<void> | null = null;
+      const ensureAuth = async () => {
+        const authPromise = authReady ?? (authReady = initializeAdminRequestAuth(adminAuth, p.secret));
+        try {
+          await authPromise;
+        } catch (error) {
+          if (authReady === authPromise) authReady = null;
+          throw error;
+        }
+      };
+
       try {
-        await initializeAdminRequestAuth(adminAuth, p.secret);
-        const res = await adminAuth.request("/admin/lab-tests/bookmarklet-import", {
-          method: "POST",
-          headers: { "x-admin-secret": p.secret },
-          body: fd,
+        const { status, data } = await retryImportRequest(async () => {
+          await ensureAuth();
+          const res = await adminAuth.request("/admin/lab-tests/bookmarklet-import", {
+            method: "POST",
+            headers: { "x-admin-secret": p.secret },
+            body: fd,
+          });
+          const data = await res.json().catch(() => ({}));
+          return { status: res.status, data };
+        }, {
+          onRetry: (attempt, delayMs) => {
+            setStatus("retrying");
+            setMessage(`The server is temporarily unavailable. Waiting ${Math.ceil(delayMs / 1000)}s before retry ${attempt}. Captured report images will be reused; Janoshik will not be refetched.`);
+          },
         });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) {
+        if (status >= 200 && status < 300) {
           setStatus("success");
           setResult(data);
           setMessage("Imported successfully.");
-        } else if (res.status === 409) {
+        } else if (status === 409) {
           setStatus("duplicate");
           setResult(data);
           setMessage(data?.error || "This report was already imported.");
-        } else if (res.status === 401) {
+        } else if (status === 401 || status === 403) {
           setStatus("error");
           setMessage("Your admin key was not accepted. Re-create the import button from the admin panel.");
         } else {
           setStatus("error");
-          setMessage(data?.error || `Import failed (HTTP ${res.status}).`);
+          setMessage(data?.error || `Import failed (HTTP ${status}).`);
         }
       } catch (err) {
         setStatus("error");
-        setMessage("Could not reach the server. Check your connection and try again.");
+        const rejectedStatus = err && typeof err === "object" && "response" in err
+          ? (err as { response?: { status?: number } }).response?.status
+          : undefined;
+        setMessage(
+          rejectedStatus === 401 || rejectedStatus === 403
+            ? "Your admin key was not accepted. Re-create the import button from the admin panel."
+            : err instanceof Error
+              ? err.message
+              : "Could not reach the server. Check your connection and try again.",
+        );
         console.error("[janoshik-receiver]", err);
       }
     }
@@ -150,10 +179,10 @@ function SingleReceiver() {
         </div>
       )}
 
-      {status === "importing" && (
+      {(status === "importing" || status === "retrying") && (
         <div className="text-center py-6">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-500" />
-          <p className="text-sm font-semibold">Importing…</p>
+          <p className="text-sm font-semibold">{status === "retrying" ? "Waiting to retry…" : "Importing…"}</p>
           <p className="mt-2 text-xs text-slate-400">{message}</p>
         </div>
       )}
@@ -199,7 +228,7 @@ function SingleReceiver() {
 
 // ── Bulk mode ────────────────────────────────────────────────────────────────
 
-type RowStatus = "queued" | "fetching" | "importing" | "imported" | "duplicate" | "failed";
+type RowStatus = "queued" | "fetching" | "importing" | "retrying" | "imported" | "duplicate" | "failed";
 
 interface Row {
   url: string;
@@ -220,6 +249,7 @@ const ROW_META: Record<RowStatus, { label: string; cls: string }> = {
   queued: { label: "Queued", cls: "text-slate-500" },
   fetching: { label: "Fetching…", cls: "text-sky-400" },
   importing: { label: "Importing…", cls: "text-indigo-400" },
+  retrying: { label: "Waiting to retry…", cls: "text-amber-400" },
   imported: { label: "Imported", cls: "text-green-400" },
   duplicate: { label: "Already on file", cls: "text-amber-400" },
   failed: { label: "Failed", cls: "text-red-400" },
@@ -306,28 +336,46 @@ function BulkReceiver() {
     });
   }, []);
 
-  const importOne = useCallback(async (url: string, images: string[]): Promise<{ status: RowStatus; detail: string }> => {
+  const importOne = useCallback(async (
+    url: string,
+    images: string[],
+    onRetry: (attempt: number, delayMs: number) => void,
+  ): Promise<{ status: RowStatus; detail: string }> => {
     const blobs = blobsFromDataUrls(images);
     if (blobs.length === 0) return { status: "failed", detail: "No readable image received." };
     const fd = new FormData();
     blobs.forEach((b, i) => fd.append("files", b, `report-${i + 1}.${extFor(b)}`));
     fd.append("url", url);
-    authReadyRef.current ??= initializeAdminRequestAuth(adminAuth, secretRef.current);
-    await authReadyRef.current;
-    const res = await adminAuth.request("/admin/lab-tests/bookmarklet-import", {
-      method: "POST",
-      headers: { "x-admin-secret": secretRef.current },
-      body: fd,
+    const ensureAuth = async () => {
+      const authPromise = authReadyRef.current ?? (authReadyRef.current = initializeAdminRequestAuth(adminAuth, secretRef.current));
+      try {
+        await authPromise;
+      } catch (error) {
+        if (authReadyRef.current === authPromise) authReadyRef.current = null;
+        throw error;
+      }
+    };
+    const { status, data } = await retryImportRequest(async () => {
+      await ensureAuth();
+      const res = await adminAuth.request("/admin/lab-tests/bookmarklet-import", {
+        method: "POST",
+        headers: { "x-admin-secret": secretRef.current },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      return { status: res.status, data };
+    }, {
+      shouldStop: () => stopRef.current,
+      onRetry,
     });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
+    if (status >= 200 && status < 300) {
       const name = data?.peptideName || "";
       if (data?.backfilled) return { status: "imported", detail: name ? `Certificate saved · ${name}` : "Certificate saved" };
       return { status: "imported", detail: name };
     }
-    if (res.status === 409) return { status: "duplicate", detail: data?.error || "Already imported." };
-    if (res.status === 401) return { status: "failed", detail: "Admin key rejected — re-create the button." };
-    return { status: "failed", detail: data?.error || `Import failed (HTTP ${res.status}).` };
+    if (status === 409) return { status: "duplicate", detail: data?.error || "Already imported." };
+    if (status === 401 || status === 403) return { status: "failed", detail: "Admin key rejected — re-create the button." };
+    return { status: "failed", detail: data?.error || `Import failed (HTTP ${status}).` };
   }, []);
 
   const setRow = useCallback((i: number, patch: Partial<Row>) => {
@@ -359,10 +407,18 @@ function BulkReceiver() {
       } else {
         setRow(i, { status: "importing" });
         try {
-          const out = await importOne(url, reply.images || []);
+          const out = await importOne(url, reply.images || [], (attempt, delayMs) => {
+            setRow(i, {
+              status: "retrying",
+              detail: `Server is temporarily unavailable. Retry ${attempt} in ${Math.ceil(delayMs / 1000)}s; report images are already captured.`,
+            });
+          });
           setRow(i, { status: out.status, detail: out.detail });
-        } catch {
-          setRow(i, { status: "failed", detail: "Could not reach the server." });
+        } catch (error) {
+          setRow(i, {
+            status: "failed",
+            detail: error instanceof Error ? error.message : "Could not reach the server.",
+          });
         }
       }
 
