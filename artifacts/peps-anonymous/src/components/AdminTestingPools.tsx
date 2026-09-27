@@ -67,6 +67,12 @@ type PoolDetail = AdminPool & {
   resultPdfUrl: string | null;
   resultPostedAt: string | null;
   votingMode: string | null;
+  labName?: string | null;
+  namedReportPriceUsd?: number | string | null;
+  vialCostUsd?: number | string | null;
+  shippingCostUsd?: number | string | null;
+  organiserTipUsd?: number | string | null;
+  inviteOnly?: boolean | null;
   contributorNamedReportEnabled: boolean | null;
   stopOnFunded: boolean | null;
   allowVialContribution: boolean | null;
@@ -103,6 +109,7 @@ type CatalogEntry = {
 type PoolFormState = {
   title: string;
   leaderUsername: string;
+  labName: string;
   description: string;
   compoundName: string;
   manufacturer: string;
@@ -117,6 +124,12 @@ type PoolFormState = {
   resultNotes: string;
   resultPdfUrl: string;
   fixedOptInFeeUsd: string;
+  namedReportPriceUsd: string;
+  vialCostUsd: string;
+  shippingCostUsd: string;
+  organiserTipUsd: string;
+  inviteOnly: boolean;
+  accessCode: string;
   contributorNamedReportEnabled: boolean;
   stopOnFunded: boolean;
   allowVialContribution: boolean;
@@ -135,10 +148,12 @@ type PoolFormState = {
 };
 
 const BLANK_FORM: PoolFormState = {
-  title: "", leaderUsername: "", description: "", compoundName: "", manufacturer: "", batchNumber: "",
+  title: "", leaderUsername: "", labName: "", description: "", compoundName: "", manufacturer: "", batchNumber: "",
   capColor: "", mgSize: "", manufacturingDate: "", imageUrl: "",
   status: "draft", approvalStatus: "approved", votingMode: "leader_decides",
   resultNotes: "", resultPdfUrl: "", fixedOptInFeeUsd: "",
+  namedReportPriceUsd: "30", vialCostUsd: "0", shippingCostUsd: "0", organiserTipUsd: "0",
+  inviteOnly: false, accessCode: "",
   contributorNamedReportEnabled: false, stopOnFunded: false,
   allowVialContribution: false, namedReportCap: "", pageMessage: "",
   resultsPassword: "",
@@ -391,6 +406,19 @@ function ParticipantsPanel({ participants, poolPaymentMethods, poolId, headers }
 type ModalTest = { id?: string; code: string; name: string; unitPriceUsd: number; quantity: number; selected: boolean; catalogId: string | null };
 type PerTestResult = { poolTestId: string; resultPdfUrl: string | null };
 
+function poolTestRowsEqual(tests: ModalTest[], originalTests: ModalTest[]): boolean {
+  return tests.length === originalTests.length && tests.every((test, index) => {
+    const original = originalTests[index];
+    return test.id === original.id
+      && test.code === original.code
+      && test.name === original.name
+      && test.unitPriceUsd === original.unitPriceUsd
+      && test.quantity === original.quantity
+      && test.selected === original.selected
+      && test.catalogId === original.catalogId;
+  });
+}
+
 function PoolFormModal({
   title: modalTitle, initialForm, initialTests, initialResults, catalog, onClose, onSubmit, isPending,
 }: {
@@ -400,7 +428,7 @@ function PoolFormModal({
   initialResults?: PerTestResult[];
   catalog: CatalogEntry[];
   onClose: () => void;
-  onSubmit: (form: PoolFormState, tests: ModalTest[], perTestResults: Array<{poolTestId: string; resultPdfUrl: string}>, perTestJanoshikUrls: Record<string, string>) => void;
+  onSubmit: (form: PoolFormState, tests: ModalTest[], perTestResults: Array<{poolTestId: string; resultPdfUrl: string}>, perTestJanoshikUrls: Record<string, string>, originalTests: ModalTest[]) => void;
   isPending: boolean;
 }) {
   const [form, setForm] = useState<PoolFormState>(initialForm);
@@ -409,7 +437,20 @@ function PoolFormModal({
   const [perTestJanoshikUrls, setPerTestJanoshikUrls] = useState<Record<string, string>>({});
   const [section, setSection] = useState<"basic" | "compound" | "payment" | "tests" | "settings" | "results">("basic");
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [newTestCode, setNewTestCode] = useState("");
+  const [newTestName, setNewTestName] = useState("");
+  const [newTestPrice, setNewTestPrice] = useState("");
   const F = FormField;
+  const isCreate = modalTitle.startsWith("Create");
+  const accessCodeRequired = form.inviteOnly && (isCreate || !initialForm.inviteOnly) && !form.accessCode.trim();
+  const fixedFeeInvalid = form.fixedOptInFeeUsd !== ""
+    && (!Number.isFinite(Number(form.fixedOptInFeeUsd)) || Number(form.fixedOptInFeeUsd) < 1);
+  const amountsInvalid = [
+    form.namedReportPriceUsd,
+    form.vialCostUsd,
+    form.shippingCostUsd,
+    form.organiserTipUsd,
+  ].some(value => value !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0));
 
   useEffect(() => {
     setForm(initialForm);
@@ -434,6 +475,17 @@ function PoolFormModal({
   function addCatalogTest(entry: CatalogEntry) {
     if (tests.some(t => t.code === entry.code)) return;
     setTests(ts => [...ts, { code: entry.code, name: entry.name, unitPriceUsd: entry.defaultPriceUsd, quantity: 1, selected: true, catalogId: entry.id }]);
+  }
+
+  function addCustomTest() {
+    const code = newTestCode.trim();
+    const name = newTestName.trim();
+    const price = Number(newTestPrice);
+    if (!code || !name || !Number.isFinite(price) || price < 0 || tests.some(t => t.code.toLowerCase() === code.toLowerCase())) return;
+    setTests(ts => [...ts, { code, name, unitPriceUsd: price, quantity: 1, selected: true, catalogId: null }]);
+    setNewTestCode("");
+    setNewTestName("");
+    setNewTestPrice("");
   }
 
   const sections: { key: typeof section; label: string }[] = [
@@ -514,6 +566,9 @@ function PoolFormModal({
             <div className="grid grid-cols-2 gap-3">
               <F label="Compound Name">
                 <I value={form.compoundName} onChange={e => setF("compoundName", e.target.value)} placeholder="e.g. BPC-157" />
+              </F>
+              <F label="Custom Lab Name">
+                <I value={form.labName} onChange={e => setF("labName", e.target.value)} placeholder="e.g. Janoshik" />
               </F>
               <F label="Manufacturer">
                 <I value={form.manufacturer} onChange={e => setF("manufacturer", e.target.value)} placeholder="e.g. Peptide Sciences" />
@@ -692,6 +747,22 @@ function PoolFormModal({
                   ))}
                 </div>
               )}
+              <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: CARD_BORDER, background: "#F8FAFC" }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: LABEL }}>Add Custom Test</p>
+                <p className="text-[11px]" style={{ color: MUTED }}>For tests not listed in the catalog. These details are specific to this pool.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <I data-testid="input-custom-test-name" value={newTestName} onChange={e => setNewTestName(e.target.value)} placeholder="Test name" aria-label="Custom test name" />
+                  <I data-testid="input-custom-test-code" value={newTestCode} onChange={e => setNewTestCode(e.target.value)} placeholder="Test code" aria-label="Custom test code" />
+                  <I data-testid="input-custom-test-price" value={newTestPrice} onChange={e => setNewTestPrice(e.target.value)} placeholder="Price (USD)" aria-label="Custom test price" type="number" min="0" step="0.01" />
+                </div>
+                <BrandBtn
+                  variant="secondary"
+                  onClick={addCustomTest}
+                  disabled={!newTestName.trim() || !newTestCode.trim() || newTestPrice === "" || !Number.isFinite(Number(newTestPrice)) || Number(newTestPrice) < 0 || tests.some(t => t.code.toLowerCase() === newTestCode.trim().toLowerCase())}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Custom Test
+                </BrandBtn>
+              </div>
               {catalog.length > 0 && (
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: LABEL }}>Add from Catalog</p>
@@ -742,8 +813,46 @@ function PoolFormModal({
                 </S>
               </F>
               <F label="Fixed Opt-in Fee (USD, leave blank for auto)">
-                <I value={form.fixedOptInFeeUsd} onChange={e => setF("fixedOptInFeeUsd", e.target.value)} placeholder="e.g. 25.00" type="number" min="0" step="0.01" />
+                <I value={form.fixedOptInFeeUsd} onChange={e => setF("fixedOptInFeeUsd", e.target.value)} placeholder="e.g. 25.00" type="number" min="1" step="0.01" />
               </F>
+              {fixedFeeInvalid && <p role="alert" className="text-xs font-medium text-red-600">Fixed opt-in fee must be at least $1.00.</p>}
+              <F label="Named Report Fee (USD, separate from pool costs)">
+                <I data-testid="input-named-report-price" value={form.namedReportPriceUsd} onChange={e => setF("namedReportPriceUsd", e.target.value)} type="number" min="0" step="0.01" />
+              </F>
+              <div className="rounded-xl border p-3 space-y-2.5" style={{ borderColor: CARD_BORDER, background: "#F8FAFC" }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: LABEL }}>Additional Pool Cost Lines (USD)</p>
+                <p className="text-[11px]" style={{ color: MUTED }}>These costs are separate from test prices and the named-report fee.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <F label="Vial Cost"><I data-testid="input-vial-cost" value={form.vialCostUsd} onChange={e => setF("vialCostUsd", e.target.value)} type="number" min="0" step="0.01" /></F>
+                  <F label="Shipping Cost"><I data-testid="input-shipping-cost" value={form.shippingCostUsd} onChange={e => setF("shippingCostUsd", e.target.value)} type="number" min="0" step="0.01" /></F>
+                  <F label="Organiser Tip"><I data-testid="input-organiser-tip" value={form.organiserTipUsd} onChange={e => setF("organiserTipUsd", e.target.value)} type="number" min="0" step="0.01" /></F>
+                </div>
+                {amountsInvalid && <p role="alert" className="text-xs font-medium text-red-600">Pool cost and named-report amounts must be nonnegative.</p>}
+              </div>
+              <div className="rounded-xl border p-3 space-y-2.5" style={{ borderColor: CARD_BORDER, background: "#F8FAFC" }}>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input data-testid="input-pool-invite-only" type="checkbox" checked={form.inviteOnly} onChange={e => setF("inviteOnly", e.target.checked)} className="accent-[#2D6BCC]" />
+                  <span className="text-sm font-semibold" style={{ color: PRIMARY_TEXT }}>Invite-only</span>
+                </label>
+                {form.inviteOnly && (
+                  <>
+                    <F label={isCreate || !initialForm.inviteOnly ? "Access Code *" : "Access Code (leave blank to keep current code)"}>
+                      <I
+                        data-testid="input-pool-access-code"
+                        type="text"
+                        autoComplete="off"
+                        required={isCreate || !initialForm.inviteOnly}
+                        value={form.accessCode}
+                        onChange={e => setF("accessCode", e.target.value)}
+                        placeholder={initialForm.inviteOnly ? "Enter a new code only to reset it" : "Create a code to share"}
+                      />
+                    </F>
+                    <p className="text-[11px] font-medium" style={{ color: BRAND_BLUE }}>
+                      Share this access code with invited participants so they can join this private pool.
+                    </p>
+                  </>
+                )}
+              </div>
               <F label="Results Password (leave blank to keep unchanged)">
                 <I type="password" value={form.resultsPassword} onChange={e => setF("resultsPassword", e.target.value)} placeholder="New password (optional)" />
               </F>
@@ -830,8 +939,8 @@ function PoolFormModal({
             const perTestResults = Object.entries(perTestUrls)
               .filter(([, url]) => url.trim())
               .map(([poolTestId, resultPdfUrl]) => ({ poolTestId, resultPdfUrl }));
-            onSubmit(form, tests, perTestResults, perTestJanoshikUrls);
-          }} disabled={isPending || !form.title.trim()}>
+            onSubmit(form, tests, perTestResults, perTestJanoshikUrls, initialTests);
+          }} disabled={isPending || !form.title.trim() || accessCodeRequired || fixedFeeInvalid || amountsInvalid}>
             {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {modalTitle.startsWith("Create") ? "Create Pool" : "Save Changes"}
           </BrandBtn>
@@ -1008,6 +1117,7 @@ function poolDetailToForm(data: PoolDetail): PoolFormState {
   return {
     title: data.title,
     leaderUsername: data.leaderUsername ?? "",
+    labName: data.labName ?? "",
     description: data.description ?? "",
     compoundName: data.compoundName ?? "",
     manufacturer: data.manufacturer ?? "",
@@ -1023,6 +1133,12 @@ function poolDetailToForm(data: PoolDetail): PoolFormState {
     resultNotes: data.resultNotes ?? "",
     resultPdfUrl: data.resultPdfUrl ?? "",
     fixedOptInFeeUsd: data.fixedOptInFeeUsd ?? "",
+    namedReportPriceUsd: String(data.namedReportPriceUsd ?? 30),
+    vialCostUsd: String(data.vialCostUsd ?? 0),
+    shippingCostUsd: String(data.shippingCostUsd ?? 0),
+    organiserTipUsd: String(data.organiserTipUsd ?? 0),
+    inviteOnly: data.inviteOnly ?? false,
+    accessCode: "",
     contributorNamedReportEnabled: data.contributorNamedReportEnabled ?? false,
     stopOnFunded: data.stopOnFunded ?? false,
     allowVialContribution: data.allowVialContribution ?? false,
@@ -1084,7 +1200,18 @@ function PoolsPanel({ headers, secret }: { headers: HeadersInit; secret: string 
     mutationFn: async ({ form, tests }: { form: PoolFormState; tests: Array<{ code: string; name: string; unitPriceUsd: number; quantity: number; selected: boolean; catalogId: string | null }> }) => {
       const r = await fetch("/api/admin/testing-pools", {
         method: "POST", headers,
-        body: JSON.stringify({ ...form, tests, paymentMethods: undefined, fixedOptInFeeUsd: form.fixedOptInFeeUsd === "" ? null : form.fixedOptInFeeUsd }),
+        body: JSON.stringify({
+          ...form,
+          labName: form.labName.trim() || null,
+          namedReportPriceUsd: Number(form.namedReportPriceUsd || 0),
+          vialCostUsd: Number(form.vialCostUsd || 0),
+          shippingCostUsd: Number(form.shippingCostUsd || 0),
+          organiserTipUsd: Number(form.organiserTipUsd || 0),
+          accessCode: form.inviteOnly ? form.accessCode.trim() : undefined,
+          tests,
+          paymentMethods: undefined,
+          fixedOptInFeeUsd: form.fixedOptInFeeUsd === "" ? null : form.fixedOptInFeeUsd,
+        }),
       });
       if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
       return r.json();
@@ -1106,7 +1233,7 @@ function PoolsPanel({ headers, secret }: { headers: HeadersInit; secret: string 
   });
 
   const editPool = useMutation({
-    mutationFn: async ({ id, form, tests, perTestResults, perTestJanoshikUrls }: { id: string; form: PoolFormState; tests: ModalTest[]; perTestResults: Array<{poolTestId: string; resultPdfUrl: string}>; perTestJanoshikUrls: Record<string, string> }) => {
+    mutationFn: async ({ id, form, tests, originalTests, perTestResults, perTestJanoshikUrls }: { id: string; form: PoolFormState; tests: ModalTest[]; originalTests: ModalTest[]; perTestResults: Array<{poolTestId: string; resultPdfUrl: string}>; perTestJanoshikUrls: Record<string, string> }) => {
       const patchBody: Record<string, unknown> = {
         title: form.title,
         description: form.description || null,
@@ -1126,22 +1253,35 @@ function PoolsPanel({ headers, secret }: { headers: HeadersInit; secret: string 
         status: form.status,
         approvalStatus: form.approvalStatus,
         votingMode: form.votingMode,
+        labName: form.labName.trim() || null,
         resultNotes: form.resultNotes || null,
         resultPdfUrl: form.resultPdfUrl || null,
         fixedOptInFeeUsd: form.fixedOptInFeeUsd === "" ? null : form.fixedOptInFeeUsd,
+        namedReportPriceUsd: Number(form.namedReportPriceUsd || 0),
+        vialCostUsd: Number(form.vialCostUsd || 0),
+        shippingCostUsd: Number(form.shippingCostUsd || 0),
+        organiserTipUsd: Number(form.organiserTipUsd || 0),
+        inviteOnly: form.inviteOnly,
         contributorNamedReportEnabled: form.contributorNamedReportEnabled,
         namedReportCap: form.namedReportCap ? parseInt(form.namedReportCap, 10) : null,
         stopOnFunded: form.stopOnFunded,
         paymentMethods: buildPMsFromForm(form),
       };
       if (form.leaderUsername.trim()) patchBody.leaderUsername = form.leaderUsername.trim();
+      if (form.accessCode.trim()) patchBody.accessCode = form.accessCode.trim();
       if (form.resultsPassword) patchBody.resultsPassword = form.resultsPassword;
 
-      const r1 = await fetch(`/api/admin/testing-pools/${id}`, { method: "PATCH", headers, body: JSON.stringify(patchBody) });
-      if (!r1.ok) throw new Error("Failed to update pool");
-
-      const r2 = await fetch(`/api/admin/testing-pools/${id}/tests`, { method: "PUT", headers, body: JSON.stringify({ tests }) });
-      if (!r2.ok) throw new Error("Failed to update tests");
+      if (!poolTestRowsEqual(tests, originalTests)) {
+        const r2 = await fetch(`/api/admin/testing-pools/${id}/tests`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ tests, poolUpdates: patchBody }),
+        });
+        if (!r2.ok) throw new Error("Failed to update tests");
+      } else {
+        const r1 = await fetch(`/api/admin/testing-pools/${id}`, { method: "PATCH", headers, body: JSON.stringify(patchBody) });
+        if (!r1.ok) throw new Error("Failed to update pool");
+      }
 
       if (perTestResults.length > 0) {
         const r3 = await fetch(`/api/admin/testing-pools/${id}/results`, { method: "PUT", headers, body: JSON.stringify({ results: perTestResults }) });
@@ -1184,7 +1324,7 @@ function PoolsPanel({ headers, secret }: { headers: HeadersInit; secret: string 
           initialResults={editingPool.results}
           catalog={catalog}
           onClose={() => setEditingPool(null)}
-          onSubmit={(form, tests, perTestResults, perTestJanoshikUrls) => editPool.mutate({ id: editingPool.id, form, tests, perTestResults, perTestJanoshikUrls })}
+          onSubmit={(form, tests, perTestResults, perTestJanoshikUrls, originalTests) => editPool.mutate({ id: editingPool.id, form, tests, originalTests, perTestResults, perTestJanoshikUrls })}
           isPending={editPool.isPending}
         />
       )}

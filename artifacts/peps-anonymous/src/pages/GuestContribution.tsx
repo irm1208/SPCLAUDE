@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { PageLayout } from "@/components/PageLayout";
 import { motion } from "framer-motion";
-import { Loader2, CheckCircle2, Clock, XCircle, FlaskConical, ExternalLink, ChevronLeft } from "lucide-react";
+import { Loader2, CheckCircle2, Clock, XCircle, FlaskConical, ExternalLink, ChevronLeft, Lock } from "lucide-react";
 import { useLocation } from "wouter";
+import { saveTestingPoolAccessCode, testingPoolFetch } from "./testing-pool-access";
 
 type ParticipantStatus = {
   id: string;
@@ -56,16 +58,22 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 export default function GuestContribution() {
   const params = useParams<{ slug: string; participantId: string }>();
   const [, setLocation] = useLocation();
+  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [accessAttempted, setAccessAttempted] = useState(false);
 
-  const { data, isLoading, error } = useQuery<ParticipantStatus>({
+  const { data, isLoading, error, refetch } = useQuery<ParticipantStatus>({
     queryKey: ["/api/testing-pools/participants", params.participantId, "status"],
     queryFn: async () => {
-      const r = await fetch(`/api/testing-pools/participants/${params.participantId}/status`, { credentials: "include" });
+      const r = await testingPoolFetch(params.slug, `/api/testing-pools/participants/${params.participantId}/status`, { credentials: "include" });
+      if (r.status === 403 && (await r.json()).error === "access_code_required") {
+        throw new Error("access_code_required");
+      }
       if (!r.ok) throw new Error("Not found");
       return r.json();
     },
     refetchInterval: 30_000,
   });
+  const requiresAccessCode = error instanceof Error && error.message === "access_code_required";
 
   const fmtUsd = (n: number) => `$${n.toFixed(2)}`;
   const fmtDate = (iso: string) => {
@@ -96,7 +104,48 @@ export default function GuestContribution() {
             </div>
           )}
 
-          {error && (
+          {requiresAccessCode && (
+            <form
+              onSubmit={async e => {
+                e.preventDefault();
+                if (!accessCodeInput.trim()) return;
+                saveTestingPoolAccessCode(params.slug, accessCodeInput);
+                setAccessAttempted(true);
+                setAccessCodeInput("");
+                await refetch();
+              }}
+              className="rounded-xl p-6 space-y-4"
+              style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}
+            >
+              <Lock className="w-6 h-6" style={{ color: "var(--t-blue)" }} />
+              <h1 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>Invite-only contribution</h1>
+              <p className="text-sm" style={{ color: "var(--t-muted)" }}>
+                Enter the access code shared by the pool leader to view your contribution status.
+              </p>
+              {accessAttempted && <p role="alert" className="text-sm text-red-600">That code did not work. Please try again.</p>}
+              <label className="block text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+                Access code
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={accessCodeInput}
+                  onChange={e => setAccessCodeInput(e.target.value)}
+                  className="mt-1 w-full rounded-lg p-2.5"
+                  style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)", color: "var(--t-text)" }}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={!accessCodeInput.trim()}
+                className="w-full rounded-lg px-4 py-2.5 text-white font-semibold disabled:opacity-50"
+                style={{ background: "var(--t-blue)" }}
+              >
+                View contribution
+              </button>
+            </form>
+          )}
+
+          {error && !requiresAccessCode && (
             <div className="text-center py-16 space-y-2">
               <XCircle className="w-8 h-8 mx-auto opacity-30" style={{ color: "var(--t-muted)" }} />
               <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Contribution not found</p>

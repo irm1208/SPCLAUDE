@@ -19,6 +19,7 @@ type Pool = {
   title: string;
   description: string | null;
   compoundName: string | null;
+  labName: string | null;
   manufacturer: string | null;
   batchNumber: string | null;
   capColor: string | null;
@@ -131,13 +132,14 @@ export default function PublicTestingPools({ bare }: { bare?: boolean } = {}) {
     }
 
     // Search — token-based fuzzy: every whitespace-separated token must appear in
-    // at least one searchable field (title, compound, manufacturer, batch).
+    // at least one searchable field (title, lab, compound, manufacturer, batch).
     const rawQ = norm(search.trim());
     if (rawQ) {
       const tokens = rawQ.split(/\s+/).filter(Boolean);
       result = result.filter(p => {
         const haystack = [
           norm(p.title),
+          p.labName ? norm(p.labName) : "",
           p.compoundName ? norm(p.compoundName) : "",
           p.manufacturer ? norm(p.manufacturer) : "",
           p.batchNumber  ? norm(p.batchNumber)  : "",
@@ -527,6 +529,13 @@ function PoolCard({ pool, navigate }: { pool: Pool; navigate: (path: string) => 
               >
                 <Building2 className="w-3 h-3" />
                 {pool.manufacturer}
+              </span>
+            )}
+            {pool.labName && (
+              <span className="self-start inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md"
+                style={{ background: "var(--t-blue-08)", color: "var(--t-blue)", border: "1px solid var(--t-blue-18)" }}>
+                <FlaskConical className="w-3 h-3" />
+                {pool.labName}
               </span>
             )}
           </div>

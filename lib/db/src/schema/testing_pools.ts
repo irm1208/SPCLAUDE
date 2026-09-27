@@ -49,12 +49,19 @@ export const testingPoolsTable = pgTable("testing_pools", {
   title: text("title").notNull(),
   description: text("description"),
   compoundName: text("compound_name"),
+  labName: text("lab_name"),
   manufacturer: text("manufacturer"),
   batchNumber: text("batch_number"),
   status: text("status").notNull().default("draft"),
   votingMode: text("voting_mode").notNull().default("leader_decides"),
   // Aggregate target across selected tests; recomputed when pool_tests change.
   targetAmountUsd: numeric("target_amount_usd", { precision: 10, scale: 2 }).notNull().default("0"),
+  namedReportPriceUsd: numeric("named_report_price_usd", { precision: 10, scale: 2 }).notNull().default("30"),
+  vialCostUsd: numeric("vial_cost_usd", { precision: 10, scale: 2 }).notNull().default("0"),
+  shippingCostUsd: numeric("shipping_cost_usd", { precision: 10, scale: 2 }).notNull().default("0"),
+  organiserTipUsd: numeric("organiser_tip_usd", { precision: 10, scale: 2 }).notNull().default("0"),
+  inviteOnly: boolean("invite_only").notNull().default(false),
+  accessCodeHash: text("access_code_hash"),
   // Single shared password (hashed) for results access
   resultsPasswordHash: text("results_password_hash"),
   // Leader's chosen wallet for receiving contributions (snapshotted at creation)

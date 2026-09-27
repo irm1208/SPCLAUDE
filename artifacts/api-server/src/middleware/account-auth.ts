@@ -150,6 +150,25 @@ export async function requireAccount(req: Request, res: Response, next: NextFunc
   });
 }
 
+/**
+ * Resolves an unrestricted account session without requiring authentication.
+ * Invalid, expired, revoked, blocked, and verification-restricted cookies are
+ * treated as anonymous so public routes can still offer their guest access path.
+ */
+export async function getOptionalAccountSession(req: Request): Promise<AccountJwtPayload | null> {
+  if (!req.cookies?.account_session) return null;
+  const res = {
+    status() { return this; },
+    json() { return this; },
+    clearCookie() { return this; },
+  } as unknown as Response;
+  let account: AccountJwtPayload | null = null;
+  await requireAccount(req, res, () => {
+    account = req.account ?? null;
+  });
+  return account;
+}
+
 // ── Cookie issuance ───────────────────────────────────────────────────────────
 
 export function getAccountCookieOptions() {

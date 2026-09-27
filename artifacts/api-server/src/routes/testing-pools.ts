@@ -13,24 +13,18 @@ import {
   type PoolPaymentMethod,
 } from "@workspace/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
-import jwt from "jsonwebtoken";
-import { requireAccount, getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
+import { requireAccount, getOptionalAccountSession } from "../middleware/account-auth";
 import { requireAdmin } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { sendAdminFromTemplate, notifyUserFromTemplate, notifyUser } from "../lib/telegram";
 import { isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
+import { computeTestingPoolTarget, parsePoolTestPriceUsd, parseStrictPoolMoney } from "../lib/testing-pool-pricing";
 
 const router: IRouter = Router();
 
-// Optional account: decode the cookie if present, but don't 401 if missing.
-function loadOptionalAccount(req: any): void {
-  if (req.account) return;
-  const token = req.cookies?.account_session as string | undefined;
-  if (!token) return;
-  try {
-    const payload = jwt.verify(token, getJwtSecret()) as AccountJwtPayload;
-    req.account = { telegramUsername: payload.telegramUsername, jti: payload.jti };
-  } catch { /* ignore */ }
+// Optional account: only grant owner privileges to an unrestricted live session.
+async function loadOptionalAccount(req: any): Promise<void> {
+  req.account = await getOptionalAccountSession(req);
 }
 
 function nanoid(n = 14): string {
@@ -60,16 +54,247 @@ function num(v: unknown, fallback = 0): number {
   return isNaN(n) ? fallback : n;
 }
 
-const EXTRA_VIAL_COST = 60;
 async function recomputeTarget(poolId: string): Promise<number> {
-  const tests = await db.select().from(poolTestsTable).where(and(eq(poolTestsTable.poolId, poolId), eq(poolTestsTable.selected, true)));
-  // Price model: sum of base prices + $60 per EXTRA vial charged ONCE for the whole pool.
-  // The extra-vial surcharge is pool-level, not per-test.
-  const baseTotal = tests.reduce((s, t) => s + num(t.unitPriceUsd), 0);
+  return recomputeTargetUsing(db, poolId);
+}
+
+async function recomputeTargetUsing(database: any, poolId: string): Promise<number> {
+  const tests = await database.select().from(poolTestsTable).where(and(eq(poolTestsTable.poolId, poolId), eq(poolTestsTable.selected, true)));
+  const [pool] = await database.select({
+    vialCostUsd: testingPoolsTable.vialCostUsd,
+    shippingCostUsd: testingPoolsTable.shippingCostUsd,
+    organiserTipUsd: testingPoolsTable.organiserTipUsd,
+  }).from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
   const qty = tests.length > 0 ? (tests[0].quantity || 1) : 1;
-  const total = baseTotal + Math.max(0, qty - 1) * EXTRA_VIAL_COST;
-  await db.update(testingPoolsTable).set({ targetAmountUsd: total.toFixed(2) }).where(eq(testingPoolsTable.id, poolId));
-  return Number(total.toFixed(2));
+  const total = computeTestingPoolTarget(tests, qty, {
+    vialCostUsd: num(pool?.vialCostUsd),
+    shippingCostUsd: num(pool?.shippingCostUsd),
+    organiserTipUsd: num(pool?.organiserTipUsd),
+  });
+  await database.update(testingPoolsTable).set({ targetAmountUsd: total.toFixed(2) }).where(eq(testingPoolsTable.id, poolId));
+  return total;
+}
+
+function poolMoneyInput(body: Record<string, unknown>, key: string, fallback: number): number | null {
+  if (!(key in body)) return fallback;
+  return parseStrictPoolMoney(body[key]);
+}
+
+function failInvalidPoolMoney(res: any, field: string): void {
+  res.status(400).json({ error: `${field} must be a non-negative amount with at most two decimal places` });
+}
+
+function parseFixedOptInFee(value: unknown): { valid: boolean; amount: number | null } {
+  if (value === null) return { valid: true, amount: null };
+  const amount = parseStrictPoolMoney(value);
+  if (amount == null || amount < 1) return { valid: false, amount: null };
+  return { valid: true, amount };
+}
+
+function failInvalidFixedOptInFee(res: any): void {
+  res.status(400).json({ error: "fixedOptInFeeUsd must be null or a USD amount of at least $1 with at most two decimal places" });
+}
+
+type PoolTestReplacement = {
+  id?: unknown;
+  catalogId?: unknown;
+  code?: unknown;
+  name?: unknown;
+  unitPriceUsd?: unknown;
+  quantity?: unknown;
+  selected?: unknown;
+  janoshikUrl?: unknown;
+};
+
+type ValidatedPoolTest = PoolTestReplacement & {
+  id?: string;
+  code: string;
+  name: string;
+  unitPriceUsd: number;
+  quantity?: unknown;
+  selected?: unknown;
+  catalogId?: unknown;
+};
+
+function validatePoolTestsInput(input: unknown): { tests: ValidatedPoolTest[] | null; error?: string } {
+  if (!Array.isArray(input)) return { tests: null, error: "tests array required" };
+  if (input.length > 500) return { tests: null, error: "tests may contain at most 500 entries" };
+  const tests: ValidatedPoolTest[] = [];
+  for (const value of input) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { tests: null, error: "Each test must be an object" };
+    }
+    const test = value as PoolTestReplacement;
+    if (typeof test.code !== "string" || !test.code.trim() || typeof test.name !== "string" || !test.name.trim()) {
+      return { tests: null, error: "Each test requires a code and name" };
+    }
+    const unitPriceUsd = parsePoolTestPriceUsd(test.unitPriceUsd);
+    if (unitPriceUsd == null) {
+      return { tests: null, error: "Each test unitPriceUsd must be a finite non-negative USD amount with at most two decimal places (maximum $99,999,999.99)" };
+    }
+    if (Object.prototype.hasOwnProperty.call(test, "id") && (typeof test.id !== "string" || !test.id.trim())) {
+      return { tests: null, error: "Each provided test ID must be a nonempty string" };
+    }
+    tests.push({
+      ...(typeof test.id === "string" ? { id: test.id } : {}),
+      catalogId: test.catalogId,
+      code: test.code,
+      name: test.name,
+      unitPriceUsd,
+      quantity: test.quantity,
+      selected: test.selected,
+      janoshikUrl: test.janoshikUrl,
+    });
+  }
+  return { tests };
+}
+
+type ReplacePoolTestsOptions = {
+  poolUpdates?: { kind: "admin" | "leader"; values: Record<string, unknown> };
+};
+
+type PoolSettingsBuild =
+  | {
+      ok: true;
+      updates: Partial<typeof testingPoolsTable.$inferInsert>;
+      pricingChanged: boolean;
+      moneyChanged: boolean;
+      wasResultsReceived: boolean;
+    }
+  | { ok: false; status: number; message: string };
+
+async function replacePoolTests(
+  poolId: string,
+  input: ValidatedPoolTest[],
+  options: ReplacePoolTestsOptions = {},
+): Promise<{ blocked: boolean; targetAmountUsd?: number; error?: { status: number; message: string }; wasResultsReceived?: boolean }> {
+  return db.transaction(async (tx) => {
+    let settingsUpdate: PoolSettingsBuild | null = null;
+    if (options.poolUpdates !== undefined) {
+      const [pool] = await tx.select().from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
+      if (!pool) return { blocked: false, error: { status: 404, message: "Pool not found" } };
+      settingsUpdate = options.poolUpdates.kind === "admin"
+        ? await buildAdminPoolUpdates(pool, options.poolUpdates.values)
+        : await buildLeaderPoolUpdates(pool, options.poolUpdates.values);
+      if (!settingsUpdate.ok) {
+        return { blocked: false, error: { status: settingsUpdate.status, message: settingsUpdate.message } };
+      }
+    }
+
+    const [payments] = await tx.select({
+      count: sql<string>`count(*) filter (where ${poolParticipantsTable.paymentStatus} in ('submitted','verified'))`,
+    }).from(poolParticipantsTable).where(eq(poolParticipantsTable.poolId, poolId));
+    if (Number(payments?.count ?? 0) > 0) return { blocked: true };
+
+    const existing = await tx.select().from(poolTestsTable).where(eq(poolTestsTable.poolId, poolId));
+    const unused = new Set(existing.map((test: any) => test.id));
+    const seenIds = new Set<string>();
+    for (const test of input) {
+      if (!Object.prototype.hasOwnProperty.call(test, "id")) continue;
+      if (typeof test.id !== "string" || !test.id.trim() || seenIds.has(test.id)) {
+        return { blocked: false, error: { status: 400, message: "Each provided test ID must be unique and belong to this pool" } };
+      }
+      if (!existing.some((row: any) => row.id === test.id)) {
+        return { blocked: false, error: { status: 400, message: "A provided test ID does not belong to this pool" } };
+      }
+      seenIds.add(test.id);
+    }
+    seenIds.clear();
+    for (const test of input) {
+      const hasId = Object.prototype.hasOwnProperty.call(test, "id");
+      const requestedId = hasId ? test.id as string : null;
+      let match = requestedId ? existing.find((row: any) => row.id === requestedId && unused.has(row.id)) : undefined;
+      if (requestedId) seenIds.add(requestedId);
+      const catalogId = test.catalogId ? String(test.catalogId).slice(0, 64) : null;
+      if (!requestedId && catalogId) {
+        match = existing.find((row: any) => unused.has(row.id) && row.catalogId === catalogId);
+      }
+      if (!requestedId && !match) {
+        match = existing.find((row: any) => unused.has(row.id) && !row.catalogId && row.code === String(test.code).slice(0, 60));
+      }
+
+      const next: {
+        poolId: string;
+        catalogId: string | null;
+        code: string;
+        name: string;
+        unitPriceUsd: string;
+        quantity: number;
+        selected: boolean;
+        janoshikUrl?: string | null;
+      } = {
+        poolId,
+        catalogId,
+        code: String(test.code).slice(0, 60),
+        name: String(test.name).slice(0, 200),
+        unitPriceUsd: test.unitPriceUsd.toFixed(2),
+        quantity: Math.max(1, parseInt(String(test.quantity ?? 1), 10) || 1),
+        selected: test.selected !== false,
+      };
+      if (Object.prototype.hasOwnProperty.call(test, "janoshikUrl")) {
+        next.janoshikUrl = test.janoshikUrl ? String(test.janoshikUrl).slice(0, 500) : null;
+      }
+
+      if (match) {
+        unused.delete(match.id);
+        const changes: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(next)) {
+          if (key === "poolId") continue;
+          if (key === "janoshikUrl" && !Object.prototype.hasOwnProperty.call(test, "janoshikUrl")) continue;
+          if (String((match as any)[key] ?? "") !== String(value ?? "")) changes[key] = value;
+        }
+        if (Object.keys(changes).length > 0) {
+          await tx.update(poolTestsTable).set(changes).where(and(
+            eq(poolTestsTable.id, match.id),
+            eq(poolTestsTable.poolId, poolId),
+          ));
+        }
+      } else {
+        await tx.insert(poolTestsTable).values({ id: nanoid(12), ...next });
+      }
+    }
+
+    for (const removedId of unused) {
+      await tx.delete(poolTestsTable).where(and(
+        eq(poolTestsTable.id, removedId),
+        eq(poolTestsTable.poolId, poolId),
+      ));
+    }
+    if (settingsUpdate?.ok && Object.keys(settingsUpdate.updates).length > 0) {
+      await tx.update(testingPoolsTable).set(settingsUpdate.updates).where(eq(testingPoolsTable.id, poolId));
+    }
+    const targetAmountUsd = await recomputeTargetUsing(tx, poolId);
+    return { blocked: false, targetAmountUsd, wasResultsReceived: settingsUpdate?.ok ? settingsUpdate.wasResultsReceived : false };
+  });
+}
+
+async function hasSubmittedOrVerifiedContributions(poolId: string): Promise<boolean> {
+  const [row] = await db.select({
+    count: sql<string>`count(*)`,
+  }).from(poolParticipantsTable).where(and(
+    eq(poolParticipantsTable.poolId, poolId),
+    inArray(poolParticipantsTable.paymentStatus, ["submitted", "verified"]),
+  ));
+  return Number(row?.count ?? 0) > 0;
+}
+
+async function requirePoolAccess(req: any, res: any, pool: typeof testingPoolsTable.$inferSelect): Promise<boolean> {
+  if (!pool.inviteOnly) return true;
+  await loadOptionalAccount(req);
+  if (req.account?.telegramUsername === pool.leaderUsername) return true;
+  const code = req.get?.("x-pool-access-code") ?? req.headers?.["x-pool-access-code"];
+  if (typeof code === "string" && code.trim() && pool.accessCodeHash && await bcrypt.compare(code.trim(), pool.accessCodeHash)) return true;
+  res.status(403).json({ error: "access_code_required", code: "access_code_required" });
+  return false;
+}
+
+async function requireParticipantPoolAccess(req: any, res: any, poolId: string): Promise<boolean> {
+  const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
+  if (!pool) {
+    res.status(404).json({ error: "Pool not found" });
+    return false;
+  }
+  return requirePoolAccess(req, res, pool);
 }
 
 async function computePoolTotals(poolId: string) {
@@ -104,11 +329,17 @@ function poolPublicShape(pool: typeof testingPoolsTable.$inferSelect) {
     title: pool.title,
     description: pool.description,
     compoundName: pool.compoundName,
+    labName: pool.labName,
     manufacturer: pool.manufacturer,
     leaderUsername: pool.leaderUsername,
     status: pool.status,
     votingMode: pool.votingMode,
     targetAmountUsd: num(pool.targetAmountUsd),
+    namedReportPriceUsd: num(pool.namedReportPriceUsd),
+    vialCostUsd: num(pool.vialCostUsd),
+    shippingCostUsd: num(pool.shippingCostUsd),
+    organiserTipUsd: num(pool.organiserTipUsd),
+    inviteOnly: pool.inviteOnly ?? false,
     payoutWalletAddress: pool.payoutWalletAddress,
     payoutCurrency: pool.payoutCurrency,
     payoutNetwork: pool.payoutNetwork,
@@ -141,7 +372,7 @@ router.get("/testing-pools", async (_req, res): Promise<void> => {
 
   const out = await Promise.all(
     pools
-      .filter(p => p.status !== "draft")
+      .filter(p => p.status !== "draft" && !p.inviteOnly)
       .map(async p => ({ ...poolPublicShape(p), ...(await computePoolTotals(p.id)) })),
   );
   res.json(out);
@@ -166,6 +397,7 @@ router.get("/testing-pools/participants/:id/status", async (req, res): Promise<v
       .where(eq(poolParticipantsTable.id, req.params.id));
 
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
 
     const [pool] = await db
       .select({
@@ -214,12 +446,13 @@ router.get("/testing-pools/participants/:id/status", async (req, res): Promise<v
 router.get("/testing-pools/:slug", async (req, res): Promise<void> => {
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.slug, req.params.slug));
   if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
-  loadOptionalAccount(req);
+  await loadOptionalAccount(req);
   const isOwner = req.account?.telegramUsername === pool.leaderUsername;
   if (!isOwner && (pool.approvalStatus !== "approved" || pool.status === "draft")) {
     res.status(404).json({ error: "Pool not found" });
     return;
   }
+  if (!await requirePoolAccess(req, res, pool)) return;
 
   const allTests = await db.select().from(poolTestsTable).where(eq(poolTestsTable.poolId, pool.id));
   // Non-owners never see rejected tests
@@ -274,6 +507,7 @@ router.get("/testing-pools/:slug", async (req, res): Promise<void> => {
     pool: poolPublicShape(pool),
     tests: tests.map(t => ({
       id: t.id,
+      catalogId: t.catalogId,
       code: t.code,
       name: t.name,
       unitPriceUsd: num(t.unitPriceUsd),
@@ -291,11 +525,16 @@ router.get("/testing-pools/:slug", async (req, res): Promise<void> => {
 
 // ── Public: POST /api/testing-pools/:slug/opt-in ──────────────────────────────
 router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
-  loadOptionalAccount(req);
+  await loadOptionalAccount(req);
   const { contactEmail, contactTelegram, displayName, amountUsd, voteTestIds, paymentMethod, namedReportOptIn, namedReportName, isPublic, canProvideVial, cryptoCurrency } = req.body ?? {};
 
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.slug, req.params.slug));
   if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
+  if (pool.approvalStatus !== "approved") {
+    res.status(404).json({ error: "Pool not found" });
+    return;
+  }
+  if (!await requirePoolAccess(req, res, pool)) return;
   if (!["open", "funded"].includes(pool.status)) {
     res.status(400).json({ error: "This pool is not currently accepting contributions" });
     return;
@@ -427,6 +666,7 @@ router.post("/testing-pools/participants/:id/submit-tx", async (req, res): Promi
   }
   const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
   if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
+  if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
   if (participant.paymentStatus === "verified") {
     res.json({ ok: true, status: "verified" });
     return;
@@ -456,6 +696,7 @@ router.post("/testing-pools/participants/:id/submit-screenshot", async (req, res
   }
   const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
   if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
+  if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
   if (participant.paymentStatus === "verified") {
     res.json({ ok: true, status: "verified" });
     return;
@@ -479,6 +720,7 @@ router.post("/testing-pools/participants/:id/init-anonpay", async (req, res): Pr
     console.log("[pool/init-anonpay] start", req.params.id);
     const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
     if (participant.paymentStatus === "verified") { res.status(400).json({ error: "Payment already verified" }); return; }
 
     // If already submitted with an existing AnonPay session, return existing session
@@ -564,6 +806,7 @@ router.post("/testing-pools/participants/:id/confirm-anonpay-initiation", async 
   try {
     const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
     if (participant.paymentStatus === "verified") { res.json({ ok: true, paymentStatus: "verified" }); return; }
     const ANON_PREFIX = "anonpay:";
     if (!participant.paymentTxHash?.startsWith(ANON_PREFIX)) {
@@ -583,6 +826,7 @@ router.get("/testing-pools/participants/:id/anonpay-status", async (req, res): P
   try {
     const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
     if (participant.paymentStatus === "verified") { res.json({ status: "verified", paymentStatus: "verified" }); return; }
     if (participant.paymentStatus !== "submitted") { res.status(400).json({ error: "Payment has not been submitted yet." }); return; }
     const ANON_PREFIX = "anonpay:";
@@ -620,7 +864,15 @@ router.get("/testing-pools/participants/:id/anonpay-status", async (req, res): P
 router.post("/testing-pools/:slug/results-unlock", async (req, res): Promise<void> => {
   const { password } = req.body ?? {};
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.slug, req.params.slug));
-  if (!pool || !pool.resultPostedAt) { res.status(404).json({ error: "Results not available" }); return; }
+  if (!pool) { res.status(404).json({ error: "Results not available" }); return; }
+  await loadOptionalAccount(req);
+  const isOwner = req.account?.telegramUsername === pool.leaderUsername;
+  if (!isOwner && (pool.approvalStatus !== "approved" || pool.status === "draft")) {
+    res.status(404).json({ error: "Results not available" });
+    return;
+  }
+  if (!await requirePoolAccess(req, res, pool)) return;
+  if (!pool.resultPostedAt) { res.status(404).json({ error: "Results not available" }); return; }
   if (pool.resultsPasswordHash) {
     if (!password || typeof password !== "string") { res.status(400).json({ error: "Password required" }); return; }
     const ok = await bcrypt.compare(password, pool.resultsPasswordHash);
@@ -853,10 +1105,33 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
     cryptoOptions: bodyCryptoOptions,
     anonpayWallet, anonpayTicker, anonpayNetwork,
     revolutHandle, paypalEmail, janoshikUrl,
-    allowVialContribution, pageMessage,
+    allowVialContribution, pageMessage, labName,
+    namedReportPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd,
+    inviteOnly, accessCode,
   } = req.body ?? {};
   if (!title || typeof title !== "string") { res.status(400).json({ error: "Title required" }); return; }
   if (!Array.isArray(tests) || tests.length === 0) { res.status(400).json({ error: "Add at least one test" }); return; }
+  const testValidation = validatePoolTestsInput(tests);
+  if (!testValidation.tests) { res.status(400).json({ error: testValidation.error }); return; }
+  const validatedTests = testValidation.tests;
+  const costs = {
+    namedReportPriceUsd: poolMoneyInput(req.body ?? {}, "namedReportPriceUsd", 30),
+    vialCostUsd: poolMoneyInput(req.body ?? {}, "vialCostUsd", 0),
+    shippingCostUsd: poolMoneyInput(req.body ?? {}, "shippingCostUsd", 0),
+    organiserTipUsd: poolMoneyInput(req.body ?? {}, "organiserTipUsd", 0),
+  };
+  for (const [field, value] of Object.entries(costs)) {
+    if (value == null) { failInvalidPoolMoney(res, field); return; }
+  }
+  if (inviteOnly !== undefined && typeof inviteOnly !== "boolean") {
+    res.status(400).json({ error: "inviteOnly must be a boolean" }); return;
+  }
+  if (inviteOnly === true && (typeof accessCode !== "string" || !accessCode.trim())) {
+    res.status(400).json({ error: "A nonempty accessCode is required for invite-only pools" }); return;
+  }
+  const fixedFeeInput = fixedOptInFeeUsd == null ? { valid: true, amount: null } : parseFixedOptInFee(fixedOptInFeeUsd);
+  if (!fixedFeeInput.valid) { failInvalidFixedOptInFee(res); return; }
+  const fixedFee = fixedFeeInput.amount;
 
   const id = nanoid(16);
   const slug = await uniqueSlug(title);
@@ -904,8 +1179,6 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
 
   const cryptoMethod = poolPaymentMethods.find(m => m.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
 
-  const fixedFee = fixedOptInFeeUsd != null ? num(fixedOptInFeeUsd) : null;
-
   await db.insert(testingPoolsTable).values({
     id,
     slug,
@@ -913,10 +1186,17 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
     title: String(title).slice(0, 200),
     description: description ? String(description).slice(0, 4000) : null,
     compoundName: compoundName ? String(compoundName).slice(0, 100) : null,
+    labName: typeof labName === "string" && labName.trim() ? labName.trim().slice(0, 200) : null,
     manufacturer: manufacturer ? String(manufacturer).slice(0, 100) : null,
     batchNumber: batchNumber ? String(batchNumber).slice(0, 100) : null,
     status: "draft",
     votingMode: votingMode === "vote" ? "vote" : "leader_decides",
+    namedReportPriceUsd: costs.namedReportPriceUsd!.toFixed(2),
+    vialCostUsd: costs.vialCostUsd!.toFixed(2),
+    shippingCostUsd: costs.shippingCostUsd!.toFixed(2),
+    organiserTipUsd: costs.organiserTipUsd!.toFixed(2),
+    inviteOnly: inviteOnly === true,
+    accessCodeHash: inviteOnly === true ? await bcrypt.hash(accessCode.trim(), 10) : null,
     payoutWalletAddress: cryptoMethod?.address ?? null,
     payoutCurrency: cryptoMethod?.currency ?? null,
     payoutNetwork: cryptoMethod?.network ?? null,
@@ -930,15 +1210,14 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
     groupBuyId: groupBuyId ? String(groupBuyId).slice(0, 64) : null,
   });
 
-  for (const t of tests) {
-    if (!t?.code || !t?.name) continue;
+  for (const t of validatedTests) {
     await db.insert(poolTestsTable).values({
       id: nanoid(12),
       poolId: id,
       catalogId: t.catalogId ? String(t.catalogId).slice(0, 64) : null,
       code: String(t.code).slice(0, 60),
       name: String(t.name).slice(0, 200),
-      unitPriceUsd: num(t.unitPriceUsd).toFixed(2),
+      unitPriceUsd: t.unitPriceUsd.toFixed(2),
       quantity: Math.max(1, parseInt(String(t.quantity ?? 1), 10) || 1),
       selected: t.selected !== false,
     });
@@ -958,15 +1237,15 @@ async function getOwnedPool(req: any, res: any, poolId: string) {
   return pool;
 }
 
-// PATCH /api/account/pool-leader/pools/:id — update pool fields / status / results
-router.patch("/account/pool-leader/pools/:id", requireAccount, async (req, res): Promise<void> => {
-  const pool = await getOwnedPool(req, res, req.params.id as string);
-  if (!pool) return;
+async function buildLeaderPoolUpdates(
+  pool: typeof testingPoolsTable.$inferSelect,
+  b: Record<string, unknown>,
+): Promise<PoolSettingsBuild> {
   const updates: Partial<typeof testingPoolsTable.$inferInsert> = {};
-  const b = req.body ?? {};
   if (typeof b.title === "string") updates.title = b.title.slice(0, 200);
   if (typeof b.description === "string") updates.description = b.description.slice(0, 4000);
   if (typeof b.compoundName === "string") updates.compoundName = b.compoundName.slice(0, 100);
+  if (typeof b.labName === "string" || b.labName === null) updates.labName = b.labName ? String(b.labName).trim().slice(0, 200) || null : null;
   if (typeof b.manufacturer === "string") updates.manufacturer = b.manufacturer.slice(0, 100);
   if (typeof b.batchNumber === "string") updates.batchNumber = b.batchNumber.slice(0, 100);
   if (typeof b.status === "string" && ["draft", "open", "funded", "sent_to_lab", "results_received", "closed", "cancelled"].includes(b.status)) {
@@ -976,32 +1255,84 @@ router.patch("/account/pool-leader/pools/:id", requireAccount, async (req, res):
   if (typeof b.resultNotes === "string") updates.resultNotes = b.resultNotes.slice(0, 10000);
   if (typeof b.resultPdfUrl === "string") updates.resultPdfUrl = b.resultPdfUrl.slice(0, 500);
   if (b.resultsPassword) updates.resultsPasswordHash = await bcrypt.hash(String(b.resultsPassword), 10);
-  if (updates.status === "results_received" && !pool.resultPostedAt) updates.resultPostedAt = new Date();
   if (typeof b.contributorNamedReportEnabled === "boolean") updates.contributorNamedReportEnabled = b.contributorNamedReportEnabled;
   if (typeof b.stopOnFunded === "boolean") updates.stopOnFunded = b.stopOnFunded;
   if (typeof b.allowVialContribution === "boolean") updates.allowVialContribution = b.allowVialContribution;
   if (typeof b.namedReportCap === "number" && b.namedReportCap > 0) updates.namedReportCap = Math.floor(b.namedReportCap);
   if (b.namedReportCap === null || b.namedReportCap === 0) updates.namedReportCap = null;
   if ("pageMessage" in b) updates.pageMessage = b.pageMessage ? String(b.pageMessage).slice(0, 2000) : null;
-  if (b.fixedOptInFeeUsd != null) {
-    updates.fixedOptInFeeUsd = b.fixedOptInFeeUsd === "" || b.fixedOptInFeeUsd === null ? null : num(b.fixedOptInFeeUsd).toFixed(2);
+
+  let fixedFeeChanged = false;
+  if ("fixedOptInFeeUsd" in b) {
+    const parsedFee = parseFixedOptInFee(b.fixedOptInFeeUsd);
+    if (!parsedFee.valid) {
+      return { ok: false, status: 400, message: "fixedOptInFeeUsd must be null or a USD amount of at least $1 with at most two decimal places" };
+    }
+    fixedFeeChanged = (pool.fixedOptInFeeUsd == null ? null : num(pool.fixedOptInFeeUsd)) !== parsedFee.amount;
+    updates.fixedOptInFeeUsd = parsedFee.amount == null ? null : parsedFee.amount.toFixed(2);
   }
-  if (b.fixedOptInFeeUsd === null || b.fixedOptInFeeUsd === "") {
-    updates.fixedOptInFeeUsd = null;
+
+  const pricingFields = ["vialCostUsd", "shippingCostUsd", "organiserTipUsd"] as const;
+  let pricingChanged = false;
+  let moneyChanged = fixedFeeChanged;
+  for (const field of pricingFields) {
+    if (!(field in b)) continue;
+    const amount = parseStrictPoolMoney(b[field]);
+    if (amount == null) {
+      return { ok: false, status: 400, message: `${field} must be a non-negative amount with at most two decimal places` };
+    }
+    if (amount !== num(pool[field])) { pricingChanged = true; moneyChanged = true; }
+    updates[field] = amount.toFixed(2);
   }
-  // Allow updating payment methods
+  if ("namedReportPriceUsd" in b) {
+    const amount = parseStrictPoolMoney(b.namedReportPriceUsd);
+    if (amount == null) {
+      return { ok: false, status: 400, message: "namedReportPriceUsd must be a non-negative amount with at most two decimal places" };
+    }
+    if (amount !== num(pool.namedReportPriceUsd)) moneyChanged = true;
+    updates.namedReportPriceUsd = amount.toFixed(2);
+  }
+
+  if ("inviteOnly" in b && typeof b.inviteOnly !== "boolean") {
+    return { ok: false, status: 400, message: "inviteOnly must be a boolean" };
+  }
+  const hasNewAccessCode = typeof b.accessCode === "string" && !!b.accessCode.trim();
+  if (b.inviteOnly === true && !pool.inviteOnly && !pool.accessCodeHash && !hasNewAccessCode) {
+    return { ok: false, status: 400, message: "A nonempty accessCode is required for invite-only pools" };
+  }
+  if (typeof b.inviteOnly === "boolean") updates.inviteOnly = b.inviteOnly;
+  if (b.inviteOnly === false) updates.accessCodeHash = null;
+  else if (hasNewAccessCode) updates.accessCodeHash = await bcrypt.hash(String(b.accessCode).trim(), 10);
+
   if (Array.isArray(b.paymentMethods)) {
     updates.paymentMethods = b.paymentMethods as PoolPaymentMethod[];
-    const crypto = (b.paymentMethods as PoolPaymentMethod[]).find((m: PoolPaymentMethod) => m.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
+    const crypto = (b.paymentMethods as PoolPaymentMethod[]).find((method: PoolPaymentMethod) => method.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
     updates.payoutWalletAddress = crypto?.address ?? null;
     updates.payoutCurrency = crypto?.currency ?? null;
     updates.payoutNetwork = crypto?.network ?? null;
   }
+
   const wasResultsReceived = updates.status === "results_received" && !pool.resultPostedAt;
-  await db.update(testingPoolsTable).set(updates).where(eq(testingPoolsTable.id, pool.id));
+  if (wasResultsReceived) updates.resultPostedAt = new Date();
+  return { ok: true, updates, pricingChanged, moneyChanged, wasResultsReceived };
+}
+
+// PATCH /api/account/pool-leader/pools/:id — update pool fields / status / results
+router.patch("/account/pool-leader/pools/:id", requireAccount, async (req, res): Promise<void> => {
+  const pool = await getOwnedPool(req, res, req.params.id as string);
+  if (!pool) return;
+  const build = await buildLeaderPoolUpdates(pool, req.body ?? {});
+  if (!build.ok) { res.status(build.status).json({ error: build.message }); return; }
+  if (build.moneyChanged && await hasSubmittedOrVerifiedContributions(pool.id)) {
+    res.status(409).json({ error: "Cannot change pool pricing after contributions have been submitted or verified" }); return;
+  }
+  if (Object.keys(build.updates).length > 0) {
+    await db.update(testingPoolsTable).set(build.updates).where(eq(testingPoolsTable.id, pool.id));
+  }
+  if (build.pricingChanged) await recomputeTarget(pool.id);
 
   // Notify verified participants with accounts when results are first posted
-  if (wasResultsReceived) {
+  if (build.wasResultsReceived) {
     const participants = await db
       .select({ accountUsername: poolParticipantsTable.accountUsername })
       .from(poolParticipantsTable)
@@ -1028,33 +1359,40 @@ router.patch("/account/pool-leader/pools/:id", requireAccount, async (req, res):
 router.put("/account/pool-leader/pools/:id/tests", requireAccount, async (req, res): Promise<void> => {
   const pool = await getOwnedPool(req, res, req.params.id as string);
   if (!pool) return;
-  const { tests } = req.body ?? {};
-  if (!Array.isArray(tests)) { res.status(400).json({ error: "tests array required" }); return; }
-  const [{ count }] = await db
-    .select({ count: sql<string>`count(*) filter (where ${poolParticipantsTable.paymentStatus} in ('submitted','verified'))` })
-    .from(poolParticipantsTable)
-    .where(eq(poolParticipantsTable.poolId, pool.id));
-  if (parseInt(count ?? "0", 10) > 0) {
+  const { tests, poolUpdates } = req.body ?? {};
+  if (poolUpdates !== undefined && (!poolUpdates || typeof poolUpdates !== "object" || Array.isArray(poolUpdates))) {
+    res.status(400).json({ error: "poolUpdates must be an object" }); return;
+  }
+  const testValidation = validatePoolTestsInput(tests);
+  if (!testValidation.tests) { res.status(400).json({ error: testValidation.error }); return; }
+  const result = await replacePoolTests(pool.id, testValidation.tests, poolUpdates === undefined
+    ? {}
+    : { poolUpdates: { kind: "leader", values: poolUpdates } });
+  if (result.error) {
+    res.status(result.error.status).json({ error: result.error.message });
+    return;
+  }
+  if (result.blocked) {
     res.status(409).json({ error: "Cannot replace tests after contributions have been received" });
     return;
   }
-  await db.delete(poolTestsTable).where(eq(poolTestsTable.poolId, pool.id));
-  for (const t of tests) {
-    if (!t?.code || !t?.name) continue;
-    await db.insert(poolTestsTable).values({
-      id: nanoid(12),
-      poolId: pool.id,
-      catalogId: t.catalogId ? String(t.catalogId).slice(0, 64) : null,
-      code: String(t.code).slice(0, 60),
-      name: String(t.name).slice(0, 200),
-      unitPriceUsd: num(t.unitPriceUsd).toFixed(2),
-      quantity: Math.max(1, parseInt(String(t.quantity ?? 1), 10) || 1),
-      selected: t.selected !== false,
-      janoshikUrl: t.janoshikUrl ? String(t.janoshikUrl).slice(0, 500) : null,
-    });
+  if (result.wasResultsReceived) {
+    const participants = await db.select({ accountUsername: poolParticipantsTable.accountUsername })
+      .from(poolParticipantsTable)
+      .where(and(
+        eq(poolParticipantsTable.poolId, pool.id),
+        eq(poolParticipantsTable.paymentStatus, "verified"),
+        not(eq(poolParticipantsTable.accountUsername, "")),
+      ));
+    const appUrl = process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://pepsanonymous.com";
+    const poolUrl = `${appUrl}/pool/${pool.slug}`;
+    for (const participant of participants) {
+      if (participant.accountUsername) {
+        notifyUser(participant.accountUsername, "status", `🔬 <b>Results are in!</b>\n\nThe testing pool <b>${pool.title}</b> has posted results.\n\n<a href="${poolUrl}">View results →</a>`).catch(() => {});
+      }
+    }
   }
-  const target = await recomputeTarget(pool.id);
-  res.json({ ok: true, targetAmountUsd: target });
+  res.json({ ok: true, targetAmountUsd: result.targetAmountUsd });
 });
 
 // GET /api/account/pool-leader/pools/:id/participants
@@ -1242,8 +1580,34 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
     contributorNamedReportEnabled, stopOnFunded, fixedOptInFeeUsd,
     allowVialContribution, pageMessage,
     resultsPassword, groupBuyId, status, approvalStatus,
+    labName, namedReportPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd,
+    inviteOnly, accessCode,
   } = req.body ?? {};
   if (!title || typeof title !== "string") { res.status(400).json({ error: "Title required" }); return; }
+  let validatedTests: ValidatedPoolTest[] | null = null;
+  if (tests !== undefined) {
+    const testValidation = validatePoolTestsInput(tests);
+    if (!testValidation.tests) { res.status(400).json({ error: testValidation.error }); return; }
+    validatedTests = testValidation.tests;
+  }
+  const costs = {
+    namedReportPriceUsd: poolMoneyInput(req.body ?? {}, "namedReportPriceUsd", 30),
+    vialCostUsd: poolMoneyInput(req.body ?? {}, "vialCostUsd", 0),
+    shippingCostUsd: poolMoneyInput(req.body ?? {}, "shippingCostUsd", 0),
+    organiserTipUsd: poolMoneyInput(req.body ?? {}, "organiserTipUsd", 0),
+  };
+  for (const [field, value] of Object.entries(costs)) {
+    if (value == null) { failInvalidPoolMoney(res, field); return; }
+  }
+  if (inviteOnly !== undefined && typeof inviteOnly !== "boolean") {
+    res.status(400).json({ error: "inviteOnly must be a boolean" }); return;
+  }
+  if (inviteOnly === true && (typeof accessCode !== "string" || !accessCode.trim())) {
+    res.status(400).json({ error: "A nonempty accessCode is required for invite-only pools" }); return;
+  }
+  const fixedFeeInput = fixedOptInFeeUsd == null ? { valid: true, amount: null } : parseFixedOptInFee(fixedOptInFeeUsd);
+  if (!fixedFeeInput.valid) { failInvalidFixedOptInFee(res); return; }
+  const fixedFee = fixedFeeInput.amount;
 
   const id = nanoid(16);
   const slug = await uniqueSlug(title);
@@ -1262,8 +1626,6 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
   });
 
   const cryptoMethod = poolPaymentMethods.find(m => m.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
-  const fixedFee = fixedOptInFeeUsd != null ? num(fixedOptInFeeUsd) : null;
-
   await db.insert(testingPoolsTable).values({
     id,
     slug,
@@ -1271,10 +1633,17 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
     title: String(title).slice(0, 200),
     description: description ? String(description).slice(0, 4000) : null,
     compoundName: compoundName ? String(compoundName).slice(0, 100) : null,
+    labName: typeof labName === "string" && labName.trim() ? labName.trim().slice(0, 200) : null,
     manufacturer: manufacturer ? String(manufacturer).slice(0, 100) : null,
     batchNumber: batchNumber ? String(batchNumber).slice(0, 100) : null,
     status: (typeof status === "string" && ["draft","open","funded","sent_to_lab","results_received","closed","cancelled"].includes(status)) ? status : "draft",
     votingMode: votingMode === "vote" ? "vote" : "leader_decides",
+    namedReportPriceUsd: costs.namedReportPriceUsd!.toFixed(2),
+    vialCostUsd: costs.vialCostUsd!.toFixed(2),
+    shippingCostUsd: costs.shippingCostUsd!.toFixed(2),
+    organiserTipUsd: costs.organiserTipUsd!.toFixed(2),
+    inviteOnly: inviteOnly === true,
+    accessCodeHash: inviteOnly === true ? await bcrypt.hash(accessCode.trim(), 10) : null,
     approvalStatus: (typeof approvalStatus === "string" && ["pending","approved","rejected"].includes(approvalStatus)) ? approvalStatus : "approved",
     payoutWalletAddress: cryptoMethod?.address ?? null,
     payoutCurrency: cryptoMethod?.currency ?? null,
@@ -1289,16 +1658,15 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
     groupBuyId: groupBuyId ? String(groupBuyId).slice(0, 64) : null,
   });
 
-  if (Array.isArray(tests)) {
-    for (const t of tests) {
-      if (!t?.code || !t?.name) continue;
+  if (validatedTests) {
+    for (const t of validatedTests) {
       await db.insert(poolTestsTable).values({
         id: nanoid(12),
         poolId: id,
         catalogId: t.catalogId ? String(t.catalogId).slice(0, 64) : null,
         code: String(t.code).slice(0, 60),
         name: String(t.name).slice(0, 200),
-        unitPriceUsd: num(t.unitPriceUsd).toFixed(2),
+        unitPriceUsd: t.unitPriceUsd.toFixed(2),
         quantity: Math.max(1, parseInt(String(t.quantity ?? 1), 10) || 1),
         selected: t.selected !== false,
       });
@@ -1336,10 +1704,15 @@ router.get("/admin/testing-pools/:id/detail", async (req, res): Promise<void> =>
     db.select().from(poolMessagesTable).where(eq(poolMessagesTable.poolId, pool.id)).orderBy(desc(poolMessagesTable.createdAt)),
   ]);
 
+  const { accessCodeHash: _accessCodeHash, resultsPasswordHash: _resultsPasswordHash, ...safePool } = pool;
   res.json({
-    ...pool,
+    ...safePool,
     paymentMethods: normalizePoolPMs((pool.paymentMethods as unknown[] | null) ?? []),
     targetAmountUsd: num(pool.targetAmountUsd),
+    namedReportPriceUsd: num(pool.namedReportPriceUsd),
+    vialCostUsd: num(pool.vialCostUsd),
+    shippingCostUsd: num(pool.shippingCostUsd),
+    organiserTipUsd: num(pool.organiserTipUsd),
     tests: tests.map(t => ({ ...t, unitPriceUsd: num(t.unitPriceUsd) })),
     participants: participants.map(p => ({ ...p, amountUsd: num(p.amountUsd) })),
     results,
@@ -1347,19 +1720,27 @@ router.get("/admin/testing-pools/:id/detail", async (req, res): Promise<void> =>
   });
 });
 
-// PATCH /api/admin/testing-pools/:id — approve/reject/hide + full edit
-router.patch("/admin/testing-pools/:id", async (req, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
-  const updates: Partial<typeof testingPoolsTable.$inferInsert> = {};
-  const b = req.body ?? {};
+type AdminPoolUpdatesResult =
+  | {
+      ok: true;
+      updates: Partial<typeof testingPoolsTable.$inferInsert>;
+      pricingChanged: boolean;
+      moneyChanged: boolean;
+      wasResultsReceived: boolean;
+    }
+  | { ok: false; status: number; message: string };
 
-  // Approval / visibility
+async function buildAdminPoolUpdates(
+  existingPool: typeof testingPoolsTable.$inferSelect,
+  b: Record<string, unknown>,
+): Promise<AdminPoolUpdatesResult> {
+  const updates: Partial<typeof testingPoolsTable.$inferInsert> = {};
+
   if (typeof b.approvalStatus === "string" && ["pending", "approved", "rejected"].includes(b.approvalStatus)) updates.approvalStatus = b.approvalStatus;
   if (typeof b.rejectionReason === "string") updates.rejectionReason = b.rejectionReason.slice(0, 500);
   if (typeof b.hiddenFromList === "boolean") updates.hiddenFromList = b.hiddenFromList;
   if (typeof b.status === "string") updates.status = b.status;
 
-  // Product metadata
   if (typeof b.capColor === "string") updates.capColor = b.capColor.slice(0, 100) || null;
   if (b.capColor === null) updates.capColor = null;
   if (typeof b.mgSize === "string") updates.mgSize = b.mgSize.slice(0, 100) || null;
@@ -1369,15 +1750,15 @@ router.patch("/admin/testing-pools/:id", async (req, res): Promise<void> => {
   if (typeof b.namedReportCap === "number" && b.namedReportCap > 0) updates.namedReportCap = Math.floor(b.namedReportCap);
   if (b.namedReportCap === null || b.namedReportCap === 0) updates.namedReportCap = null;
   if (typeof b.manufacturingDate === "string") {
-    const d = b.manufacturingDate.trim();
-    updates.manufacturingDate = /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+    const date = b.manufacturingDate.trim();
+    updates.manufacturingDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
   }
   if (b.manufacturingDate === null) updates.manufacturingDate = null;
 
-  // Core pool details
   if (typeof b.title === "string") updates.title = b.title.slice(0, 200);
   if (typeof b.description === "string" || b.description === null) updates.description = b.description ? String(b.description).slice(0, 4000) : null;
   if (typeof b.compoundName === "string" || b.compoundName === null) updates.compoundName = b.compoundName ? String(b.compoundName).slice(0, 100) : null;
+  if (typeof b.labName === "string" || b.labName === null) updates.labName = b.labName ? String(b.labName).trim().slice(0, 200) || null : null;
   if (typeof b.manufacturer === "string" || b.manufacturer === null) updates.manufacturer = b.manufacturer ? String(b.manufacturer).slice(0, 100) : null;
   if (typeof b.batchNumber === "string" || b.batchNumber === null) updates.batchNumber = b.batchNumber ? String(b.batchNumber).slice(0, 100) : null;
   if (typeof b.votingMode === "string" && ["leader_decides", "vote"].includes(b.votingMode)) updates.votingMode = b.votingMode;
@@ -1387,45 +1768,95 @@ router.patch("/admin/testing-pools/:id", async (req, res): Promise<void> => {
   if (typeof b.stopOnFunded === "boolean") updates.stopOnFunded = b.stopOnFunded;
   if (typeof b.allowVialContribution === "boolean") updates.allowVialContribution = b.allowVialContribution;
   if ("pageMessage" in b) updates.pageMessage = b.pageMessage ? String(b.pageMessage).slice(0, 2000) : null;
-  if ("fixedOptInFeeUsd" in b) updates.fixedOptInFeeUsd = (b.fixedOptInFeeUsd == null || b.fixedOptInFeeUsd === "") ? null : num(b.fixedOptInFeeUsd).toFixed(2);
+
+  let fixedFeeChanged = false;
+  if ("fixedOptInFeeUsd" in b) {
+    const parsedFee = parseFixedOptInFee(b.fixedOptInFeeUsd);
+    if (!parsedFee.valid) {
+      return { ok: false, status: 400, message: "fixedOptInFeeUsd must be null or a USD amount of at least $1 with at most two decimal places" };
+    }
+    fixedFeeChanged = (existingPool.fixedOptInFeeUsd == null ? null : num(existingPool.fixedOptInFeeUsd)) !== parsedFee.amount;
+    updates.fixedOptInFeeUsd = parsedFee.amount == null ? null : parsedFee.amount.toFixed(2);
+  }
   if (b.resultsPassword) updates.resultsPasswordHash = await bcrypt.hash(String(b.resultsPassword), 10);
 
-  // Payment methods
+  const pricingFields = ["vialCostUsd", "shippingCostUsd", "organiserTipUsd"] as const;
+  let pricingChanged = false;
+  let moneyChanged = fixedFeeChanged;
+  for (const field of pricingFields) {
+    if (!(field in b)) continue;
+    const amount = parseStrictPoolMoney(b[field]);
+    if (amount == null) {
+      return { ok: false, status: 400, message: `${field} must be a non-negative amount with at most two decimal places` };
+    }
+    if (amount !== num(existingPool[field])) { pricingChanged = true; moneyChanged = true; }
+    updates[field] = amount.toFixed(2);
+  }
+  if ("namedReportPriceUsd" in b) {
+    const amount = parseStrictPoolMoney(b.namedReportPriceUsd);
+    if (amount == null) {
+      return { ok: false, status: 400, message: "namedReportPriceUsd must be a non-negative amount with at most two decimal places" };
+    }
+    if (amount !== num(existingPool.namedReportPriceUsd)) moneyChanged = true;
+    updates.namedReportPriceUsd = amount.toFixed(2);
+  }
+
+  if ("inviteOnly" in b && typeof b.inviteOnly !== "boolean") {
+    return { ok: false, status: 400, message: "inviteOnly must be a boolean" };
+  }
+  const hasNewAccessCode = typeof b.accessCode === "string" && !!b.accessCode.trim();
+  if (b.inviteOnly === true && !existingPool.inviteOnly && !existingPool.accessCodeHash && !hasNewAccessCode) {
+    return { ok: false, status: 400, message: "A nonempty accessCode is required for invite-only pools" };
+  }
+  if (typeof b.inviteOnly === "boolean") updates.inviteOnly = b.inviteOnly;
+  if (b.inviteOnly === false) updates.accessCodeHash = null;
+  else if (hasNewAccessCode) updates.accessCodeHash = await bcrypt.hash(String(b.accessCode).trim(), 10);
+
   if (Array.isArray(b.paymentMethods)) {
     updates.paymentMethods = b.paymentMethods as PoolPaymentMethod[];
-    const crypto = (b.paymentMethods as PoolPaymentMethod[]).find((m) => m.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
+    const crypto = (b.paymentMethods as PoolPaymentMethod[]).find(method => method.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
     updates.payoutWalletAddress = crypto?.address ?? null;
     updates.payoutCurrency = crypto?.currency ?? null;
     updates.payoutNetwork = crypto?.network ?? null;
   }
 
-  // Fetch current pool state to determine whether this is the first time results are posted
-  const [currentPool] = await db.select({ resultPostedAt: testingPoolsTable.resultPostedAt, slug: testingPoolsTable.slug, title: testingPoolsTable.title })
-    .from(testingPoolsTable).where(eq(testingPoolsTable.id, req.params.id));
-  const wasResultsReceived = updates.status === "results_received" && (!currentPool || !currentPool.resultPostedAt);
+  const wasResultsReceived = updates.status === "results_received" && !existingPool.resultPostedAt;
   if (wasResultsReceived) updates.resultPostedAt = new Date();
+  return { ok: true, updates, pricingChanged, moneyChanged, wasResultsReceived };
+}
 
-  if (Object.keys(updates).length > 0) {
-    await db.update(testingPoolsTable).set(updates).where(eq(testingPoolsTable.id, req.params.id));
+// PATCH /api/admin/testing-pools/:id — approve/reject/hide + full edit
+router.patch("/admin/testing-pools/:id", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const [existingPool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.id, req.params.id));
+  if (!existingPool) { res.status(404).json({ error: "Pool not found" }); return; }
+  const build = await buildAdminPoolUpdates(existingPool, req.body ?? {});
+  if (!build.ok) { res.status(build.status).json({ error: build.message }); return; }
+  if (build.moneyChanged && await hasSubmittedOrVerifiedContributions(existingPool.id)) {
+    res.status(409).json({ error: "Cannot change pool pricing after contributions have been submitted or verified" }); return;
   }
+  if (Object.keys(build.updates).length > 0) {
+    await db.update(testingPoolsTable).set(build.updates).where(eq(testingPoolsTable.id, req.params.id));
+  }
+  if (build.pricingChanged) await recomputeTarget(existingPool.id);
 
   // Notify verified participants with accounts when results are first posted
-  if (wasResultsReceived && currentPool) {
+  if (build.wasResultsReceived) {
     const participants = await db
       .select({ accountUsername: poolParticipantsTable.accountUsername })
       .from(poolParticipantsTable)
       .where(and(
-        eq(poolParticipantsTable.poolId, req.params.id),
+        eq(poolParticipantsTable.poolId, existingPool.id),
         eq(poolParticipantsTable.paymentStatus, "verified"),
         not(eq(poolParticipantsTable.accountUsername, "")),
       ));
     const appUrl = process.env.REPLIT_DEV_DOMAIN
       ? `https://${process.env.REPLIT_DEV_DOMAIN}`
       : "https://pepsanonymous.com";
-    const poolUrl = `${appUrl}/pool/${currentPool.slug}`;
+    const poolUrl = `${appUrl}/pool/${existingPool.slug}`;
     for (const p of participants) {
       if (!p.accountUsername) continue;
-      const msg = `🔬 <b>Results are in!</b>\n\nThe testing pool <b>${currentPool.title}</b> has posted results.\n\n<a href="${poolUrl}">View results →</a>`;
+      const msg = `🔬 <b>Results are in!</b>\n\nThe testing pool <b>${existingPool.title}</b> has posted results.\n\n<a href="${poolUrl}">View results →</a>`;
       notifyUser(p.accountUsername, "status", msg).catch(() => {});
     }
   }
@@ -1439,6 +1870,9 @@ router.delete("/admin/testing-pools/tests/:testId", async (req, res): Promise<vo
   const [test] = await db.select({ id: poolTestsTable.id, poolId: poolTestsTable.poolId })
     .from(poolTestsTable).where(eq(poolTestsTable.id, req.params.testId));
   if (!test) { res.status(404).json({ error: "Test not found" }); return; }
+  if (await hasSubmittedOrVerifiedContributions(test.poolId)) {
+    res.status(409).json({ error: "Cannot change pool tests after contributions have been submitted or verified" }); return;
+  }
   await db.delete(poolTestsTable).where(eq(poolTestsTable.id, req.params.testId));
   await recomputeTarget(test.poolId);
   res.json({ ok: true });
@@ -1461,13 +1895,14 @@ router.patch("/admin/testing-pools/tests/:testId/status", async (req, res): Prom
 
 // POST /api/testing-pools/:slug/tests/:testId/request-delete — leader requests deletion
 router.post("/testing-pools/:slug/tests/:testId/request-delete", async (req, res): Promise<void> => {
-  loadOptionalAccount(req);
+  await loadOptionalAccount(req);
   if (!req.account) { res.status(401).json({ error: "Not authenticated" }); return; }
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.slug, req.params.slug));
   if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
   if (pool.leaderUsername !== req.account.telegramUsername) {
     res.status(403).json({ error: "Only the pool leader can request test removal" }); return;
   }
+  if (!await requirePoolAccess(req, res, pool)) return;
   if (pool.status !== "open") {
     res.status(400).json({ error: "Test removal requests are only allowed while the pool is open" }); return;
   }
@@ -1482,28 +1917,48 @@ router.post("/testing-pools/:slug/tests/:testId/request-delete", async (req, res
   res.json({ ok: true });
 });
 
-// PUT /api/admin/testing-pools/:id/tests — replace all tests (admin, no contributor restriction)
+// PUT /api/admin/testing-pools/:id/tests — update the test set without discarding surviving IDs/results
 router.put("/admin/testing-pools/:id/tests", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { tests } = req.body ?? {};
-  if (!Array.isArray(tests)) { res.status(400).json({ error: "tests array required" }); return; }
-  await db.delete(poolTestsTable).where(eq(poolTestsTable.poolId, req.params.id));
-  for (const t of tests) {
-    if (!t?.code || !t?.name) continue;
-    await db.insert(poolTestsTable).values({
-      id: nanoid(12),
-      poolId: req.params.id,
-      catalogId: t.catalogId ? String(t.catalogId).slice(0, 64) : null,
-      code: String(t.code).slice(0, 60),
-      name: String(t.name).slice(0, 200),
-      unitPriceUsd: num(t.unitPriceUsd).toFixed(2),
-      quantity: Math.max(1, parseInt(String(t.quantity ?? 1), 10) || 1),
-      selected: t.selected !== false,
-      janoshikUrl: t.janoshikUrl ? String(t.janoshikUrl).slice(0, 500) : null,
-    });
+  const { tests, poolUpdates } = req.body ?? {};
+  if (poolUpdates !== undefined && (!poolUpdates || typeof poolUpdates !== "object" || Array.isArray(poolUpdates))) {
+    res.status(400).json({ error: "poolUpdates must be an object" }); return;
   }
-  const target = await recomputeTarget(req.params.id);
-  res.json({ ok: true, targetAmountUsd: target });
+  const testValidation = validatePoolTestsInput(tests);
+  if (!testValidation.tests) { res.status(400).json({ error: testValidation.error }); return; }
+  const [pool] = await db.select({ id: testingPoolsTable.id }).from(testingPoolsTable).where(eq(testingPoolsTable.id, req.params.id));
+  if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
+  const result = await replacePoolTests(pool.id, testValidation.tests, poolUpdates === undefined
+    ? {}
+    : { poolUpdates: { kind: "admin", values: poolUpdates } });
+  if (result.error) {
+    res.status(result.error.status).json({ error: result.error.message });
+    return;
+  }
+  if (result.blocked) {
+    res.status(409).json({ error: "Cannot change pool tests after contributions have been submitted or verified" }); return;
+  }
+  if (result.wasResultsReceived) {
+    const [updatedPool] = await db.select({ slug: testingPoolsTable.slug, title: testingPoolsTable.title })
+      .from(testingPoolsTable).where(eq(testingPoolsTable.id, pool.id));
+    if (updatedPool) {
+      const participants = await db.select({ accountUsername: poolParticipantsTable.accountUsername })
+        .from(poolParticipantsTable)
+        .where(and(
+          eq(poolParticipantsTable.poolId, pool.id),
+          eq(poolParticipantsTable.paymentStatus, "verified"),
+          not(eq(poolParticipantsTable.accountUsername, "")),
+        ));
+      const appUrl = process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "https://pepsanonymous.com";
+      const poolUrl = `${appUrl}/pool/${updatedPool.slug}`;
+      for (const participant of participants) {
+        if (participant.accountUsername) {
+          notifyUser(participant.accountUsername, "status", `🔬 <b>Results are in!</b>\n\nThe testing pool <b>${updatedPool.title}</b> has posted results.\n\n<a href="${poolUrl}">View results →</a>`).catch(() => {});
+        }
+      }
+    }
+  }
+  res.json({ ok: true, targetAmountUsd: result.targetAmountUsd });
 });
 
 // PATCH /api/admin/testing-pools/:id/test-janoshik — update per-test janoshik URLs (non-destructive)

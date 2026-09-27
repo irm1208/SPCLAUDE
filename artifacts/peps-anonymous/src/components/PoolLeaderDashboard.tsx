@@ -34,6 +34,12 @@ type LeaderPool = {
   contributorNamedReportEnabled: boolean;
   namedReportCap: number | null;
   fixedOptInFeeUsd: number | null;
+  labName: string | null;
+  namedReportPriceUsd: number;
+  vialCostUsd: number;
+  shippingCostUsd: number;
+  organiserTipUsd: number;
+  inviteOnly: boolean;
 };
 
 type CatalogEntry = {
@@ -46,7 +52,7 @@ type CatalogEntry = {
   analysisSection: string | null;
 };
 
-type PendingTest = { catalogId?: string; code: string; name: string; unitPriceUsd: number; quantity: number };
+type PendingTest = { id?: string; catalogId?: string; code: string; name: string; unitPriceUsd: number; quantity: number; selected?: boolean; janoshikUrl?: string };
 
 const POOL_STATUS_LABEL: Record<string, string> = {
   draft: "Draft",
@@ -1250,9 +1256,16 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
   const [manufacturer, setManufacturer] = useState("");
   const [batchNumber, setBatchNumber] = useState("");
   const [description, setDescription] = useState("");
+  const [labName, setLabName] = useState("");
   const [doseUnit, setDoseUnit] = useState<"mcg" | "mg" | "iu">("mcg");
   const [doseValue, setDoseValue] = useState<string>("");
   const [resultsPassword, setResultsPassword] = useState("");
+  const [namedReportPriceUsd, setNamedReportPriceUsd] = useState("30");
+  const [vialCostUsd, setVialCostUsd] = useState("");
+  const [shippingCostUsd, setShippingCostUsd] = useState("");
+  const [organiserTipUsd, setOrganiserTipUsd] = useState("");
+  const [inviteOnly, setInviteOnly] = useState(false);
+  const [accessCode, setAccessCode] = useState("");
   const [votingMode, setVotingMode] = useState<"leader_decides" | "vote">("leader_decides");
 
   // Tests (ordered array — index = priority)
@@ -1283,6 +1296,9 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
   const [janoshikUrl, setJanoshikUrl] = useState((leaderStatus as any).janoshikUrl ?? "");
   const [allowVialContribution, setAllowVialContribution] = useState(false);
   const [pageMessage, setPageMessage] = useState("");
+  const [newTestName, setNewTestName] = useState("");
+  const [newTestCode, setNewTestCode] = useState("");
+  const [newTestPrice, setNewTestPrice] = useState("");
 
   // Fixed vs any fee
   const [fixedFeeEnabled, setFixedFeeEnabled] = useState(false);
@@ -1305,6 +1321,17 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
 
   const removeTest = (i: number) => setTests(prev => prev.filter((_, j) => j !== i));
 
+  const addCustomTest = () => {
+    const name = newTestName.trim();
+    const code = newTestCode.trim();
+    const price = Number(newTestPrice);
+    if (!name || !code || !Number.isFinite(price) || price < 0 || tests.some(t => t.code.toLowerCase() === code.toLowerCase())) return;
+    setTests(prev => [...prev, { catalogId: undefined, code, name, unitPriceUsd: price, quantity: vialAmount }]);
+    setNewTestName("");
+    setNewTestCode("");
+    setNewTestPrice("");
+  };
+
   const moveUp = (i: number) => {
     if (i === 0) return;
     setTests(prev => { const a = [...prev]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return a; });
@@ -1325,7 +1352,8 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
   // testTotal returns just the base price — extra-vial surcharge is charged once for the whole pool.
   const testTotal = (t: PendingTest) => t.unitPriceUsd;
   const extraVialTotal = (vialAmount - 1) * EXTRA_VIAL;
-  const target = tests.reduce((s, t) => s + testTotal(t), 0) + extraVialTotal;
+  const additionalCosts = [vialCostUsd, shippingCostUsd, organiserTipUsd].reduce((sum, value) => sum + (value.trim() ? Number(value) : 0), 0);
+  const target = tests.reduce((s, t) => s + testTotal(t), 0) + extraVialTotal + additionalCosts;
 
   const hasAtLeastOnePayment = createPoolCryptoOptions.some(o => o.walletAddress.trim()) || anonpayWallet || revolutHandle || paypalEmail || janoshikUrl;
 
@@ -1336,6 +1364,12 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
     if (fixedFeeEnabled && (!fixedFeeValue || isNaN(parseFloat(fixedFeeValue)))) {
       toast({ title: "Enter a valid fixed opt-in fee", variant: "destructive" }); return;
     }
+    const moneyFields = { namedReportPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd };
+    if (Object.entries(moneyFields).some(([field, value]) => value.trim() !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0) || field === "namedReportPriceUsd" && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0))) {
+      toast({ title: "Enter valid nonnegative pool costs", variant: "destructive" }); return;
+    }
+    const accessCodeRequired = inviteOnly && !accessCode.trim();
+    if (accessCodeRequired) { toast({ title: "Access code required", variant: "destructive" }); return; }
 
     // Address validation — must be at least 20 characters of valid address chars.
     const addrRe = /^[A-Za-z0-9\-_:.+@]{20,}$/;
@@ -1360,7 +1394,7 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title, description, compoundName, manufacturer, batchNumber: batchNumber || undefined, doseUnit,
+          title, description, compoundName, manufacturer, labName: labName.trim() || null, batchNumber: batchNumber || undefined, doseUnit,
           doseValue: doseValue ? parseFloat(doseValue) : undefined,
           votingMode,
           resultsPassword: resultsPassword || undefined,
@@ -1380,6 +1414,12 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
           paypalEmail: paypalEmail || undefined,
           janoshikUrl: janoshikUrl || undefined,
           fixedOptInFeeUsd: fixedFeeEnabled && fixedFeeValue ? parseFloat(fixedFeeValue) : null,
+          namedReportPriceUsd: Number(namedReportPriceUsd),
+          vialCostUsd: vialCostUsd.trim() ? Number(vialCostUsd) : undefined,
+          shippingCostUsd: shippingCostUsd.trim() ? Number(shippingCostUsd) : undefined,
+          organiserTipUsd: organiserTipUsd.trim() ? Number(organiserTipUsd) : undefined,
+          inviteOnly,
+          accessCode: inviteOnly ? accessCode.trim() : undefined,
         }),
       });
       const j = await r.json();
@@ -1486,6 +1526,11 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
                 placeholder="Vendor or manufacturer name" className={INPUT_CLS} style={INPUT_STYLE} />
             </div>
             <div>
+              <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Lab Name</label>
+              <input value={labName} onChange={e => setLabName(e.target.value)}
+                placeholder="Testing lab (optional)" className={INPUT_CLS} style={INPUT_STYLE} />
+            </div>
+            <div>
               <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Batch Number</label>
               <input value={batchNumber} onChange={e => setBatchNumber(e.target.value)}
                 placeholder="Batch or lot number (optional)" className={INPUT_CLS} style={INPUT_STYLE} />
@@ -1528,6 +1573,15 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
           <section>
             <p className={SECTION_LABEL}>Add from Catalog</p>
             <TestSearchDropdown catalog={catalog} tests={tests} onAdd={addFromCatalog} />
+            <div className="rounded-xl p-3 mt-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Add Custom Test</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input aria-label="Custom test name" value={newTestName} onChange={e => setNewTestName(e.target.value)} placeholder="Test name" className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label="Custom test code" value={newTestCode} onChange={e => setNewTestCode(e.target.value)} placeholder="Test code" className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label="Custom test price" type="number" min="0" step="0.01" value={newTestPrice} onChange={e => setNewTestPrice(e.target.value)} placeholder="Unit price (USD)" className={INPUT_CLS} style={INPUT_STYLE} />
+              </div>
+              <button type="button" onClick={addCustomTest} disabled={!newTestName.trim() || !newTestCode.trim() || newTestPrice === "" || !Number.isFinite(Number(newTestPrice)) || Number(newTestPrice) < 0 || tests.some(t => t.code.toLowerCase() === newTestCode.trim().toLowerCase())} className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-blue)", color: "#fff" }}>Add Custom Test</button>
+            </div>
           </section>
 
           {/* ── Selected Tests (ordered) ── */}
@@ -1668,6 +1722,10 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
           {/* ── Contributor Add-ons ── */}
           <section>
             <p className={SECTION_LABEL}>Contributor Add-ons</p>
+            <div className="mb-3">
+              <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Named Report Price (USD, separate)</label>
+              <input aria-label="Named report price" type="number" min="0" step="0.01" value={namedReportPriceUsd} onChange={e => setNamedReportPriceUsd(e.target.value)} className={INPUT_CLS} style={INPUT_STYLE} />
+            </div>
             <button
               onClick={() => setNamedReportEnabled(o => !o)}
               className="w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left"
@@ -1682,10 +1740,10 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
               }
               <div>
                 <p className="text-sm font-semibold" style={{ color: namedReportEnabled ? "#7C3AED" : "var(--t-text)" }}>
-                  Additional named report <span className="font-bold text-emerald-600">+$30.00</span>
+                  Additional named report <span className="font-bold text-emerald-600">+${Number(namedReportPriceUsd || 0).toFixed(2)}</span>
                 </p>
                 <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-                  Enable this so contributors can opt-in at checkout. The $30 is paid separately to Janoshik — not part of the pool total.
+                  Enable this so contributors can opt-in at checkout. This fee is paid separately — not part of the pool total.
                 </p>
               </div>
             </button>
@@ -1704,6 +1762,23 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
                 />
               </div>
             )}
+          </section>
+
+          <section className="space-y-3">
+            <p className={SECTION_LABEL}>Additional Pool Costs (USD)</p>
+            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Optional target costs, separate from test prices and named reports.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label className="text-[11px] font-semibold">Vial Cost<input aria-label="Vial cost" type="number" min="0" step="0.01" value={vialCostUsd} onChange={e => setVialCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+              <label className="text-[11px] font-semibold">Shipping Cost<input aria-label="Shipping cost" type="number" min="0" step="0.01" value={shippingCostUsd} onChange={e => setShippingCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+              <label className="text-[11px] font-semibold">Organiser Tip<input aria-label="Organiser tip" type="number" min="0" step="0.01" value={organiserTipUsd} onChange={e => setOrganiserTipUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+            </div>
+            <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+              <input type="checkbox" checked={inviteOnly} onChange={e => setInviteOnly(e.target.checked)} /> Invite-only pool
+            </label>
+            {inviteOnly && <div>
+              <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Access Code *</label>
+              <input aria-label="Access code" required value={accessCode} onChange={e => setAccessCode(e.target.value)} autoComplete="off" placeholder="Create a code to share" className={INPUT_CLS} style={INPUT_STYLE} />
+            </div>}
           </section>
 
           {/* ── Payment Methods ── */}
@@ -1950,6 +2025,56 @@ function EditPoolModal({
   const [compoundName, setCompoundName] = useState(pool.compoundName ?? "");
   const [manufacturer, setManufacturer] = useState(pool.manufacturer ?? "");
   const [description, setDescription] = useState(pool.description ?? "");
+  const [labName, setLabName] = useState(pool.labName ?? "");
+  const [namedReportPriceUsd, setNamedReportPriceUsd] = useState(String(pool.namedReportPriceUsd ?? 30));
+  const [vialCostUsd, setVialCostUsd] = useState(String(pool.vialCostUsd ?? 0));
+  const [shippingCostUsd, setShippingCostUsd] = useState(String(pool.shippingCostUsd ?? 0));
+  const [organiserTipUsd, setOrganiserTipUsd] = useState(String(pool.organiserTipUsd ?? 0));
+  const [inviteOnly, setInviteOnly] = useState(pool.inviteOnly ?? false);
+  const [accessCode, setAccessCode] = useState("");
+  const [newTestName, setNewTestName] = useState("");
+  const [newTestCode, setNewTestCode] = useState("");
+  const [newTestPrice, setNewTestPrice] = useState("");
+  const [editedTests, setEditedTests] = useState<PendingTest[] | null>(null);
+  const { data: loadedTests = [], isLoading: testsLoading, isError: testsLoadError } = useQuery<PendingTest[]>({
+    queryKey: ["/api/testing-pools", pool.slug, "leader-edit-tests"],
+    queryFn: async () => {
+      const r = await fetch(`/api/testing-pools/${pool.slug}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Could not load pool tests");
+      const detail = await r.json();
+      return (detail.tests ?? []).map((t: PendingTest) => ({
+        id: t.id,
+        catalogId: t.catalogId,
+        code: t.code,
+        name: t.name,
+        unitPriceUsd: Number(t.unitPriceUsd),
+        quantity: Number(t.quantity ?? 1),
+        selected: t.selected,
+        janoshikUrl: t.janoshikUrl,
+      }));
+    },
+  });
+  const tests = editedTests ?? loadedTests;
+  const selectedTests = tests.filter(test => test.selected !== false);
+  const extraVialCost = selectedTests.length > 0 ? Math.max(0, selectedTests[0].quantity - 1) * 60 : 0;
+  const goalPreview = selectedTests.reduce((sum, test) => sum + test.unitPriceUsd, 0)
+    + extraVialCost
+    + Number(vialCostUsd || 0) + Number(shippingCostUsd || 0) + Number(organiserTipUsd || 0);
+  const updateTest = (index: number, patch: Partial<PendingTest>) => setEditedTests(current => {
+    const next = [...(current ?? loadedTests)];
+    next[index] = { ...next[index], ...patch };
+    return next;
+  });
+  const addCustomTest = () => {
+    const name = newTestName.trim();
+    const code = newTestCode.trim();
+    const price = Number(newTestPrice);
+    if (!name || !code || !Number.isFinite(price) || price < 0 || tests.some(t => t.code.toLowerCase() === code.toLowerCase())) return;
+    setEditedTests(current => [...(current ?? loadedTests), { catalogId: undefined, code, name, unitPriceUsd: price, quantity: 1 }]);
+    setNewTestName("");
+    setNewTestCode("");
+    setNewTestPrice("");
+  };
   const [namedReportEnabled, setNamedReportEnabled] = useState(pool.contributorNamedReportEnabled);
   const [namedReportCap, setNamedReportCap] = useState(pool.namedReportCap != null ? String(pool.namedReportCap) : "");
   const [allowVialContribution, setAllowVialContribution] = useState((pool as any).allowVialContribution ?? false);
@@ -2032,26 +2157,45 @@ function EditPoolModal({
     if (fixedFeeEnabled && (!fixedFeeValue || isNaN(parseFloat(fixedFeeValue)))) {
       toast({ title: "Enter a valid fixed fee", variant: "destructive" }); return;
     }
+    const moneyFields = { namedReportPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd };
+    if (Object.entries(moneyFields).some(([field, value]) => value.trim() !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0) || field === "namedReportPriceUsd" && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0))) {
+      toast({ title: "Enter valid nonnegative pool costs", variant: "destructive" }); return;
+    }
+    const accessCodeRequired = inviteOnly && !pool.inviteOnly && !accessCode.trim();
+    if (accessCodeRequired) { toast({ title: "Access code required", variant: "destructive" }); return; }
+    if (editedTests && testsLoadError) { toast({ title: "Could not load existing tests", variant: "destructive" }); return; }
+    const poolUpdates = {
+      title: title.trim(),
+      description: description.trim(),
+      compoundName: compoundName.trim(),
+      manufacturer: manufacturer.trim(),
+      labName: labName.trim() || null,
+      namedReportPriceUsd: Number(namedReportPriceUsd),
+      vialCostUsd: vialCostUsd.trim() ? Number(vialCostUsd) : 0,
+      shippingCostUsd: shippingCostUsd.trim() ? Number(shippingCostUsd) : 0,
+      organiserTipUsd: organiserTipUsd.trim() ? Number(organiserTipUsd) : 0,
+      ...(inviteOnly && pool.inviteOnly && !accessCode.trim() ? {} : { inviteOnly }),
+      accessCode: accessCode.trim() || undefined,
+      contributorNamedReportEnabled: namedReportEnabled,
+      namedReportCap: namedReportEnabled && namedReportCap ? parseInt(namedReportCap, 10) : null,
+      allowVialContribution,
+      pageMessage: pageMessage || null,
+      paymentMethods: buildUpdatedPaymentMethods(),
+      fixedOptInFeeUsd: fixedFeeEnabled && fixedFeeValue ? parseFloat(fixedFeeValue) : null,
+    };
     setSubmitting(true);
     try {
-      const r = await fetch(`/api/account/pool-leader/pools/${pool.id}`, {
-        method: "PATCH",
+      const r = await fetch(
+        editedTests
+          ? `/api/account/pool-leader/pools/${pool.id}/tests`
+          : `/api/account/pool-leader/pools/${pool.id}`,
+        {
+        method: editedTests ? "PUT" : "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          compoundName: compoundName.trim(),
-          manufacturer: manufacturer.trim(),
-          contributorNamedReportEnabled: namedReportEnabled,
-          namedReportCap: namedReportEnabled && namedReportCap ? parseInt(namedReportCap, 10) : null,
-          allowVialContribution,
-          pageMessage: pageMessage || null,
-          paymentMethods: buildUpdatedPaymentMethods(),
-          fixedOptInFeeUsd: fixedFeeEnabled && fixedFeeValue ? parseFloat(fixedFeeValue) : null,
-        }),
+        body: JSON.stringify(editedTests ? { tests: editedTests, poolUpdates } : poolUpdates),
       });
-      if (!r.ok) throw new Error((await r.json()).error ?? "Failed");
+      if (!r.ok) throw new Error((await r.json()).error ?? (editedTests ? "Could not update tests" : "Failed"));
       qc.invalidateQueries({ queryKey: ["/api/account/pool-leader/pools"] });
       onSuccess();
     } catch (e: any) {
@@ -2086,6 +2230,8 @@ function EditPoolModal({
               placeholder="Compound name" className={INPUT_CLS} style={INPUT_STYLE} />
             <input value={manufacturer} onChange={e => setManufacturer(e.target.value)}
               placeholder="Manufacturer / source" className={INPUT_CLS} style={INPUT_STYLE} />
+            <input value={labName} onChange={e => setLabName(e.target.value)}
+              placeholder="Lab name (optional)" className={INPUT_CLS} style={INPUT_STYLE} />
             <textarea value={description} onChange={e => setDescription(e.target.value)}
               rows={2} placeholder="Description (optional)"
               className={INPUT_CLS + " resize-none"} style={INPUT_STYLE} />
@@ -2093,6 +2239,8 @@ function EditPoolModal({
 
           <section>
             <p className={SECTION_LABEL}>Contributor Add-ons</p>
+            <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Named Report Price (USD, separate)</label>
+            <input aria-label="Named report price" type="number" min="0" step="0.01" value={namedReportPriceUsd} onChange={e => setNamedReportPriceUsd(e.target.value)} className={INPUT_CLS + " mb-3"} style={INPUT_STYLE} />
             <button
               onClick={() => setNamedReportEnabled(o => !o)}
               className="w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left"
@@ -2107,10 +2255,10 @@ function EditPoolModal({
               }
               <div>
                 <p className="text-sm font-semibold" style={{ color: namedReportEnabled ? "#7C3AED" : "var(--t-text)" }}>
-                  Additional named report <span className="font-bold text-emerald-600">+$30.00</span>
+                  Additional named report <span className="font-bold text-emerald-600">+${Number(namedReportPriceUsd || 0).toFixed(2)}</span>
                 </p>
                 <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-                  Contributors can opt-in and pay $30 extra to have their own name on the report.
+                  Contributors can opt-in and pay this separate fee to have their own name on the report.
                 </p>
               </div>
             </button>
@@ -2129,6 +2277,31 @@ function EditPoolModal({
                 />
               </div>
             )}
+          </section>
+
+          <section className="space-y-3">
+            <p className={SECTION_LABEL}>Pool Tests</p>
+            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Custom tests are pool-specific and do not require a catalog or peptide entry. Test changes are only allowed before contributions are received.</p>
+            {testsLoading && <p className="text-xs" style={{ color: "var(--t-muted)" }}>Loading pool tests…</p>}
+            {testsLoadError && <p className="text-xs text-red-600">Could not load existing pool tests. Test editing is unavailable until they can be loaded.</p>}
+            {tests.map((t, index) => (
+              <div key={`${t.code}-${index}`} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_120px_auto] gap-2 items-center">
+                <input aria-label={`Test name ${index + 1}`} value={t.name} onChange={e => updateTest(index, { name: e.target.value })} className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label={`Test code ${index + 1}`} value={t.code} onChange={e => updateTest(index, { code: e.target.value })} className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label={`Test unit price ${index + 1}`} type="number" min="0" step="0.01" value={t.unitPriceUsd} onChange={e => updateTest(index, { unitPriceUsd: Number(e.target.value) })} className={INPUT_CLS} style={INPUT_STYLE} />
+                <button type="button" aria-label={`Remove test ${index + 1}`} onClick={() => setEditedTests(current => (current ?? loadedTests).filter((_, i) => i !== index))} className="text-red-500 text-xs font-semibold">Remove</button>
+              </div>
+            ))}
+            <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Add Custom Test</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input aria-label="Custom test name" value={newTestName} onChange={e => setNewTestName(e.target.value)} placeholder="Test name" className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label="Custom test code" value={newTestCode} onChange={e => setNewTestCode(e.target.value)} placeholder="Test code" className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label="Custom test price" type="number" min="0" step="0.01" value={newTestPrice} onChange={e => setNewTestPrice(e.target.value)} placeholder="Unit price (USD)" className={INPUT_CLS} style={INPUT_STYLE} />
+              </div>
+              <button type="button" onClick={addCustomTest} disabled={testsLoading || testsLoadError || !newTestName.trim() || !newTestCode.trim() || newTestPrice === "" || !Number.isFinite(Number(newTestPrice)) || Number(newTestPrice) < 0 || tests.some(t => t.code.toLowerCase() === newTestCode.trim().toLowerCase())} className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-blue)", color: "#fff" }}>Add Custom Test</button>
+            </div>
+            <p className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Goal preview: ${goalPreview.toFixed(2)} (tests + additional pool costs)</p>
           </section>
 
           <section>
@@ -2150,6 +2323,24 @@ function EditPoolModal({
           <section>
             <p className={SECTION_LABEL}>Additional Settings</p>
             <div className="space-y-2">
+              <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Additional Pool Costs (USD)</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <label className="text-[11px] font-semibold">Vial Cost<input aria-label="Vial cost" type="number" min="0" step="0.01" value={vialCostUsd} onChange={e => setVialCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+                  <label className="text-[11px] font-semibold">Shipping Cost<input aria-label="Shipping cost" type="number" min="0" step="0.01" value={shippingCostUsd} onChange={e => setShippingCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+                  <label className="text-[11px] font-semibold">Organiser Tip<input aria-label="Organiser tip" type="number" min="0" step="0.01" value={organiserTipUsd} onChange={e => setOrganiserTipUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+                </div>
+              </div>
+              <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
+                <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+                  <input type="checkbox" checked={inviteOnly} onChange={e => setInviteOnly(e.target.checked)} /> Invite-only pool
+                </label>
+                {inviteOnly && <div>
+                  <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>{pool.inviteOnly ? "Access Code (blank to keep current code)" : "Access Code *"}</label>
+                  <input aria-label="Access code" type="password" autoComplete="new-password" required={!pool.inviteOnly} value={accessCode} onChange={e => setAccessCode(e.target.value)} placeholder={pool.inviteOnly ? "Enter a new code only to reset it" : "Create a code to share"} className={INPUT_CLS} style={INPUT_STYLE} />
+                  {pool.inviteOnly && <p className="text-[10px] mt-1" style={{ color: "var(--t-muted)" }}>The current code is not shown. Leave blank to preserve it.</p>}
+                </div>}
+              </div>
               <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
                 <input type="checkbox" checked={allowVialContribution} onChange={e => setAllowVialContribution(e.target.checked)} className="rounded" />
                 <div>

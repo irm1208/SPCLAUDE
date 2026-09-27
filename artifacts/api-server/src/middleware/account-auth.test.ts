@@ -2,10 +2,12 @@ import jwt from "jsonwebtoken";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
+const revocationState = vi.hoisted(() => ({ jti: null as string | null }));
+
 vi.mock("@workspace/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@workspace/db")>();
   const db = {
-    select: () => ({ from: () => ({ where: async () => [] }) }),
+    select: () => ({ from: () => ({ where: async () => revocationState.jti ? [{ jti: revocationState.jti }] : [] }) }),
     insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
     delete: () => ({ where: async () => undefined }),
   };
@@ -13,7 +15,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
 });
 
 import * as accountAuth from "./account-auth";
-import { getAccountCookieOptions, issueAccountCookie, requireAccount, requireAccountIdentity } from "./account-auth";
+import { getAccountCookieOptions, getOptionalAccountSession, issueAccountCookie, requireAccount, requireAccountIdentity } from "./account-auth";
 
 function response() {
   const res = {
@@ -149,6 +151,38 @@ describe("account session authorization", () => {
     await requireAccount(protectedReq as never, protectedRes as never, vi.fn());
     expect(protectedRes.status).toHaveBeenCalledWith(403);
     expect(protectedRes.json).toHaveBeenCalledWith({ error: "verification_required" });
+  });
+
+  it("does not return an optional owner session unless it passes account-auth restrictions", async () => {
+    const validRes = response();
+    issueAccountCookie(validRes as never, "active-user", { verificationRequired: false });
+    const validReq = { cookies: { account_session: validRes.cookie.mock.calls[0][1] }, ip: "127.0.0.1" };
+    expect(await getOptionalAccountSession(validReq as never)).toMatchObject({ telegramUsername: "active-user", verificationRequired: false });
+
+    const restrictedRes = response();
+    issueAccountCookie(restrictedRes as never, "restricted-user", { verificationRequired: true });
+    const restrictedReq = { cookies: { account_session: restrictedRes.cookie.mock.calls[0][1] }, ip: "127.0.0.1" };
+    expect(await getOptionalAccountSession(restrictedReq as never)).toBeNull();
+
+    revocationState.jti = "revoked-optional-session";
+    const revokedToken = jwt.sign({
+      telegramUsername: "revoked-user",
+      jti: revocationState.jti,
+      verificationRequired: false,
+    }, accountAuth.getJwtSecret(), { expiresIn: 24 * 60 * 60 });
+    const revokedReq = { cookies: { account_session: revokedToken }, ip: "127.0.0.1" };
+    expect(await getOptionalAccountSession(revokedReq as never)).toBeNull();
+    revocationState.jti = null;
+
+    const oldIat = Math.floor(Date.now() / 1000) - 25 * 60 * 60;
+    const expiredToken = jwt.sign({
+      telegramUsername: "inactive-user",
+      jti: "inactive-optional-session",
+      verificationRequired: false,
+      iat: oldIat,
+    }, accountAuth.getJwtSecret(), { expiresIn: 7 * 24 * 60 * 60 });
+    const expiredReq = { cookies: { account_session: expiredToken }, ip: "127.0.0.1" };
+    expect(await getOptionalAccountSession(expiredReq as never)).toBeNull();
   });
 
   it("requires every ordinary account cookie issuer to use database-derived state", () => {

@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useAccount } from "@/hooks/use-account";
 import { useTheme } from "@/hooks/use-theme";
+import { saveTestingPoolAccessCode, testingPoolFetch } from "./testing-pool-access";
 
 type PoolPaymentMethod =
   | { type: "crypto"; currency: string; network: string; address: string }
@@ -27,6 +28,7 @@ type Pool = {
   title: string;
   description: string | null;
   compoundName: string | null;
+  labName: string | null;
   manufacturer: string | null;
   batchNumber: string | null;
   capColor: string | null;
@@ -37,6 +39,11 @@ type Pool = {
   status: string;
   votingMode: "leader_decides" | "vote";
   targetAmountUsd: number;
+  vialCostUsd: number;
+  shippingCostUsd: number;
+  organiserTipUsd: number;
+  namedReportPriceUsd: number;
+  inviteOnly: boolean;
   payoutWalletAddress: string | null;
   payoutCurrency: string | null;
   payoutNetwork: string | null;
@@ -407,7 +414,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
     let cancelled = false;
     const poll = async () => {
       try {
-        const r = await fetch(`/api/testing-pools/${pool.slug}`, { credentials: "include" });
+        const r = await testingPoolFetch(pool.slug, `/api/testing-pools/${pool.slug}`, { credentials: "include" });
         if (!r.ok || cancelled) return;
         const d = await r.json();
         if (!cancelled) setLiveStats({
@@ -463,7 +470,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
       setAnonPayInitializing(false);
     }, 25000);
 
-    fetch(`/api/testing-pools/participants/${participantId}/init-anonpay`, { method: "POST", signal: controller.signal })
+    testingPoolFetch(pool.slug, `/api/testing-pools/participants/${participantId}/init-anonpay`, { method: "POST", signal: controller.signal })
       .then(async r => {
         const text = await r.text();
         try { return JSON.parse(text) as { iframeUrl?: string; error?: string }; }
@@ -488,7 +495,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
     const poll = async () => {
       if (cancelled) return;
       try {
-        const r = await fetch(`/api/testing-pools/participants/${participantId}/anonpay-status`);
+        const r = await testingPoolFetch(pool.slug, `/api/testing-pools/participants/${participantId}/anonpay-status`);
         if (!r.ok) return;
         const d = await r.json() as { status?: string; paymentStatus?: string };
         if (d.paymentStatus === "verified") {
@@ -555,7 +562,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
     if (!txHash.trim()) { toast({ title: "Enter your transaction hash", variant: "destructive" }); return; }
     setSubmitting(true);
     try {
-      const r = await fetch(`/api/testing-pools/participants/${participantId}/submit-tx`, {
+      const r = await testingPoolFetch(pool.slug, `/api/testing-pools/participants/${participantId}/submit-tx`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ txHash: txHash.trim() }),
@@ -582,7 +589,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
       if (selectedMethod === "janoshik" && janoshikPaymentRef.trim()) {
         body.paymentRef = janoshikPaymentRef.trim();
       }
-      const r = await fetch(`/api/testing-pools/participants/${participantId}/submit-screenshot`, {
+      const r = await testingPoolFetch(pool.slug, `/api/testing-pools/participants/${participantId}/submit-screenshot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -611,7 +618,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
       <p className="text-[9px] font-bold tracking-[0.14em] uppercase" style={{ color: "#E9A020" }}>
         Send Payment —{" "}
         {namedReportOptIn
-          ? <>{fmtUsd(parseFloat(amount))} <span style={{ color: "#7C3AED" }}>+ $30.00 (named report)</span></>
+          ? <>{fmtUsd(parseFloat(amount))} <span style={{ color: "#7C3AED" }}>+ ${pool.namedReportPriceUsd.toFixed(2)} (named report, separate)</span></>
           : fmtUsd(parseFloat(amount))
         }
       </p>
@@ -915,7 +922,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
                     <button
                       onClick={async () => {
                         try {
-                          const r = await fetch(`/api/testing-pools/participants/${participantId}/confirm-anonpay-initiation`, { method: "POST" });
+                          const r = await testingPoolFetch(pool.slug, `/api/testing-pools/participants/${participantId}/confirm-anonpay-initiation`, { method: "POST" });
                           const d = await r.json() as { ok?: boolean; paymentStatus?: string; error?: string };
                           if (r.ok) {
                             setAnonPayInitiated(true);
@@ -961,7 +968,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
                           setAnonPayStatusChecking(true);
                           setAnonPayStatusMsg("");
                           try {
-                            const r = await fetch(`/api/testing-pools/participants/${participantId}/anonpay-status`);
+                            const r = await testingPoolFetch(pool.slug, `/api/testing-pools/participants/${participantId}/anonpay-status`);
                             const d = await r.json() as { status?: string; paymentStatus?: string };
                             const s = (d.status ?? "").toLowerCase();
                             if (d.paymentStatus === "verified" || s === "anonpayfinished" || s === "finished" || s === "complete" || s === "completed") {
@@ -1061,7 +1068,7 @@ function PaymentReceipt({ pool, receipt }: { pool: Pool; receipt: ReceiptInfo })
     let cancelled = false;
     const poll = async () => {
       try {
-        const r = await fetch(`/api/testing-pools/${pool.slug}`, { credentials: "include" });
+        const r = await testingPoolFetch(pool.slug, `/api/testing-pools/${pool.slug}`, { credentials: "include" });
         if (!r.ok || cancelled) return;
         const d = await r.json();
         if (!cancelled) setLiveStats({
@@ -1332,6 +1339,8 @@ export default function TestingPool() {
   const [resultsPassword, setResultsPassword] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [shareCopied, setShareCopied] = useState(false);
+  const [accessCodeInput, setAccessCodeInput] = useState("");
+  const [accessAttempted, setAccessAttempted] = useState(false);
   const [resultsData, setResultsData] = useState<{
     resultNotes: string | null;
     resultPdfUrl: string | null;
@@ -1358,10 +1367,14 @@ export default function TestingPool() {
   const { data, isLoading, error } = useQuery<PoolDetail>({
     queryKey: ["/api/testing-pools", slug, refreshKey],
     queryFn: async () => {
-      const r = await fetch(`/api/testing-pools/${slug}`, { credentials: "include" });
+      const r = await testingPoolFetch(slug, `/api/testing-pools/${slug}`, { credentials: "include" });
+      if (r.status === 403 && (await r.json()).error === "access_code_required") {
+        throw new Error("access_code_required");
+      }
       if (!r.ok) throw new Error("Pool not found");
       return r.json();
     },
+    retry: false,
   });
 
   // Pool leader participant management
@@ -1410,7 +1423,7 @@ export default function TestingPool() {
       const s = JSON.parse(stored) as { participantId: string; amount: string; namedReportOptIn: boolean; namedReportName: string; paymentCurrency?: string | null; receipt?: ReceiptInfo };
       if (!s.participantId) return;
       // Check current status from server
-      fetch(`/api/testing-pools/participants/${s.participantId}/status`)
+      testingPoolFetch(slug, `/api/testing-pools/participants/${s.participantId}/status`)
         .then(r => r.ok ? r.json() : null)
         .then((d: { paymentStatus?: string } | null) => {
           if (!d) { sessionStorage.removeItem(key); return; }
@@ -1433,7 +1446,7 @@ export default function TestingPool() {
       const finalAmount = pool.fixedOptInFeeUsd != null ? String(pool.fixedOptInFeeUsd) : amount;
       const poolMethods = pool.paymentMethods ?? [];
       const cryptoChosen = selectedMethodType === "crypto" || (poolMethods.length === 1 && poolMethods[0]?.type === "crypto");
-      const r = await fetch(`/api/testing-pools/${slug}/opt-in`, {
+      const r = await testingPoolFetch(slug, `/api/testing-pools/${slug}/opt-in`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -1474,7 +1487,7 @@ export default function TestingPool() {
 
   const unlockResultsMutation = useMutation({
     mutationFn: async () => {
-      const r = await fetch(`/api/testing-pools/${slug}/results-unlock`, {
+      const r = await testingPoolFetch(slug, `/api/testing-pools/${slug}/results-unlock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: resultsPassword }),
@@ -1490,7 +1503,7 @@ export default function TestingPool() {
   const requestDeleteMutation = useMutation({
     mutationFn: async (testId: string) => {
       setDeletingTestId(testId);
-      const r = await fetch(`/api/testing-pools/${slug}/tests/${testId}/request-delete`, {
+      const r = await testingPoolFetch(slug, `/api/testing-pools/${slug}/tests/${testId}/request-delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(account ? { Authorization: `Bearer ${localStorage.getItem("account_token")}` } : {}) },
       });
@@ -1516,6 +1529,46 @@ export default function TestingPool() {
   );
 
   if (isLoading) return spinnerEl;
+  if (error instanceof Error && error.message === "access_code_required") {
+    return (
+      <PoolLayout title="Invite-only testing pool">
+        <div className="max-w-md mx-auto px-4 py-12">
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              if (!accessCodeInput.trim()) return;
+              saveTestingPoolAccessCode(slug, accessCodeInput);
+              setAccessAttempted(true);
+              setRefreshKey(k => k + 1);
+            }}
+            className="rounded-xl p-6 space-y-4"
+            style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}
+          >
+            <Lock className="w-6 h-6" style={{ color: "var(--t-blue)" }} />
+            <h1 className="text-lg font-bold" style={{ color: "var(--t-text)" }}>Invite-only testing pool</h1>
+            <p className="text-sm" style={{ color: "var(--t-muted)" }}>
+              Enter the access code shared by the pool leader to view this pool and contribute.
+            </p>
+            {accessAttempted && <p role="alert" className="text-sm text-red-600">That code did not work. Please try again.</p>}
+            <label className="block text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+              Access code
+              <input
+                type="password"
+                autoComplete="off"
+                value={accessCodeInput}
+                onChange={e => setAccessCodeInput(e.target.value)}
+                className="mt-1 w-full rounded-lg p-2.5"
+                style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)", color: "var(--t-text)" }}
+              />
+            </label>
+            <button type="submit" disabled={!accessCodeInput.trim()} className="w-full rounded-lg px-4 py-2.5 text-white font-semibold disabled:opacity-50" style={{ background: "var(--t-blue)" }}>
+              View pool
+            </button>
+          </form>
+        </div>
+      </PoolLayout>
+    );
+  }
   if (error || !data) {
     return (
       <PoolLayout title="Testing Pool">
@@ -1537,7 +1590,13 @@ export default function TestingPool() {
   // Use the correct vial-cost formula: sum of base prices + pool-level extra-vial surcharge.
   // pool.targetAmountUsd (DB-stored) may be stale if saved with the old unitPrice×qty formula.
   const poolExtraVial = extraVialCost(selectedTests);
-  const computedGoal = (selectedTests.reduce((s, t) => s + testCost(t), 0) + poolExtraVial) || pool.targetAmountUsd;
+  const extraCosts = [
+    { label: "Vial cost", cost: pool.vialCostUsd ?? 0 },
+    { label: "Shipping", cost: pool.shippingCostUsd ?? 0 },
+    { label: "Organiser tip", cost: pool.organiserTipUsd ?? 0 },
+  ].filter(item => item.cost > 0);
+  const computedGoal = (selectedTests.reduce((s, t) => s + testCost(t), 0) + poolExtraVial
+    + extraCosts.reduce((sum, item) => sum + item.cost, 0)) || pool.targetAmountUsd;
   const progressPct = computedGoal > 0 ? Math.min(100, (data.raisedUsd / computedGoal) * 100) : 0;
 
   let cumulative = 0;
@@ -1560,6 +1619,9 @@ export default function TestingPool() {
   if (poolExtraVial > 0) {
     gaugeSegments.push({ cost: poolExtraVial, color: "#94A3B8" });
   }
+  extraCosts.forEach((item, i) => {
+    gaugeSegments.push({ cost: item.cost, color: ["#0F766E", "#B45309", "#6D28D9"][i] });
+  });
 
   const inputCls = "w-full px-3 py-2.5 text-sm rounded-lg outline-none transition-colors";
   const inputStyle = {
@@ -1618,9 +1680,9 @@ export default function TestingPool() {
                   </span>
                 </div>
                 <h1 className="text-[20px] sm:text-[22px] font-extrabold text-white leading-tight">{pool.title}</h1>
-                {(pool.compoundName || pool.manufacturer) && (
+                {(pool.labName || pool.compoundName || pool.manufacturer) && (
                   <p className="text-[12px] mt-0.5" style={{ color: "rgba(255,255,255,0.6)" }}>
-                    {[pool.compoundName, pool.manufacturer].filter(Boolean).join(" · ")}
+                    {[pool.labName, pool.compoundName, pool.manufacturer].filter(Boolean).join(" · ")}
                   </p>
                 )}
                 {(pool.batchNumber || pool.capColor || pool.mgSize || pool.manufacturingDate) && (
@@ -1662,6 +1724,11 @@ export default function TestingPool() {
                       ${pool.fixedOptInFeeUsd} fixed fee
                     </span>
                   )}
+                  {pool.inviteOnly && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold" style={{ color: "#fff", background: "rgba(255,255,255,0.12)", padding: "1px 8px", borderRadius: 4 }}>
+                      <Lock className="w-3 h-3" /> Invite-only · access code required
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2 shrink-0">
@@ -1675,7 +1742,7 @@ export default function TestingPool() {
                     }}
                     className="w-9 h-9 flex items-center justify-center transition-opacity hover:opacity-70"
                     style={{ borderRadius: 6, background: "rgba(255,255,255,0.12)" }}
-                    title="Copy pool link"
+                    title={pool.inviteOnly ? "Copy invite-only link (share the access code separately)" : "Copy pool link"}
                   >
                     {shareCopied
                       ? <CheckCircle2 className="w-4 h-4" style={{ color: "#4ade80" }} />
@@ -1932,6 +1999,14 @@ export default function TestingPool() {
                     </span>
                   </div>
                 )}
+                {extraCosts.map((item, i) => (
+                  <div key={item.label} className="flex items-center gap-1.5">
+                    <span className="w-3 h-2 inline-block" style={{ background: ["#0F766E", "#B45309", "#6D28D9"][i], borderRadius: 1 }} />
+                    <span className="text-[10px] font-semibold" style={{ color: "var(--t-muted)" }}>
+                      {item.label} · +${item.cost.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
               </div>
 
               {/* ── Community Vote Tally (compact) ── */}
@@ -2193,8 +2268,8 @@ export default function TestingPool() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-bold flex items-center gap-2 flex-wrap" style={{ color: namedReportOptIn && !full ? "#7C3AED" : "var(--t-text)" }}>
-                              {full ? "Named report slots full" : "Get a named Janoshik report"}
-                              {!full && <span className="text-emerald-600 font-semibold">+$30 (separate)</span>}
+                              {full ? "Named report slots full" : `Get a named ${pool.labName ?? "lab"} report`}
+                              {!full && <span className="text-emerald-600 font-semibold">+${pool.namedReportPriceUsd.toFixed(2)} (separate)</span>}
                               {cap != null && (
                                 <span className="text-[10px] font-normal px-1.5 py-0.5 rounded" style={{ background: full ? "rgba(239,68,68,0.1)" : "rgba(139,92,246,0.1)", color: full ? "#ef4444" : "#7C3AED" }}>
                                   {taken}/{cap} slots
@@ -2204,7 +2279,7 @@ export default function TestingPool() {
                             <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
                               {full
                                 ? "All named report spots have been claimed"
-                                : "Your name appears on an individual Janoshik test report — $30 paid separately, not part of the pool"}
+                                : `Your name appears on an individual report — $${pool.namedReportPriceUsd.toFixed(2)} paid separately, not part of the pool`}
                             </p>
                           </div>
                         </button>
@@ -2334,7 +2409,7 @@ export default function TestingPool() {
                         {(() => {
                           const base = namedReportTotal != null ? namedReportTotal : (amount ? parseFloat(amount) : null);
                           if (base == null) return "Opt In";
-                          if (namedReportOptIn) return `Opt In — $${base.toFixed(2)} + $30.00`;
+                          if (namedReportOptIn) return `Opt In — $${base.toFixed(2)} + $${pool.namedReportPriceUsd.toFixed(2)} separately`;
                           return `Opt In — $${base.toFixed(2)}`;
                         })()}
                       </>
