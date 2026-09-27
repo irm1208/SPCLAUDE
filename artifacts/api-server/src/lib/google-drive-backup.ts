@@ -18,6 +18,16 @@ const DRIVE_CONNECTOR = "google-drive";
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const MAX_UPLOAD_ATTEMPTS = 6;
 const PLAIN_SQL_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+const PLAIN_SQL_MAX_TRANSPORT_SIZE = 2 * 1024 * 1024;
+const PLAIN_SQL_CHUNK_SIZE_STEP = 256 * 1024;
+const PLAIN_SQL_MIN_CHUNK_SIZE = 256 * 1024;
+
+function shrinkPlainSqlChunkSize(currentSize: number): number {
+  return Math.max(
+    PLAIN_SQL_MIN_CHUNK_SIZE,
+    Math.floor((currentSize / 2) / PLAIN_SQL_CHUNK_SIZE_STEP) * PLAIN_SQL_CHUNK_SIZE_STEP,
+  );
+}
 
 export interface DriveBackupFile {
   id: string;
@@ -350,6 +360,7 @@ class GoogleDriveBackupStorage {
     let uploadResponse: Response | null = null;
     let completed = false;
     let attemptsAtOffset = 0;
+    let maxDecodedChunkSize = Math.min(PLAIN_SQL_UPLOAD_CHUNK_SIZE, fileStats.size);
 
     while (!completed) {
       let statusResponse: Response | null = null;
@@ -377,8 +388,20 @@ class GoogleDriveBackupStorage {
         await statusResponse?.arrayBuffer().catch(() => new ArrayBuffer(0));
         attemptsAtOffset += 1;
       } else {
-        const chunkEnd = Math.min(nextOffset + PLAIN_SQL_UPLOAD_CHUNK_SIZE, fileStats.size);
-        const transport = await createPlainSqlChunkTransportFile(filePath, nextOffset, chunkEnd);
+        let chunkEnd: number;
+        let transport: { filePath: string; size: number };
+        while (true) {
+          chunkEnd = Math.min(nextOffset + maxDecodedChunkSize, fileStats.size);
+          transport = await createPlainSqlChunkTransportFile(filePath, nextOffset, chunkEnd);
+          if (transport.size <= PLAIN_SQL_MAX_TRANSPORT_SIZE) break;
+          await unlink(transport.filePath).catch(() => undefined);
+          if (chunkEnd - nextOffset <= PLAIN_SQL_MIN_CHUNK_SIZE) {
+            throw new Error(
+              `Compressed SQL chunk exceeds the ${PLAIN_SQL_MAX_TRANSPORT_SIZE}-byte upload limit at the minimum decoded chunk size`,
+            );
+          }
+          maxDecodedChunkSize = shrinkPlainSqlChunkSize(maxDecodedChunkSize);
+        }
         try {
           const transportBlob = await openAsBlob(transport.filePath, { type: PLAIN_SQL_MIME_TYPE });
           try {
@@ -404,6 +427,48 @@ class GoogleDriveBackupStorage {
 
         if (uploadResponse?.status === 200 || uploadResponse?.status === 201) {
           completed = true;
+          continue;
+        }
+        if (uploadResponse?.status === 413) {
+          await uploadResponse.arrayBuffer().catch(() => new ArrayBuffer(0));
+          let statusResponse: Response;
+          try {
+            statusResponse = await this.connectors.proxy(DRIVE_CONNECTOR, uploadPath, {
+              method: "PUT",
+              headers: {
+                "Content-Length": "0",
+                "Content-Range": `bytes */${fileStats.size}`,
+              },
+            });
+          } catch {
+            throw new Error(
+              "Could not confirm Google Drive upload progress after HTTP 413; retaining the SQL backup",
+            );
+          }
+          if (statusResponse.status === 200 || statusResponse.status === 201) {
+            uploadResponse = statusResponse;
+            completed = true;
+            continue;
+          }
+          if (statusResponse.status !== 308) {
+            return responseError(statusResponse, "Recovering after a rejected Google Drive upload chunk");
+          }
+          const committed = committedDriveUploadBytes(statusResponse, fileStats.size);
+          if (committed > nextOffset) {
+            nextOffset = committed;
+            attemptsAtOffset = 0;
+            if (maxDecodedChunkSize > PLAIN_SQL_MIN_CHUNK_SIZE) {
+              maxDecodedChunkSize = shrinkPlainSqlChunkSize(maxDecodedChunkSize);
+            }
+            continue;
+          }
+          if (Math.min(maxDecodedChunkSize, fileStats.size - nextOffset) <= PLAIN_SQL_MIN_CHUNK_SIZE) {
+            throw new Error(
+              "Google Drive rejected the minimum 256 KiB plain SQL upload chunk; retaining the SQL backup",
+            );
+          }
+          maxDecodedChunkSize = shrinkPlainSqlChunkSize(maxDecodedChunkSize);
+          attemptsAtOffset = 0;
           continue;
         }
         if (uploadResponse?.status === 308) {

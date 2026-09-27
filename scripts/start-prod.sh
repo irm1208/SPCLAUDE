@@ -11,6 +11,9 @@ cd /home/runner/workspace
 export PORT="${PORT:-5000}"
 export API_PORT="${PORT}"
 export NODE_ENV=production
+# sharp's native packages live outside node_modules so deployment ignore
+# patterns cannot strip them from the compiled artifact.
+export NODE_PATH="$PWD/artifacts/api-server/dist/vendor${NODE_PATH:+:$NODE_PATH}"
 
 # Run the WWB seed in the background so it never delays server startup.
 # Cloud Run requires the process to bind its port quickly; the seed is

@@ -308,6 +308,7 @@ describe("Google Drive database backup helpers", () => {
     const uploadedChunks: Buffer[] = [];
     const requests: Array<{ headers: Record<string, string>; body: Buffer }> = [];
     let proxyCalls = 0;
+    let committed = 0;
     proxy.mockReset();
     proxy.mockImplementation(async (
       _connector: string,
@@ -315,7 +316,7 @@ describe("Google Drive database backup helpers", () => {
       options?: { headers?: Record<string, string>; body?: Blob },
     ) => {
       proxyCalls += 1;
-      if (proxyCalls > 8) throw new Error(`Unexpected upload loop at ${path}`);
+      if (proxyCalls > 20) throw new Error(`Unexpected upload loop at ${path}`);
       if (path === "/upload/drive/v3/files?uploadType=resumable") {
         return new Response(null, {
           status: 200,
@@ -328,14 +329,26 @@ describe("Google Drive database backup helpers", () => {
           : Buffer.alloc(0);
         if (body.length) {
           requests.push({ headers: options!.headers!, body });
+          const range = options!.headers!["Content-Range"].match(/^bytes (\d+)-(\d+)\/\d+$/);
+          expect(range).not.toBeNull();
+          const start = Number(range?.[1]);
+          const end = Number(range?.[2]);
+          expect(start).toBe(committed);
           const decoded = gunzipSync(body);
           uploadedChunks.push(decoded);
+          committed = end + 1;
           if (uploadedChunks.length === 1) {
             throw new Error("connector lost the first chunk response");
           }
-          return new Response(JSON.stringify({ id: "large-plain-uploaded" }), { status: 200 });
+          if (committed === plainSql.length) {
+            return new Response(JSON.stringify({ id: "large-plain-uploaded" }), { status: 200 });
+          }
+          return new Response(null, { status: 308, headers: { range: `bytes=0-${committed - 1}` } });
         } else {
-          return new Response(null, { status: 308, headers: { range: `bytes=0-${chunkSize - 1}` } });
+          return new Response(
+            null,
+            { status: 308, headers: committed ? { range: `bytes=0-${committed - 1}` } : {} },
+          );
         }
       }
       return new Response(JSON.stringify({
@@ -351,19 +364,129 @@ describe("Google Drive database backup helpers", () => {
         "S&PBACKUP-2026-09-02_10-40-11.SQL",
       )).resolves.toMatchObject({ id: "large-plain-uploaded" });
 
-      expect(requests).toHaveLength(2);
-      expect(requests[0]?.headers).toMatchObject({
-        "Content-Encoding": "gzip",
-        "Content-Length": String(requests[0]?.body.length),
-        "Content-Range": `bytes 0-${chunkSize - 1}/${plainSql.length}`,
-      });
-      expect(requests[1]?.headers).toMatchObject({
-        "Content-Encoding": "gzip",
-        "Content-Length": String(requests[1]?.body.length),
-        "Content-Range": `bytes ${chunkSize}-${plainSql.length - 1}/${plainSql.length}`,
-      });
-      expect(requests.every((request) => request.body.length < 8 * 1024 * 1024)).toBe(true);
+      expect(requests.length).toBeGreaterThan(2);
+      expect(requests[0]?.headers["Content-Range"]).toBe(`bytes 0-${1024 * 1024 - 1}/${plainSql.length}`);
+      for (let index = 1; index < requests.length; index += 1) {
+        const previousRange = requests[index - 1]?.headers["Content-Range"].match(/^bytes (\d+)-(\d+)\//);
+        const currentRange = requests[index]?.headers["Content-Range"].match(/^bytes (\d+)-(\d+)\//);
+        expect(Number(currentRange?.[1])).toBe(Number(previousRange?.[2]) + 1);
+      }
+      const finalRange = requests.at(-1)?.headers["Content-Range"].match(/^bytes (\d+)-(\d+)\//);
+      expect(Number(finalRange?.[2])).toBe(plainSql.length - 1);
+      expect(requests.every((request) =>
+        request.body.length < 2 * 1024 * 1024 &&
+        request.headers["Content-Length"] === String(request.body.length),
+      )).toBe(true);
       expect(Buffer.compare(Buffer.concat(uploadedChunks), plainSql)).toBe(0);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("shrinks a SQL chunk after a 413 and resumes at the same committed offset", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const plainPath = join(directory, "adaptive-backup.SQL");
+    const plainSql = randomBytes(1024 * 1024 + 17);
+    const gatewayLimit = 512 * 1024;
+    const transmittedSizes: number[] = [];
+    const acceptedRanges: Array<{ start: number; end: number }> = [];
+    const uploadedChunks: Buffer[] = [];
+    let committed = 0;
+    await writeFile(plainPath, plainSql);
+    proxy.mockReset();
+    proxy.mockImplementation(async (
+      _connector: string,
+      path: string,
+      options?: { headers?: Record<string, string>; body?: Blob },
+    ) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/plain-adaptive" },
+        });
+      }
+      if (path === "/upload/plain-adaptive") {
+        if (!options?.body) {
+          return new Response(
+            null,
+            { status: 308, headers: committed ? { range: `bytes=0-${committed - 1}` } : {} },
+          );
+        }
+        const body = Buffer.from(await options.body.arrayBuffer());
+        transmittedSizes.push(body.length);
+        if (body.length > gatewayLimit) return new Response("gateway payload limit", { status: 413 });
+
+        const match = options.headers?.["Content-Range"]?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+        expect(match).not.toBeNull();
+        const start = Number(match?.[1]);
+        const end = Number(match?.[2]);
+        expect(start).toBe(committed);
+        acceptedRanges.push({ start, end });
+        const decoded = gunzipSync(body);
+        uploadedChunks.push(decoded);
+        committed = end + 1;
+        if (committed === plainSql.length) {
+          return new Response(JSON.stringify({ id: "adaptive-uploaded" }), { status: 200 });
+        }
+        return new Response(null, { status: 308, headers: { range: `bytes=0-${committed - 1}` } });
+      }
+      return new Response(JSON.stringify({
+        id: "adaptive-uploaded",
+        name: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+        size: String(plainSql.length),
+      }), { status: 200 });
+    });
+
+    try {
+      await expect(uploadBackupToGoogleDrive(
+        plainPath,
+        "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      )).resolves.toMatchObject({ id: "adaptive-uploaded" });
+
+      expect(transmittedSizes.some((size) => size > gatewayLimit)).toBe(true);
+      expect(transmittedSizes.filter((size) => size > gatewayLimit)).toHaveLength(2);
+      expect(transmittedSizes.filter((size) => size <= gatewayLimit).length).toBeGreaterThan(1);
+      expect(acceptedRanges[0]?.start).toBe(0);
+      for (let index = 1; index < acceptedRanges.length; index += 1) {
+        expect(acceptedRanges[index]?.start).toBe(acceptedRanges[index - 1]!.end + 1);
+      }
+      expect(acceptedRanges.at(-1)?.end).toBe(plainSql.length - 1);
+      expect(Buffer.compare(Buffer.concat(uploadedChunks), plainSql)).toBe(0);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails explicitly when the gateway rejects the minimum SQL chunk", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
+    const plainPath = join(directory, "minimum-backup.SQL");
+    const plainSql = randomBytes(256 * 1024);
+    const requestSizes: number[] = [];
+    await writeFile(plainPath, plainSql);
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string, options?: { body?: Blob }) => {
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        return new Response(null, {
+          status: 200,
+          headers: { location: "https://www.googleapis.com/upload/plain-minimum" },
+        });
+      }
+      if (path === "/upload/plain-minimum") {
+        if (options?.body) {
+          requestSizes.push((await options.body.arrayBuffer()).byteLength);
+          return new Response("gateway payload limit", { status: 413 });
+        }
+        return new Response(null, { status: 308 });
+      }
+      return new Response("{}");
+    });
+
+    try {
+      await expect(uploadBackupToGoogleDrive(
+        plainPath,
+        "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      )).rejects.toThrow("Google Drive rejected the minimum 256 KiB plain SQL upload chunk");
+      expect(requestSizes).toHaveLength(1);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

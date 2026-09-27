@@ -2,6 +2,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { build as esbuild } from "esbuild";
 import { rm, readFile } from "fs/promises";
+import { copySharpRuntimePackages } from "./src/lib/sharp-runtime-packaging.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +38,7 @@ const allowlist = [
   "passport",
   "passport-local",
   "pg",
+  "sharp",
   "stripe",
   "uuid",
   "ws",
@@ -70,6 +72,10 @@ async function buildAll() {
     outfile: path.resolve(distDir, "index.cjs"),
     define: {
       "process.env.NODE_ENV": '"production"',
+      "import.meta.url": "__bundleFileUrl",
+    },
+    banner: {
+      js: 'const __bundleFileUrl = require("node:url").pathToFileURL(__filename).href;',
     },
     minify: true,
     // node-fetch v2 validates signal.constructor.name; esbuild must preserve AbortSignal.
@@ -77,6 +83,10 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // sharp's JavaScript is bundled above, but its platform-specific native
+  // bindings and libvips shared library must accompany the standalone bundle.
+  await copySharpRuntimePackages(__dirname, distDir);
 }
 
 buildAll().catch((err) => {

@@ -20,6 +20,7 @@ args = ["node", "artifacts/api-server/dist/index.cjs"]
 
 [services.production.run.env]
 PORT = "8080"
+NODE_PATH = "artifacts/api-server/dist/vendor"
 
 [services.production.health.startup]
 path = "/api/healthz"
