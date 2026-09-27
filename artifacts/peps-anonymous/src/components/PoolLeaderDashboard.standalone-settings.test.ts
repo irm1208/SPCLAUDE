@@ -56,3 +56,24 @@ test("leader edit submits pool updates atomically with changed tests and patches
   assert.doesNotMatch(edit, /fetch\(`\/api\/account\/pool-leader\/pools\/\$\{pool\.id\}\/tests`/);
   assert.doesNotMatch(edit, /const testsResponse/);
 });
+
+test("pool pricing keeps goal costs together and named reports outside the goal", () => {
+  const create = source.slice(source.indexOf("function CreatePoolModal"), source.indexOf("// ─── Edit Pool Modal"));
+  const edit = source.slice(source.indexOf("function EditPoolModal"));
+  const summary = source.slice(source.indexOf("function PoolGoalBreakdown"), source.indexOf("function CreatePoolModal"));
+
+  for (const modal of [create, edit]) {
+    const tests = modal.indexOf("Pool Tests") >= 0 ? modal.indexOf("Pool Tests") : modal.indexOf("Payment Order");
+    const costs = modal.indexOf("Pool-wide costs");
+    const goal = modal.indexOf("<PoolGoalBreakdown");
+    const addOn = modal.indexOf("Contributor Add-ons");
+    assert.ok(tests >= 0 && tests < costs && costs < goal && goal < addOn, "tests, costs, goal, and optional report must appear in that order");
+    assert.match(modal, /Vial Cost[\s\S]*Shipping Cost[\s\S]*Organiser Tip/);
+  }
+  for (const label of ["Test prices", "Extra vials", "Vial cost", "Shipping", "Organiser tip", "Funding goal"]) {
+    assert.ok(summary.includes(label), `itemised goal missing ${label}`);
+  }
+  assert.match(summary, /already included in the test price/);
+  assert.match(summary, /Named reports are optional and charged separately/);
+  assert.doesNotMatch(summary, /namedReportPriceUsd/);
+});

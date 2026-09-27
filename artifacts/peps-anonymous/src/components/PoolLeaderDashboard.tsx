@@ -1243,6 +1243,44 @@ function PaymentMethodPicker({
 
 // ─── Create Pool Modal ────────────────────────────────────────────────────────
 
+function PoolGoalBreakdown({ testsTotal, extraVialCost, vialCost, shippingCost, organiserTip, total, totalLabel }: {
+  testsTotal: number;
+  extraVialCost: number;
+  vialCost: number;
+  shippingCost: number;
+  organiserTip: number;
+  total: number;
+  totalLabel: string;
+}) {
+  const rows = [
+    ["Test prices", testsTotal],
+    ["Extra vials", extraVialCost],
+    ["Vial cost", vialCost],
+    ["Shipping", shippingCost],
+    ["Organiser tip", organiserTip],
+  ] as const;
+  return (
+    <div className="rounded-xl p-4 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
+      <p className="text-xs font-bold" style={{ color: "var(--t-text)" }}>Funding goal breakdown</p>
+      <dl className="space-y-1.5">
+        {rows.map(([label, amount]) => (
+          <div key={label} className="flex justify-between gap-4 text-xs">
+            <dt style={{ color: "var(--t-muted)" }}>{label}</dt>
+            <dd className="tabular-nums" style={{ color: "var(--t-text)" }}>${amount.toFixed(2)}</dd>
+          </div>
+        ))}
+        <div className="flex justify-between gap-4 pt-2 mt-2 text-sm font-bold" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-text)" }}>
+          <dt>{totalLabel} · Funding goal</dt>
+          <dd className="tabular-nums">${total.toFixed(2)}</dd>
+        </div>
+      </dl>
+      <p className="text-[11px] leading-relaxed" style={{ color: "var(--t-muted)" }}>
+        Only add costs not already included in the test price. Named reports are optional and charged separately, not part of this goal.
+      </p>
+    </div>
+  );
+}
+
 function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: LeaderStatus; onClose: () => void; onSuccess: (slug: string) => void }) {
   const { toast } = useToast();
   const { data: catalog = [] } = useQuery<CatalogEntry[]>({
@@ -1649,14 +1687,29 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
                 </div>
               )}
 
-              {/* Total */}
-              <div className="mt-1 flex items-center justify-between px-3 py-2.5 rounded-xl"
-                style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
-                <span className="text-xs font-medium" style={{ color: "var(--t-muted)" }}>Total target</span>
-                <span className="text-base font-bold" style={{ color: "var(--t-text)" }}>${target.toFixed(2)}</span>
-              </div>
             </section>
           )}
+
+          <section className="space-y-3">
+            <p className={SECTION_LABEL}>Pool-wide costs (USD)</p>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              Enter each amount once for the whole pool. If your test price already includes the vial, shipping, or tip, leave that field at $0.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label className="text-[11px] font-semibold">Vial Cost<input aria-label="Vial cost" type="number" min="0" step="0.01" value={vialCostUsd} onChange={e => setVialCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+              <label className="text-[11px] font-semibold">Shipping Cost<input aria-label="Shipping cost" type="number" min="0" step="0.01" value={shippingCostUsd} onChange={e => setShippingCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+              <label className="text-[11px] font-semibold">Organiser Tip<input aria-label="Organiser tip" type="number" min="0" step="0.01" value={organiserTipUsd} onChange={e => setOrganiserTipUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+            </div>
+            <PoolGoalBreakdown
+              testsTotal={tests.reduce((sum, test) => sum + testTotal(test), 0)}
+              extraVialCost={extraVialTotal}
+              vialCost={Number(vialCostUsd || 0)}
+              shippingCost={Number(shippingCostUsd || 0)}
+              organiserTip={Number(organiserTipUsd || 0)}
+              total={target}
+              totalLabel="Total target"
+            />
+          </section>
 
           {/* ── Funding behaviour ── */}
           <section>
@@ -1762,23 +1815,6 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
                 />
               </div>
             )}
-          </section>
-
-          <section className="space-y-3">
-            <p className={SECTION_LABEL}>Additional Pool Costs (USD)</p>
-            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Optional target costs, separate from test prices and named reports.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <label className="text-[11px] font-semibold">Vial Cost<input aria-label="Vial cost" type="number" min="0" step="0.01" value={vialCostUsd} onChange={e => setVialCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
-              <label className="text-[11px] font-semibold">Shipping Cost<input aria-label="Shipping cost" type="number" min="0" step="0.01" value={shippingCostUsd} onChange={e => setShippingCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
-              <label className="text-[11px] font-semibold">Organiser Tip<input aria-label="Organiser tip" type="number" min="0" step="0.01" value={organiserTipUsd} onChange={e => setOrganiserTipUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
-            </div>
-            <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--t-text)" }}>
-              <input type="checkbox" checked={inviteOnly} onChange={e => setInviteOnly(e.target.checked)} /> Invite-only pool
-            </label>
-            {inviteOnly && <div>
-              <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Access Code *</label>
-              <input aria-label="Access code" required value={accessCode} onChange={e => setAccessCode(e.target.value)} autoComplete="off" placeholder="Create a code to share" className={INPUT_CLS} style={INPUT_STYLE} />
-            </div>}
           </section>
 
           {/* ── Payment Methods ── */}
@@ -1902,6 +1938,13 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
           <section>
             <p className={SECTION_LABEL}>Additional Settings</p>
             <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--t-text)" }}>
+                <input type="checkbox" checked={inviteOnly} onChange={e => setInviteOnly(e.target.checked)} /> Invite-only pool
+              </label>
+              {inviteOnly && <div>
+                <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Access Code *</label>
+                <input aria-label="Access code" required value={accessCode} onChange={e => setAccessCode(e.target.value)} autoComplete="off" placeholder="Create a code to share" className={INPUT_CLS} style={INPUT_STYLE} />
+              </div>}
               <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
                 <input type="checkbox" checked={allowVialContribution} onChange={e => setAllowVialContribution(e.target.checked)} className="rounded" />
                 <div>
@@ -2237,28 +2280,73 @@ function EditPoolModal({
               className={INPUT_CLS + " resize-none"} style={INPUT_STYLE} />
           </section>
 
+          <section className="space-y-3">
+            <p className={SECTION_LABEL}>Pool Tests</p>
+            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Enter the price for the lab test here. The test code identifies the test; it is not a charge. Custom tests do not require a catalog entry. Test changes are only allowed before contributions are received.</p>
+            {testsLoading && <p className="text-xs" style={{ color: "var(--t-muted)" }}>Loading pool tests…</p>}
+            {testsLoadError && <p className="text-xs text-red-600">Could not load existing pool tests. Test editing is unavailable until they can be loaded.</p>}
+            {tests.map((t, index) => (
+              <div key={`${t.code}-${index}`} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px_auto] gap-2 items-end">
+                <label className="min-w-0 text-[11px] font-semibold">Test name<input aria-label={`Test name ${index + 1}`} value={t.name} onChange={e => updateTest(index, { name: e.target.value })} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+                <label className="min-w-0 text-[11px] font-semibold">Test code<input aria-label={`Test code ${index + 1}`} value={t.code} onChange={e => updateTest(index, { code: e.target.value })} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+                <label className="min-w-0 text-[11px] font-semibold">Test price (USD)<input aria-label={`Test unit price ${index + 1}`} type="number" min="0" step="0.01" value={t.unitPriceUsd} onChange={e => updateTest(index, { unitPriceUsd: Number(e.target.value) })} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+                <button type="button" aria-label={`Remove test ${index + 1}`} onClick={() => setEditedTests(current => (current ?? loadedTests).filter((_, i) => i !== index))} className="text-red-500 text-xs font-semibold">Remove</button>
+              </div>
+            ))}
+            <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Add Custom Test</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <input aria-label="Custom test name" value={newTestName} onChange={e => setNewTestName(e.target.value)} placeholder="Test name" className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label="Custom test code" value={newTestCode} onChange={e => setNewTestCode(e.target.value)} placeholder="Test code" className={INPUT_CLS} style={INPUT_STYLE} />
+                <input aria-label="Custom test price" type="number" min="0" step="0.01" value={newTestPrice} onChange={e => setNewTestPrice(e.target.value)} placeholder="Unit price (USD)" className={INPUT_CLS} style={INPUT_STYLE} />
+              </div>
+              <button type="button" onClick={addCustomTest} disabled={testsLoading || testsLoadError || !newTestName.trim() || !newTestCode.trim() || newTestPrice === "" || !Number.isFinite(Number(newTestPrice)) || Number(newTestPrice) < 0 || tests.some(t => t.code.toLowerCase() === newTestCode.trim().toLowerCase())} className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-blue)", color: "#fff" }}>Add Custom Test</button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <p className={SECTION_LABEL}>Pool-wide costs (USD)</p>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              Enter each amount once for the whole pool. If the test price already includes the vial, shipping, or tip, leave that field at $0.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label className="text-[11px] font-semibold">Vial Cost<input aria-label="Vial cost" type="number" min="0" step="0.01" value={vialCostUsd} onChange={e => setVialCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+              <label className="text-[11px] font-semibold">Shipping Cost<input aria-label="Shipping cost" type="number" min="0" step="0.01" value={shippingCostUsd} onChange={e => setShippingCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+              <label className="text-[11px] font-semibold">Organiser Tip<input aria-label="Organiser tip" type="number" min="0" step="0.01" value={organiserTipUsd} onChange={e => setOrganiserTipUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
+            </div>
+            <PoolGoalBreakdown
+              testsTotal={selectedTests.reduce((sum, test) => sum + test.unitPriceUsd, 0)}
+              extraVialCost={extraVialCost}
+              vialCost={Number(vialCostUsd || 0)}
+              shippingCost={Number(shippingCostUsd || 0)}
+              organiserTip={Number(organiserTipUsd || 0)}
+              total={goalPreview}
+              totalLabel="Goal preview"
+            />
+          </section>
+
           <section>
-            <p className={SECTION_LABEL}>Contributor Add-ons</p>
+            <p className={SECTION_LABEL}>Contributor Add-ons (outside the goal)</p>
             <label className="block text-[11px] font-semibold mb-1" style={{ color: "var(--t-muted)" }}>Named Report Price (USD, separate)</label>
             <input aria-label="Named report price" type="number" min="0" step="0.01" value={namedReportPriceUsd} onChange={e => setNamedReportPriceUsd(e.target.value)} className={INPUT_CLS + " mb-3"} style={INPUT_STYLE} />
             <button
               onClick={() => setNamedReportEnabled(o => !o)}
               className="w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left"
               style={{
-                borderColor: namedReportEnabled ? "#8B5CF6" : "var(--t-border)",
-                background: namedReportEnabled ? "rgba(139,92,246,0.06)" : "var(--t-surface)",
+                borderColor: namedReportEnabled ? "var(--t-blue)" : "var(--t-border)",
+                background: namedReportEnabled ? "var(--t-blue-06)" : "var(--t-surface)",
               }}
             >
               {namedReportEnabled
-                ? <ToggleRight className="w-5 h-5 shrink-0" style={{ color: "#8B5CF6" }} />
+                ? <ToggleRight className="w-5 h-5 shrink-0" style={{ color: "var(--t-blue)" }} />
                 : <ToggleLeft className="w-5 h-5 shrink-0" style={{ color: "var(--t-muted)", opacity: 0.5 }} />
               }
               <div>
-                <p className="text-sm font-semibold" style={{ color: namedReportEnabled ? "#7C3AED" : "var(--t-text)" }}>
+                <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>
                   Additional named report <span className="font-bold text-emerald-600">+${Number(namedReportPriceUsd || 0).toFixed(2)}</span>
                 </p>
                 <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-                  Contributors can opt-in and pay this separate fee to have their own name on the report.
+                  Contributors can opt in and pay this optional fee separately. It does not increase the funding goal.
                 </p>
               </div>
             </button>
@@ -2277,31 +2365,6 @@ function EditPoolModal({
                 />
               </div>
             )}
-          </section>
-
-          <section className="space-y-3">
-            <p className={SECTION_LABEL}>Pool Tests</p>
-            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Custom tests are pool-specific and do not require a catalog or peptide entry. Test changes are only allowed before contributions are received.</p>
-            {testsLoading && <p className="text-xs" style={{ color: "var(--t-muted)" }}>Loading pool tests…</p>}
-            {testsLoadError && <p className="text-xs text-red-600">Could not load existing pool tests. Test editing is unavailable until they can be loaded.</p>}
-            {tests.map((t, index) => (
-              <div key={`${t.code}-${index}`} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_120px_auto] gap-2 items-center">
-                <input aria-label={`Test name ${index + 1}`} value={t.name} onChange={e => updateTest(index, { name: e.target.value })} className={INPUT_CLS} style={INPUT_STYLE} />
-                <input aria-label={`Test code ${index + 1}`} value={t.code} onChange={e => updateTest(index, { code: e.target.value })} className={INPUT_CLS} style={INPUT_STYLE} />
-                <input aria-label={`Test unit price ${index + 1}`} type="number" min="0" step="0.01" value={t.unitPriceUsd} onChange={e => updateTest(index, { unitPriceUsd: Number(e.target.value) })} className={INPUT_CLS} style={INPUT_STYLE} />
-                <button type="button" aria-label={`Remove test ${index + 1}`} onClick={() => setEditedTests(current => (current ?? loadedTests).filter((_, i) => i !== index))} className="text-red-500 text-xs font-semibold">Remove</button>
-              </div>
-            ))}
-            <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Add Custom Test</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input aria-label="Custom test name" value={newTestName} onChange={e => setNewTestName(e.target.value)} placeholder="Test name" className={INPUT_CLS} style={INPUT_STYLE} />
-                <input aria-label="Custom test code" value={newTestCode} onChange={e => setNewTestCode(e.target.value)} placeholder="Test code" className={INPUT_CLS} style={INPUT_STYLE} />
-                <input aria-label="Custom test price" type="number" min="0" step="0.01" value={newTestPrice} onChange={e => setNewTestPrice(e.target.value)} placeholder="Unit price (USD)" className={INPUT_CLS} style={INPUT_STYLE} />
-              </div>
-              <button type="button" onClick={addCustomTest} disabled={testsLoading || testsLoadError || !newTestName.trim() || !newTestCode.trim() || newTestPrice === "" || !Number.isFinite(Number(newTestPrice)) || Number(newTestPrice) < 0 || tests.some(t => t.code.toLowerCase() === newTestCode.trim().toLowerCase())} className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40" style={{ background: "var(--t-blue)", color: "#fff" }}>Add Custom Test</button>
-            </div>
-            <p className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Goal preview: ${goalPreview.toFixed(2)} (tests + additional pool costs)</p>
           </section>
 
           <section>
@@ -2323,14 +2386,6 @@ function EditPoolModal({
           <section>
             <p className={SECTION_LABEL}>Additional Settings</p>
             <div className="space-y-2">
-              <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Additional Pool Costs (USD)</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <label className="text-[11px] font-semibold">Vial Cost<input aria-label="Vial cost" type="number" min="0" step="0.01" value={vialCostUsd} onChange={e => setVialCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
-                  <label className="text-[11px] font-semibold">Shipping Cost<input aria-label="Shipping cost" type="number" min="0" step="0.01" value={shippingCostUsd} onChange={e => setShippingCostUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
-                  <label className="text-[11px] font-semibold">Organiser Tip<input aria-label="Organiser tip" type="number" min="0" step="0.01" value={organiserTipUsd} onChange={e => setOrganiserTipUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} /></label>
-                </div>
-              </div>
               <div className="rounded-xl p-3 space-y-2" style={{ border: "1px solid var(--t-border)", background: "var(--t-bg)" }}>
                 <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--t-text)" }}>
                   <input type="checkbox" checked={inviteOnly} onChange={e => setInviteOnly(e.target.checked)} /> Invite-only pool
