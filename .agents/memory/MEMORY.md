@@ -134,3 +134,4 @@
 - [Invoice edit isolation](invoice-edit-isolation.md) — invoice saves are PDF-document overrides only; never write invoice lines, totals, shipping, or notes back to orders.
 - [App Storage bucket readiness](app-storage-bucket-readiness.md) — constructing the SDK client does not prove a default bucket exists; await a storage operation before claiming uploads work.
 - [Worktree dependency links](worktree-dependency-links.md) — an isolated worktree may lack package-level workspace symlinks even while the main workspace's node_modules is populated.
+- [Minified storage SDK AbortSignal](storage-sdk-abortsignal-minify.md) — node-fetch v2 rejects minified abort-controller signals; preserve names in the API production bundle.

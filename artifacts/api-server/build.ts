@@ -72,6 +72,8 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
+    // node-fetch v2 validates signal.constructor.name; esbuild must preserve AbortSignal.
+    keepNames: true,
     external: externals,
     logLevel: "info",
   });
