@@ -339,6 +339,7 @@ export default function WholesaleOrder() {
   if (!account || !account.isWholesale) return null;
 
   const activeProducts = products.filter(p => p.active !== false);
+  const selectedProducts = activeProducts.filter(p => (quantities[p.id] ?? 0) > 0);
 
   const setQty = (id: string, val: number) => {
     const rounded = Math.round(val);
@@ -352,9 +353,7 @@ export default function WholesaleOrder() {
     });
   };
 
-  const lineItems = activeProducts
-    .filter(p => (quantities[p.id] ?? 0) > 0)
-    .map(p => ({
+  const lineItems = selectedProducts.map(p => ({
       productId: p.id,
       productName: p.name,
       quantity: quantities[p.id],
@@ -1029,6 +1028,71 @@ export default function WholesaleOrder() {
                   />
                 </div>
               </div>
+              {selectedProducts.length > 0 && (
+                <section aria-label="Current order" className="relative overflow-hidden rounded-xl border" style={{ borderColor: "var(--t-blue-25)", background: "var(--t-surface)" }}>
+                  <PriceWatermark username={getAccountHandle(account)} />
+                  <div className="relative flex items-center justify-between px-3 sm:px-4 py-2.5 border-b" style={{ borderColor: "var(--t-border)", background: "var(--t-blue-03)" }}>
+                    <h3 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Current order</h3>
+                    <span className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>{totalKits} kit{totalKits === 1 ? "" : "s"}</span>
+                  </div>
+                  <div className="relative divide-y" style={{ borderColor: "var(--t-border)" }}>
+                    {selectedProducts.map(product => {
+                      const qty = quantities[product.id] ?? 0;
+                      const stockLevel = getStockLevel(product.stock);
+                      const afterStock = product.stock != null ? Math.max(0, product.stock - qty) : null;
+                      const displayLevel = afterStock != null ? getStockLevel(afterStock) : stockLevel;
+                      const stockMeta = STOCK_META[displayLevel];
+                      return (
+                        <div key={product.id} className="flex items-center justify-between gap-2 px-3 sm:px-4 py-3" style={{ borderColor: "var(--t-border)" }}>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold break-words" style={{ color: "var(--t-text)" }}>{product.name}</p>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                              <span className="text-xs" style={{ color: "var(--t-muted)" }}>${product.price.toFixed(2)} each</span>
+                              {stockLevel !== "none" && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: stockMeta.color }}>
+                                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: stockMeta.color }} />
+                                  {stockLevel === "oos" ? "Out of Stock" : stockMeta.label}
+                                </span>
+                              )}
+                            </div>
+                            {productLabTestsMap[product.name] === true && (
+                              <button
+                                type="button"
+                                onClick={() => setLabTestsProduct({ productName: product.name, batchPrefixes: productPrefixesRef.current[product.name] ?? [] })}
+                                className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold"
+                                style={{ color: "var(--t-blue)", background: "var(--t-blue-08)", border: "1px solid var(--t-blue-25)" }}
+                              >
+                                <TestTube className="w-3 h-3" /> Lab Reports
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button type="button" aria-label={`Remove one ${product.name}`} onClick={() => setQty(product.id, qty - 1)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                              <Minus className="w-3 h-3" style={{ color: "var(--t-muted)" }} />
+                            </button>
+                            <input
+                              type="number"
+                              aria-label={`${product.name} quantity`}
+                              min={0}
+                              step={1}
+                              value={qty}
+                              onChange={e => {
+                                const v = parseInt(e.target.value, 10);
+                                setQty(product.id, isNaN(v) ? 0 : Math.max(0, v));
+                              }}
+                              className="w-12 h-7 text-center rounded-lg text-sm font-semibold outline-none border"
+                              style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
+                            />
+                            <button type="button" aria-label={`Add one ${product.name}`} onClick={() => setQty(product.id, qty + 1)} className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                              <Plus className="w-3 h-3" style={{ color: "var(--t-muted)" }} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
               {products.some(p => p.batchCode) && (
                 <div
                   role="note"
