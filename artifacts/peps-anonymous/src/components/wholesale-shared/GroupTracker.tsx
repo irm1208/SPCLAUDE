@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Check, CheckCircle2, Clock, CreditCard, Crown, Loader2, MapPin, Trash2, Truck } from "lucide-react";
 import type { WholesaleShareDetail, WholesaleShareMember } from "@/hooks/use-wholesale-shares";
 import { PriceWatermark } from "@/components/PriceWatermark";
+import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 
 interface GroupTrackerProps {
   share: WholesaleShareDetail;
@@ -149,6 +150,9 @@ export function GroupTracker({ share, onPayMember, showItems = false, onRemoveMe
               <Chip ok={addressSet} label="Address set" neutralLabel="Address pending" icon={<MapPin className="w-3 h-3" />} />
             )}
             {!isOpen && <PayChip paymentStatus={m.paymentStatus} />}
+            {m.orderGrandTotal != null && (
+              <CreditPaymentPill creditsApplied={m.creditsApplied} grandTotal={m.orderGrandTotal} />
+            )}
           </div>
            {share.isCreator && m.paymentTransactions && (
              <PaymentTransactionDetails transactions={m.paymentTransactions} />

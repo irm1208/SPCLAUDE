@@ -7,6 +7,7 @@ const pillSource = readFileSync(new URL("../components/CreditPaymentPill.tsx", i
 const adminSource = readFileSync(new URL("../pages/Admin.tsx", import.meta.url), "utf8");
 const organiserSource = readFileSync(new URL("../pages/GbOrganiser.tsx", import.meta.url), "utf8");
 const accountOrdersSource = readFileSync(new URL("../pages/AccountOrders.tsx", import.meta.url), "utf8");
+const sharedGroupSource = readFileSync(new URL("../components/wholesale-shared/GroupTracker.tsx", import.meta.url), "utf8");
 
 test("credit payment status classifies none, partial, and full coverage", async () => {
   assert.ok(existsSync(helperPath), "credit payment helper should exist");
@@ -48,6 +49,13 @@ test("main admin renders the pill in both order surfaces", () => {
 
 test("organiser renders the shared credit payment pill", () => {
   assert.match(organiserSource, /<CreditPaymentPill/);
+});
+
+test("shared-order member status shows the applied credit amount and coverage", () => {
+  assert.match(
+    sharedGroupSource,
+    /m\.orderGrandTotal != null[\s\S]*?<CreditPaymentPill\s+creditsApplied=\{m\.creditsApplied\}\s+grandTotal=\{m\.orderGrandTotal\}/,
+  );
 });
 
 test("all order lists expose an applied-credit filter", () => {
