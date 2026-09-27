@@ -1652,13 +1652,14 @@ function OrdersTab({ secret }: { secret: string }) {
                   return (
                     <div key={m.id} className="px-4 py-3">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
                           <User className="w-3 h-3 shrink-0 opacity-50" />
                           <span className="font-medium text-sm truncate">{m.telegramUsername}</span>
                           <span className="font-mono text-[11px] text-muted-foreground shrink-0">{m.code}</span>
                           <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0", PAYMENT_COLORS[m.paymentStatus] ?? "bg-slate-100 text-slate-500")}>
                             {PAYMENT_LABELS[m.paymentStatus] ?? m.paymentStatus}
                           </span>
+                          <CreditPaymentPill creditsApplied={m.creditsApplied} grandTotal={m.grandTotal} currency={m.currency} />
                         </div>
                         <button
                           onClick={() => setExpanded(manageOpen ? null : m.id)}

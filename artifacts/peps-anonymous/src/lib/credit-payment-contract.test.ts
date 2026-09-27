@@ -58,6 +58,14 @@ test("shared-order member status shows the applied credit amount and coverage", 
   );
 });
 
+test("admin shared-order dropdown shows each member's credit pill next to payment status", () => {
+  const members = adminSource.match(/\{members\.map\(m => \{([\s\S]*?)\n\s*\}\)\}/)?.[1] ?? "";
+  assert.match(
+    members,
+    /PAYMENT_LABELS\[m\.paymentStatus\][\s\S]*?<CreditPaymentPill creditsApplied=\{m\.creditsApplied\} grandTotal=\{m\.grandTotal\} currency=\{m\.currency\} \/>/,
+  );
+});
+
 test("all order lists expose an applied-credit filter", () => {
   assert.match(adminSource, /creditFilter/);
   assert.match(organiserSource, /creditFilter/);
