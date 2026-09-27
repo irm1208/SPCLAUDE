@@ -43,3 +43,10 @@ test("public pool cards can show and search the chosen lab", () => {
   assert.match(listSource, /p\.labName \? norm\(p\.labName\)/);
   assert.match(listSource, /\{pool\.labName\}/);
 });
+
+test("available pool contribution is expanded by default but can still be collapsed", () => {
+  assert.match(source, /const \[contributeOpen, setContributeOpen\] = useState\(true\)/);
+  assert.match(source, /onClick=\{\(\) => setContributeOpen\(o => !o\)\}/);
+  assert.match(source, /aria-expanded=\{contributeOpen\}/);
+  assert.match(source, /display: contributeOpen \? "block" : "none"/);
+});

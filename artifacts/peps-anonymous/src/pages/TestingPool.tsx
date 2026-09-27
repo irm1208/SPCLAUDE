@@ -1327,7 +1327,7 @@ export default function TestingPool() {
 
   const { account, isLoading: accountLoading } = useAccount();
 
-  const [contributeOpen, setContributeOpen] = useState(false);
+  const [contributeOpen, setContributeOpen] = useState(true);
   const [closedTestsOpen, setClosedTestsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [deletingTestId, setDeletingTestId] = useState<string | null>(null);
@@ -2065,6 +2065,8 @@ export default function TestingPool() {
                   <button
                     type="button"
                     onClick={() => setContributeOpen(o => !o)}
+                     aria-expanded={contributeOpen}
+                     aria-controls="pool-contribution-form"
                     className="w-full flex items-center justify-between px-4 sm:px-5 py-4 text-left transition-colors hover:bg-black/[0.03]"
                   >
                     <span className="text-[9px] font-bold tracking-[0.14em] uppercase" style={{ color: "var(--t-muted)" }}>
@@ -2078,6 +2080,7 @@ export default function TestingPool() {
 
                   {/* Collapsible body */}
                   <div
+                     id="pool-contribution-form"
                     className="px-4 sm:px-5 pt-4 pb-4 sm:pb-5 space-y-3"
                     style={{ borderTop: "1px solid var(--t-border)", display: contributeOpen ? "block" : "none" }}
                   >
