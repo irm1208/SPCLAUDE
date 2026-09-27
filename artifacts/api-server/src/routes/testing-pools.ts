@@ -18,7 +18,7 @@ import { requireAdmin } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { sendAdminFromTemplate, notifyUserFromTemplate, notifyUser } from "../lib/telegram";
 import { isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
-import { computeTestingPoolTarget, parsePoolTestPriceUsd, parseStrictPoolMoney } from "../lib/testing-pool-pricing";
+import { computeTestingPoolTarget, DEFAULT_MAX_VIAL_COUNT, fitsTestingPoolTarget, parsePoolVialCount, validatePoolVialQuantities, parsePoolTestPriceUsd, parseStrictPoolMoney } from "../lib/testing-pool-pricing";
 
 const router: IRouter = Router();
 
@@ -58,19 +58,39 @@ async function recomputeTarget(poolId: string): Promise<number> {
   return recomputeTargetUsing(db, poolId);
 }
 
+function projectedPoolTarget(
+  tests: Array<{ unitPriceUsd: string | number; quantity?: unknown; selected?: unknown }>,
+  costs: { extraVialPriceUsd: number; vialCostUsd: number; shippingCostUsd: number; organiserTipUsd: number },
+): number {
+  const selected = tests.filter(test => test.selected !== false);
+  return computeTestingPoolTarget(selected, Number(selected[0]?.quantity ?? 1), costs);
+}
+
+function poolCostsWithUpdates(pool: typeof testingPoolsTable.$inferSelect, updates: Partial<typeof testingPoolsTable.$inferInsert> = {}) {
+  return {
+    extraVialPriceUsd: num(updates.extraVialPriceUsd ?? pool.extraVialPriceUsd),
+    vialCostUsd: num(updates.vialCostUsd ?? pool.vialCostUsd),
+    shippingCostUsd: num(updates.shippingCostUsd ?? pool.shippingCostUsd),
+    organiserTipUsd: num(updates.organiserTipUsd ?? pool.organiserTipUsd),
+  };
+}
+
 async function recomputeTargetUsing(database: any, poolId: string): Promise<number> {
   const tests = await database.select().from(poolTestsTable).where(and(eq(poolTestsTable.poolId, poolId), eq(poolTestsTable.selected, true)));
   const [pool] = await database.select({
+    extraVialPriceUsd: testingPoolsTable.extraVialPriceUsd,
     vialCostUsd: testingPoolsTable.vialCostUsd,
     shippingCostUsd: testingPoolsTable.shippingCostUsd,
     organiserTipUsd: testingPoolsTable.organiserTipUsd,
   }).from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
   const qty = tests.length > 0 ? (tests[0].quantity || 1) : 1;
   const total = computeTestingPoolTarget(tests, qty, {
+    extraVialPriceUsd: num(pool?.extraVialPriceUsd),
     vialCostUsd: num(pool?.vialCostUsd),
     shippingCostUsd: num(pool?.shippingCostUsd),
     organiserTipUsd: num(pool?.organiserTipUsd),
   });
+  if (!fitsTestingPoolTarget(total)) throw new Error("Testing pool target exceeds the supported USD limit");
   await database.update(testingPoolsTable).set({ targetAmountUsd: total.toFixed(2) }).where(eq(testingPoolsTable.id, poolId));
   return total;
 }
@@ -78,6 +98,15 @@ async function recomputeTargetUsing(database: any, poolId: string): Promise<numb
 function poolMoneyInput(body: Record<string, unknown>, key: string, fallback: number): number | null {
   if (!(key in body)) return fallback;
   return parseStrictPoolMoney(body[key]);
+}
+
+function maxVialCountInput(body: Record<string, unknown>): number | null {
+  return "maxVialCount" in body ? parsePoolVialCount(body.maxVialCount) : DEFAULT_MAX_VIAL_COUNT;
+}
+
+async function exceedsPoolVialMaximum(poolId: string, maximum: number): Promise<boolean> {
+  const tests = await db.select({ quantity: poolTestsTable.quantity }).from(poolTestsTable).where(eq(poolTestsTable.poolId, poolId));
+  return tests.some(test => test.quantity > maximum);
 }
 
 function failInvalidPoolMoney(res: any, field: string): void {
@@ -170,15 +199,23 @@ async function replacePoolTests(
 ): Promise<{ blocked: boolean; targetAmountUsd?: number; error?: { status: number; message: string }; wasResultsReceived?: boolean }> {
   return db.transaction(async (tx) => {
     let settingsUpdate: PoolSettingsBuild | null = null;
+    const [pool] = await tx.select().from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
+    if (!pool) return { blocked: false, error: { status: 404, message: "Pool not found" } };
     if (options.poolUpdates !== undefined) {
-      const [pool] = await tx.select().from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
-      if (!pool) return { blocked: false, error: { status: 404, message: "Pool not found" } };
       settingsUpdate = options.poolUpdates.kind === "admin"
         ? await buildAdminPoolUpdates(pool, options.poolUpdates.values)
         : await buildLeaderPoolUpdates(pool, options.poolUpdates.values);
       if (!settingsUpdate.ok) {
         return { blocked: false, error: { status: settingsUpdate.status, message: settingsUpdate.message } };
       }
+    }
+    const maxVialCount = settingsUpdate?.ok && settingsUpdate.updates.maxVialCount != null
+      ? settingsUpdate.updates.maxVialCount : pool.maxVialCount;
+    if (validatePoolVialQuantities(input, maxVialCount) == null) {
+      return { blocked: false, error: { status: 400, message: "All tests must use the same whole vial count, between 1 and the pool maximum" } };
+    }
+    if (!fitsTestingPoolTarget(projectedPoolTarget(input, poolCostsWithUpdates(pool, settingsUpdate?.ok ? settingsUpdate.updates : {})))) {
+      return { blocked: false, error: { status: 400, message: "Pool funding goal exceeds $99,999,999.99" } };
     }
 
     const [payments] = await tx.select({
@@ -336,6 +373,8 @@ function poolPublicShape(pool: typeof testingPoolsTable.$inferSelect) {
     votingMode: pool.votingMode,
     targetAmountUsd: num(pool.targetAmountUsd),
     namedReportPriceUsd: num(pool.namedReportPriceUsd),
+    extraVialPriceUsd: num(pool.extraVialPriceUsd),
+    maxVialCount: pool.maxVialCount,
     vialCostUsd: num(pool.vialCostUsd),
     shippingCostUsd: num(pool.shippingCostUsd),
     organiserTipUsd: num(pool.organiserTipUsd),
@@ -1116,12 +1155,26 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
   const validatedTests = testValidation.tests;
   const costs = {
     namedReportPriceUsd: poolMoneyInput(req.body ?? {}, "namedReportPriceUsd", 30),
+    extraVialPriceUsd: poolMoneyInput(req.body ?? {}, "extraVialPriceUsd", 60),
     vialCostUsd: poolMoneyInput(req.body ?? {}, "vialCostUsd", 0),
     shippingCostUsd: poolMoneyInput(req.body ?? {}, "shippingCostUsd", 0),
     organiserTipUsd: poolMoneyInput(req.body ?? {}, "organiserTipUsd", 0),
   };
   for (const [field, value] of Object.entries(costs)) {
     if (value == null) { failInvalidPoolMoney(res, field); return; }
+  }
+  const maxVialCount = maxVialCountInput(req.body ?? {});
+  if (maxVialCount == null) { res.status(400).json({ error: "maxVialCount must be a whole number between 1 and 20" }); return; }
+  if (validatePoolVialQuantities(validatedTests, maxVialCount) == null) {
+    res.status(400).json({ error: "All tests must use the same whole vial count, between 1 and the pool maximum" }); return;
+  }
+  if (!fitsTestingPoolTarget(projectedPoolTarget(validatedTests, {
+    extraVialPriceUsd: costs.extraVialPriceUsd!,
+    vialCostUsd: costs.vialCostUsd!,
+    shippingCostUsd: costs.shippingCostUsd!,
+    organiserTipUsd: costs.organiserTipUsd!,
+  }))) {
+    res.status(400).json({ error: "Pool funding goal exceeds $99,999,999.99" }); return;
   }
   if (inviteOnly !== undefined && typeof inviteOnly !== "boolean") {
     res.status(400).json({ error: "inviteOnly must be a boolean" }); return;
@@ -1179,7 +1232,8 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
 
   const cryptoMethod = poolPaymentMethods.find(m => m.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
 
-  await db.insert(testingPoolsTable).values({
+  await db.transaction(async tx => {
+  await tx.insert(testingPoolsTable).values({
     id,
     slug,
     leaderUsername: leader.tg,
@@ -1192,6 +1246,8 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
     status: "draft",
     votingMode: votingMode === "vote" ? "vote" : "leader_decides",
     namedReportPriceUsd: costs.namedReportPriceUsd!.toFixed(2),
+    extraVialPriceUsd: costs.extraVialPriceUsd!.toFixed(2),
+    maxVialCount,
     vialCostUsd: costs.vialCostUsd!.toFixed(2),
     shippingCostUsd: costs.shippingCostUsd!.toFixed(2),
     organiserTipUsd: costs.organiserTipUsd!.toFixed(2),
@@ -1211,7 +1267,7 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
   });
 
   for (const t of validatedTests) {
-    await db.insert(poolTestsTable).values({
+    await tx.insert(poolTestsTable).values({
       id: nanoid(12),
       poolId: id,
       catalogId: t.catalogId ? String(t.catalogId).slice(0, 64) : null,
@@ -1222,7 +1278,8 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
       selected: t.selected !== false,
     });
   }
-  await recomputeTarget(id);
+  await recomputeTargetUsing(tx, id);
+  });
 
   res.status(201).json({ id, slug });
 });
@@ -1284,6 +1341,18 @@ async function buildLeaderPoolUpdates(
     if (amount !== num(pool[field])) { pricingChanged = true; moneyChanged = true; }
     updates[field] = amount.toFixed(2);
   }
+  if ("extraVialPriceUsd" in b) {
+    const amount = parseStrictPoolMoney(b.extraVialPriceUsd);
+    if (amount == null) return { ok: false, status: 400, message: "extraVialPriceUsd must be a non-negative amount with at most two decimal places" };
+    if (amount !== num(pool.extraVialPriceUsd)) { pricingChanged = true; moneyChanged = true; }
+    updates.extraVialPriceUsd = amount.toFixed(2);
+  }
+  if ("maxVialCount" in b) {
+    const max = parsePoolVialCount(b.maxVialCount);
+    if (max == null) return { ok: false, status: 400, message: "maxVialCount must be a whole number between 1 and 20" };
+    if (max !== pool.maxVialCount) moneyChanged = true;
+    updates.maxVialCount = max;
+  }
   if ("namedReportPriceUsd" in b) {
     const amount = parseStrictPoolMoney(b.namedReportPriceUsd);
     if (amount == null) {
@@ -1323,6 +1392,15 @@ router.patch("/account/pool-leader/pools/:id", requireAccount, async (req, res):
   if (!pool) return;
   const build = await buildLeaderPoolUpdates(pool, req.body ?? {});
   if (!build.ok) { res.status(build.status).json({ error: build.message }); return; }
+  if (build.updates.maxVialCount != null && await exceedsPoolVialMaximum(pool.id, build.updates.maxVialCount)) {
+    res.status(400).json({ error: "Lower the planned vial count before reducing the pool maximum" }); return;
+  }
+  if (build.pricingChanged) {
+    const tests = await db.select().from(poolTestsTable).where(eq(poolTestsTable.poolId, pool.id));
+    if (!fitsTestingPoolTarget(projectedPoolTarget(tests, poolCostsWithUpdates(pool, build.updates)))) {
+      res.status(400).json({ error: "Pool funding goal exceeds $99,999,999.99" }); return;
+    }
+  }
   if (build.moneyChanged && await hasSubmittedOrVerifiedContributions(pool.id)) {
     res.status(409).json({ error: "Cannot change pool pricing after contributions have been submitted or verified" }); return;
   }
@@ -1592,12 +1670,26 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
   }
   const costs = {
     namedReportPriceUsd: poolMoneyInput(req.body ?? {}, "namedReportPriceUsd", 30),
+    extraVialPriceUsd: poolMoneyInput(req.body ?? {}, "extraVialPriceUsd", 60),
     vialCostUsd: poolMoneyInput(req.body ?? {}, "vialCostUsd", 0),
     shippingCostUsd: poolMoneyInput(req.body ?? {}, "shippingCostUsd", 0),
     organiserTipUsd: poolMoneyInput(req.body ?? {}, "organiserTipUsd", 0),
   };
   for (const [field, value] of Object.entries(costs)) {
     if (value == null) { failInvalidPoolMoney(res, field); return; }
+  }
+  const maxVialCount = maxVialCountInput(req.body ?? {});
+  if (maxVialCount == null) { res.status(400).json({ error: "maxVialCount must be a whole number between 1 and 20" }); return; }
+  if (validatedTests && validatePoolVialQuantities(validatedTests, maxVialCount) == null) {
+    res.status(400).json({ error: "All tests must use the same whole vial count, between 1 and the pool maximum" }); return;
+  }
+  if (validatedTests && !fitsTestingPoolTarget(projectedPoolTarget(validatedTests, {
+    extraVialPriceUsd: costs.extraVialPriceUsd!,
+    vialCostUsd: costs.vialCostUsd!,
+    shippingCostUsd: costs.shippingCostUsd!,
+    organiserTipUsd: costs.organiserTipUsd!,
+  }))) {
+    res.status(400).json({ error: "Pool funding goal exceeds $99,999,999.99" }); return;
   }
   if (inviteOnly !== undefined && typeof inviteOnly !== "boolean") {
     res.status(400).json({ error: "inviteOnly must be a boolean" }); return;
@@ -1626,7 +1718,8 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
   });
 
   const cryptoMethod = poolPaymentMethods.find(m => m.type === "crypto") as { type: "crypto"; currency: string; network: string; address: string } | undefined;
-  await db.insert(testingPoolsTable).values({
+  await db.transaction(async tx => {
+  await tx.insert(testingPoolsTable).values({
     id,
     slug,
     leaderUsername: "__admin__",
@@ -1639,6 +1732,8 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
     status: (typeof status === "string" && ["draft","open","funded","sent_to_lab","results_received","closed","cancelled"].includes(status)) ? status : "draft",
     votingMode: votingMode === "vote" ? "vote" : "leader_decides",
     namedReportPriceUsd: costs.namedReportPriceUsd!.toFixed(2),
+    extraVialPriceUsd: costs.extraVialPriceUsd!.toFixed(2),
+    maxVialCount,
     vialCostUsd: costs.vialCostUsd!.toFixed(2),
     shippingCostUsd: costs.shippingCostUsd!.toFixed(2),
     organiserTipUsd: costs.organiserTipUsd!.toFixed(2),
@@ -1660,7 +1755,7 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
 
   if (validatedTests) {
     for (const t of validatedTests) {
-      await db.insert(poolTestsTable).values({
+      await tx.insert(poolTestsTable).values({
         id: nanoid(12),
         poolId: id,
         catalogId: t.catalogId ? String(t.catalogId).slice(0, 64) : null,
@@ -1671,8 +1766,9 @@ router.post("/admin/testing-pools", async (req, res): Promise<void> => {
         selected: t.selected !== false,
       });
     }
-    await recomputeTarget(id);
+    await recomputeTargetUsing(tx, id);
   }
+  });
 
   res.status(201).json({ id, slug });
 });
@@ -1792,6 +1888,18 @@ async function buildAdminPoolUpdates(
     if (amount !== num(existingPool[field])) { pricingChanged = true; moneyChanged = true; }
     updates[field] = amount.toFixed(2);
   }
+  if ("extraVialPriceUsd" in b) {
+    const amount = parseStrictPoolMoney(b.extraVialPriceUsd);
+    if (amount == null) return { ok: false, status: 400, message: "extraVialPriceUsd must be a non-negative amount with at most two decimal places" };
+    if (amount !== num(existingPool.extraVialPriceUsd)) { pricingChanged = true; moneyChanged = true; }
+    updates.extraVialPriceUsd = amount.toFixed(2);
+  }
+  if ("maxVialCount" in b) {
+    const max = parsePoolVialCount(b.maxVialCount);
+    if (max == null) return { ok: false, status: 400, message: "maxVialCount must be a whole number between 1 and 20" };
+    if (max !== existingPool.maxVialCount) moneyChanged = true;
+    updates.maxVialCount = max;
+  }
   if ("namedReportPriceUsd" in b) {
     const amount = parseStrictPoolMoney(b.namedReportPriceUsd);
     if (amount == null) {
@@ -1832,6 +1940,15 @@ router.patch("/admin/testing-pools/:id", async (req, res): Promise<void> => {
   if (!existingPool) { res.status(404).json({ error: "Pool not found" }); return; }
   const build = await buildAdminPoolUpdates(existingPool, req.body ?? {});
   if (!build.ok) { res.status(build.status).json({ error: build.message }); return; }
+  if (build.updates.maxVialCount != null && await exceedsPoolVialMaximum(existingPool.id, build.updates.maxVialCount)) {
+    res.status(400).json({ error: "Lower the planned vial count before reducing the pool maximum" }); return;
+  }
+  if (build.pricingChanged) {
+    const tests = await db.select().from(poolTestsTable).where(eq(poolTestsTable.poolId, existingPool.id));
+    if (!fitsTestingPoolTarget(projectedPoolTarget(tests, poolCostsWithUpdates(existingPool, build.updates)))) {
+      res.status(400).json({ error: "Pool funding goal exceeds $99,999,999.99" }); return;
+    }
+  }
   if (build.moneyChanged && await hasSubmittedOrVerifiedContributions(existingPool.id)) {
     res.status(409).json({ error: "Cannot change pool pricing after contributions have been submitted or verified" }); return;
   }

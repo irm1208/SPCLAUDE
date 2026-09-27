@@ -39,6 +39,8 @@ type Pool = {
   status: string;
   votingMode: "leader_decides" | "vote";
   targetAmountUsd: number;
+  extraVialPriceUsd: number;
+  maxVialCount: number;
   vialCostUsd: number;
   shippingCostUsd: number;
   organiserTipUsd: number;
@@ -122,17 +124,19 @@ function fmtUsd(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function fmtUsdExact(n: number) {
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 // ── Vial cost formula ─────────────────────────────────────────────────────────
-// Base price covers 1 vial. Each additional vial adds $60 ONCE for the whole
-// pool (not per test). testCost() returns just the base price for a single test.
-const EXTRA_VIAL_COST = 60;
+// Base price covers 1 vial. Extra vials are added once per pool (not per test).
 function testCost(t: { unitPriceUsd: number; quantity: number }): number {
   return t.unitPriceUsd;
 }
 // Pool-level extra-vial surcharge (applied once, regardless of test count).
-function extraVialCost(tests: { quantity: number }[]): number {
+function extraVialCost(tests: { quantity: number }[], pricePerVial: number): number {
   const qty = tests.length > 0 ? (tests[0].quantity || 1) : 1;
-  return Math.max(0, qty - 1) * EXTRA_VIAL_COST;
+  return Math.max(0, qty - 1) * pricePerVial;
 }
 
 // ── Pool Gauge ────────────────────────────────────────────────────────────────
@@ -618,8 +622,8 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
       <p className="text-[9px] font-bold tracking-[0.14em] uppercase" style={{ color: "#E9A020" }}>
         Send Payment —{" "}
         {namedReportOptIn
-          ? <>{fmtUsd(parseFloat(amount))} <span style={{ color: "#7C3AED" }}>+ ${pool.namedReportPriceUsd.toFixed(2)} (named report, separate)</span></>
-          : fmtUsd(parseFloat(amount))
+          ? <>{fmtUsdExact(parseFloat(amount))} <span style={{ color: "#7C3AED" }}>+ ${pool.namedReportPriceUsd.toFixed(2)} (named report, separate)</span></>
+          : fmtUsdExact(parseFloat(amount))
         }
       </p>
 
@@ -658,7 +662,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
           {chosenMethod.type === "crypto" && (
             <>
               <p className="text-xs" style={{ color: "var(--t-text)" }}>
-                Send <span className="font-bold">{fmtUsd(parseFloat(amount))} {initialCryptoCurrency || chosenMethod.currency}</span> on{" "}
+                Send <span className="font-bold">{fmtUsdExact(parseFloat(amount))} {initialCryptoCurrency || chosenMethod.currency}</span> on{" "}
                 <span className="font-bold">{chosenMethod.network}</span> to:
               </p>
               <div className="flex items-center gap-2 rounded-lg px-3 py-2"
@@ -695,7 +699,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
             <>
               {chosenMethod.type === "paypal" && (
                 <p className="text-xs" style={{ color: "var(--t-text)" }}>
-                  Send <span className="font-bold">{fmtUsd(parseFloat(amount))}</span> via PayPal to:{" "}
+                  Send <span className="font-bold">{fmtUsdExact(parseFloat(amount))}</span> via PayPal to:{" "}
                   <button
                     onClick={() => { navigator.clipboard.writeText(chosenMethod.email); setWalletCopied(true); }}
                     className="font-mono font-bold inline-flex items-center gap-1 transition-opacity hover:opacity-70"
@@ -708,7 +712,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
               )}
               {chosenMethod.type === "revolut" && (
                 <p className="text-xs" style={{ color: "var(--t-text)" }}>
-                  Send <span className="font-bold">{fmtUsd(parseFloat(amount))}</span> via Revolut to:{" "}
+                  Send <span className="font-bold">{fmtUsdExact(parseFloat(amount))}</span> via Revolut to:{" "}
                   <button
                     onClick={() => { navigator.clipboard.writeText(chosenMethod.handle); setWalletCopied(true); }}
                     className="font-mono font-bold inline-flex items-center gap-1 transition-opacity hover:opacity-70"
@@ -723,7 +727,7 @@ function PaymentSection({ pool, amount, participantId, namedReportOptIn, namedRe
               {chosenMethod.type === "janoshik" && (
                 <div className="space-y-2">
                   <p className="text-xs" style={{ color: "var(--t-text)" }}>
-                    Complete your payment of <span className="font-bold">{fmtUsd(parseFloat(amount))}</span> via Janoshik.
+                    Complete your payment of <span className="font-bold">{fmtUsdExact(parseFloat(amount))}</span> via Janoshik.
                   </p>
                   <a
                     href={(chosenMethod as any).url}
@@ -1195,7 +1199,7 @@ function PaymentReceipt({ pool, receipt }: { pool: Pool; receipt: ReceiptInfo })
               className="font-extrabold tabular-nums"
               style={{ fontSize: 22, color: HIT, fontFamily: "ui-monospace,SFMono-Regular,monospace", letterSpacing: "-0.02em" }}
             >
-              {fmtUsd(receipt.amount)}
+              {fmtUsdExact(receipt.amount)}
             </span>
           </div>
 
@@ -1587,14 +1591,14 @@ export default function TestingPool() {
   const allTests = activeTests;
   const acceptingContributions = ["open", "funded"].includes(pool.status) && !(pool.stopOnFunded && pool.status === "funded");
   const statusColor = STATUS_COLOR[pool.status] ?? "var(--t-muted)";
-  // Use the correct vial-cost formula: sum of base prices + pool-level extra-vial surcharge.
-  // pool.targetAmountUsd (DB-stored) may be stale if saved with the old unitPrice×qty formula.
-  const poolExtraVial = extraVialCost(selectedTests);
+  const poolExtraVial = extraVialCost(selectedTests, pool.extraVialPriceUsd ?? 60);
   const extraCosts = [
     { label: "Vial cost", cost: pool.vialCostUsd ?? 0 },
     { label: "Shipping", cost: pool.shippingCostUsd ?? 0 },
     { label: "Organiser tip", cost: pool.organiserTipUsd ?? 0 },
   ].filter(item => item.cost > 0);
+  // Older pools can have a stale stored goal; compute the visible breakdown
+  // with the pool's saved unit price rather than a hardcoded surcharge.
   const computedGoal = (selectedTests.reduce((s, t) => s + testCost(t), 0) + poolExtraVial
     + extraCosts.reduce((sum, item) => sum + item.cost, 0)) || pool.targetAmountUsd;
   const progressPct = computedGoal > 0 ? Math.min(100, (data.raisedUsd / computedGoal) * 100) : 0;
@@ -1995,7 +1999,7 @@ export default function TestingPool() {
                   <div className="flex items-center gap-1.5">
                     <span className="w-3 h-2 inline-block" style={{ background: "#94A3B8", borderRadius: 1 }} />
                     <span className="text-[10px] font-semibold" style={{ color: "var(--t-muted)" }}>
-                      Additional vials ({selectedTests.length > 0 ? (selectedTests[0].quantity || 1) - 1 : 0}×) · +{fmtUsd(poolExtraVial)}
+                      Additional vials ({selectedTests.length > 0 ? (selectedTests[0].quantity || 1) - 1 : 0} × {fmtUsdExact(pool.extraVialPriceUsd ?? 60)}) · +{fmtUsdExact(poolExtraVial)}
                     </span>
                   </div>
                 )}
@@ -2483,7 +2487,7 @@ export default function TestingPool() {
                   <div>
                     <div className="flex justify-between items-baseline mb-1.5">
                       <span className="text-[12px] font-bold" style={{ color: "var(--t-text)" }}>{fmtUsd(data.raisedUsd)} raised</span>
-                      <span className="text-[11px]" style={{ color: "var(--t-muted)" }}>of {fmtUsd(computedGoal)}</span>
+                      <span className="text-[11px]" style={{ color: "var(--t-muted)" }}>of {fmtUsdExact(computedGoal)}</span>
                     </div>
                     <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--t-border)" }}>
                       <motion.div

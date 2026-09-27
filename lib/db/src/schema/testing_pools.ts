@@ -57,6 +57,8 @@ export const testingPoolsTable = pgTable("testing_pools", {
   // Aggregate target across selected tests; recomputed when pool_tests change.
   targetAmountUsd: numeric("target_amount_usd", { precision: 10, scale: 2 }).notNull().default("0"),
   namedReportPriceUsd: numeric("named_report_price_usd", { precision: 10, scale: 2 }).notNull().default("30"),
+  extraVialPriceUsd: numeric("extra_vial_price_usd", { precision: 10, scale: 2 }).notNull().default("60"),
+  maxVialCount: integer("max_vial_count").notNull().default(4),
   vialCostUsd: numeric("vial_cost_usd", { precision: 10, scale: 2 }).notNull().default("0"),
   shippingCostUsd: numeric("shipping_cost_usd", { precision: 10, scale: 2 }).notNull().default("0"),
   organiserTipUsd: numeric("organiser_tip_usd", { precision: 10, scale: 2 }).notNull().default("0"),

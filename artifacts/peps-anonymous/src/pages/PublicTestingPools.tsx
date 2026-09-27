@@ -614,12 +614,12 @@ function PoolCard({ pool, navigate }: { pool: Pool; navigate: (path: string) => 
         >
           <div className="flex items-baseline justify-between mb-2">
             <span className="text-sm font-bold tabular-nums" style={{ color: "var(--t-text)" }}>
-              ${raised.toFixed(0)}
+              ${raised.toFixed(2)}
               <span className="text-[11px] font-normal ml-1" style={{ color: "var(--t-subtle)" }}>raised</span>
             </span>
             <span className="text-[11px] font-semibold tabular-nums" style={{ color: t.accent }}>
               {pct.toFixed(1)}%
-              <span className="font-normal ml-1" style={{ color: "var(--t-subtle)" }}>of ${goal.toFixed(0)}</span>
+              <span className="font-normal ml-1" style={{ color: "var(--t-subtle)" }}>of ${goal.toFixed(2)}</span>
             </span>
           </div>
 

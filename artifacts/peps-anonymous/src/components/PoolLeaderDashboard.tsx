@@ -36,6 +36,8 @@ type LeaderPool = {
   fixedOptInFeeUsd: number | null;
   labName: string | null;
   namedReportPriceUsd: number;
+  extraVialPriceUsd: number;
+  maxVialCount: number;
   vialCostUsd: number;
   shippingCostUsd: number;
   organiserTipUsd: number;
@@ -1299,6 +1301,8 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
   const [doseValue, setDoseValue] = useState<string>("");
   const [resultsPassword, setResultsPassword] = useState("");
   const [namedReportPriceUsd, setNamedReportPriceUsd] = useState("30");
+  const [extraVialPriceUsd, setExtraVialPriceUsd] = useState("60");
+  const [maxVialCount, setMaxVialCount] = useState("4");
   const [vialCostUsd, setVialCostUsd] = useState("");
   const [shippingCostUsd, setShippingCostUsd] = useState("");
   const [organiserTipUsd, setOrganiserTipUsd] = useState("");
@@ -1386,10 +1390,9 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
     const a = [...prev]; a[i] = { ...a[i], unitPriceUsd: val }; return a;
   });
 
-  const EXTRA_VIAL = 60;
   // testTotal returns just the base price — extra-vial surcharge is charged once for the whole pool.
   const testTotal = (t: PendingTest) => t.unitPriceUsd;
-  const extraVialTotal = (vialAmount - 1) * EXTRA_VIAL;
+  const extraVialTotal = (vialAmount - 1) * Number(extraVialPriceUsd || 0);
   const additionalCosts = [vialCostUsd, shippingCostUsd, organiserTipUsd].reduce((sum, value) => sum + (value.trim() ? Number(value) : 0), 0);
   const target = tests.reduce((s, t) => s + testTotal(t), 0) + extraVialTotal + additionalCosts;
 
@@ -1402,9 +1405,13 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
     if (fixedFeeEnabled && (!fixedFeeValue || isNaN(parseFloat(fixedFeeValue)))) {
       toast({ title: "Enter a valid fixed opt-in fee", variant: "destructive" }); return;
     }
-    const moneyFields = { namedReportPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd };
+    const moneyFields = { namedReportPriceUsd, extraVialPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd };
     if (Object.entries(moneyFields).some(([field, value]) => value.trim() !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0) || field === "namedReportPriceUsd" && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0))) {
       toast({ title: "Enter valid nonnegative pool costs", variant: "destructive" }); return;
+    }
+    if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(extraVialPriceUsd) || Number(extraVialPriceUsd) > 99_999_999.99
+      || !/^[1-9]\d*$/.test(maxVialCount) || Number(maxVialCount) > 20 || vialAmount > Number(maxVialCount)) {
+      toast({ title: "Check the extra-vial price and vial limit", variant: "destructive" }); return;
     }
     const accessCodeRequired = inviteOnly && !accessCode.trim();
     if (accessCodeRequired) { toast({ title: "Access code required", variant: "destructive" }); return; }
@@ -1453,6 +1460,8 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
           janoshikUrl: janoshikUrl || undefined,
           fixedOptInFeeUsd: fixedFeeEnabled && fixedFeeValue ? parseFloat(fixedFeeValue) : null,
           namedReportPriceUsd: Number(namedReportPriceUsd),
+          extraVialPriceUsd: Number(extraVialPriceUsd),
+          maxVialCount: Number(maxVialCount),
           vialCostUsd: vialCostUsd.trim() ? Number(vialCostUsd) : undefined,
           shippingCostUsd: shippingCostUsd.trim() ? Number(shippingCostUsd) : undefined,
           organiserTipUsd: organiserTipUsd.trim() ? Number(organiserTipUsd) : undefined,
@@ -1581,32 +1590,6 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
             </div>
           </section>
 
-          {/* ── Number of Vials ── */}
-          <section>
-            <p className={SECTION_LABEL}>Number of Vials</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              {[1, 2, 3, 4].map(n => (
-                <button
-                  key={n}
-                  onClick={() => { setVialAmount(n); setTests(prev => prev.map(t => ({ ...t, quantity: n }))); }}
-                  className="w-8 h-8 rounded-lg text-xs font-bold transition-all"
-                  style={{
-                    border: `2px solid ${vialAmount === n ? "var(--t-blue)" : "var(--t-border)"}`,
-                    background: vialAmount === n ? "var(--t-blue-08)" : "var(--t-surface)",
-                    color: vialAmount === n ? "var(--t-blue)" : "var(--t-muted)",
-                  }}
-                >
-                  {n}
-                </button>
-              ))}
-              <span className="text-xs" style={{ color: "var(--t-muted)" }}>
-                {vialAmount === 1
-                  ? "1 vial included · each extra vial +$60 · max 3 extra"
-                  : `${vialAmount} vials · +$${(vialAmount - 1) * 60} for ${vialAmount - 1} extra vial${vialAmount - 1 !== 1 ? "s" : ""}`}
-              </span>
-            </div>
-          </section>
-
           {/* ── Add from Catalog ── */}
           <section>
             <p className={SECTION_LABEL}>Add from Catalog</p>
@@ -1677,21 +1660,44 @@ function CreatePoolModal({ leaderStatus, onClose, onSuccess }: { leaderStatus: L
               </div>
 
               {/* Additional vials line — shown once for the whole pool when qty > 1 */}
-              {extraVialTotal > 0 && (
-                <div className="flex items-center justify-between px-3 py-2 rounded-xl"
-                  style={{ background: "var(--t-blue-06)", border: "1px dashed var(--t-blue)" }}>
-                  <span className="text-xs font-medium" style={{ color: "var(--t-blue)" }}>
-                    Additional vials ({vialAmount - 1}×) · +${EXTRA_VIAL} each
-                  </span>
-                  <span className="text-sm font-bold" style={{ color: "var(--t-blue)" }}>+${extraVialTotal.toFixed(0)}</span>
-                </div>
-              )}
-
             </section>
           )}
 
           <section className="space-y-3">
-            <p className={SECTION_LABEL}>Pool-wide costs (USD)</p>
+            <p className={SECTION_LABEL}>Vials &amp; pool-wide costs (USD)</p>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              The first vial is covered by your test prices. Extra vials are added once for the whole pool, not for each test.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label className="text-[11px] font-semibold">Maximum vial count
+                <input aria-label="Maximum vial count" type="number" min="1" max="20" step="1" value={maxVialCount}
+                  onChange={e => {
+                    setMaxVialCount(e.target.value);
+                    const max = Number(e.target.value);
+                    if (Number.isInteger(max) && max >= 1 && max < vialAmount) {
+                      setVialAmount(max);
+                      setTests(prev => prev.map(t => ({ ...t, quantity: max })));
+                    }
+                  }} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} />
+              </label>
+              <label className="text-[11px] font-semibold">Vials planned
+                <select aria-label="Vials planned" value={vialAmount} onChange={e => {
+                  const count = Number(e.target.value);
+                  setVialAmount(count);
+                  setTests(prev => prev.map(t => ({ ...t, quantity: count })));
+                }} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE}>
+                  {Array.from({ length: Math.min(20, Math.max(vialAmount, Number(maxVialCount) || 1)) }, (_, i) => i + 1).map(n =>
+                    <option key={n} value={n}>{n} vial{n === 1 ? "" : "s"}</option>)}
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold">Price per extra vial
+                <input aria-label="Price per extra vial" type="number" min="0" step="0.01" value={extraVialPriceUsd}
+                  onChange={e => setExtraVialPriceUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} />
+              </label>
+            </div>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              {vialAmount - 1} extra vial{vialAmount === 2 ? "" : "s"} × ${Number(extraVialPriceUsd || 0).toFixed(2)} = ${extraVialTotal.toFixed(2)}
+            </p>
             <p className="text-xs" style={{ color: "var(--t-muted)" }}>
               Enter each amount once for the whole pool. If your test price already includes the vial, shipping, or tip, leave that field at $0.
             </p>
@@ -2070,6 +2076,8 @@ function EditPoolModal({
   const [description, setDescription] = useState(pool.description ?? "");
   const [labName, setLabName] = useState(pool.labName ?? "");
   const [namedReportPriceUsd, setNamedReportPriceUsd] = useState(String(pool.namedReportPriceUsd ?? 30));
+  const [extraVialPriceUsd, setExtraVialPriceUsd] = useState(String(pool.extraVialPriceUsd ?? 60));
+  const [maxVialCount, setMaxVialCount] = useState(String(pool.maxVialCount ?? 4));
   const [vialCostUsd, setVialCostUsd] = useState(String(pool.vialCostUsd ?? 0));
   const [shippingCostUsd, setShippingCostUsd] = useState(String(pool.shippingCostUsd ?? 0));
   const [organiserTipUsd, setOrganiserTipUsd] = useState(String(pool.organiserTipUsd ?? 0));
@@ -2099,7 +2107,8 @@ function EditPoolModal({
   });
   const tests = editedTests ?? loadedTests;
   const selectedTests = tests.filter(test => test.selected !== false);
-  const extraVialCost = selectedTests.length > 0 ? Math.max(0, selectedTests[0].quantity - 1) * 60 : 0;
+  const vialAmount = tests[0]?.quantity ?? 1;
+  const extraVialCost = selectedTests.length > 0 ? Math.max(0, selectedTests[0].quantity - 1) * Number(extraVialPriceUsd || 0) : 0;
   const goalPreview = selectedTests.reduce((sum, test) => sum + test.unitPriceUsd, 0)
     + extraVialCost
     + Number(vialCostUsd || 0) + Number(shippingCostUsd || 0) + Number(organiserTipUsd || 0);
@@ -2113,7 +2122,7 @@ function EditPoolModal({
     const code = newTestCode.trim();
     const price = Number(newTestPrice);
     if (!name || !code || !Number.isFinite(price) || price < 0 || tests.some(t => t.code.toLowerCase() === code.toLowerCase())) return;
-    setEditedTests(current => [...(current ?? loadedTests), { catalogId: undefined, code, name, unitPriceUsd: price, quantity: 1 }]);
+    setEditedTests(current => [...(current ?? loadedTests), { catalogId: undefined, code, name, unitPriceUsd: price, quantity: vialAmount }]);
     setNewTestName("");
     setNewTestCode("");
     setNewTestPrice("");
@@ -2200,9 +2209,13 @@ function EditPoolModal({
     if (fixedFeeEnabled && (!fixedFeeValue || isNaN(parseFloat(fixedFeeValue)))) {
       toast({ title: "Enter a valid fixed fee", variant: "destructive" }); return;
     }
-    const moneyFields = { namedReportPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd };
+    const moneyFields = { namedReportPriceUsd, extraVialPriceUsd, vialCostUsd, shippingCostUsd, organiserTipUsd };
     if (Object.entries(moneyFields).some(([field, value]) => value.trim() !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0) || field === "namedReportPriceUsd" && (!value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0))) {
       toast({ title: "Enter valid nonnegative pool costs", variant: "destructive" }); return;
+    }
+    if (!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(extraVialPriceUsd) || Number(extraVialPriceUsd) > 99_999_999.99
+      || !/^[1-9]\d*$/.test(maxVialCount) || Number(maxVialCount) > 20 || vialAmount > Number(maxVialCount)) {
+      toast({ title: "Check the extra-vial price and vial limit", variant: "destructive" }); return;
     }
     const accessCodeRequired = inviteOnly && !pool.inviteOnly && !accessCode.trim();
     if (accessCodeRequired) { toast({ title: "Access code required", variant: "destructive" }); return; }
@@ -2214,6 +2227,8 @@ function EditPoolModal({
       manufacturer: manufacturer.trim(),
       labName: labName.trim() || null,
       namedReportPriceUsd: Number(namedReportPriceUsd),
+      extraVialPriceUsd: Number(extraVialPriceUsd),
+      maxVialCount: Number(maxVialCount),
       vialCostUsd: vialCostUsd.trim() ? Number(vialCostUsd) : 0,
       shippingCostUsd: shippingCostUsd.trim() ? Number(shippingCostUsd) : 0,
       organiserTipUsd: organiserTipUsd.trim() ? Number(organiserTipUsd) : 0,
@@ -2305,7 +2320,30 @@ function EditPoolModal({
           </section>
 
           <section className="space-y-3">
-            <p className={SECTION_LABEL}>Pool-wide costs (USD)</p>
+            <p className={SECTION_LABEL}>Vials &amp; pool-wide costs (USD)</p>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>One vial is included in the test prices. Set how many the pool needs and charge for extra vials only once.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <label className="text-[11px] font-semibold">Maximum vial count
+                <input aria-label="Maximum vial count" type="number" min="1" max="20" step="1" value={maxVialCount} onChange={e => {
+                  setMaxVialCount(e.target.value);
+                  const max = Number(e.target.value);
+                  if (Number.isInteger(max) && max >= 1 && max < vialAmount && !testsLoadError && !testsLoading)
+                    setEditedTests(tests.map(t => ({ ...t, quantity: max })));
+                }} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} />
+              </label>
+              <label className="text-[11px] font-semibold">Vials planned
+                <select aria-label="Vials planned" disabled={testsLoading || testsLoadError} value={vialAmount} onChange={e =>
+                  setEditedTests(tests.map(t => ({ ...t, quantity: Number(e.target.value) })))
+                } className={INPUT_CLS + " mt-1"} style={INPUT_STYLE}>
+                  {Array.from({ length: Math.min(20, Math.max(vialAmount, Number(maxVialCount) || 1)) }, (_, i) => i + 1).map(n =>
+                    <option key={n} value={n}>{n} vial{n === 1 ? "" : "s"}</option>)}
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold">Price per extra vial
+                <input aria-label="Price per extra vial" type="number" min="0" step="0.01" value={extraVialPriceUsd} onChange={e => setExtraVialPriceUsd(e.target.value)} className={INPUT_CLS + " mt-1"} style={INPUT_STYLE} />
+              </label>
+            </div>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>{Math.max(0, vialAmount - 1)} extra vial{vialAmount === 2 ? "" : "s"} × ${Number(extraVialPriceUsd || 0).toFixed(2)} = ${extraVialCost.toFixed(2)}</p>
             <p className="text-xs" style={{ color: "var(--t-muted)" }}>
               Enter each amount once for the whole pool. If the test price already includes the vial, shipping, or tip, leave that field at $0.
             </p>

@@ -69,6 +69,8 @@ type PoolDetail = AdminPool & {
   votingMode: string | null;
   labName?: string | null;
   namedReportPriceUsd?: number | string | null;
+  extraVialPriceUsd?: number | string | null;
+  maxVialCount?: number | null;
   vialCostUsd?: number | string | null;
   shippingCostUsd?: number | string | null;
   organiserTipUsd?: number | string | null;
@@ -125,6 +127,8 @@ type PoolFormState = {
   resultPdfUrl: string;
   fixedOptInFeeUsd: string;
   namedReportPriceUsd: string;
+  extraVialPriceUsd: string;
+  maxVialCount: string;
   vialCostUsd: string;
   shippingCostUsd: string;
   organiserTipUsd: string;
@@ -152,7 +156,7 @@ const BLANK_FORM: PoolFormState = {
   capColor: "", mgSize: "", manufacturingDate: "", imageUrl: "",
   status: "draft", approvalStatus: "approved", votingMode: "leader_decides",
   resultNotes: "", resultPdfUrl: "", fixedOptInFeeUsd: "",
-  namedReportPriceUsd: "30", vialCostUsd: "0", shippingCostUsd: "0", organiserTipUsd: "0",
+  namedReportPriceUsd: "30", extraVialPriceUsd: "60", maxVialCount: "4", vialCostUsd: "0", shippingCostUsd: "0", organiserTipUsd: "0",
   inviteOnly: false, accessCode: "",
   contributorNamedReportEnabled: false, stopOnFunded: false,
   allowVialContribution: false, namedReportCap: "", pageMessage: "",
@@ -447,10 +451,15 @@ function PoolFormModal({
     && (!Number.isFinite(Number(form.fixedOptInFeeUsd)) || Number(form.fixedOptInFeeUsd) < 1);
   const amountsInvalid = [
     form.namedReportPriceUsd,
+    form.extraVialPriceUsd,
     form.vialCostUsd,
     form.shippingCostUsd,
     form.organiserTipUsd,
   ].some(value => value !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0));
+  const vialSettingsInvalid = !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(form.extraVialPriceUsd)
+    || Number(form.extraVialPriceUsd) > 99_999_999.99
+    || !/^[1-9]\d*$/.test(form.maxVialCount) || Number(form.maxVialCount) > 20
+    || tests.some(test => test.quantity > Number(form.maxVialCount));
 
   useEffect(() => {
     setForm(initialForm);
@@ -474,7 +483,7 @@ function PoolFormModal({
 
   function addCatalogTest(entry: CatalogEntry) {
     if (tests.some(t => t.code === entry.code)) return;
-    setTests(ts => [...ts, { code: entry.code, name: entry.name, unitPriceUsd: entry.defaultPriceUsd, quantity: 1, selected: true, catalogId: entry.id }]);
+    setTests(ts => [...ts, { code: entry.code, name: entry.name, unitPriceUsd: entry.defaultPriceUsd, quantity: ts[0]?.quantity ?? 1, selected: true, catalogId: entry.id }]);
   }
 
   function addCustomTest() {
@@ -482,7 +491,7 @@ function PoolFormModal({
     const name = newTestName.trim();
     const price = Number(newTestPrice);
     if (!code || !name || !Number.isFinite(price) || price < 0 || tests.some(t => t.code.toLowerCase() === code.toLowerCase())) return;
-    setTests(ts => [...ts, { code, name, unitPriceUsd: price, quantity: 1, selected: true, catalogId: null }]);
+    setTests(ts => [...ts, { code, name, unitPriceUsd: price, quantity: ts[0]?.quantity ?? 1, selected: true, catalogId: null }]);
     setNewTestCode("");
     setNewTestName("");
     setNewTestPrice("");
@@ -806,6 +815,27 @@ function PoolFormModal({
 
           {section === "settings" && (
             <div className="space-y-3">
+              <div className="rounded-xl border p-3 space-y-2.5" style={{ borderColor: CARD_BORDER, background: "#F8FAFC" }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: LABEL }}>Vials &amp; funding goal</p>
+                <p className="text-[11px]" style={{ color: MUTED }}>The first vial is covered by test prices. Extra vials are charged once per pool.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <F label="Maximum vial count"><I aria-label="Maximum vial count" type="number" min="1" max="20" step="1" value={form.maxVialCount} onChange={e => {
+                    setF("maxVialCount", e.target.value);
+                    const max = Number(e.target.value);
+                    if (Number.isInteger(max) && max >= 1 && tests.some(t => t.quantity > max))
+                      setTests(ts => ts.map(t => ({ ...t, quantity: max })));
+                  }} /></F>
+                  <F label="Vials planned"><select aria-label="Vials planned" value={tests[0]?.quantity ?? 1} onChange={e => setTests(ts => ts.map(t => ({ ...t, quantity: Number(e.target.value) })))} className={inp + " w-full"} style={inpStyle}>
+                    {Array.from({ length: Math.min(20, Math.max(tests[0]?.quantity ?? 1, Number(form.maxVialCount) || 1)) }, (_, i) => i + 1).map(n =>
+                      <option key={n} value={n}>{n} vial{n === 1 ? "" : "s"}</option>)}
+                  </select></F>
+                  <F label="Price per extra vial (USD)"><I aria-label="Price per extra vial" type="number" min="0" step="0.01" value={form.extraVialPriceUsd} onChange={e => setF("extraVialPriceUsd", e.target.value)} /></F>
+                </div>
+                <p className="text-[11px]" style={{ color: MUTED }}>
+                  {Math.max(0, (tests[0]?.quantity ?? 1) - 1)} extra × ${Number(form.extraVialPriceUsd || 0).toFixed(2)} = ${(Math.max(0, (tests[0]?.quantity ?? 1) - 1) * Number(form.extraVialPriceUsd || 0)).toFixed(2)}
+                </p>
+                {vialSettingsInvalid && <p role="alert" className="text-xs font-medium text-red-600">Use a nonnegative price (two decimal places) and a maximum of 1–20 vials.</p>}
+              </div>
               <F label="Voting Mode">
                 <S value={form.votingMode} onChange={e => setF("votingMode", e.target.value)}>
                   <option value="leader_decides">Leader decides</option>
@@ -940,7 +970,7 @@ function PoolFormModal({
               .filter(([, url]) => url.trim())
               .map(([poolTestId, resultPdfUrl]) => ({ poolTestId, resultPdfUrl }));
             onSubmit(form, tests, perTestResults, perTestJanoshikUrls, initialTests);
-          }} disabled={isPending || !form.title.trim() || accessCodeRequired || fixedFeeInvalid || amountsInvalid}>
+          }} disabled={isPending || !form.title.trim() || accessCodeRequired || fixedFeeInvalid || amountsInvalid || vialSettingsInvalid}>
             {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             {modalTitle.startsWith("Create") ? "Create Pool" : "Save Changes"}
           </BrandBtn>
@@ -1134,6 +1164,8 @@ function poolDetailToForm(data: PoolDetail): PoolFormState {
     resultPdfUrl: data.resultPdfUrl ?? "",
     fixedOptInFeeUsd: data.fixedOptInFeeUsd ?? "",
     namedReportPriceUsd: String(data.namedReportPriceUsd ?? 30),
+    extraVialPriceUsd: String(data.extraVialPriceUsd ?? 60),
+    maxVialCount: String(data.maxVialCount ?? 4),
     vialCostUsd: String(data.vialCostUsd ?? 0),
     shippingCostUsd: String(data.shippingCostUsd ?? 0),
     organiserTipUsd: String(data.organiserTipUsd ?? 0),
@@ -1204,6 +1236,8 @@ function PoolsPanel({ headers, secret }: { headers: HeadersInit; secret: string 
           ...form,
           labName: form.labName.trim() || null,
           namedReportPriceUsd: Number(form.namedReportPriceUsd || 0),
+          extraVialPriceUsd: Number(form.extraVialPriceUsd),
+          maxVialCount: Number(form.maxVialCount),
           vialCostUsd: Number(form.vialCostUsd || 0),
           shippingCostUsd: Number(form.shippingCostUsd || 0),
           organiserTipUsd: Number(form.organiserTipUsd || 0),
@@ -1258,6 +1292,8 @@ function PoolsPanel({ headers, secret }: { headers: HeadersInit; secret: string 
         resultPdfUrl: form.resultPdfUrl || null,
         fixedOptInFeeUsd: form.fixedOptInFeeUsd === "" ? null : form.fixedOptInFeeUsd,
         namedReportPriceUsd: Number(form.namedReportPriceUsd || 0),
+        extraVialPriceUsd: Number(form.extraVialPriceUsd),
+        maxVialCount: Number(form.maxVialCount),
         vialCostUsd: Number(form.vialCostUsd || 0),
         shippingCostUsd: Number(form.shippingCostUsd || 0),
         organiserTipUsd: Number(form.organiserTipUsd || 0),

@@ -224,6 +224,8 @@ async function runStartupMigrations(): Promise<void> {
     // standalone testing-pool costs and invite-only access
     await db.execute(sql`ALTER TABLE testing_pools ADD COLUMN IF NOT EXISTS lab_name text`);
     await db.execute(sql`ALTER TABLE testing_pools ADD COLUMN IF NOT EXISTS named_report_price_usd numeric(10,2) NOT NULL DEFAULT 30`);
+    await db.execute(sql`ALTER TABLE testing_pools ADD COLUMN IF NOT EXISTS extra_vial_price_usd numeric(10,2) NOT NULL DEFAULT 60`);
+    await db.execute(sql`ALTER TABLE testing_pools ADD COLUMN IF NOT EXISTS max_vial_count integer NOT NULL DEFAULT 4`);
     await db.execute(sql`ALTER TABLE testing_pools ADD COLUMN IF NOT EXISTS vial_cost_usd numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE testing_pools ADD COLUMN IF NOT EXISTS shipping_cost_usd numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE testing_pools ADD COLUMN IF NOT EXISTS organiser_tip_usd numeric(10,2) NOT NULL DEFAULT 0`);

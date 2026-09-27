@@ -19,6 +19,7 @@
 - [Lab test preview embeddability](lab-test-preview-embeddability.md) — Janoshik: Cloudflare+SAMEORIGIN → link only. Uzorak: no X-Frame-Options → iframe directly when no snapshot/pdf.
 - [Janoshik import via browser helper](janoshik-cloudflare-import.md) — Janoshik Cloudflare-blocks server fetches (403); import only via admin bookmarklet → receiver → bookmarklet-import; single + bulk (2-tab postMessage worker, same-host only); preview/proxy prefer stored blob.
 - [Testing pool mobile overflow](testing-pool-mobile-overflow.md) — TestingPool/GbTestingPool wrap in overflow-x-hidden (clips, not scrolls); long compound labels get cut off → need min-w-0+break-words; use lg:grid-cols-2 not md:.
+- [Testing pool vial funding semantics](testing-pool-vial-funding.md) — extra-vial pricing increases the shared funding goal once, not each contributor's payment; selected vial count is pool-wide.
 - [Lab certificate compression](lab-cert-compression.md) — all pdfBlob writes funnel through prepareCertificateForStorage (→WebP q85); compress stored bytes only, extract on originals; idempotent via ≤90% keep rule.
 - [Lab-test list endpoints exclude pdfBlob](lab-tests-list-no-blob.md) — list/bulk lab_tests queries must project columns explicitly and omit pdfBlob; bare select() bloats response to ~105MB and silently breaks /tests page. Images load via /proxy.
 - [Wholesale share status races](wholesale-share-status-races.md) — lock/cancel/submit/delivery writes each need conditional status-gated updates (→409); only the chosen recipient sets the address.
