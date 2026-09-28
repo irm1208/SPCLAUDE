@@ -487,24 +487,21 @@ describe("plain SQL database backup production orchestration", () => {
       .not.toContain(databaseUrl);
   });
 
-  it("reconciles a retained SQL backup already present in Drive without reuploading", async () => {
-    const upload = vi.fn();
+  it("revalidates retained SQL by uploading or reusing its verified manifest set", async () => {
+    const upload = vi.fn(async () => ({ id: "manifest" }));
     const unlink = vi.fn(async () => undefined);
     const recovered = await uploadRetainedPlainBackups({
       backupDir: "/tmp/backups",
       fileNames: ["notes.txt", "S&PBACKUP-2026-09-02_10-40-11.SQL"],
-      stat: vi.fn(async () => ({ size: 123 })),
-      findRemote: vi.fn(async () => [{
-        id: "existing",
-        name: "S&PBACKUP-2026-09-02_10-40-11.SQL",
-        size: "123",
-      }]),
       upload,
       unlink,
     });
 
     expect(recovered).toBe(1);
-    expect(upload).not.toHaveBeenCalled();
+    expect(upload).toHaveBeenCalledWith(
+      "/tmp/backups/S&PBACKUP-2026-09-02_10-40-11.SQL",
+      "S&PBACKUP-2026-09-02_10-40-11.SQL",
+    );
     expect(unlink).toHaveBeenCalledWith(
       "/tmp/backups/S&PBACKUP-2026-09-02_10-40-11.SQL",
     );
@@ -515,8 +512,6 @@ describe("plain SQL database backup production orchestration", () => {
     const options = {
       backupDir: "/tmp/backups",
       fileNames: ["S&PBACKUP-2026-09-02_10-40-11.SQL"],
-      stat: vi.fn(async () => ({ size: 123 })),
-      findRemote: vi.fn(async () => []),
       upload: vi.fn(async () => { throw new Error("Drive unavailable"); }),
       unlink,
     };

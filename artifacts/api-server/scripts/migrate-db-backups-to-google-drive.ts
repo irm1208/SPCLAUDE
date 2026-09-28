@@ -3,9 +3,6 @@ import { basename, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import {
   discoverLegacyBackupFiles,
-  findGoogleDriveBackupsByName,
-  findMatchingDriveBackup,
-  migrationAction,
   uploadBackupToGoogleDrive,
 } from "../src/lib/google-drive-backup";
 
@@ -79,44 +76,15 @@ async function main(): Promise<void> {
     const prefix = `[db-backup-migration] [${index + 1}/${files.length}] ${fileName}`;
 
     try {
-      const remoteFiles = await findGoogleDriveBackupsByName(fileName);
-      const action = migrationAction(expectedSize, remoteFiles);
-
-      if (action === "conflict") {
-        summary.conflictFiles += 1;
-        console.error(
-          `${prefix}: conflict — Drive has the same name with a different byte size; local file retained`,
-        );
-        continue;
-      }
-
-      if (action === "already_migrated") {
-        const matching = findMatchingDriveBackup(remoteFiles, fileName, expectedSize);
-        if (!matching) {
-          throw new Error("matching file disappeared during verification");
-        }
-        summary.alreadyMigratedFiles += 1;
-        summary.alreadyMigratedBytes += expectedSize;
-        if (dryRun) {
-          console.log(`${prefix}: already_migrated (${expectedSize} bytes); would delete local file`);
-        } else {
-          await unlink(filePath);
-          console.log(
-            `${prefix}: already_migrated and verified as Drive file ${matching.id}; local file deleted`,
-          );
-        }
-        continue;
-      }
-
       if (dryRun) {
         console.log(`${prefix}: would_upload (${expectedSize} bytes)`);
         continue;
       }
 
       const uploaded = await uploadBackupToGoogleDrive(filePath, fileName);
-      if (uploaded.name !== fileName || Number(uploaded.size) !== expectedSize) {
+      if (uploaded.name !== `${fileName}.manifest.json`) {
         throw new Error(
-          `post-upload verification mismatch: expected ${expectedSize}, got ${uploaded.size ?? "unknown"}`,
+          `post-upload verification mismatch: expected committed manifest, got ${uploaded.name}`,
         );
       }
       await unlink(filePath);

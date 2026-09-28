@@ -9,7 +9,7 @@ import { createGunzip } from "node:zlib";
 import { pool } from "@workspace/db";
 import { decryptBackupToStream, parseBackupEncryptionKey } from "./backup-encryption";
 import { startDisposablePostgres, type DisposablePostgres } from "./disposable-postgres";
-import { downloadGoogleDriveBackup, isSupportedBackupName, listGoogleDriveBackups, selectNewestBackup, type DriveBackupFile } from "./google-drive-backup";
+import { downloadGoogleDriveBackup, downloadGoogleDriveSqlBackup, isSupportedBackupName, listGoogleDriveBackups, selectNewestBackup, type DriveBackupFile } from "./google-drive-backup";
 import { validateRestoredDatabase, type RestoreValidationResult } from "./db-restore-validation";
 import { writeLog } from "./audit-log";
 import { createAlert } from "./create-alert";
@@ -162,7 +162,11 @@ async function allocateDriveDownloadPath(): Promise<string> {
 }
 
 async function downloadDriveBackup(backup: DriveBackupFile, path: string): Promise<void> {
-  await downloadGoogleDriveBackup(backup.id, path);
+  if (backup.name.endsWith(".SQL.manifest.json")) {
+    await downloadGoogleDriveSqlBackup(backup, path);
+  } else {
+    await downloadGoogleDriveBackup(backup.id, path);
+  }
 }
 
 export function createVerificationAdvisoryLock(lockPool: {

@@ -19,10 +19,7 @@ import { join } from "path";
 import { pool } from "@workspace/db";
 import {
   buildPlainDriveBackupFileName,
-  findGoogleDriveBackupsByName,
-  findMatchingDriveBackup,
   uploadBackupToGoogleDrive,
-  type DriveBackupFile,
 } from "./google-drive-backup";
 import { buildPgDumpArgs } from "./db-backup-command";
 import { encryptBackupStream, parseBackupEncryptionKey } from "./backup-encryption";
@@ -169,8 +166,6 @@ export interface PlainBackupAttemptOptions extends PlainBackupOptions {
 export interface RetainedPlainBackupOptions {
   backupDir: string;
   fileNames: string[];
-  stat: (path: string) => Promise<{ size: number }>;
-  findRemote: (fileName: string) => Promise<DriveBackupFile[]>;
   upload: (filePath: string, fileName: string) => Promise<{ id: string }>;
   unlink: (path: string) => Promise<void>;
 }
@@ -305,11 +300,9 @@ export async function uploadRetainedPlainBackups(
     .sort();
   for (const fileName of retained) {
     const filePath = join(options.backupDir, fileName);
-    const { size } = await options.stat(filePath);
-    const remoteFiles = await options.findRemote(fileName);
-    if (!findMatchingDriveBackup(remoteFiles, fileName, size)) {
-      await options.upload(filePath, fileName);
-    }
+    // Upload owns part/manifest verification and safely resumes matching parts.
+    // Size-only matches to legacy raw SQL objects are not backup commits.
+    await options.upload(filePath, fileName);
     await options.unlink(filePath);
     recovered += 1;
   }
@@ -321,8 +314,6 @@ async function reconcileRetainedPlainBackups(): Promise<number> {
   return uploadRetainedPlainBackups({
     backupDir: BACKUP_DIR,
     fileNames: await promisify(readdir)(BACKUP_DIR),
-    stat: (path) => promisify(stat)(path),
-    findRemote: findGoogleDriveBackupsByName,
     upload: uploadBackupToGoogleDrive,
     unlink: (path) => promisify(unlink)(path),
   });

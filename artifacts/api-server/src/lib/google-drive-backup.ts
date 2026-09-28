@@ -1,18 +1,30 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { createReadStream, createWriteStream, openAsBlob } from "fs";
-import { rename, stat, unlink } from "fs/promises";
+import { chmod, mkdtemp, readFile, rename, rm, stat, unlink, writeFile } from "fs/promises";
 import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
-import { Readable } from "stream";
+import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
-import { createGzip } from "zlib";
+import { createGunzip, createGzip } from "zlib";
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import {
+  buildSqlBackupManifestName,
+  buildSqlBackupManifestSegmentName,
+  buildSqlBackupPartName,
+  parseSqlBackupManifestSegment,
+  parseSqlBackupRootManifest,
+  SQL_BACKUP_MANIFEST_SEGMENT_PARTS,
+  SQL_BACKUP_PART_MAX_TRANSPORT_SIZE,
+  SQL_BACKUP_PART_SIZE,
+  type SqlBackupManifestPart,
+  type SqlBackupManifestSegmentReference,
+} from "./google-drive-backup-manifest";
 
 export const DRIVE_BACKUP_FOLDER_NAME = "Salt & Peps Database Backups";
 export const DRIVE_BACKUP_FILE_PREFIX = "S&PBACKUP-";
 export const DRIVE_BACKUP_FILE_SUFFIX = ".sql.gz.enc";
 export const DRIVE_BACKUP_MIME_TYPE = "application/octet-stream";
-const PLAIN_SQL_MIME_TYPE = "application/sql";
+const PLAIN_SQL_MIME_TYPE = "application/octet-stream";
 
 const DRIVE_CONNECTOR = "google-drive";
 const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
@@ -23,10 +35,7 @@ const PLAIN_SQL_CHUNK_SIZE_STEP = 256 * 1024;
 const PLAIN_SQL_MIN_CHUNK_SIZE = 256 * 1024;
 
 function shrinkPlainSqlChunkSize(currentSize: number): number {
-  return Math.max(
-    PLAIN_SQL_MIN_CHUNK_SIZE,
-    Math.floor((currentSize / 2) / PLAIN_SQL_CHUNK_SIZE_STEP) * PLAIN_SQL_CHUNK_SIZE_STEP,
-  );
+  return Math.max(PLAIN_SQL_MIN_CHUNK_SIZE, Math.floor((currentSize / 2) / PLAIN_SQL_CHUNK_SIZE_STEP) * PLAIN_SQL_CHUNK_SIZE_STEP);
 }
 
 export interface DriveBackupFile {
@@ -37,6 +46,8 @@ export interface DriveBackupFile {
   modifiedTime?: string;
   parents?: string[];
   trashed?: boolean;
+  /** Google Drive API returns md5Checksum as 32 lowercase hexadecimal characters. */
+  md5Checksum?: string;
 }
 
 export function buildDriveBackupFileName(date: Date = new Date()): string {
@@ -60,7 +71,7 @@ export function buildPlainDriveBackupFileName(date: Date = new Date()): string {
 export function isSupportedBackupName(fileName: string): boolean {
   const timestamp = "\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}";
   return new RegExp(
-    `^${DRIVE_BACKUP_FILE_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${timestamp}(?:\\.sql\\.gz\\.enc|\\.SQL)$`,
+    `^${DRIVE_BACKUP_FILE_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${timestamp}(?:\\.sql\\.gz\\.enc|\\.SQL(?:\\.manifest\\.json)?)$`,
   ).test(fileName);
 }
 
@@ -99,15 +110,27 @@ export function buildDriveTransportHeaders(encryptedSize: number): Record<string
   };
 }
 
+/** Headers for a complete compressed part object (never a partial content range). */
 export function buildPlainDriveTransportHeaders(
-  originalSize: number,
+  _originalSize: number,
+  transportSize: number,
+): Record<string, string> {
+  return {
+    "Content-Type": DRIVE_BACKUP_MIME_TYPE,
+    "Content-Length": String(transportSize),
+  };
+}
+
+function buildPlainDriveResumableChunkHeaders(
+  totalSize: number,
+  start: number,
+  endExclusive: number,
   transportSize: number,
 ): Record<string, string> {
   return {
     "Content-Type": PLAIN_SQL_MIME_TYPE,
-    "Content-Encoding": "gzip",
     "Content-Length": String(transportSize),
-    "Content-Range": `bytes 0-${originalSize - 1}/${originalSize}`,
+    "Content-Range": `bytes ${start}-${endExclusive - 1}/${totalSize}`,
   };
 }
 
@@ -127,20 +150,6 @@ function committedDriveUploadBytes(response: Response, totalSize: number): numbe
   if (!match) return 0;
   const end = Number(match[2]);
   return Number.isSafeInteger(end) && end >= 0 && end < totalSize ? end + 1 : 0;
-}
-
-function buildPlainDriveResumableChunkHeaders(
-  totalSize: number,
-  start: number,
-  endExclusive: number,
-  transportSize: number,
-): Record<string, string> {
-  return {
-    "Content-Type": PLAIN_SQL_MIME_TYPE,
-    "Content-Encoding": "gzip",
-    "Content-Length": String(transportSize),
-    "Content-Range": `bytes ${start}-${endExclusive - 1}/${totalSize}`,
-  };
 }
 
 export function isRetryableDriveUploadStatus(status: number): boolean {
@@ -204,6 +213,58 @@ async function createPlainSqlChunkTransportFile(
     await unlink(transportPath).catch(() => undefined);
     throw error;
   }
+}
+
+async function createSqlPartTransportFile(
+  sourcePath: string,
+  transportPath: string,
+  start: number,
+  endExclusive: number,
+  totalSqlHash: ReturnType<typeof createHash>,
+): Promise<{ sqlSize: number; sqlSha256: string; compressedSize: number; compressedMd5: string }> {
+  const sqlHash = createHash("sha256");
+  await pipeline(
+    createReadStream(sourcePath, { start, end: endExclusive - 1 }),
+    new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        sqlHash.update(chunk);
+        totalSqlHash.update(chunk);
+        callback(null, chunk);
+      },
+    }),
+    createGzip(),
+    createWriteStream(transportPath, { flags: "wx", mode: 0o600 }),
+  );
+  const compressedHash = createHash("md5");
+  await pipeline(
+    createReadStream(transportPath),
+    new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        compressedHash.update(chunk);
+        callback(null, chunk);
+      },
+    }),
+    new Transform({ transform(_chunk, _encoding, callback) { callback(); } }),
+  );
+  const compressedSize = (await stat(transportPath)).size;
+  return {
+    sqlSize: endExclusive - start,
+    sqlSha256: sqlHash.digest("hex"),
+    compressedSize,
+    compressedMd5: compressedHash.digest("hex"),
+  };
+}
+
+async function hashFile(path: string, algorithm: "sha256" | "md5"): Promise<string> {
+  const hash = createHash(algorithm);
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+async function privateTemporaryDirectory(parentPath: string, prefix: string): Promise<string> {
+  const directory = await mkdtemp(join(parentPath, prefix));
+  await chmod(directory, 0o700);
+  return directory;
 }
 
 async function responseError(response: Response, action: string): Promise<never> {
@@ -276,19 +337,26 @@ class GoogleDriveBackupStorage {
 
   async findFilesByName(fileName: string): Promise<DriveBackupFile[]> {
     const folderId = await this.getFolderId();
-    const params = new URLSearchParams({
-      q: [
-        `'${escapeDriveQueryValue(folderId)}' in parents`,
-        `name = '${escapeDriveQueryValue(fileName)}'`,
-        "trashed = false",
-      ].join(" and "),
-      fields: "files(id,name,size,mimeType,modifiedTime,parents,trashed)",
-      pageSize: "100",
-    });
-    const response = await this.connectors.proxy(DRIVE_CONNECTOR, driveFilesPath(params));
-    if (!response.ok) return responseError(response, `Finding Drive files named ${fileName}`);
-    const body = (await response.json()) as { files?: DriveBackupFile[] };
-    return body.files ?? [];
+    const files: DriveBackupFile[] = [];
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({
+        q: [
+          `'${escapeDriveQueryValue(folderId)}' in parents`,
+          `name = '${escapeDriveQueryValue(fileName)}'`,
+          "trashed = false",
+        ].join(" and "),
+        fields: "nextPageToken,files(id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed)",
+        pageSize: "100",
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+      const response = await this.connectors.proxy(DRIVE_CONNECTOR, driveFilesPath(params));
+      if (!response.ok) return responseError(response, `Finding Drive files named ${fileName}`);
+      const body = (await response.json()) as { files?: DriveBackupFile[]; nextPageToken?: string };
+      files.push(...(body.files ?? []));
+      pageToken = body.nextPageToken;
+    } while (pageToken);
+    return files;
   }
 
   async listBackups(): Promise<DriveBackupFile[]> {
@@ -298,7 +366,7 @@ class GoogleDriveBackupStorage {
     do {
       const params = new URLSearchParams({
         q: [`'${escapeDriveQueryValue(folderId)}' in parents`, "trashed = false"].join(" and "),
-        fields: "nextPageToken,files(id,name,size,mimeType,modifiedTime,parents,trashed)",
+        fields: "nextPageToken,files(id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed)",
         pageSize: "100",
         orderBy: "modifiedTime desc",
       });
@@ -317,7 +385,7 @@ class GoogleDriveBackupStorage {
 
   async getFile(fileId: string): Promise<DriveBackupFile> {
     const params = new URLSearchParams({
-      fields: "id,name,size,mimeType,modifiedTime,parents,trashed",
+      fields: "id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed",
     });
     const response = await this.connectors.proxy(
       DRIVE_CONNECTOR,
@@ -327,7 +395,253 @@ class GoogleDriveBackupStorage {
     return (await response.json()) as DriveBackupFile;
   }
 
+  private async uploadCompleteObject(
+    filePath: string,
+    fileName: string,
+    expectedSize: number,
+    expectedMd5: string,
+  ): Promise<DriveBackupFile> {
+    const findCommittedObject = async (): Promise<DriveBackupFile | null> => {
+      const matches = await this.findFilesByName(fileName);
+      if (!matches.length) return null;
+      if (matches.length !== 1 ||
+          Number(matches[0]?.size) !== expectedSize ||
+          matches[0]?.md5Checksum !== expectedMd5) {
+        throw new Error(`Google Drive file name conflict: ${fileName}`);
+      }
+      return matches[0]!;
+    };
+
+    for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+      const committed = await findCommittedObject();
+      if (committed) return committed;
+      let uploadResponse: Response | undefined;
+      try {
+        const folderId = await this.getFolderId();
+        const initResponse = await this.connectors.proxy(
+          DRIVE_CONNECTOR,
+          "/upload/drive/v3/files?uploadType=resumable",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json; charset=UTF-8",
+              "X-Upload-Content-Type": DRIVE_BACKUP_MIME_TYPE,
+              "X-Upload-Content-Length": String(expectedSize),
+            },
+            body: JSON.stringify({
+              name: fileName,
+              mimeType: DRIVE_BACKUP_MIME_TYPE,
+              parents: [folderId],
+            }),
+          },
+        );
+        if (!initResponse.ok) {
+          if (!isRetryableDriveUploadStatus(initResponse.status)) {
+            return responseError(initResponse, `Starting Google Drive upload for ${fileName}`);
+          }
+          await initResponse.arrayBuffer().catch(() => new ArrayBuffer(0));
+        } else {
+          const location = initResponse.headers.get("location");
+          if (!location) throw new Error("Google Drive did not return a resumable upload location");
+          const uploadUrl = new URL(location);
+          const blob = await openAsBlob(filePath, { type: DRIVE_BACKUP_MIME_TYPE });
+          uploadResponse = await this.connectors.proxy(
+            DRIVE_CONNECTOR,
+            `${uploadUrl.pathname}${uploadUrl.search}`,
+            {
+              method: "PUT",
+              headers: {
+                "Content-Type": DRIVE_BACKUP_MIME_TYPE,
+                "Content-Length": String(expectedSize),
+                "Content-Range": `bytes 0-${expectedSize - 1}/${expectedSize}`,
+              },
+              body: blob,
+            },
+          );
+          if (uploadResponse.status === 200 || uploadResponse.status === 201) {
+            const uploaded = (await uploadResponse.json().catch(() => ({}))) as { id?: string };
+            if (!uploaded.id) throw new Error("Google Drive completed the upload without returning a file ID");
+            const verified = await this.getFile(uploaded.id);
+            if (verified.name !== fileName ||
+                Number(verified.size) !== expectedSize ||
+                verified.md5Checksum !== expectedMd5) {
+              throw new Error(`Google Drive verification failed for ${fileName}`);
+            }
+            return verified;
+          }
+          // A 308 can indicate a committed prefix. This connector's gateway rejects
+          // every suffix-range continuation, so never resume this session.
+          if (uploadResponse.status !== 308 && !isRetryableDriveUploadStatus(uploadResponse.status)) {
+            return responseError(uploadResponse, `Uploading complete Google Drive object ${fileName}`);
+          }
+          await uploadResponse.arrayBuffer().catch(() => new ArrayBuffer(0));
+        }
+      } catch (error) {
+        if (!isRetryableDriveUploadException(error)) throw error;
+      }
+
+      const completedAfterLostResponse = await findCommittedObject();
+      if (completedAfterLostResponse) return completedAfterLostResponse;
+      if (attempt === MAX_UPLOAD_ATTEMPTS) break;
+      await sleep(Math.min(1_000 * 2 ** (attempt - 1), 16_000));
+    }
+    throw new Error(`Google Drive complete-object upload did not finish after retries: ${fileName}`);
+  }
+
+  private async uploadSqlManifest(filePath: string, sqlFileName: string): Promise<DriveBackupFile> {
+    const sourceStats = await stat(filePath);
+    const originalSha256 = await hashFile(filePath, "sha256");
+    const segmentedSqlHash = createHash("sha256");
+    const temporaryDirectory = await privateTemporaryDirectory(tmpdir(), "sp-sql-backup-parts-");
+    let currentParts: SqlBackupManifestPart[] = [];
+    let nextSegmentIndex = 1;
+    let nextPartIndex = 1;
+    const segmentReferences: SqlBackupManifestSegmentReference[] = [];
+    const uploadSegment = async (): Promise<void> => {
+      if (currentParts.length === 0) return;
+      const segmentName = buildSqlBackupManifestSegmentName(sqlFileName, nextSegmentIndex);
+      const segmentPath = join(temporaryDirectory, `segment-${String(nextSegmentIndex).padStart(6, "0")}.json`);
+      const segment = {
+        version: 1,
+        format: "salt-peps-sql-manifest-segment",
+        sqlFileName,
+        index: nextSegmentIndex,
+        parts: currentParts,
+      };
+      await writeFile(segmentPath, JSON.stringify(segment), { flag: "wx", mode: 0o600 });
+      const segmentSize = (await stat(segmentPath)).size;
+      const segmentSha256 = await hashFile(segmentPath, "sha256");
+      if (segmentSize > 1024 * 1024) {
+        throw new Error(`SQL backup manifest segment exceeds size limit: ${segmentName}`);
+      }
+      const existing = await this.findFilesByName(segmentName);
+      let remote: DriveBackupFile;
+      if (existing.length) {
+        if (existing.length !== 1 ||
+            Number(existing[0]?.size) !== segmentSize ||
+            existing[0]?.md5Checksum !== await hashFile(segmentPath, "md5")) {
+          throw new Error(`Google Drive SQL backup manifest segment conflict: ${segmentName}`);
+        }
+        remote = existing[0]!;
+      } else {
+        remote = await this.uploadCompleteObject(
+          segmentPath,
+          segmentName,
+          segmentSize,
+          await hashFile(segmentPath, "md5"),
+        );
+      }
+      segmentReferences.push({
+        index: nextSegmentIndex,
+        name: segmentName,
+        fileId: remote.id,
+        size: segmentSize,
+        sha256: segmentSha256,
+        firstPartIndex: nextPartIndex - currentParts.length,
+        partCount: currentParts.length,
+      });
+      nextSegmentIndex += 1;
+      currentParts = [];
+      await unlink(segmentPath);
+    };
+    try {
+      for (let start = 0, index = 1; start < sourceStats.size; start += SQL_BACKUP_PART_SIZE, index += 1) {
+        const endExclusive = Math.min(start + SQL_BACKUP_PART_SIZE, sourceStats.size);
+        const partName = buildSqlBackupPartName(sqlFileName, index);
+        const transportPath = join(temporaryDirectory, `part-${String(index).padStart(6, "0")}.gz`);
+        const metadata = await createSqlPartTransportFile(
+          filePath,
+          transportPath,
+          start,
+          endExclusive,
+          segmentedSqlHash,
+        );
+        if (metadata.compressedSize > SQL_BACKUP_PART_MAX_TRANSPORT_SIZE) {
+          throw new Error(`Compressed SQL backup part exceeds transport limit: ${partName}`);
+        }
+        const matches = await this.findFilesByName(partName);
+        let remotePart: DriveBackupFile;
+        if (matches.length) {
+          if (matches.length !== 1 ||
+              Number(matches[0]?.size) !== metadata.compressedSize ||
+              matches[0]?.md5Checksum !== metadata.compressedMd5) {
+            throw new Error(`Google Drive SQL backup part name conflict: ${partName}`);
+          }
+          remotePart = matches[0]!;
+        } else {
+          remotePart = await this.uploadCompleteObject(
+            transportPath,
+            partName,
+            metadata.compressedSize,
+            metadata.compressedMd5,
+          );
+        }
+        if (Number(remotePart.size) !== metadata.compressedSize ||
+            remotePart.md5Checksum !== metadata.compressedMd5) {
+          throw new Error(`Google Drive SQL backup part verification failed: ${partName}`);
+        }
+        currentParts.push({
+          index,
+          name: partName,
+          fileId: remotePart.id,
+          sqlSize: metadata.sqlSize,
+          sqlSha256: metadata.sqlSha256,
+          compressedSize: metadata.compressedSize,
+          compressedMd5: metadata.compressedMd5,
+        });
+        nextPartIndex += 1;
+        await unlink(transportPath);
+        if (currentParts.length === SQL_BACKUP_MANIFEST_SEGMENT_PARTS) await uploadSegment();
+      }
+
+      await uploadSegment();
+      if (segmentedSqlHash.digest("hex") !== originalSha256 ||
+          (await stat(filePath)).size !== sourceStats.size) {
+        throw new Error("Local SQL backup changed during Google Drive upload; retaining the source");
+      }
+      const manifest = {
+        version: 2,
+        format: "salt-peps-sql-parts",
+        sqlFileName,
+        originalSize: sourceStats.size,
+        originalSha256,
+        segments: segmentReferences,
+      };
+      const manifestPath = join(temporaryDirectory, "manifest.json");
+      await writeFile(manifestPath, JSON.stringify(manifest), { flag: "wx", mode: 0o600 });
+      const manifestName = buildSqlBackupManifestName(sqlFileName);
+      const manifestStats = await stat(manifestPath);
+      const manifestMd5 = await hashFile(manifestPath, "md5");
+      if (manifestStats.size > 1024 * 1024) {
+        throw new Error("SQL backup root manifest exceeds size limit");
+      }
+      const existingManifest = await this.findFilesByName(manifestName);
+      if (existingManifest.length) {
+        if (existingManifest.length !== 1 ||
+            Number(existingManifest[0]?.size) !== manifestStats.size ||
+            existingManifest[0]?.md5Checksum !== manifestMd5) {
+          throw new Error(`Google Drive SQL backup manifest name conflict: ${manifestName}`);
+        }
+        return existingManifest[0]!;
+      }
+      const uploadedManifest = await this.uploadCompleteObject(
+        manifestPath,
+        manifestName,
+        manifestStats.size,
+        manifestMd5,
+      );
+      if (Number(uploadedManifest.size) !== manifestStats.size ||
+          uploadedManifest.md5Checksum !== manifestMd5) {
+        throw new Error(`Google Drive SQL backup manifest verification failed: ${manifestName}`);
+      }
+      return uploadedManifest;
+    } finally {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+    }
+  }
+
   private async uploadPlainSql(filePath: string, fileName: string): Promise<DriveBackupFile> {
+    throw new Error("Legacy partial-range SQL uploads are disabled; use the manifest upload path");
     const folderId = await this.getFolderId();
     const fileStats = await stat(filePath);
     const initResponse = await this.connectors.proxy(
@@ -541,8 +855,8 @@ class GoogleDriveBackupStorage {
   }
 
   async upload(filePath: string, fileName: string): Promise<DriveBackupFile> {
-    if (fileName.endsWith(".SQL")) {
-      return this.uploadPlainSql(filePath, fileName);
+    if (fileName.toLowerCase().endsWith(".sql")) {
+      return this.uploadSqlManifest(filePath, fileName);
     }
     const folderId = await this.getFolderId();
     const fileStats = await stat(filePath);
@@ -690,6 +1004,113 @@ class GoogleDriveBackupStorage {
       throw error;
     }
   }
+
+  async downloadSqlManifest(manifestFile: DriveBackupFile, destinationPath: string): Promise<void> {
+    const workDirectory = await privateTemporaryDirectory(dirname(destinationPath), ".sql-restore-");
+    const manifestPath = join(workDirectory, "manifest.json");
+    const assembledPath = join(workDirectory, "reconstructed.SQL");
+    try {
+      await this.download(manifestFile.id, manifestPath);
+      const manifestBytes = await readFile(manifestPath);
+      if ((manifestFile.size !== undefined && Number(manifestFile.size) !== manifestBytes.length) ||
+          (manifestFile.md5Checksum !== undefined &&
+            await hashFile(manifestPath, "md5") !== manifestFile.md5Checksum)) {
+        throw new Error("SQL backup manifest metadata checksum mismatch");
+      }
+      const manifest = parseSqlBackupRootManifest(
+        JSON.parse(manifestBytes.toString("utf8")) as unknown,
+      );
+      if (manifestFile.name !== buildSqlBackupManifestName(manifest.sqlFileName)) {
+        throw new Error("SQL backup manifest filename does not match its declared SQL filename");
+      }
+
+      if (manifestBytes.length > 1024 * 1024) throw new Error("SQL backup root manifest exceeds size limit");
+      const totalHash = createHash("sha256");
+      let totalSize = 0;
+      let globalPartIndex = 0;
+      if (manifest.originalSize === 0) {
+        await writeFile(assembledPath, Buffer.alloc(0), { flag: "wx", mode: 0o600 });
+      }
+      for (const reference of manifest.segments) {
+        const segmentRemote = await this.getFile(reference.fileId);
+        if (segmentRemote.name !== reference.name ||
+            Number(segmentRemote.size) !== reference.size) {
+          throw new Error(`SQL backup manifest segment metadata mismatch: ${reference.name}`);
+        }
+        const segmentPath = join(workDirectory, `segment-${String(reference.index).padStart(6, "0")}.json`);
+        await this.download(reference.fileId, segmentPath);
+        if ((await stat(segmentPath)).size !== reference.size ||
+            await hashFile(segmentPath, "sha256") !== reference.sha256 ||
+            (segmentRemote.md5Checksum &&
+              await hashFile(segmentPath, "md5") !== segmentRemote.md5Checksum)) {
+          throw new Error(`SQL backup manifest segment checksum mismatch: ${reference.name}`);
+        }
+        const segment = parseSqlBackupManifestSegment(
+          JSON.parse((await readFile(segmentPath)).toString("utf8")) as unknown,
+          manifest.sqlFileName,
+          reference.index,
+        );
+        if (segment.parts.length !== reference.partCount ||
+            segment.parts[0]?.index !== reference.firstPartIndex) {
+          throw new Error(`SQL backup manifest segment reference mismatch: ${reference.name}`);
+        }
+        for (const part of segment.parts) {
+          globalPartIndex += 1;
+          const expectedPartSize = Math.min(
+            SQL_BACKUP_PART_SIZE,
+            manifest.originalSize - totalSize,
+          );
+          if (part.index !== globalPartIndex || part.sqlSize !== expectedPartSize) {
+            throw new Error(`SQL backup manifest part size mismatch: ${part.name}`);
+          }
+          const remotePart = await this.getFile(part.fileId);
+          if (remotePart.name !== part.name ||
+              Number(remotePart.size) !== part.compressedSize ||
+              remotePart.md5Checksum !== part.compressedMd5) {
+            throw new Error(`SQL backup part metadata mismatch: ${part.name}`);
+          }
+          const compressedPath = join(workDirectory, `part-${String(part.index).padStart(6, "0")}.gz`);
+          await this.download(part.fileId, compressedPath);
+          if ((await stat(compressedPath)).size !== part.compressedSize ||
+              await hashFile(compressedPath, "md5") !== part.compressedMd5) {
+            throw new Error(`SQL backup part checksum mismatch: ${part.name}`);
+          }
+          const partHash = createHash("sha256");
+          let partSize = 0;
+          await pipeline(
+            createReadStream(compressedPath),
+            createGunzip(),
+            new Transform({
+              transform(chunk: Buffer, _encoding, callback) {
+                partHash.update(chunk);
+                totalHash.update(chunk);
+                partSize += chunk.length;
+                totalSize += chunk.length;
+                callback(null, chunk);
+              },
+            }),
+            createWriteStream(assembledPath, {
+              flags: globalPartIndex === 1 ? "wx" : "a",
+              mode: 0o600,
+            }),
+          );
+          if (partSize !== part.sqlSize || partHash.digest("hex") !== part.sqlSha256) {
+            throw new Error(`SQL backup decoded part checksum mismatch: ${part.name}`);
+          }
+          await unlink(compressedPath);
+        }
+        await unlink(segmentPath);
+      }
+      if (totalSize !== manifest.originalSize ||
+          globalPartIndex !== Math.ceil(manifest.originalSize / SQL_BACKUP_PART_SIZE) ||
+          totalHash.digest("hex") !== manifest.originalSha256) {
+        throw new Error("Reconstructed SQL backup checksum mismatch");
+      }
+      await rename(assembledPath, destinationPath);
+    } finally {
+      await rm(workDirectory, { recursive: true, force: true });
+    }
+  }
 }
 
 const storage = new GoogleDriveBackupStorage();
@@ -713,6 +1134,17 @@ export async function downloadGoogleDriveBackup(
   destinationPath: string,
 ): Promise<void> {
   return storage.download(fileId, destinationPath);
+}
+
+export async function downloadGoogleDriveSqlBackup(
+  manifestFile: DriveBackupFile,
+  destinationPath: string,
+): Promise<void> {
+  return storage.downloadSqlManifest(manifestFile, destinationPath);
+}
+
+export async function getGoogleDriveBackupFile(fileId: string): Promise<DriveBackupFile> {
+  return storage.getFile(fileId);
 }
 
 export async function uploadBackupToGoogleDrive(

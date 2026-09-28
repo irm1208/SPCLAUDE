@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { randomBytes } from "crypto";
+import { createHash } from "crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { gunzipSync } from "zlib";
+import { gzipSync, gunzipSync } from "zlib";
 
 const { proxy } = vi.hoisted(() => ({ proxy: vi.fn() }));
 
@@ -25,11 +26,13 @@ import {
   isRetryableDriveUploadStatus,
   isSupportedBackupName,
   downloadGoogleDriveBackup,
+  downloadGoogleDriveSqlBackup,
   listGoogleDriveBackups,
   migrationAction,
   selectNewestBackup,
   uploadBackupToGoogleDrive,
 } from "./google-drive-backup";
+import { sha256Hex } from "./google-drive-backup-manifest";
 import { buildPgDumpArgs } from "./db-backup-command";
 
 describe("Google Drive database backup helpers", () => {
@@ -113,16 +116,15 @@ describe("Google Drive database backup helpers", () => {
 
   it("describes a gzip transport whose decoded Drive object is plain SQL", () => {
     expect(buildPlainDriveTransportHeaders(660_000_000, 42_000_000)).toEqual({
-      "Content-Type": "application/sql",
-      "Content-Encoding": "gzip",
+      "Content-Type": "application/octet-stream",
       "Content-Length": "42000000",
-      "Content-Range": "bytes 0-659999999/660000000",
     });
   });
 
   it("recognizes encrypted backups and legacy SQL only for verification", () => {
     expect(isSupportedBackupName("S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc")).toBe(true);
     expect(isSupportedBackupName("S&PBACKUP-2026-09-02_10-40-11.SQL")).toBe(true);
+    expect(isSupportedBackupName("S&PBACKUP-2026-09-02_10-40-11.SQL.manifest.json")).toBe(true);
     expect(isSupportedBackupName("S&PBACKUP-2026-09-02_10-40-11.sql.gz")).toBe(false);
   });
 
@@ -141,6 +143,11 @@ describe("Google Drive database backup helpers", () => {
           modifiedTime: "2026-09-02T10:40:11.000Z",
         },
         {
+          id: "versioned-sql",
+          name: "S&PBACKUP-2026-09-04_10-40-11.SQL.manifest.json",
+          modifiedTime: "2026-09-04T10:40:11.000Z",
+        },
+        {
           id: "encrypted-newest",
           name: "S&PBACKUP-2026-09-03_10-40-11.sql.gz.enc",
           modifiedTime: "2026-09-03T10:40:11.000Z",
@@ -151,7 +158,7 @@ describe("Google Drive database backup helpers", () => {
           modifiedTime: "2026-09-05T10:40:11.000Z",
         },
       ]),
-    ).toMatchObject({ id: "encrypted-newest" });
+    ).toMatchObject({ id: "versioned-sql" });
   });
 
   it("lists every Drive backup page before selecting a supported backup", async () => {
@@ -247,7 +254,8 @@ describe("Google Drive database backup helpers", () => {
     }
   });
 
-  it("uploads plain SQL through gzip transport while Drive stores decoded SQL bytes", async () => {
+  /* Obsolete partial-range transport tests; replacement full-object tests follow.
+  it.skip("uploads plain SQL through a legacy gzip transport", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const plainPath = join(directory, "backup.SQL");
     const plainSql = "-- PostgreSQL database dump\\nSELECT 1;\\n";
@@ -299,7 +307,7 @@ describe("Google Drive database backup helpers", () => {
     }
   });
 
-  it("uploads large plain SQL as bounded gzip chunks with decoded SQL ranges", async () => {
+  it.skip("uploads large plain SQL as partial decoded ranges", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const plainPath = join(directory, "large-backup.SQL");
     const chunkSize = 4 * 1024 * 1024;
@@ -383,7 +391,7 @@ describe("Google Drive database backup helpers", () => {
     }
   });
 
-  it("shrinks a SQL chunk after a 413 and resumes at the same committed offset", async () => {
+  it.skip("shrinks a SQL chunk after a 413", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const plainPath = join(directory, "adaptive-backup.SQL");
     const plainSql = randomBytes(1024 * 1024 + 17);
@@ -457,7 +465,7 @@ describe("Google Drive database backup helpers", () => {
     }
   });
 
-  it("fails explicitly when the gateway rejects the minimum SQL chunk", async () => {
+  it.skip("rejects a minimum legacy SQL chunk", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const plainPath = join(directory, "minimum-backup.SQL");
     const plainSql = randomBytes(256 * 1024);
@@ -492,7 +500,7 @@ describe("Google Drive database backup helpers", () => {
     }
   });
 
-  it("recovers a plain SQL upload when the completion response is lost", async () => {
+  it.skip("recovers a legacy SQL upload completion response", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const plainPath = join(directory, "backup.SQL");
     const plainSql = "SELECT 1;\n";
@@ -532,7 +540,7 @@ describe("Google Drive database backup helpers", () => {
     }
   });
 
-  it("resumes a plain SQL upload at the committed decoded offset after a lost response", async () => {
+  it.skip("resumes a plain SQL upload after a lost response", async () => {
     const directory = await mkdtemp(join(tmpdir(), "drive-backup-test-"));
     const plainPath = join(directory, "backup.SQL");
     const plainSql = "SELECT 123456789;\n";
@@ -579,6 +587,384 @@ describe("Google Drive database backup helpers", () => {
         `bytes 5-${Buffer.byteLength(plainSql) - 1}/${Buffer.byteLength(plainSql)}`,
       );
       expect(resumedSql).toBe(plainSql.slice(5));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  */
+  it("uploads deterministic complete gzip parts, then commits the manifest last", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-parts-test-"));
+    const sqlName = "S&PBACKUP-2026-09-02_10-40-11.SQL";
+    const source = randomBytes(2 * 1024 * 1024 + 37);
+    const sourcePath = join(directory, sqlName);
+    await writeFile(sourcePath, source);
+    const stored = new Map<string, { id: string; name: string; bytes: Buffer; md5Checksum: string }>();
+    const uploads: Array<{ name: string; headers: Record<string, string>; body: Buffer }> = [];
+    let nextSession = 0;
+    proxy.mockReset();
+    proxy.mockImplementation(async (
+      _connector: string,
+      path: string,
+      options?: { method?: string; headers?: Record<string, string>; body?: Blob | string },
+    ) => {
+      if (path.startsWith("/drive/v3/files?")) {
+        const query = new URL(path, "https://drive.local").searchParams.get("q") ?? "";
+        if (query.includes("Salt & Peps")) {
+          return new Response(JSON.stringify({ files: [{ id: "backup-folder" }] }));
+        }
+        const matched = query.match(/name = '([^']+)'/);
+        const existing = matched
+          ? [...stored.values()].filter((file) => file.name === matched[1])
+          : [...stored.values()];
+        return new Response(JSON.stringify({ files: existing.map(({ id, name, bytes, md5Checksum }) => ({
+          id, name, size: String(bytes.length), md5Checksum,
+        })) }));
+      }
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        const metadata = JSON.parse(String(options?.body)) as { name: string };
+        const session = `/upload/session-${++nextSession}`;
+        (proxy as any).pending ??= new Map();
+        (proxy as any).pending.set(session, metadata.name);
+        return new Response(null, { status: 200, headers: { location: `https://drive.local${session}` } });
+      }
+      if (path.startsWith("/upload/session-")) {
+        const name = (proxy as any).pending.get(path) as string;
+        const body = Buffer.from(await (options!.body as Blob).arrayBuffer());
+        expect(options?.headers?.["Content-Encoding"]).toBeUndefined();
+        expect(options?.headers?.["Content-Range"]).toBe(`bytes 0-${body.length - 1}/${body.length}`);
+        expect(options?.headers?.["Content-Length"]).toBe(String(body.length));
+        uploads.push({ name, headers: options!.headers!, body });
+        const id = `file-${stored.size + 1}`;
+        stored.set(id, {
+          id,
+          name,
+          bytes: body,
+          md5Checksum: createHash("md5").update(body).digest("hex"),
+        });
+        return new Response(JSON.stringify({ id }));
+      }
+      const fileId = decodeURIComponent(path.split("/").at(-1)!.split("?")[0]!);
+      const file = stored.get(fileId);
+      if (path.includes("alt=media")) return new Response(file!.bytes);
+      return new Response(JSON.stringify({
+        id: file!.id,
+        name: file!.name,
+        size: String(file!.bytes.length),
+        md5Checksum: file!.md5Checksum,
+      }));
+    });
+
+    try {
+      const committed = await uploadBackupToGoogleDrive(sourcePath, sqlName);
+      expect(committed.name).toBe(`${sqlName}.manifest.json`);
+      expect(uploads.map((upload) => upload.name)).toEqual([
+        `${sqlName}.part-000001.gz`,
+        `${sqlName}.part-000002.gz`,
+        `${sqlName}.part-000003.gz`,
+        `${sqlName}.manifest-segment-000001.json`,
+        `${sqlName}.manifest.json`,
+      ]);
+      expect(uploads.every((upload) => upload.body.length <= 2 * 1024 * 1024)).toBe(true);
+      const decodedParts = uploads.slice(0, 3).map(({ body }) => gunzipSync(body));
+      expect(Buffer.compare(Buffer.concat(decodedParts), source)).toBe(0);
+      const root = JSON.parse(uploads.at(-1)!.body.toString("utf8"));
+      expect(root.version).toBe(2);
+      expect(root.originalSha256).toBe(sha256Hex(source));
+      const segment = JSON.parse(uploads.at(-2)!.body.toString("utf8"));
+      expect(segment.parts).toHaveLength(3);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses matching completed parts after an interrupted manifest commit", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-resume-test-"));
+    const sqlName = "S&PBACKUP-2026-09-02_10-40-11.SQL";
+    const sourcePath = join(directory, sqlName);
+    await writeFile(sourcePath, randomBytes(64 * 1024));
+    const stored = new Map<string, { id: string; name: string; bytes: Buffer; md5Checksum: string }>();
+    let rejectManifest = true;
+    let partUploads = 0;
+    let nextSession = 0;
+    (proxy as any).pending = new Map();
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string, options?: any) => {
+      if (path.startsWith("/drive/v3/files?")) {
+        const query = new URL(path, "https://drive.local").searchParams.get("q") ?? "";
+        if (query.includes("Salt & Peps")) return new Response(JSON.stringify({ files: [{ id: "backup-folder" }] }));
+        const matched = query.match(/name = '([^']+)'/);
+        const file = [...stored.values()].find((item) => item.name === matched?.[1]);
+        return new Response(JSON.stringify({ files: file ? [{
+          id: file.id, name: file.name, size: String(file.bytes.length), md5Checksum: file.md5Checksum,
+        }] : [] }));
+      }
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        const { name } = JSON.parse(String(options.body));
+        if (name.endsWith(".manifest.json") && rejectManifest) {
+          rejectManifest = false;
+          return new Response("interrupted", { status: 400 });
+        }
+        const session = `/upload/session-${++nextSession}`;
+        (proxy as any).pending.set(session, name);
+        return new Response(null, { headers: { location: `https://drive.local${session}` } });
+      }
+      if (path.startsWith("/upload/session-")) {
+        const name = (proxy as any).pending.get(path);
+        const bytes = Buffer.from(await options.body.arrayBuffer());
+        const id = `drive-${stored.size + 1}`;
+        stored.set(id, { id, name, bytes, md5Checksum: createHash("md5").update(bytes).digest("hex") });
+        if (name.endsWith(".part-000001.gz")) partUploads += 1;
+        return new Response(JSON.stringify({ id }));
+      }
+      const id = path.split("/").at(-1)!.split("?")[0]!;
+      const file = stored.get(id)!;
+      return new Response(JSON.stringify({
+        id, name: file.name, size: String(file.bytes.length), md5Checksum: file.md5Checksum,
+      }));
+    });
+    try {
+      await expect(uploadBackupToGoogleDrive(sourcePath, sqlName)).rejects.toThrow(/Starting Google Drive upload/);
+      await expect(uploadBackupToGoogleDrive(sourcePath, sqlName)).resolves.toMatchObject({
+        name: `${sqlName}.manifest.json`,
+      });
+      expect(partUploads).toBe(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("abandons a partially committed Drive session and retries only a complete object", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-308-test-"));
+    const sqlName = "S&PBACKUP-2026-09-02_10-40-11.SQL";
+    const sourcePath = join(directory, sqlName);
+    await writeFile(sourcePath, randomBytes(1024));
+    const stored = new Map<string, { id: string; name: string; bytes: Buffer; md5Checksum: string }>();
+    const sessions = new Map<string, string>();
+    const ranges: string[] = [];
+    let sessionNumber = 0;
+    let rejectedFirstPart = false;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string, options?: any) => {
+      if (path.startsWith("/drive/v3/files?")) {
+        const query = new URL(path, "https://drive.local").searchParams.get("q") ?? "";
+        if (query.includes("Salt & Peps")) return new Response(JSON.stringify({ files: [{ id: "backup-folder" }] }));
+        const requestedName = query.match(/name = '([^']+)'/)?.[1];
+        const items = [...stored.values()].filter((file) => file.name === requestedName);
+        return new Response(JSON.stringify({ files: items.map(file => ({
+          id: file.id, name: file.name, size: String(file.bytes.length), md5Checksum: file.md5Checksum,
+        })) }));
+      }
+      if (path === "/upload/drive/v3/files?uploadType=resumable") {
+        const name = JSON.parse(String(options.body)).name as string;
+        const session = `/upload/session-${++sessionNumber}`;
+        sessions.set(session, name);
+        return new Response(null, { headers: { location: `https://drive.local${session}` } });
+      }
+      if (path.startsWith("/upload/session-")) {
+        const name = sessions.get(path)!;
+        const bytes = Buffer.from(await (options.body as Blob).arrayBuffer());
+        ranges.push(options.headers["Content-Range"]);
+        if (name.endsWith(".part-000001.gz") && !rejectedFirstPart) {
+          rejectedFirstPart = true;
+          return new Response(null, { status: 308, headers: { range: "bytes=0-2" } });
+        }
+        const id = `drive-${stored.size + 1}`;
+        const md5Checksum = createHash("md5").update(bytes).digest("hex");
+        stored.set(id, { id, name, bytes, md5Checksum });
+        return new Response(JSON.stringify({ id }));
+      }
+      const id = path.split("/").at(-1)!.split("?")[0]!;
+      const file = stored.get(id)!;
+      return new Response(JSON.stringify({
+        id, name: file.name, size: String(file.bytes.length), md5Checksum: file.md5Checksum,
+      }));
+    });
+    try {
+      await expect(uploadBackupToGoogleDrive(sourcePath, sqlName)).resolves.toMatchObject({
+        name: `${sqlName}.manifest.json`,
+      });
+      expect(sessionNumber).toBeGreaterThanOrEqual(4);
+      expect(ranges.every(range => /^bytes 0-\d+\/\d+$/.test(range))).toBe(true);
+      expect(ranges.every(range => !range.startsWith("bytes 3-"))).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reconstructs exact SQL from a committed manifest", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-restore-test-"));
+    const destination = join(directory, "restore.SQL");
+    const sql = Buffer.from("SELECT 'exact bytes';\n");
+    const compressed = gzipSync(sql);
+    const partName = "S&PBACKUP-2026-09-02_10-40-11.SQL.part-000001.gz";
+    const manifestName = "S&PBACKUP-2026-09-02_10-40-11.SQL.manifest.json";
+    const md5 = (bytes: Buffer) => createHash("md5").update(bytes).digest("hex");
+    const segmentName = "S&PBACKUP-2026-09-02_10-40-11.SQL.manifest-segment-000001.json";
+    const segment = Buffer.from(JSON.stringify({
+      version: 1,
+      format: "salt-peps-sql-manifest-segment",
+      sqlFileName: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      index: 1,
+      parts: [{
+        index: 1,
+        name: partName,
+        fileId: "restore-part",
+        sqlSize: sql.length,
+        sqlSha256: sha256Hex(sql),
+        compressedSize: compressed.length,
+        compressedMd5: md5(compressed),
+      }],
+    }));
+    const manifest = Buffer.from(JSON.stringify({
+      version: 2,
+      format: "salt-peps-sql-parts",
+      sqlFileName: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      originalSize: sql.length,
+      originalSha256: sha256Hex(sql),
+      segments: [{
+        index: 1,
+        name: segmentName,
+        fileId: "restore-segment",
+        size: segment.length,
+        sha256: sha256Hex(segment),
+        firstPartIndex: 1,
+        partCount: 1,
+      }],
+    }));
+    const files = new Map([
+      ["restore-manifest", {
+        id: "restore-manifest", name: manifestName, bytes: manifest, md5Checksum: md5(manifest),
+      }],
+      ["restore-part", {
+        id: "restore-part", name: partName, bytes: compressed, md5Checksum: md5(compressed),
+      }],
+      ["restore-segment", {
+        id: "restore-segment", name: segmentName, bytes: segment, md5Checksum: md5(segment),
+      }],
+    ]);
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      const id = path.split("/").at(-1)!.split("?")[0]!;
+      const file = files.get(id)!;
+      if (path.includes("alt=media")) return new Response(file.bytes);
+      return new Response(JSON.stringify({
+        id: file.id, name: file.name, size: String(file.bytes.length), md5Checksum: file.md5Checksum,
+      }));
+    });
+    try {
+      await downloadGoogleDriveSqlBackup({
+        id: "restore-manifest",
+        name: manifestName,
+        size: String(manifest.length),
+        md5Checksum: md5(manifest),
+      }, destination);
+      expect(await readFile(destination)).toEqual(sql);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails explicitly on a mismatched same-name Drive part", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-conflict-test-"));
+    const sqlName = "S&PBACKUP-2026-09-02_10-40-11.SQL";
+    const sourcePath = join(directory, sqlName);
+    await writeFile(sourcePath, "retained SQL");
+    const conflictingPartName = `${sqlName}.part-000001.gz`;
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      const query = new URL(path, "https://drive.local").searchParams.get("q") ?? "";
+      if (query.includes("Salt & Peps")) return new Response(JSON.stringify({ files: [{ id: "backup-folder" }] }));
+      if (query.includes(conflictingPartName)) {
+        return new Response(JSON.stringify({ files: [{
+          id: "wrong-part", name: conflictingPartName, size: "1", md5Checksum: "00000000000000000000000000000000",
+        }] }));
+      }
+      return new Response(JSON.stringify({ files: [] }));
+    });
+    try {
+      await expect(uploadBackupToGoogleDrive(sourcePath, sqlName)).rejects.toThrow(
+        "Google Drive SQL backup part name conflict",
+      );
+      expect(await readFile(sourcePath, "utf8")).toBe("retained SQL");
+      expect(proxy.mock.calls.some((call) => String(call[1]).startsWith("/upload/"))).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a corrupt manifest part without replacing an existing restored SQL file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-backup-corrupt-test-"));
+    const destination = join(directory, "restored.SQL");
+    await writeFile(destination, "previous restore");
+    const compressed = Buffer.from("not a gzip stream");
+    const md5Checksum = createHash("md5").update(compressed).digest("hex");
+    const part = {
+      index: 1,
+      name: "S&PBACKUP-2026-09-02_10-40-11.SQL.part-000001.gz",
+      fileId: "corrupt-part",
+      sqlSize: 3,
+      sqlSha256: sha256Hex(Buffer.from("SQL")),
+      compressedSize: compressed.length,
+      compressedMd5: md5Checksum,
+    };
+    const segmentName = "S&PBACKUP-2026-09-02_10-40-11.SQL.manifest-segment-000001.json";
+    const segmentBytes = Buffer.from(JSON.stringify({
+      version: 1,
+      format: "salt-peps-sql-manifest-segment",
+      sqlFileName: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      index: 1,
+      parts: [part],
+    }));
+    const manifestBytes = Buffer.from(JSON.stringify({
+      version: 2,
+      format: "salt-peps-sql-parts",
+      sqlFileName: "S&PBACKUP-2026-09-02_10-40-11.SQL",
+      originalSize: 3,
+      originalSha256: sha256Hex(Buffer.from("SQL")),
+      segments: [{
+        index: 1,
+        name: segmentName,
+        fileId: "segment-id",
+        size: segmentBytes.length,
+        sha256: sha256Hex(segmentBytes),
+        firstPartIndex: 1,
+        partCount: 1,
+      }],
+    }));
+    const files = new Map([
+      ["manifest-id", {
+        id: "manifest-id",
+        name: `${part.name.split(".part-")[0]}.manifest.json`,
+        bytes: manifestBytes,
+        md5Checksum: createHash("md5").update(manifestBytes).digest("hex"),
+      }],
+      ["corrupt-part", { id: "corrupt-part", name: part.name, bytes: compressed, md5Checksum }],
+      ["segment-id", {
+        id: "segment-id",
+        name: segmentName,
+        bytes: segmentBytes,
+        md5Checksum: createHash("md5").update(segmentBytes).digest("hex"),
+      }],
+    ]);
+    proxy.mockReset();
+    proxy.mockImplementation(async (_connector: string, path: string) => {
+      const id = path.split("/").at(-1)!.split("?")[0]!;
+      const file = files.get(id);
+      if (path.includes("alt=media")) return new Response(file!.bytes);
+      return new Response(JSON.stringify({
+        id, name: file!.name, size: String(file!.bytes.length), md5Checksum: file!.md5Checksum,
+      }));
+    });
+    try {
+      await expect(downloadGoogleDriveSqlBackup({
+        id: "manifest-id",
+        name: `${part.name.split(".part-")[0]}.manifest.json`,
+        size: String(manifestBytes.length),
+        md5Checksum: files.get("manifest-id")!.md5Checksum,
+      }, destination)).rejects.toThrow();
+      expect(await readFile(destination, "utf8")).toBe("previous restore");
+      expect((await readdir(directory)).filter((name) => name.includes("partial"))).toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
