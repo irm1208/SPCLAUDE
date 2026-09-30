@@ -18,6 +18,7 @@ import { useDraftStore } from "@/hooks/use-draft-store";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout, getAccountHandle, type GroupBuySummary } from "@/hooks/use-account";
 import { PriceWatermark } from "@/components/PriceWatermark";
+import { GbProductBrowse } from "./GbProductBrowse";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 
@@ -431,6 +432,7 @@ function OrderFormShell({ children }: { children: React.ReactNode }) {
 
 export default function OrderForm() {
   const [, setLocation] = useLocation();
+  const [productView, setProductView] = useState<"picker" | "list">("picker");
   const search = useSearch();
   const searchParams = new URLSearchParams(search);
   const gbId = searchParams.get("gbId") ?? null;
@@ -1349,10 +1351,44 @@ export default function OrderForm() {
               )}
             </div>
 
+            {gbId && (
+              <div className="mb-4 flex w-fit rounded-lg border border-white/15 bg-[#162231] p-1" role="group" aria-label="Product view">
+                {(["picker", "list"] as const).map(view => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => setProductView(view)}
+                    aria-pressed={productView === view}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${productView === view ? "bg-[#2D6BCC] text-white" : "text-white/65 hover:text-white"}`}
+                  >
+                    {view === "picker" ? "Picker" : "Full list"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {gbId && productView === "list" && (
+              <div className="mb-5">
+                <GbProductBrowse
+                  products={products}
+                  categoryOrder={catOrderData?.order?.length ? catOrderData.order : CAT_ORDER_FALLBACK}
+                  capacity={stockViewEnabled ? gbCapacity : undefined}
+                  selectedIds={new Set(draft.lineItems.map(item => item.productId).filter((id): id is string => !!id))}
+                  onAdd={handleQuickAdd}
+                  formatPrice={formatPrice}
+                  hidePrices={hideOrderFormPrices}
+                  loading={isLoadingProducts}
+                  disabled={isLoadingProducts ||
+                    (gbMaxKitsTotal != null && gbKitsOrderedTotal + draft.lineItems.filter(item => item.productId).reduce((sum, item) => sum + item.quantity, 0) >= gbMaxKitsTotal) ||
+                    (gbMaxKitsPerCustomer != null && gbKitsOrderedByUser + draft.lineItems.filter(item => item.productId).reduce((sum, item) => sum + item.quantity, 0) >= gbMaxKitsPerCustomer)}
+                />
+              </div>
+            )}
+
             <div className={`space-y-3 relative${gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal ? " opacity-40 pointer-events-none select-none" : ""}`}>
               <PriceWatermark username={getAccountHandle(account)} variant="dark" />
               <AnimatePresence initial={false}>
-                {draft.lineItems.map((item) => (
+                {draft.lineItems.filter(item => !gbId || productView === "picker" || item.productId).map((item) => (
                   <motion.div
                     key={item.id}
                     initial={{ opacity: 0, height: 0 }}
@@ -1369,7 +1405,9 @@ export default function OrderForm() {
                     const itemAllowHalfKits = !gbId
                       ? true
                       : (productHalfKit ?? gbAllowHalfKits);
-                    const itemMaxPerCustomer: number | null = gbId ? (itemProduct?.maxPerCustomer ?? null) : null;
+                    const itemMaxPerCustomer: number | null = gbId && itemProduct && "maxPerCustomer" in itemProduct
+                      ? (itemProduct.maxPerCustomer ?? null)
+                      : null;
                     // GB-level per-customer budget remaining for this specific line item
                     const otherLineItemsQty = draft.lineItems.reduce((sum, li) => li.id !== item.id ? sum + li.quantity : sum, 0);
                     const gbRemainingForItem: number | null = (gbId && gbMaxKitsPerCustomer != null)
@@ -1390,18 +1428,22 @@ export default function OrderForm() {
                         : null;
                     return (
                     <div className="flex flex-col gap-3 overflow-hidden">
-                      <SearchableProductSelect
-                        products={products}
-                        value={item.productId ?? ""}
-                        onChange={(productId) => handleProductSelect(item.id, productId)}
-                        disabledIds={[]}
-                        disabled={isLoadingProducts}
-                        formatPrice={formatPrice}
-                        catOrder={catOrderData?.order}
-                        capacity={gbId && stockViewEnabled ? gbCapacity : undefined}
-                        popularity={gbId ? gbPopularity : undefined}
-                        hidePrices={hideOrderFormPrices}
-                      />
+                      {gbId && productView === "list" ? (
+                        <p className="text-sm font-semibold text-white">{item.productName}</p>
+                      ) : (
+                        <SearchableProductSelect
+                          products={products}
+                          value={item.productId ?? ""}
+                          onChange={(productId) => handleProductSelect(item.id, productId)}
+                          disabledIds={[]}
+                          disabled={isLoadingProducts}
+                          formatPrice={formatPrice}
+                          catOrder={catOrderData?.order}
+                          capacity={gbId && stockViewEnabled ? gbCapacity : undefined}
+                          popularity={gbId ? gbPopularity : undefined}
+                          hidePrices={hideOrderFormPrices}
+                        />
+                      )}
 
                       {/* Action links — protocol info + lab report buttons */}
                       {item.productId && (
@@ -1549,12 +1591,19 @@ export default function OrderForm() {
                           </div>
                         )}
 
-                        {draft.lineItems.length > 1 && (
+                        {(draft.lineItems.length > 1 || (gbId && productView === "list")) && (
                           <button
                             type="button"
+                            aria-label={`Remove ${item.productName || "product"} from order`}
                             className="p-2 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition-all"
                             style={{ color: "rgba(255,255,255,0.75)" }}
-                            onClick={() => draft.removeLineItem(item.id)}
+                            onClick={() => {
+                              if (draft.lineItems.length === 1) {
+                                draft.updateLineItem(item.id, { productId: "", productName: "", unitPrice: 0 });
+                              } else {
+                                draft.removeLineItem(item.id);
+                              }
+                            }}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1570,7 +1619,7 @@ export default function OrderForm() {
               </AnimatePresence>
             </div>
 
-            <button
+            {(!gbId || productView === "picker") && <button
               type="button"
               onClick={draft.addLineItem}
               disabled={!!(gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal)}
@@ -1584,7 +1633,7 @@ export default function OrderForm() {
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.3)"; }}
             >
               <Plus className="w-4 h-4" /> Add another product
-            </button>
+            </button>}
 
             {/* Real-time kit limit warnings */}
             {gbId && (() => {
