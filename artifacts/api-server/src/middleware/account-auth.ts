@@ -25,10 +25,14 @@ export interface AccountJwtPayload {
   jti: string;
   /** True only for sessions issued while account verification is outstanding. */
   verificationRequired: boolean;
+  /** Whether the member explicitly selected a seven-day persistent session. */
+  remembered?: boolean;
 }
 
 const ACCOUNT_SESSION_IDLE_MS = 24 * 60 * 60 * 1000;
 const ACCOUNT_SESSION_IDLE_SECONDS = ACCOUNT_SESSION_IDLE_MS / 1000;
+const REMEMBERED_ACCOUNT_SESSION_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
+const REMEMBERED_ACCOUNT_SESSION_IDLE_SECONDS = REMEMBERED_ACCOUNT_SESSION_IDLE_MS / 1000;
 
 declare global {
   namespace Express {
@@ -96,13 +100,17 @@ export async function requireAccountIdentity(req: Request, res: Response, next: 
     || typeof payload.jti !== "string"
     || !payload.jti
     || (payload.verificationRequired !== undefined && typeof payload.verificationRequired !== "boolean")
+    || (payload.remembered !== undefined && typeof payload.remembered !== "boolean")
   ) {
     res.status(401).json({ error: "Session expired or invalid — please log in again" });
     return;
   }
 
   const issuedAt = (payload as AccountJwtPayload & { iat?: number }).iat;
-  if (typeof issuedAt !== "number" || Date.now() - issuedAt * 1000 >= ACCOUNT_SESSION_IDLE_MS) {
+  const idleLimit = payload.remembered === true
+    ? REMEMBERED_ACCOUNT_SESSION_IDLE_MS
+    : ACCOUNT_SESSION_IDLE_MS;
+  if (typeof issuedAt !== "number" || Date.now() - issuedAt * 1000 >= idleLimit) {
     res.status(401).json({ error: "Session expired or invalid — please log in again" });
     return;
   }
@@ -130,6 +138,7 @@ export async function requireAccountIdentity(req: Request, res: Response, next: 
     telegramUsername: payload.telegramUsername,
     jti: payload.jti,
     verificationRequired: payload.verificationRequired === true,
+    remembered: payload.remembered === true,
   };
   next();
 }
@@ -192,31 +201,39 @@ export function getAccountCookieOptions() {
 export function issueAccountCookie(
   res: Response,
   telegramUsername: string,
-  options: { verificationRequired: boolean },
+  options: { verificationRequired: boolean; remembered?: boolean },
 ): void {
   setAccountSessionCookie(res, {
     telegramUsername,
     jti: randomUUID(),
     verificationRequired: options.verificationRequired,
+    remembered: options.remembered === true,
   });
 }
 
 /** Refreshes idle expiry while preserving the token ID used for logout revocation. */
 export function refreshAccountCookie(res: Response, account: AccountJwtPayload): void {
-  setAccountSessionCookie(res, account);
+  setAccountSessionCookie(res, { ...account, remembered: account.remembered === true });
 }
 
 function setAccountSessionCookie(res: Response, payload: AccountJwtPayload): void {
   const secret = getJwtSecret();
-  const token = jwt.sign(payload, secret, { expiresIn: ACCOUNT_SESSION_IDLE_SECONDS });
+  const remembered = payload.remembered === true;
+  const idleMs = remembered ? REMEMBERED_ACCOUNT_SESSION_IDLE_MS : ACCOUNT_SESSION_IDLE_MS;
+  const idleSeconds = remembered ? REMEMBERED_ACCOUNT_SESSION_IDLE_SECONDS : ACCOUNT_SESSION_IDLE_SECONDS;
+  const token = jwt.sign({ ...payload, remembered }, secret, { expiresIn: idleSeconds });
   res.cookie("account_session", token, {
     ...getAccountCookieOptions(),
-    maxAge: ACCOUNT_SESSION_IDLE_MS,
+    maxAge: idleMs,
   });
 }
 
 /** Issues a session from current authoritative verification state. */
-export async function issueAccountCookieForAccount(res: Response, telegramUsername: string): Promise<boolean> {
+export async function issueAccountCookieForAccount(
+  res: Response,
+  telegramUsername: string,
+  options: { remembered?: boolean } = {},
+): Promise<boolean> {
   const [account] = await db
     .select({
       telegramUsername: accountsTable.telegramUsername,
@@ -229,6 +246,7 @@ export async function issueAccountCookieForAccount(res: Response, telegramUserna
   if (!account) return false;
   issueAccountCookie(res, account.telegramUsername, {
     verificationRequired: account.verificationRequiredAt !== null && account.verifiedAt === null,
+    remembered: options.remembered === true,
   });
   return true;
 }

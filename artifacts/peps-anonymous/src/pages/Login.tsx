@@ -87,6 +87,7 @@ export default function Login() {
   const [step, setStep] = useState<Step>("form");
   const [username, setUsername] = useState("");
   const [credential, setCredential] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [showCredential, setShowCredential] = useState(false);
   const [email, setEmail] = useState("");
   const [country, setCountry] = useState("");
@@ -314,6 +315,7 @@ export default function Login() {
       const result = await smartLogin.mutateAsync({
         telegramUsername: username.trim(),
         credential: credential.trim(),
+        rememberMe,
       });
       if ((result as any).needsSetup) {
         setTab("signup");
@@ -552,6 +554,23 @@ export default function Login() {
                     </button>
                   </div>
                 </div>
+
+                <label className="flex items-start gap-2.5 cursor-pointer text-sm" style={{ color: T.text }}>
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={e => setRememberMe(e.target.checked)}
+                    aria-label="Remember me for 7 days"
+                    disabled={isLoading}
+                    className="mt-0.5 accent-blue-700"
+                  />
+                  <span>
+                    Remember me for 7 days
+                    <span className="block text-xs mt-0.5" style={{ color: T.muted }}>
+                      Keeps you signed in on this browser; your password is never stored.
+                    </span>
+                  </span>
+                </label>
 
                 {error && <ErrorBanner message={error} />}
 

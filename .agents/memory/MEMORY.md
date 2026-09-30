@@ -115,7 +115,7 @@
 - [Qiyunle turnover is product-level](qiyunle-product-turnover.md) — OOS/restock uses total stock across batches; any new batch can close the product’s open OOS period.
 - [BMURFS package integrity](bmurfs-package-integrity.md) — international delivery can mean handoff; historical pairing requires explicit roles; tracking edits must not roll back refreshed histories.
 - [Standalone crypto checkout boundary](standalone-crypto-checkout-boundary.md) — Open Crypto Checkout may live in main, but must remain independently distributable and uncoupled from Peps.
-- [Admin 2FA scope](admin-2fa-scope.md) — authenticator 2FA is admin-only; enabled uses admin sessions/step-up, disabled reverts to shared ADMIN_SECRET.
+- [Admin 2FA scope](admin-2fa-scope.md) — 2FA is admin-only; disabled mode accepts shared secret at login, then uses revocable sessions without storing the secret.
 - [Admin fetch interceptor recursion](admin-fetch-interceptor-recursion.md) — capture native fetch before monkey-patching global fetch, or enabled-mode admin requests recurse until the browser crashes.
 - [Admin 2FA standalone pages](admin-2fa-standalone-pages.md) — separate admin tabs do not inherit the main tab’s fetch interceptor; restore session and route mutations through AdminAuthController.
 - [Admin step-up scope](admin-step-up-scope.md) — after login, extra TOTP is only for admin security and money destinations; routine operations rely on session+CSRF.

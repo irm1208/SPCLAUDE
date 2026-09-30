@@ -376,7 +376,7 @@ router.post("/account/login", async (req, res): Promise<void> => {
     return;
   }
 
-  await issueAccountCookieForAccount(res, tg);
+  await issueAccountCookieForAccount(res, tg, { remembered: req.body?.rememberMe === true });
 
   db.update(accountsTable).set({ lastLoginIp: req.ip ?? null, lastLoginAt: new Date() })
     .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});
@@ -1271,7 +1271,7 @@ router.post("/account/change-username", requireAccount, async (req, res): Promis
   await tx.execute(sql`UPDATE wholesale_shares SET delivery_username = ${newTg} WHERE lower(delivery_username) IN (${oldTgBare}, ${oldTgWithAt})`);
   });
 
-  await issueAccountCookieForAccount(res, newTg);
+  await issueAccountCookieForAccount(res, newTg, { remembered: req.account!.remembered });
 
   writeLog("login", "info", "account_username_changed",
     `Username changed: ${oldTgBare} → ${newTg}`,
@@ -1430,7 +1430,7 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
           .where(eq(lookupAttemptsTable.id, ipAttempt.id))
           .catch(() => {});
       }
-      await issueAccountCookieForAccount(res, tg);
+      await issueAccountCookieForAccount(res, tg, { remembered: req.body?.rememberMe === true });
       db.update(accountsTable).set({ lastLoginIp: ip, lastLoginAt: new Date() })
         .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});
       writeLog("login", "info", "account_login",
@@ -1544,7 +1544,7 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
   }
 
   const needsPassword = !account.passwordHash;
-  await issueAccountCookieForAccount(res, tg);
+  await issueAccountCookieForAccount(res, tg, { remembered: req.body?.rememberMe === true });
 
   db.update(accountsTable).set({ lastLoginIp: ip, lastLoginAt: new Date() })
     .where(eq(accountsTable.telegramUsername, tg)).catch(() => {});

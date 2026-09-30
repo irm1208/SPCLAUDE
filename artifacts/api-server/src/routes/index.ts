@@ -92,6 +92,7 @@ router.use("/admin", adminLimiter);
 router.use("/admin/security/enable", adminTwoFactorLimiter);
 router.use("/admin/auth/login", adminTwoFactorLimiter);
 router.use("/admin/auth/verify", adminTwoFactorLimiter);
+router.use("/admin/auth/legacy-login", adminTwoFactorLimiter);
 router.use("/admin/auth/step-up", adminTwoFactorLimiter);
 router.use("/admin/security/disable", adminTwoFactorLimiter);
 router.use("/admin/security/recovery-codes", adminTwoFactorLimiter);

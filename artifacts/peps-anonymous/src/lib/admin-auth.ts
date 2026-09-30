@@ -5,6 +5,7 @@ export interface AdminSecurityStatus {
 export interface AdminIdentity {
   username: string;
   csrfToken: string;
+  rememberMe?: boolean;
 }
 
 export interface AdminActionBinding {
@@ -37,6 +38,9 @@ const AUTH_PATHS = [
   "/api/admin/security/enable/confirm",
   "/api/admin/auth/login",
   "/api/admin/auth/verify",
+  "/api/admin/auth/legacy-login",
+  "/api/admin/auth/legacy-me",
+  "/api/admin/auth/legacy-logout",
 ];
 
 export class AdminSessionExpiredError extends Error {
@@ -108,6 +112,8 @@ function isMutation(method?: string): boolean {
 
 export class AdminAuthController {
   twoFactorEnabled: boolean | null = null;
+  rememberMe = false;
+  sessionBacked = false;
   csrfToken = "";
   username = "";
   onSessionExpired?: () => void;
@@ -128,6 +134,8 @@ export class AdminAuthController {
 
   setMode(enabled: boolean): void {
     this.twoFactorEnabled = enabled;
+    this.rememberMe = false;
+    this.sessionBacked = false;
     if (enabled) this.clearSecret();
   }
 
@@ -149,45 +157,50 @@ export class AdminAuthController {
   }
 
   get disabledModeSecret(): string {
-    return this.secret || this.storage?.getItem(ADMIN_SECRET_KEY) || "";
+    if (this.rememberMe) return "";
+    return this.secret;
   }
 
   async initialize(): Promise<AdminSecurityStatus> {
     const response = await this.fetcher("/api/admin/security/status", { credentials: "include" });
     const status = await this.requireJson<AdminSecurityStatus>(response);
     this.setMode(status.twoFactorEnabled);
-    if (!status.twoFactorEnabled) this.secret = this.storage?.getItem(ADMIN_SECRET_KEY) ?? "";
+    // Retire the old tab-stored shared secret; the unchecked path is memory-only.
+    if (!status.twoFactorEnabled) this.clearSecret();
     return status;
   }
 
-  async loginWithSecret(secret: string): Promise<void> {
+  async loginWithSecret(secret: string, rememberMe = false): Promise<void> {
     if (this.twoFactorEnabled !== false) throw new Error("Shared-secret login is unavailable");
-    const response = await this.fetcher("/api/admin/auth-check", {
-      headers: { "x-admin-secret": secret },
-      credentials: "omit",
-    });
-    if (!response.ok) throw new AdminApiError(response, await responseBody(response));
-    this.secret = secret;
-    this.storage?.setItem(ADMIN_SECRET_KEY, secret);
+    const identity = await this.authJson<AdminIdentity>("/api/admin/auth/legacy-login", { adminSecret: secret, rememberMe });
+    this.clearSecret();
+    this.username = identity.username;
+    this.csrfToken = identity.csrfToken;
+    this.rememberMe = identity.rememberMe === true;
+    this.sessionBacked = true;
   }
 
-  async login(username: string, password: string): Promise<string> {
-    const result = await this.authJson<{ challenge: string }>("/api/admin/auth/login", { username, password });
+  async login(username: string, password: string, rememberMe = false): Promise<string> {
+    const result = await this.authJson<{ challenge: string }>("/api/admin/auth/login", { username, password, rememberMe });
     return result.challenge;
   }
 
   async verify(challenge: string, factor: { code: string } | { recoveryCode: string }): Promise<AdminIdentity> {
     const identity = await this.authJson<AdminIdentity>("/api/admin/auth/verify", { challenge, ...factor });
     this.csrfToken = identity.csrfToken;
+    this.rememberMe = identity.rememberMe === true;
+    this.sessionBacked = true;
     return identity;
   }
 
   async restoreSession(): Promise<AdminIdentity> {
-    const response = await this.fetcher("/api/admin/auth/me", { credentials: "include" });
+    const response = await this.fetcher(this.twoFactorEnabled ? "/api/admin/auth/me" : "/api/admin/auth/legacy-me", { credentials: "include" });
     if (response.status === 401) return this.expired();
     const identity = await this.requireJson<AdminIdentity>(response);
     this.username = identity.username;
     this.csrfToken = identity.csrfToken;
+    this.rememberMe = identity.rememberMe === true;
+    this.sessionBacked = true;
     return identity;
   }
 
@@ -201,12 +214,20 @@ export class AdminAuthController {
     });
     this.setMode(true);
     this.csrfToken = activation.csrfToken;
+    this.sessionBacked = true;
     return activation;
   }
 
   async logout(): Promise<void> {
-    if (this.twoFactorEnabled && this.csrfToken) {
-      await this.request("/admin/auth/logout", { method: "POST" }, undefined, false);
+    if (this.sessionBacked) {
+      if (!this.csrfToken) throw new Error("Admin session cannot be signed out without a CSRF token");
+      const path = this.twoFactorEnabled ? "/admin/auth/logout" : "/admin/auth/legacy-logout";
+      let response = await this.request(path, { method: "POST" }, undefined, false);
+      if (response.status === 403) {
+        await this.restoreSession();
+        response = await this.request(path, { method: "POST" }, undefined, false);
+      }
+      if (!response.ok) throw new AdminApiError(response, await responseBody(response));
     }
     this.clear();
   }
@@ -243,7 +264,7 @@ export class AdminAuthController {
     }
     const response = await this.fetcher(url, prepared);
     const body = await responseBody(response);
-    if (response.status === 401 && this.twoFactorEnabled &&
+    if (response.status === 401 && (this.sessionBacked || this.twoFactorEnabled) &&
       body && typeof body === "object" && "error" in body &&
       body.error === "admin_session_expired") return this.expired();
     if (response.status === 403 && allowStepUp && body && typeof body === "object" &&
@@ -296,12 +317,14 @@ export class AdminAuthController {
   clear(): void {
     this.username = "";
     this.csrfToken = "";
+    this.rememberMe = false;
+    this.sessionBacked = false;
     this.clearSecret();
   }
 
   private prepare(init: RequestInit): RequestInit {
     const headers = new Headers(init.headers);
-    if (this.twoFactorEnabled) {
+    if (this.sessionBacked || this.twoFactorEnabled) {
       headers.delete("x-admin-secret");
       if (isMutation(init.method) && this.csrfToken) headers.set("x-admin-csrf", this.csrfToken);
       return { ...init, headers, credentials: "include" };
@@ -327,7 +350,7 @@ export class AdminAuthController {
       method: "POST", credentials: "include", headers, body: JSON.stringify(body),
     });
     const result = await responseBody(response);
-    if (response.status === 401 && this.twoFactorEnabled && result && typeof result === "object" &&
+    if (response.status === 401 && (this.sessionBacked || this.twoFactorEnabled) && result && typeof result === "object" &&
       "error" in result && result.error === "admin_session_expired") {
       return this.expired();
     }
@@ -452,6 +475,8 @@ export async function initializeAdminRequestAuth(
 ): Promise<void> {
   const status = await controller.initialize();
   if (status.twoFactorEnabled) {
+    await controller.restoreSession();
+  } else if (legacySecret === "__admin_session__") {
     await controller.restoreSession();
   } else if (legacySecret) {
     await controller.loginWithSecret(legacySecret);

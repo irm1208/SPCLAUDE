@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { accountsTable, gbReshippersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAccount } from "./account-auth";
-import { requireAdminForRequest } from "./require-admin";
+import { LEGACY_ADMIN_SESSION_COOKIE, requireAdminForRequest } from "./require-admin";
 
 declare global {
   namespace Express {
@@ -28,7 +28,8 @@ export async function requireReshipper(req: Request, res: Response, next: NextFu
   const adminSecret = req.headers["x-admin-secret"] as string | undefined;
   const impersonateUsername = req.headers["x-impersonate-username"] as string | undefined;
   const adminSession = req.cookies?.["peps_admin_session"] as string | undefined;
-  if ((adminSecret || adminSession) && impersonateUsername) {
+  const legacyAdminSession = req.cookies?.[LEGACY_ADMIN_SESSION_COOKIE] as string | undefined;
+  if ((adminSecret || adminSession || legacyAdminSession) && impersonateUsername) {
     if (await requireAdminForRequest(req, res)) {
       req.reshipper = { telegramUsername: impersonateUsername, reshipperStatus: "approved" };
       next();

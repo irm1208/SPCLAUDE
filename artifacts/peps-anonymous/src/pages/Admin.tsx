@@ -27691,8 +27691,8 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
 }
 
 
-function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, recoveryCodes = [], onRecoveryCodesDismissed, onEnabled, onDisabled }: {
-  initialSecret: string; theme: "dark"|"light"; onToggleTheme: () => void; admin2fa?: boolean;
+function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rememberedSession = false, recoveryCodes = [], onRecoveryCodesDismissed, onEnabled, onDisabled }: {
+  initialSecret: string; theme: "dark"|"light"; onToggleTheme: () => void; admin2fa?: boolean; rememberedSession?: boolean;
   recoveryCodes?: string[];
   onRecoveryCodesDismissed: () => void;
   onEnabled: (activation: { csrfToken: string; recoveryCodes: string[] }) => void;
@@ -27715,7 +27715,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rec
   // A just-enabled session reuses this mounted shell. Do not retain the prior
   // shared secret in component state once the server changes authentication mode.
   useEffect(() => {
-    if (admin2fa) setSecret("");
+    if (admin2fa) setSecret("__admin_session__");
   }, [admin2fa]);
 
   // ─── Alert badge + dropdown ──────────────────────────────────
@@ -27782,10 +27782,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rec
   };
 
   const doLogout = useCallback(() => {
-    setSecret("");
-    setAuthed(false);
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-    try { sessionStorage.removeItem("_adm_s"); localStorage.removeItem("_adm_lf"); } catch {}
     window.dispatchEvent(new Event("admin-auth-logout"));
   }, []);
 
@@ -27805,7 +27802,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rec
       if (now - lastVisibilityCheckRef.current < VISIBILITY_CHECK_COOLDOWN_MS) return;
       lastVisibilityCheckRef.current = now;
       if (!admin2fa && !secret) { doLogout(); return; }
-      if (admin2fa) adminAuth.restoreSession().catch(error => {
+      if (adminAuth.sessionBacked) adminAuth.restoreSession().catch(error => {
         if (error instanceof AdminSessionExpiredError) doLogout();
       });
       else fetch(apiUrl("/admin/auth-check"), { headers: { "x-admin-secret": secret }, credentials: "omit" })
@@ -27814,11 +27811,11 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rec
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [authed, secret, doLogout, admin2fa]);
+  }, [authed, secret, doLogout, admin2fa, rememberedSession]);
 
   // Inactivity auto-logout
   useEffect(() => {
-    if (!authed) return;
+    if (!authed || rememberedSession) return;
     const events = ["mousemove", "keydown", "pointerdown", "scroll", "touchstart"];
     const handler = () => resetLogoutTimer();
     events.forEach(e => window.addEventListener(e, handler, { passive: true }));
@@ -27827,7 +27824,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rec
       events.forEach(e => window.removeEventListener(e, handler));
       if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
     };
-  }, [authed, resetLogoutTimer]);
+  }, [authed, resetLogoutTimer, rememberedSession]);
 
   useEffect(() => {
     if (!secret) { setChecking(false); return; }
@@ -28420,11 +28417,12 @@ function EnabledAdminLogin({ onAuthenticated }: { onAuthenticated: () => void })
   const [password, setPassword] = useState("");
   const [factor, setFactor] = useState("");
   const [recovery, setRecovery] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const primary = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setError("");
-    try { setChallenge(await adminAuth.login(username, password)); setPassword(""); }
+    try { setChallenge(await adminAuth.login(username, password, rememberMe)); setPassword(""); }
     catch { setError("Unable to sign in. Check your credentials and try again."); }
     finally { setBusy(false); }
   };
@@ -28441,6 +28439,10 @@ function EnabledAdminLogin({ onAuthenticated }: { onAuthenticated: () => void })
       {!challenge ? <>
         <Input value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" autoComplete="username" autoFocus />
         <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" />
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--adm-muted)" }}>
+          <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} />
+          Remember me for 7 days on this device
+        </label>
       </> : <>
         <Input value={factor} onChange={e => setFactor(e.target.value)} placeholder={recovery ? "Recovery code" : "Six-digit authenticator code"} autoFocus />
         <button type="button" className="text-xs text-orange-500" onClick={() => { setRecovery(v => !v); setFactor(""); }}>
@@ -28475,6 +28477,7 @@ export default function Admin() {
   const [gateSecret, setGateSecret] = useState("");
   const [freshRecoveryCodes, setFreshRecoveryCodes] = useState<string[]>([]);
   const [gateInput,  setGateInput]  = useState("");
+  const [gateRememberMe, setGateRememberMe] = useState(false);
   const [gateError,  setGateError]  = useState<"wrong" | "ratelimit" | "network" | false>(false);
   const [gateShow,   setGateShow]   = useState(false);
   const [gateLoading, setGateLoading] = useState(false);
@@ -28493,7 +28496,6 @@ export default function Admin() {
   const handleEnabled = useCallback((activation: { csrfToken: string; recoveryCodes: string[] }) => {
     // The server has already issued the cookie and CSRF token. Clear the
     // shared-secret path before rendering anything that can make admin calls.
-    adminAuth.setMode(true);
     adminAuth.setCsrfToken(activation.csrfToken);
     setGateSecret("");
     try { sessionStorage.removeItem("_adm_s"); localStorage.removeItem("_adm_lf"); } catch {}
@@ -28519,6 +28521,14 @@ export default function Admin() {
     setStatusFailed(false);
     const boot = async () => {
       try {
+        // Older preview tabs copied the shared password into storage. The
+        // session-based preview needs only a non-secret marker now.
+        try {
+          if (sessionStorage.getItem("peps_admin_preview_secret") !== "__admin_session__") {
+            sessionStorage.removeItem("peps_admin_preview_secret");
+          }
+          localStorage.removeItem("peps_admin_preview_secret");
+        } catch { /* storage may be unavailable */ }
         const status = await retryAdminAvailability(() => adminAuth.initialize(), controller.signal);
         if (!active) return;
         if (status.twoFactorEnabled) {
@@ -28530,15 +28540,11 @@ export default function Admin() {
             else throw error;
           }
         } else {
-          const savedSecret = adminAuth.disabledModeSecret;
-          if (savedSecret) {
-            try {
-              await retryAdminAvailability(() => adminAuth.loginWithSecret(savedSecret), controller.signal);
-              if (active) { setGateSecret(savedSecret); setAuthenticated(true); }
-            } catch (error) {
-              if (error instanceof AdminApiError && isAdminAuthRejection(error.response.status)) adminAuth.clear();
-              else throw error;
-            }
+          try {
+            await retryAdminAvailability(() => adminAuth.restoreSession(), controller.signal);
+            if (active) { setGateSecret("__admin_session__"); activateSession(); }
+          } catch (error) {
+            if (!(error instanceof AdminSessionExpiredError)) throw error;
           }
           if (active) setMode(false);
         }
@@ -28564,10 +28570,25 @@ export default function Admin() {
   }, []);
 
   useEffect(() => {
-    const logout = () => {
-      if (mode) adminAuth.logout().catch(() => adminAuth.clear());
-      uninstallInterceptor.current?.(); uninstallInterceptor.current = null;
-      setAuthenticated(false); setGateSecret("");
+    const logout = async () => {
+      try {
+        await adminAuth.logout();
+        try {
+          sessionStorage.removeItem("_adm_s");
+          sessionStorage.removeItem("peps_admin_preview_secret");
+          localStorage.removeItem("peps_admin_preview_secret");
+          localStorage.removeItem("_adm_lf");
+        } catch { /* storage may be unavailable */ }
+        uninstallInterceptor.current?.(); uninstallInterceptor.current = null;
+        setAuthenticated(false); setGateSecret("");
+      } catch (error) {
+        if (error instanceof AdminSessionExpiredError) {
+          uninstallInterceptor.current?.(); uninstallInterceptor.current = null;
+          setAuthenticated(false); setGateSecret("");
+        } else {
+          window.alert("Could not sign out on the server. Please try again.");
+        }
+      }
     };
     window.addEventListener("admin-auth-logout", logout);
     return () => window.removeEventListener("admin-auth-logout", logout);
@@ -28582,9 +28603,10 @@ export default function Admin() {
     setGateError(false);
     try {
       try {
-        await adminAuth.loginWithSecret(gateInput);
-        try { sessionStorage.setItem("_adm_s", gateInput); localStorage.setItem("_adm_lf", "1"); } catch {}
-        setGateSecret(gateInput); setAuthenticated(true);
+        await adminAuth.loginWithSecret(gateInput, gateRememberMe);
+        setGateSecret("__admin_session__");
+        activateSession();
+        setGateInput("");
       } catch (cause) {
         if (cause instanceof AdminApiError && cause.response.status === 429) setGateError("ratelimit");
         else {
@@ -28610,7 +28632,7 @@ export default function Admin() {
 
   if (authenticated) return (
     <div data-admin-theme={adminTheme} className={adminTheme === "dark" ? "dark" : ""}>
-      <AdminInner initialSecret={mode ? "__admin_session__" : gateSecret} theme={adminTheme} onToggleTheme={toggleTheme} admin2fa={mode}
+      <AdminInner initialSecret={adminAuth.sessionBacked ? "__admin_session__" : gateSecret} theme={adminTheme} onToggleTheme={toggleTheme} admin2fa={mode} rememberedSession={adminAuth.rememberMe}
         recoveryCodes={freshRecoveryCodes} onRecoveryCodesDismissed={() => setFreshRecoveryCodes([])}
         onEnabled={handleEnabled} onDisabled={handleDisabled} />
       {stepUpRequest !== undefined && <AdminStepUpDialog request={stepUpRequest} onComplete={code => {
@@ -28663,6 +28685,10 @@ export default function Admin() {
                 {gateShow ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--adm-muted)" }}>
+              <input type="checkbox" checked={gateRememberMe} onChange={e => setGateRememberMe(e.target.checked)} />
+              Remember me for 7 days on this device
+            </label>
             {gateError === "wrong" && (
               <p className="text-red-400 text-xs text-center -mt-1">Incorrect password. Try again.</p>
             )}

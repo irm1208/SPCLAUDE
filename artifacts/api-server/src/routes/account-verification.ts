@@ -106,7 +106,9 @@ router.post("/account/verification/email/confirm", requireAccountIdentity, async
       res.status(400).json({ error: "Invalid verification code" });
       return;
     }
-    await issueAccountCookieForAccount(res, req.account!.telegramUsername);
+    await issueAccountCookieForAccount(res, req.account!.telegramUsername, {
+      remembered: req.account!.remembered,
+    });
     writeLog("login", "info", "verification_email_completed", "Email account verification completed", {
       telegramUsername: req.account!.telegramUsername,
     }, req.ip).catch(() => {});
@@ -122,7 +124,9 @@ router.post("/account/verification/session/upgrade", requireAccountIdentity, asy
     res.status(403).json({ error: "verification_required" });
     return;
   }
-  await issueAccountCookieForAccount(res, account.telegramUsername);
+  await issueAccountCookieForAccount(res, account.telegramUsername, {
+    remembered: req.account!.remembered,
+  });
   writeLog("login", "info", "verification_session_upgraded", "Verified account session upgraded", {
     telegramUsername: account.telegramUsername,
   }, req.ip).catch(() => {});

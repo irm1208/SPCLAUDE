@@ -17,7 +17,7 @@ import { requireAdmin } from "../middleware/require-admin";
 import { notifyUserFull } from "../lib/telegram";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
 import { activeRefundStatusesSql, RefundMutationBlockedError, assertNoActiveRefund } from "../lib/refund-mutation-guard";
-import { requireAdminForRequest } from "../middleware/require-admin";
+import { LEGACY_ADMIN_SESSION_COOKIE, requireAdminForRequest } from "../middleware/require-admin";
 import { extractBatchNumbersFromImages } from "../lib/gemini-lab-extract";
 
 // Optional account auth: decode the cookie if present, but don't 401 if missing.
@@ -41,7 +41,7 @@ const imageUpload = multer({
 });
 
 async function isAdminRequest(req: import("express").Request, res: import("express").Response): Promise<boolean> {
-  if (!req.headers["x-admin-secret"] && !req.cookies?.peps_admin_session) return false;
+  if (!req.headers["x-admin-secret"] && !req.cookies?.peps_admin_session && !req.cookies?.[LEGACY_ADMIN_SESSION_COOKIE]) return false;
   return requireAdminForRequest(req, res);
 }
 import {

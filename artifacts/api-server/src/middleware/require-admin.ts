@@ -3,6 +3,8 @@ import type { Request, Response } from "express";
 import { db } from "@workspace/db";
 import { auditLogsTable, adminSecuritySettingsTable, adminSessionsTable, adminUsersTable } from "@workspace/db";
 import { and, gte, eq, sql, gt, isNull } from "drizzle-orm";
+import { adminSessionIdleMs, adminSessionTokenHash } from "../lib/admin-session-policy";
+import { isAllowedAdminCsrfOrigin } from "../lib/admin-csrf-origin";
 
 // ── In-memory fast path + DB-backed persistence ────────────────────────────────
 // In-memory map is fast for the common case.
@@ -19,6 +21,10 @@ const MAX_ATTEMPTS = 30;
 const BLOCK_MS = 15 * 60 * 1000; // 15 minutes
 const SESSION_IDLE_MS = 30 * 60 * 1000;
 const SESSION_ACTIVITY_WRITE_MS = 5 * 60 * 1000;
+export const LEGACY_ADMIN_SESSION_COOKIE = "peps_admin_legacy_session";
+const LEGACY_ADMIN_CSRF_COOKIE = "peps_admin_legacy_csrf";
+const LEGACY_ADMIN_USER_ID = "__legacy_admin_secret_session__";
+type LegacyCookieAuthResult = "absent" | "authorized" | "stale" | "rejected";
 
 function getIp(req: Request): string {
   return (req.ip ?? req.socket?.remoteAddress ?? "unknown") as string;
@@ -65,68 +71,47 @@ export function requireAdmin(req: Request, res: Response): boolean {
     res.status(401).json({ error: "Unauthorized" });
     return false;
   }
+  return authenticateAdminSecret(req, res, req.headers["x-admin-secret"]);
+}
+
+/** Validates one shared-secret attempt and preserves the existing persistent brute-force lockout. */
+export function authenticateAdminSecret(req: Request, res: Response, provided: unknown): boolean {
   const secret = process.env["ADMIN_SECRET"];
   if (!secret) {
     res.status(503).json({ error: "Admin not configured" });
     return false;
   }
-
-  const ip = getIp(req);
-  const now = Date.now();
-
+  const ip = getIp(req), now = Date.now();
   const rec = attempts.get(ip);
   if (rec && rec.blockedUntil > now) {
     const wait = Math.ceil((rec.blockedUntil - now) / 1000);
     res.status(429).json({ error: `Too many failed attempts. Try again in ${wait}s.` });
     return false;
   }
-
-  const provided = req.headers["x-admin-secret"];
-  if (!provided || typeof provided !== "string") {
+  if (provided === undefined || provided === null || provided === "") {
     res.status(401).json({ error: "Unauthorized" });
     return false;
   }
-
   let authed = false;
   try {
-    const bufA = Buffer.from(provided, "utf8");
+    const bufA = Buffer.from(typeof provided === "string" ? provided : "", "utf8");
     const bufB = Buffer.from(secret, "utf8");
-    if (bufA.length === bufB.length) {
-      authed = timingSafeEqual(bufA, bufB);
-    } else {
-      timingSafeEqual(bufA, Buffer.alloc(bufA.length));
-    }
-  } catch {
-    authed = false;
-  }
-
+    if (bufA.length === bufB.length) authed = timingSafeEqual(bufA, bufB);
+    else timingSafeEqual(bufA, Buffer.alloc(bufA.length));
+  } catch { authed = false; }
   if (!authed) {
     const current = attempts.get(ip) ?? { count: 0, blockedUntil: 0 };
     current.count += 1;
-
-    // Persist failure to DB for restart-resistant brute-force protection
     logFailureToDB(ip);
-
-    // If in-memory count is still low, do an async DB sync to catch post-restart accumulated failures
-    if (current.count < MAX_ATTEMPTS) {
-      syncBlockFromDB(ip, current);
-    }
-
-    if (current.count >= MAX_ATTEMPTS) {
-      current.blockedUntil = now + BLOCK_MS;
-    }
+    if (current.count < MAX_ATTEMPTS) syncBlockFromDB(ip, current);
+    if (current.count >= MAX_ATTEMPTS) current.blockedUntil = now + BLOCK_MS;
     attempts.set(ip, current);
     res.status(401).json({ error: "Unauthorized" });
     return false;
   }
-
   attempts.delete(ip);
-
-  // Stamp the acting admin identity onto request locals for downstream use (e.g. audit logs).
-  // Uses ADMIN_USERNAME env var if set; falls back to "admin" for single-secret setups.
   res.locals["adminUsername"] = process.env["ADMIN_USERNAME"] ?? "admin";
   res.locals["adminId"] = null;
-
   return true;
 }
 
@@ -139,7 +124,13 @@ export async function adminAuthorizationMiddleware(req: Request, res: Response, 
   const [settings] = await db.select().from(adminSecuritySettingsTable).where(eq(adminSecuritySettingsTable.id, 1));
   const enabled = settings?.twoFactorEnabled === true;
   res.locals["adminModeEnabled"] = enabled;
-  if (!enabled) { next(); return; }
+  if (!enabled) {
+    const legacyAuth = await authenticateLegacyAdminCookie(req, res);
+    if (legacyAuth === "authorized" || legacyAuth === "stale") { next(); return; }
+    if (legacyAuth === "rejected") return;
+    next();
+    return;
+  }
 
   const token = req.cookies?.["peps_admin_session"];
   if (typeof token !== "string") { res.status(401).json({ error: "Unauthorized" }); return; }
@@ -156,11 +147,8 @@ export async function adminAuthorizationMiddleware(req: Request, res: Response, 
 
   if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
     const origin = req.get("origin") ?? req.get("referer");
-    const host = req.get("host");
     const csrf = req.get("x-admin-csrf");
-    let sameOrigin = false;
-    try { sameOrigin = !!origin && !!host && new URL(origin).host === host; } catch { /* rejected below */ }
-    if (!sameOrigin || typeof csrf !== "string" || !timingSafeHashEqual(csrf, session.csrfTokenHash)) {
+    if (!isAllowedAdminCsrfOrigin(origin, req.get("host")) || typeof csrf !== "string" || !timingSafeHashEqual(csrf, session.csrfTokenHash)) {
       res.status(403).json({ error: "CSRF validation failed" }); return;
     }
   }
@@ -173,7 +161,7 @@ export async function adminAuthorizationMiddleware(req: Request, res: Response, 
     const now = new Date();
     await db.update(adminSessionsTable).set({
       lastUsedAt: now,
-      idleExpiresAt: new Date(Math.min(now.getTime() + SESSION_IDLE_MS, new Date(session.expiresAt).getTime())),
+      idleExpiresAt: new Date(Math.min(now.getTime() + adminSessionIdleMs(session.createdAt, session.expiresAt), new Date(session.expiresAt).getTime())),
     }).where(eq(adminSessionsTable.id, session.id));
   }
   const protectedMutation = isReusableStepUpRoute(req);
@@ -182,6 +170,52 @@ export async function adminAuthorizationMiddleware(req: Request, res: Response, 
     res.status(403).json({ error: "step_up_required" }); return;
   }
   next();
+}
+
+async function authenticateLegacyAdminCookie(req: Request, res: Response): Promise<LegacyCookieAuthResult> {
+  const legacyToken = req.cookies?.[LEGACY_ADMIN_SESSION_COOKIE];
+  if (legacyToken === undefined) return "absent";
+  if (typeof legacyToken !== "string") { res.status(401).json({ error: "Unauthorized" }); return "rejected"; }
+  const secret = process.env["ADMIN_SECRET"];
+  if (!secret) { res.status(401).json({ error: "Unauthorized" }); return "rejected"; }
+  const [legacySession] = await db.select().from(adminSessionsTable).where(and(
+    eq(adminSessionsTable.tokenHash, adminSessionTokenHash(legacyToken, secret)),
+    eq(adminSessionsTable.adminUserId, LEGACY_ADMIN_USER_ID),
+    isNull(adminSessionsTable.revokedAt),
+    gt(adminSessionsTable.idleExpiresAt, new Date()),
+    gt(adminSessionsTable.expiresAt, new Date()),
+  ));
+  if (!legacySession) {
+    // Permit only an explicit shared-secret header to continue through the
+    // legacy route auth. A found session with invalid CSRF never reaches here.
+    if (typeof req.headers["x-admin-secret"] === "string" && req.headers["x-admin-secret"] !== "") return "stale";
+    res.status(401).json({ error: "admin_session_expired" });
+    return "rejected";
+  }
+  const [legacyUser] = await db.select().from(adminUsersTable).where(and(eq(adminUsersTable.id, LEGACY_ADMIN_USER_ID), eq(adminUsersTable.active, true)));
+  if (!legacyUser) { res.status(401).json({ error: "Unauthorized" }); return "rejected"; }
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    const origin = req.get("origin") ?? req.get("referer");
+    const csrf = req.get("x-admin-csrf");
+    if (!isAllowedAdminCsrfOrigin(origin, req.get("host")) || typeof csrf !== "string" || !timingSafeHashEqual(csrf, legacySession.csrfTokenHash)) {
+      res.status(403).json({ error: "CSRF validation failed" });
+      return "rejected";
+    }
+  }
+  res.locals["adminAuthorized"] = true;
+  res.locals["adminUser"] = legacyUser;
+  res.locals["adminSession"] = legacySession;
+  res.locals["adminId"] = legacyUser.id;
+  res.locals["adminUsername"] = process.env["ADMIN_USERNAME"] ?? "admin";
+  res.locals["adminCsrfToken"] = req.cookies?.[LEGACY_ADMIN_CSRF_COOKIE];
+  if (Date.now() - new Date(legacySession.lastUsedAt).getTime() >= SESSION_ACTIVITY_WRITE_MS) {
+    const now = new Date();
+    await db.update(adminSessionsTable).set({
+      lastUsedAt: now,
+      idleExpiresAt: new Date(Math.min(now.getTime() + adminSessionIdleMs(legacySession.createdAt, legacySession.expiresAt), new Date(legacySession.expiresAt).getTime())),
+    }).where(eq(adminSessionsTable.id, legacySession.id));
+  }
+  return "authorized";
 }
 
 export function attachAdminSensitiveMutationAudit(req: Request, res: Response, stepUpMode: "reusable" | "single_use"): void {
@@ -242,7 +276,13 @@ function isSingleUseMutationPath(path: string): boolean {
 export async function requireAdminForRequest(req: Request, res: Response): Promise<boolean> {
   const [settings] = await db.select().from(adminSecuritySettingsTable).where(eq(adminSecuritySettingsTable.id, 1));
   res.locals["adminModeEnabled"] = settings?.twoFactorEnabled === true;
-  if (!res.locals["adminModeEnabled"]) return requireAdmin(req, res);
+  if (!res.locals["adminModeEnabled"]) {
+    const legacyAuth = await authenticateLegacyAdminCookie(req, res);
+    if (legacyAuth === "authorized") return true;
+    if (legacyAuth === "rejected") return false;
+    if (legacyAuth === "stale") return authenticateAdminSecret(req, res, req.headers["x-admin-secret"]);
+    return requireAdmin(req, res);
+  }
   let passed = false;
   await adminAuthorizationMiddleware(req, res, () => { passed = true; });
   return passed;

@@ -134,11 +134,11 @@ export function useLogout() {
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ telegramUsername, password }: { telegramUsername: string; password: string }) => {
+    mutationFn: async ({ telegramUsername, password, rememberMe = false }: { telegramUsername: string; password: string; rememberMe?: boolean }) => {
       const res = await fetch("/api/account/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramUsername, password }),
+        body: JSON.stringify({ telegramUsername, password, rememberMe }),
         credentials: "include",
       });
       const data = await res.json();
@@ -154,11 +154,11 @@ export function useLogin() {
 export function useSmartLogin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ telegramUsername, credential }: { telegramUsername: string; credential: string }) => {
+    mutationFn: async ({ telegramUsername, credential, rememberMe }: { telegramUsername: string; credential: string; rememberMe: boolean }) => {
       const res = await fetch("/api/account/smart-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegramUsername, credential }),
+        body: JSON.stringify({ telegramUsername, credential, rememberMe }),
         credentials: "include",
       });
       const data = await res.json();

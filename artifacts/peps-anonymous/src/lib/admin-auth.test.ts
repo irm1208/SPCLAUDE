@@ -14,7 +14,7 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-test("status is fetched before disabled shared-secret authentication", async () => {
+test("status is fetched before issuing a short-lived legacy admin session", async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   const auth = new AdminAuthController(async (input, init) => {
     calls.push({ url: String(input), init });
@@ -23,8 +23,65 @@ test("status is fetched before disabled shared-secret authentication", async () 
   await auth.initialize();
   await auth.loginWithSecret("bootstrap");
   assert.equal(calls[0]?.url, "/api/admin/security/status");
-  assert.equal(new Headers(calls[1]?.init?.headers).get("x-admin-secret"), "bootstrap");
-  assert.equal(calls[1]?.init?.credentials, "omit");
+  assert.equal(calls[1]?.url, "/api/admin/auth/legacy-login");
+  assert.deepEqual(JSON.parse(String(calls[1]?.init?.body)), { adminSecret: "bootstrap", rememberMe: false });
+  assert.equal(calls[1]?.init?.credentials, "include");
+});
+
+test("remembered legacy admin authenticates with a cookie, never persists or resends the shared secret", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const items = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => { items.set(key, value); },
+    removeItem: (key: string) => { items.delete(key); },
+  };
+  const auth = new AdminAuthController(async (input, init) => {
+    calls.push({ url: String(input), init });
+    return json({ csrfToken: "legacy-csrf", username: "admin", rememberMe: true });
+  }, storage);
+  auth.setMode(false);
+  await auth.loginWithSecret("private-password", true);
+  assert.equal(calls[0]?.url, "/api/admin/auth/legacy-login");
+  assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), { adminSecret: "private-password", rememberMe: true });
+  assert.equal(items.size, 0);
+  assert.equal(auth.disabledModeSecret, "");
+  assert.equal(auth.rememberMe, true);
+  await auth.request("/admin/orders", { method: "PATCH", headers: { "x-admin-secret": "private-password" } });
+  assert.equal(calls[1]?.init?.credentials, "include");
+  assert.equal(new Headers(calls[1]?.init?.headers).has("x-admin-secret"), false);
+  assert.equal(new Headers(calls[1]?.init?.headers).get("x-admin-csrf"), "legacy-csrf");
+  await auth.logout();
+  assert.equal(calls[2]?.url, "/api/admin/auth/legacy-logout");
+});
+
+test("unchecked legacy login does not retain its password and removes older stored copies", async () => {
+  const items = new Map<string, string>([["_adm_s", "previous-password"]]);
+  const storage = {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => { items.set(key, value); },
+    removeItem: (key: string) => { items.delete(key); },
+  };
+  const auth = new AdminAuthController(async input =>
+    String(input).endsWith("/security/status") ? json({ twoFactorEnabled: false }) : json({ ok: true }), storage);
+  await auth.initialize();
+  assert.equal(items.has("_adm_s"), false);
+  assert.equal(auth.disabledModeSecret, "");
+  await auth.loginWithSecret("current-password");
+  assert.equal(auth.disabledModeSecret, "");
+  assert.equal(auth.sessionBacked, true);
+  assert.equal(items.has("_adm_s"), false);
+});
+
+test("restored legacy remembered session retains its CSRF and seven-day status", async () => {
+  const auth = new AdminAuthController(async input => {
+    assert.equal(String(input), "/api/admin/auth/legacy-me");
+    return json({ username: "admin", csrfToken: "restored-csrf", rememberMe: true });
+  });
+  auth.setMode(false);
+  await auth.restoreSession();
+  assert.equal(auth.csrfToken, "restored-csrf");
+  assert.equal(auth.rememberMe, true);
 });
 
 test("admin startup 503s retry and retain the enabled session", async () => {
@@ -92,7 +149,7 @@ test("enabled login completes password challenge with TOTP or recovery code", as
   await auth.verify(challenge, { code: "123456" });
   await auth.verify(challenge, { recoveryCode: "ABCD-EFGH" });
   assert.deepEqual(requests.map(r => r.body), [
-    { username: "alice", password: "correct horse battery" },
+    { username: "alice", password: "correct horse battery", rememberMe: false },
     { challenge: "challenge-1", code: "123456" },
     { challenge: "challenge-1", recoveryCode: "ABCD-EFGH" },
   ]);
@@ -478,8 +535,39 @@ test("admin impersonation mutation uses session CSRF in enabled mode and shared 
   assert.equal(enabledHeaders.has("x-admin-secret"), false);
 
   const disabledHeaders = new Headers(calls[2]?.headers);
-  assert.equal(calls[2]?.credentials, "omit");
-  assert.equal(disabledHeaders.get("x-admin-secret"), "legacy-secret");
+  assert.equal(calls[2]?.credentials, "include");
+  assert.equal(disabledHeaders.has("x-admin-secret"), false);
+});
+
+test("admin logout retries once with the current cookie CSRF and fails closed if revocation fails", async () => {
+  const requests: Array<{ path: string; csrf: string | null }> = [];
+  const auth = new AdminAuthController(async (input, init) => {
+    const path = String(input);
+    requests.push({ path, csrf: new Headers(init?.headers).get("x-admin-csrf") });
+    if (path.endsWith("/legacy-login")) return json({ username: "admin", csrfToken: "legacy-csrf", rememberMe: true });
+    if (path.endsWith("/legacy-me")) return json({ username: "admin", csrfToken: "fresh", rememberMe: true });
+    return requests.filter(r => r.path.endsWith("/legacy-logout")).length === 1
+      ? json({ error: "CSRF validation failed" }, 403) : json({ ok: true });
+  });
+  auth.setMode(false);
+  await auth.loginWithSecret("private", true);
+  await auth.logout();
+  assert.deepEqual(requests.filter(r => r.path.endsWith("/legacy-logout")).map(r => r.csrf), ["legacy-csrf", "fresh"]);
+  assert.equal(auth.sessionBacked, false);
+});
+
+test("a rejected admin logout retains authenticated state instead of pretending to sign out", async () => {
+  const auth = new AdminAuthController(async input =>
+    String(input).endsWith("/legacy-me")
+      ? json({ username: "admin", csrfToken: "fresh", rememberMe: true })
+      : String(input).endsWith("/legacy-logout")
+        ? json({ error: "CSRF validation failed" }, 403)
+        : json({ username: "admin", csrfToken: "original", rememberMe: true }));
+  auth.setMode(false);
+  await auth.loginWithSecret("private", true);
+  await assert.rejects(auth.logout(), AdminApiError);
+  assert.equal(auth.sessionBacked, true);
+  assert.equal(auth.csrfToken, "fresh");
 });
 
 test("admin impersonation payment destinations use exact built-in action bindings", async () => {

@@ -82,6 +82,20 @@ describe("account session authorization", () => {
     expect(payload.exp! - payload.iat!).toBe(24 * 60 * 60);
   });
 
+  it("issues a seven-day persistent session when remember me is selected", () => {
+    const res = response();
+    issueAccountCookie(res as never, "remembered-user", {
+      verificationRequired: false,
+      remembered: true,
+    });
+    const token = res.cookie.mock.calls[0][1] as string;
+    const payload = jwt.decode(token) as jwt.JwtPayload & { remembered?: boolean };
+
+    expect(payload.remembered).toBe(true);
+    expect(payload.exp! - payload.iat!).toBe(7 * 24 * 60 * 60);
+    expect(res.cookie.mock.calls[0][2]).toMatchObject({ maxAge: 7 * 24 * 60 * 60 * 1000 });
+  });
+
   it("refreshes activity without changing the revocation identifier", () => {
     const refreshAccountCookie = (accountAuth as unknown as {
       refreshAccountCookie?: (
@@ -113,6 +127,23 @@ describe("account session authorization", () => {
     expect(res.cookie.mock.calls[0][2]).toMatchObject({ maxAge: 24 * 60 * 60 * 1000 });
   });
 
+  it("preserves remembered-session duration and claim when refreshing activity", () => {
+    const res = response();
+    accountAuth.refreshAccountCookie(res as never, {
+      telegramUsername: "remembered-user",
+      jti: "same-remembered-session-id",
+      verificationRequired: false,
+      remembered: true,
+    });
+    const token = res.cookie.mock.calls[0][1] as string;
+    const payload = jwt.decode(token) as jwt.JwtPayload & { remembered?: boolean; jti: string };
+
+    expect(payload.remembered).toBe(true);
+    expect(payload.jti).toBe("same-remembered-session-id");
+    expect(payload.exp! - payload.iat!).toBe(7 * 24 * 60 * 60);
+    expect(res.cookie.mock.calls[0][2]).toMatchObject({ maxAge: 7 * 24 * 60 * 60 * 1000 });
+  });
+
   it("rejects a still-valid legacy token after 24 hours without refreshed activity", async () => {
     const issuedAt = Math.floor(Date.now() / 1000) - 25 * 60 * 60;
     const token = jwt.sign({
@@ -128,6 +159,24 @@ describe("account session authorization", () => {
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: "Session expired or invalid — please log in again" });
+  });
+
+  it("accepts a remembered session for up to seven days of inactivity", async () => {
+    const issuedAt = Math.floor(Date.now() / 1000) - 2 * 24 * 60 * 60;
+    const token = jwt.sign({
+      telegramUsername: "remembered-user",
+      jti: "remembered-session-id",
+      verificationRequired: false,
+      remembered: true,
+      iat: issuedAt,
+    }, accountAuth.getJwtSecret(), { expiresIn: 7 * 24 * 60 * 60 });
+    const req = { cookies: { account_session: token }, ip: "127.0.0.1" };
+    const next = vi.fn();
+
+    await requireAccountIdentity(req as never, response() as never, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(req).toHaveProperty("account.remembered", true);
   });
 
   it("provides a dedicated account-session activity refresh route", () => {
@@ -199,7 +248,30 @@ describe("account session authorization", () => {
       expect(source).not.toMatch(/issueAccountCookie\(res,/);
     }
     const authSource = readFileSync(new URL("./account-auth.ts", import.meta.url), "utf8");
-    expect(authSource).toMatch(/options: \{ verificationRequired: boolean \}/);
+    expect(authSource).toMatch(/options: \{ verificationRequired: boolean; remembered\?: boolean \}/);
     expect(authSource).toContain("verificationRequired: account.verificationRequiredAt !== null && account.verifiedAt === null");
+  });
+
+  it("passes the selected remember-me preference through both member login endpoints", () => {
+    const source = readFileSync(new URL("../routes/account.ts", import.meta.url), "utf8");
+    const regularLogin = source.slice(source.indexOf('router.post("/account/login"'), source.indexOf('router.post("/account/logout"'));
+    const smartLogin = source.slice(source.indexOf('router.post("/account/smart-login"'), source.indexOf('// GET /api/account/profile'));
+
+    expect(regularLogin).toContain("remembered: req.body?.rememberMe === true");
+    expect(smartLogin).toContain("remembered: req.body?.rememberMe === true");
+  });
+
+  it("preserves remember-me when email confirmation reissues a restricted session", () => {
+    const source = readFileSync(new URL("../routes/account-verification.ts", import.meta.url), "utf8");
+    expect(source).toContain("req.account!.remembered");
+  });
+
+  it("exposes the member remember-me choice and sends it with smart login", () => {
+    const page = readFileSync(new URL("../../../../artifacts/peps-anonymous/src/pages/Login.tsx", import.meta.url), "utf8");
+    const hook = readFileSync(new URL("../../../../artifacts/peps-anonymous/src/hooks/use-account.ts", import.meta.url), "utf8");
+    expect(page).toContain('aria-label="Remember me for 7 days"');
+    expect(page).toContain("rememberMe,");
+    expect(hook).toContain("rememberMe: boolean");
+    expect(hook).toContain("rememberMe");
   });
 });
