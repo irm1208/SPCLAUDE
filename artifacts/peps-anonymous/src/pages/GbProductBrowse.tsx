@@ -11,16 +11,16 @@ const stockLabel = { available: "In stock", limited: "Medium", low: "Low", full:
 const stockColor = { available: "#6EE7B7", limited: "#FCD34D", low: "#FDBA74", full: "#FCA5A5" };
 
 export function GbProductBrowse({
-  products, categoryOrder, capacity, selectedIds, onAdd, formatPrice, hidePrices, disabled, loading,
+  products, categoryOrder, capacity, quantities, onAdjust, canIncrease, formatPrice, hidePrices, loading,
 }: {
   products: BrowseProduct[];
   categoryOrder: string[];
   capacity?: Capacity[];
-  selectedIds: Set<string>;
-  onAdd: (id: string) => void;
+  quantities: Map<string, number>;
+  onAdjust: (id: string, direction: -1 | 1) => void;
+  canIncrease: (product: BrowseProduct, quantity: number) => boolean;
   formatPrice: (price: number) => string;
   hidePrices: boolean;
-  disabled: boolean;
   loading: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -50,11 +50,12 @@ export function GbProductBrowse({
           <div className="overflow-hidden rounded-xl border border-white/10">
             {items.map(product => {
               const cap = capacityByName.get(product.name.trim().toLowerCase());
-              const selected = selectedIds.has(product.id);
+              const quantity = quantities.get(product.id) ?? 0;
+              const selected = quantity > 0;
               const unavailable = cap?.status === "full" || product.maxPerCustomer === 0;
               return (
-                <div key={product.id} className="flex min-w-0 items-center gap-3 border-b border-white/10 bg-[#162231] px-3 py-3 last:border-b-0">
-                  <div className="min-w-0 flex-1">
+                <div key={product.id} className="flex min-w-0 flex-wrap items-center gap-3 border-b border-white/10 bg-[#162231] px-3 py-3 last:border-b-0">
+                  <div className="min-w-[9rem] flex-1">
                     <p className="break-words text-sm font-medium leading-snug text-white">{product.name}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
                       {product.mgSize && <span className="text-white/55">{product.mgSize}</span>}
@@ -66,15 +67,35 @@ export function GbProductBrowse({
                       {!hidePrices && <span className="font-semibold text-white/80">{formatPrice(product.price)}</span>}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onAdd(product.id)}
-                    disabled={disabled || selected || unavailable}
-                    aria-label={selected ? `${product.name} already in order` : `Add ${product.name} to order`}
-                    className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[#5B8DEF]/40 bg-[#2D6BCC]/20 px-2.5 text-xs font-bold text-white transition-colors hover:bg-[#2D6BCC]/40 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {selected ? "Added" : unavailable ? "Unavailable" : <><Plus className="h-3.5 w-3.5" /> Add</>}
-                  </button>
+                  {selected ? (
+                    <div className="ml-auto flex h-11 w-36 shrink-0 items-center justify-between overflow-hidden rounded-lg border border-[#5B8DEF]/40 bg-[#2D6BCC]/20 text-white" role="group" aria-label={`${product.name} quantity`}>
+                      <button
+                        type="button"
+                        onClick={() => onAdjust(product.id, -1)}
+                        disabled={loading}
+                        aria-label={`Decrease ${product.name} quantity`}
+                        className="flex h-full w-11 items-center justify-center text-lg font-semibold hover:bg-[#2D6BCC]/40 disabled:cursor-not-allowed disabled:opacity-45"
+                      >−</button>
+                      <span className="min-w-0 flex-1 text-center text-sm font-bold tabular-nums" aria-live="polite">{quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => onAdjust(product.id, 1)}
+                        disabled={loading || unavailable || !canIncrease(product, quantity)}
+                        aria-label={`Increase ${product.name} quantity`}
+                        className="flex h-full w-11 items-center justify-center text-lg font-semibold hover:bg-[#2D6BCC]/40 disabled:cursor-not-allowed disabled:opacity-45"
+                      >+</button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onAdjust(product.id, 1)}
+                      disabled={loading || unavailable || !canIncrease(product, 0)}
+                      aria-label={`Add ${product.name} to order`}
+                      className="ml-auto flex h-11 w-36 shrink-0 items-center justify-center gap-1 rounded-lg border border-[#5B8DEF]/40 bg-[#2D6BCC]/20 text-sm font-bold text-white transition-colors hover:bg-[#2D6BCC]/40 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {unavailable ? "Unavailable" : <><Plus className="h-4 w-4" /> Add</>}
+                    </button>
+                  )}
                 </div>
               );
             })}

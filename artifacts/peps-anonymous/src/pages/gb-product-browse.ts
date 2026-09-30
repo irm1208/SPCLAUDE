@@ -7,6 +7,19 @@ export type BrowseProduct = {
   maxPerCustomer?: number | null;
 };
 
+export function canIncreaseBrowseQuantity({
+  quantity, groupRemaining, customerRemaining, productRemaining, unavailable = false,
+}: {
+  quantity: number;
+  groupRemaining: number;
+  customerRemaining: number;
+  productRemaining: number;
+  unavailable?: boolean;
+}): boolean {
+  const step = quantity < 1 ? 1 - quantity : 1;
+  return !unavailable && step <= Math.min(groupRemaining, customerRemaining, productRemaining);
+}
+
 export function groupProductsForBrowse<T extends BrowseProduct>(
   products: T[],
   query: string,

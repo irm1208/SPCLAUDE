@@ -19,6 +19,7 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout, getAccountHandle, type GroupBuySummary } from "@/hooks/use-account";
 import { PriceWatermark } from "@/components/PriceWatermark";
 import { GbProductBrowse } from "./GbProductBrowse";
+import { canIncreaseBrowseQuantity, type BrowseProduct } from "./gb-product-browse";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 
@@ -934,6 +935,37 @@ export default function OrderForm() {
     }
   };
 
+  const browseQuantities = new Map(
+    draft.lineItems.filter(item => item.productId).map(item => [item.productId!, item.quantity] as const),
+  );
+  const browseTotal = draft.lineItems.reduce((sum, item) => sum + (item.productId ? item.quantity : 0), 0);
+  const canIncreaseInBrowse = (product: BrowseProduct, quantity: number, total = browseTotal) =>
+    canIncreaseBrowseQuantity({
+      quantity,
+      groupRemaining: gbMaxKitsTotal == null ? Infinity : gbMaxKitsTotal - gbKitsOrderedTotal - total,
+      customerRemaining: gbMaxKitsPerCustomer == null ? Infinity : gbMaxKitsPerCustomer - gbKitsOrderedByUser - total,
+      productRemaining: product.maxPerCustomer == null ? Infinity : product.maxPerCustomer - quantity,
+      unavailable: isLoadingProducts || (stockViewEnabled && gbCapacity.some(cap =>
+        cap.productName.trim().toLowerCase() === product.name.trim().toLowerCase() && cap.status === "full")),
+    });
+
+  const handleBrowseAdjust = (productId: string, direction: -1 | 1) => {
+    const currentItems = useDraftStore.getState().lineItems;
+    const item = currentItems.find(line => line.productId === productId);
+    if (direction === -1) {
+      if (!item) return;
+      if (item.quantity <= 1) draft.removeLineItem(item.id);
+      else draft.updateLineItem(item.id, { quantity: prevQty(item.quantity) });
+      return;
+    }
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    const currentTotal = currentItems.reduce((sum, line) => sum + (line.productId ? line.quantity : 0), 0);
+    if (!canIncreaseInBrowse(product, item?.quantity ?? 0, currentTotal)) return;
+    if (item) draft.updateLineItem(item.id, { quantity: nextQty(item.quantity) });
+    else handleQuickAdd(productId);
+  };
+
   const handleDeliverySelect = (methodId: string) => {
     const method = deliveryMethods.find(m => m.id === methodId);
     if (method) {
@@ -1373,14 +1405,12 @@ export default function OrderForm() {
                   products={products}
                   categoryOrder={catOrderData?.order?.length ? catOrderData.order : CAT_ORDER_FALLBACK}
                   capacity={stockViewEnabled ? gbCapacity : undefined}
-                  selectedIds={new Set(draft.lineItems.map(item => item.productId).filter((id): id is string => !!id))}
-                  onAdd={handleQuickAdd}
+                  quantities={browseQuantities}
+                  onAdjust={handleBrowseAdjust}
+                  canIncrease={canIncreaseInBrowse}
                   formatPrice={formatPrice}
                   hidePrices={hideOrderFormPrices}
                   loading={isLoadingProducts}
-                  disabled={isLoadingProducts ||
-                    (gbMaxKitsTotal != null && gbKitsOrderedTotal + draft.lineItems.filter(item => item.productId).reduce((sum, item) => sum + item.quantity, 0) >= gbMaxKitsTotal) ||
-                    (gbMaxKitsPerCustomer != null && gbKitsOrderedByUser + draft.lineItems.filter(item => item.productId).reduce((sum, item) => sum + item.quantity, 0) >= gbMaxKitsPerCustomer)}
                 />
               </div>
             )}
