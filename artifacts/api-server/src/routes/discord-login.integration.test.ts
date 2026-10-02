@@ -8,17 +8,27 @@ const state = vi.hoisted(() => ({
   accountWrites: 0,
   cookies: 0,
   linkedAccount: null as null | {
-    telegramUsername: string; accountStatus: string; hasPassword: boolean;
+    telegramUsername: string; accountStatus: string; hasPassword: boolean; discordId: string;
   },
   issuedUsername: null as string | null,
 }));
 
-vi.mock("@workspace/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@workspace/db")>();
+vi.mock("@workspace/db", async () => {
+  const schema = await import("@workspace/db/schema");
   const db = {
     select: () => ({
       from: () => ({
-        where: async () => state.linkedAccount ? [state.linkedAccount] : [],
+        where: async (condition: { queryChunks?: Array<unknown> }) => {
+          const chunks = condition.queryChunks ?? [];
+          const matchesDiscordId = chunks.includes(schema.accountsTable.discordId)
+            && chunks.some(chunk =>
+              typeof chunk === "object"
+              && chunk !== null
+              && "value" in chunk
+              && chunk.value === state.linkedAccount?.discordId
+            );
+          return state.linkedAccount && matchesDiscordId ? [state.linkedAccount] : [];
+        },
       }),
     }),
     update: () => ({
@@ -33,7 +43,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
       },
     }),
   };
-  return { ...actual, db };
+  return { ...schema, db };
 });
 vi.mock("../middleware/account-auth", () => ({
   getJwtSecret: () => "discord-test-secret",
@@ -98,7 +108,7 @@ describe("mounted Discord login", () => {
     { telegramUsername: "discord:42", hasPassword: true },
     { telegramUsername: "chosen_name", hasPassword: false },
   ])("offers setup for incomplete linked account %j", async account => {
-    state.linkedAccount = { ...account, accountStatus: "active" };
+    state.linkedAccount = { ...account, accountStatus: "active", discordId: "discord-unlinked" };
     expect(await discordCallback()).toEqual({
       status: 302, location: "/account?s=profile&discord_setup=1",
     });
@@ -107,7 +117,7 @@ describe("mounted Discord login", () => {
 
   it("keeps Discord login working after the site username has been renamed", async () => {
     state.linkedAccount = {
-      telegramUsername: "chosen_name", hasPassword: true, accountStatus: "active",
+      telegramUsername: "chosen_name", hasPassword: true, accountStatus: "active", discordId: "discord-unlinked",
     };
     expect(await discordCallback()).toEqual({ status: 302, location: "/account" });
     expect(state.cookies).toBe(1);
@@ -116,10 +126,20 @@ describe("mounted Discord login", () => {
 
   it("does not show setup or issue a session for a suspended linked account", async () => {
     state.linkedAccount = {
-      telegramUsername: "discord:42", hasPassword: false, accountStatus: "suspended",
+      telegramUsername: "discord:42", hasPassword: false, accountStatus: "suspended", discordId: "discord-unlinked",
     };
     const result = await discordCallback();
     expect(result.location).toContain("/login?discord_error=");
+    expect(state.cookies).toBe(0);
+  });
+
+  it("rejects an account linked to a different Discord identity", async () => {
+    state.linkedAccount = {
+      telegramUsername: "other_user", hasPassword: true, accountStatus: "active", discordId: "different-discord-id",
+    };
+    const result = await discordCallback();
+    expect(result.location).toContain("No%20account%20is%20linked");
+    expect(state.accountWrites).toBe(0);
     expect(state.cookies).toBe(0);
   });
 });
