@@ -9494,6 +9494,14 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                             <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-muted)", fontVariantNumeric: "tabular-nums" }}>{gb.currency} {o.deliveryPrice.toFixed(2)}</span>
                           </div>
                         )}
+                        {o.tip > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 9px 0", marginTop: 2 }}>
+                            <span style={{ fontSize: 10, color: "var(--t-subtle)" }}>Tip</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t-muted)", fontVariantNumeric: "tabular-nums" }}>
+                              {gb.currency} {o.tip.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
                         <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 9px 0", marginTop: 2 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, color: "var(--t-text)" }}>Total</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: "#059669", fontVariantNumeric: "tabular-nums" }}>{gb.currency} {o.grandTotal.toFixed(2)}</span>
