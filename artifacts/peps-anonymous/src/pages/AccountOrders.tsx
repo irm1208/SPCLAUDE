@@ -17,7 +17,9 @@ import {
   useDeletedOrders, useRestoreOrder, type DeletedOrder,
 } from "@/hooks/use-account";
 import { BottomTabs } from "@/components/BottomTabs";
+import { DiscordCredentialsSetup } from "@/components/account/DiscordCredentialsSetup";
 import { fmtC } from "@/lib/currency";
+import { getDiscordSetupStep } from "@/lib/discord-credentials-setup";
 import { accountRequiresVerification } from "@/lib/account-verification-flow";
 import { hasAppliedCredit } from "@/lib/credit-payment";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
@@ -575,6 +577,7 @@ function TelegramCard() {
 
 function ProfileTab({ username }: { username: string }) {
   const { account } = useAccount();
+  const needsDiscordSetup = getDiscordSetupStep(account) !== "complete";
   const isDiscord = isDiscordOnlyAccount(username);
   const displayHandle = account ? getAccountHandle(account) : username;
   const { data: profile, isLoading: profileLoading } = useProfile();
@@ -654,9 +657,11 @@ function ProfileTab({ username }: { username: string }) {
             <User className="w-6 h-6 text-blue-600" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{isDiscord ? "Discord Username" : "Telegram Username"}</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{isDiscord ? "Discord Username" : account?.discordLinked ? "Site login username" : "Telegram Username"}</p>
             <p className="text-base font-bold text-slate-800">@{displayHandle}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">This is your account identity and cannot be changed</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">{account?.discordLinked
+              ? "Manage your site login in Account Settings."
+              : "This is your account identity and cannot be changed"}</p>
           </div>
         </div>
       </div>
@@ -714,8 +719,10 @@ function ProfileTab({ username }: { username: string }) {
         </button>
       </form>
 
+      {account && <DiscordCredentialsSetup key={account.telegramUsername} account={account} />}
+
       {/* Password change */}
-      <form onSubmit={handleChangePassword} className="bg-white rounded-xl p-4 shadow-sm space-y-3"
+      <form hidden={needsDiscordSetup} onSubmit={handleChangePassword} className="bg-white rounded-xl p-4 shadow-sm space-y-3"
         style={{ border: "1px solid var(--t-border)" }}>
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 shrink-0" style={{ color: "var(--t-blue)" }} />

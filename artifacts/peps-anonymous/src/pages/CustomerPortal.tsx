@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { PoolLeaderDashboard } from "@/components/PoolLeaderDashboard";
 import { AccountPoolContributions } from "@/components/AccountPoolContributions";
 import { WholesaleAccessSection } from "@/components/WholesaleAccessSection";
+import { DiscordCredentialsSetup } from "@/components/account/DiscordCredentialsSetup";
+import { getDiscordSetupStep } from "@/lib/discord-credentials-setup";
 import { COUNTRY_LIST } from "@/data/countries";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -7196,6 +7198,8 @@ export default function CustomerPortal() {
   const _initSection = _searchParams.get("s") as Section | null;
   const _initTicketId = _searchParams.get("ticket") ?? null;
   const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
+  const needsDiscordSetup = getDiscordSetupStep(account) !== "complete";
+  const cameFromDiscordSetup = _searchParams.get("discord_setup") === "1";
   const qc = useQueryClient();
   const logoutMutation = useLogout();
 
@@ -9423,8 +9427,14 @@ export default function CustomerPortal() {
             </div>
           </motion.div>
 
+          {account && <DiscordCredentialsSetup
+            key={account.telegramUsername}
+            account={account}
+            onSkip={cameFromDiscordSetup ? () => setLocation("/account?s=home") : undefined}
+          />}
+
           {/* ── Change Username ── */}
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          <motion.div hidden={needsDiscordSetup} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
             className="rounded-2xl overflow-hidden shadow-sm"
             style={{ background: T.surface, border: `1px solid ${T.border}` }}>
             <div className="px-5 py-4 flex items-center gap-3"
@@ -9497,7 +9507,7 @@ export default function CustomerPortal() {
           </motion.div>
 
           {/* ── Change Password ── */}
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          <motion.div hidden={needsDiscordSetup} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
             className="rounded-2xl overflow-hidden shadow-sm"
             style={{ background: T.surface, border: `1px solid ${T.border}` }}>
             <div className="px-5 py-4 flex items-center gap-3"
