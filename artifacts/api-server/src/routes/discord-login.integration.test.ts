@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import jwt from "jsonwebtoken";
 import type { AddressInfo } from "node:net";
@@ -7,6 +7,10 @@ import type { Server } from "node:http";
 const state = vi.hoisted(() => ({
   accountWrites: 0,
   cookies: 0,
+  linkedAccount: null as null | {
+    telegramUsername: string; accountStatus: string; hasPassword: boolean;
+  },
+  issuedUsername: null as string | null,
 }));
 
 vi.mock("@workspace/db", async (importOriginal) => {
@@ -14,7 +18,7 @@ vi.mock("@workspace/db", async (importOriginal) => {
   const db = {
     select: () => ({
       from: () => ({
-        where: async () => [],
+        where: async () => state.linkedAccount ? [state.linkedAccount] : [],
       }),
     }),
     update: () => ({
@@ -34,7 +38,10 @@ vi.mock("@workspace/db", async (importOriginal) => {
 vi.mock("../middleware/account-auth", () => ({
   getJwtSecret: () => "discord-test-secret",
   requireAccount: (_req: any, res: any) => res.status(401).end(),
-  issueAccountCookieForAccount: async () => { state.cookies += 1; },
+  issueAccountCookieForAccount: async (_res: unknown, username: string) => {
+    state.cookies += 1;
+    state.issuedUsername = username;
+  },
 }));
 vi.mock("../middleware/require-admin", () => ({ requireAdmin: () => false }));
 vi.mock("../lib/discord", () => ({
@@ -52,9 +59,14 @@ vi.mock("../lib/discord", () => ({
 import discordRouter from "./discord";
 
 describe("mounted Discord login", () => {
-  it("does not create an account for an unlinked Discord identity", async () => {
+  beforeEach(() => {
+    state.linkedAccount = null;
     state.accountWrites = 0;
     state.cookies = 0;
+    state.issuedUsername = null;
+  });
+
+  async function discordCallback() {
     const app = express();
     app.use(discordRouter);
     const server: Server = await new Promise(resolve => {
@@ -67,12 +79,47 @@ describe("mounted Discord login", () => {
         `http://127.0.0.1:${port}/account/discord/oauth-callback?code=oauth-code&state=${encodeURIComponent(signedState)}`,
         { redirect: "manual" },
       );
-      expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toContain("No%20account%20is%20linked");
-      expect(state.accountWrites).toBe(0);
-      expect(state.cookies).toBe(0);
+      return { status: response.status, location: response.headers.get("location") };
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
+  }
+
+  it("does not create an account for an unlinked Discord identity", async () => {
+    const result = await discordCallback();
+    expect(result.status).toBe(302);
+    expect(result.location).toContain("No%20account%20is%20linked");
+    expect(state.accountWrites).toBe(0);
+    expect(state.cookies).toBe(0);
+  });
+
+  it.each([
+    { telegramUsername: "discord:42", hasPassword: false },
+    { telegramUsername: "discord:42", hasPassword: true },
+    { telegramUsername: "chosen_name", hasPassword: false },
+  ])("offers setup for incomplete linked account %j", async account => {
+    state.linkedAccount = { ...account, accountStatus: "active" };
+    expect(await discordCallback()).toEqual({
+      status: 302, location: "/account?s=profile&discord_setup=1",
+    });
+    expect(state.cookies).toBe(1);
+  });
+
+  it("keeps Discord login working after the site username has been renamed", async () => {
+    state.linkedAccount = {
+      telegramUsername: "chosen_name", hasPassword: true, accountStatus: "active",
+    };
+    expect(await discordCallback()).toEqual({ status: 302, location: "/account" });
+    expect(state.cookies).toBe(1);
+    expect(state.issuedUsername).toBe("chosen_name");
+  });
+
+  it("does not show setup or issue a session for a suspended linked account", async () => {
+    state.linkedAccount = {
+      telegramUsername: "discord:42", hasPassword: false, accountStatus: "suspended",
+    };
+    const result = await discordCallback();
+    expect(result.location).toContain("/login?discord_error=");
+    expect(state.cookies).toBe(0);
   });
 });

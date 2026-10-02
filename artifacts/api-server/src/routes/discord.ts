@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getJwtSecret, issueAccountCookieForAccount, requireAccount } from "../middleware/account-auth";
 import { requireAdmin } from "../middleware/require-admin";
 import {
@@ -211,7 +211,11 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
   if (action === "login") {
     // Look up by discord_id
     const [byDiscord] = await db
-      .select({ telegramUsername: accountsTable.telegramUsername, accountStatus: accountsTable.accountStatus })
+      .select({
+        telegramUsername: accountsTable.telegramUsername,
+        accountStatus: accountsTable.accountStatus,
+        hasPassword: sql<boolean>`${accountsTable.passwordHash} IS NOT NULL`,
+      })
       .from(accountsTable)
       .where(eq(accountsTable.discordId, discordUser.id));
 
@@ -233,7 +237,11 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
         .where(eq(accountsTable.telegramUsername, byDiscord.telegramUsername));
 
       await issueAccountCookieForAccount(res, byDiscord.telegramUsername);
-      res.redirect("/account");
+      const needsCredentialSetup = !byDiscord.hasPassword
+        || byDiscord.telegramUsername.replace(/^@/, "").startsWith("discord:");
+      res.redirect(needsCredentialSetup
+        ? "/account?s=profile&discord_setup=1"
+        : "/account");
       return;
     }
 
