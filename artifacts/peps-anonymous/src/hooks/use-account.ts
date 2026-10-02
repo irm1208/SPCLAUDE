@@ -6,6 +6,8 @@ export interface AccountMe {
   telegramUsername: string;
   verificationRequired?: boolean;
   discordUsername?: string | null;
+  hasPassword?: boolean;
+  discordLinked?: boolean;
   accountStatus?: string;
   createdAt?: string;
   healthDataConsent?: boolean;
