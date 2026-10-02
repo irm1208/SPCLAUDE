@@ -17,6 +17,7 @@ let dom: JSDOM;
 let container: HTMLDivElement;
 let root: Root | undefined;
 let originalFetch: typeof fetch;
+let originalWindow: Window & typeof globalThis;
 
 const accountFixture: AccountMe = {
   telegramUsername: "discord:42",
@@ -45,6 +46,7 @@ before(async () => {
     globals[name] = (dom.window as unknown as Record<string, unknown>)[name];
   }
   globals.IS_REACT_ACT_ENVIRONMENT = true;
+  originalWindow = globalThis.window;
   originalFetch = globalThis.fetch;
   createRoot = (await import("react-dom/client")).createRoot;
 });
@@ -52,6 +54,7 @@ before(async () => {
 after(() => {
   dom.window.close();
   globalThis.fetch = originalFetch;
+  globalThis.window = originalWindow;
 });
 
 afterEach(async () => {
@@ -144,6 +147,32 @@ test("a username error keeps the established password available for retry", asyn
   assert.match(container.textContent ?? "", /already taken/);
   assert.equal(input("input-discord-password").value, "SafePassword9!");
   assert.equal(input("input-discord-site-username").value, "taken_name");
+});
+
+test("successful username change clears fields and requests a full-page account refresh", async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  let reloadTo: string | undefined;
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), body: JSON.parse(String(options?.body)) });
+    return new Response(JSON.stringify({ ok: true, newUsername: "available_name" }), { status: 200 });
+  };
+  await mount({ ...accountFixture, hasPassword: true });
+  changeInput("input-discord-site-username", "available_name");
+  changeInput("input-discord-password", "SafePassword9!");
+  globalThis.window = new Proxy(originalWindow, {
+    get(target, property) {
+      if (property === "location") return { replace: (url: string) => { reloadTo = url; } };
+      return Reflect.get(target, property, target);
+    },
+  });
+  await submitForm();
+  assert.deepEqual(calls, [{
+    url: "/api/account/change-username",
+    body: { newUsername: "available_name", currentPassword: "SafePassword9!" },
+  }]);
+  assert.equal(reloadTo, "/account?s=profile");
+  assert.equal(input("input-discord-site-username").value, "");
+  assert.equal(input("input-discord-password").value, "");
 });
 
 test("switching accounts resets form state", async () => {

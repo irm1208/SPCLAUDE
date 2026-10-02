@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
 import type { AccountMe } from "../../hooks/use-account";
 import { getDiscordSetupStep, submitDiscordSetup } from "../../lib/discord-credentials-setup";
 
@@ -14,7 +13,6 @@ function DiscordCredentialsSetupForm({
   account, onSkip,
 }: { account: AccountMe; onSkip?: () => void }) {
   const qc = useQueryClient();
-  const [, setLocation] = useLocation();
   const [passwordCreated, setPasswordCreated] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -50,7 +48,8 @@ function DiscordCredentialsSetupForm({
           ? "Password saved. Choose your site username below."
           : "Password saved. You can now use your site username and password to sign in." });
       } else {
-        setLocation("/account?s=profile");
+        setUsername("");
+        window.location.replace("/account?s=profile");
       }
     } catch (error) {
       setMessage({ ok: false, text: error instanceof Error ? error.message : "Could not save login details" });
