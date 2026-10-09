@@ -44,6 +44,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { COUNTRIES } from "@/data/countries";
 import { CURRENCY_SYMBOLS, currSym, fmtC } from "@/lib/currency";
+import { getLabTestWarehouse, type LabTestWarehouse } from "@/lib/batch-prefixes";
 import {
   centsToMoneyNumber,
   safeCentsToMoneyNumber,
@@ -26391,7 +26392,7 @@ interface OrgAdminGB {
 }
 interface OrgAdminLabTest {
   id: number; url: string; peptideName: string; supplier: string | null;
-  labName: string | null; batchCode: string | null; purityPct: string | null;
+  labName: string | null; batchCode: string | null; warehouse?: LabTestWarehouse | null; purityPct: string | null;
   testDate: string | null; pending: boolean; organiserId: string | null;
   groupBuyId: string | null; createdAt: string;
 }
@@ -27581,7 +27582,7 @@ function OrganisersAdminTab({ secret }: { secret: string }) {
                     <span>@{t.organiserId}</span>
                     {t.labName && <span>{t.labName}</span>}
                     {t.purityPct && <span>{t.purityPct}% purity</span>}
-                    {t.batchCode && <span>Batch: {t.batchCode}</span>}
+                    {t.batchCode && <span>Batch: {t.batchCode}{(t.warehouse ?? getLabTestWarehouse(t.batchCode)) ? ` · ${t.warehouse ?? getLabTestWarehouse(t.batchCode)} warehouse` : ""}</span>}
                     {t.groupBuyId && <span>GB: #{t.groupBuyId}</span>}
                     {t.testDate && <span>{new Date(t.testDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>}
                   </div>

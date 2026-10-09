@@ -12,13 +12,18 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("@workspace/db", async () => {
   const schema = await import("@workspace/db/schema");
-  const select = () => {
+  const select = (projection?: Record<string, unknown>) => {
+    let rows = mockState.selectedRows;
     const builder: Record<string, unknown> = {
       from() { return builder; },
       where() { return builder; },
       limit() { return builder; },
+      orderBy() { return builder; },
       then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
-        return Promise.resolve(mockState.selectedRows).then(resolve, reject);
+        const result = projection
+          ? rows.map(row => Object.fromEntries(Object.keys(projection).filter(key => key in row).map(key => [key, row[key]])))
+          : rows;
+        return Promise.resolve(result).then(resolve, reject);
       },
     };
     return builder;
@@ -68,12 +73,18 @@ vi.mock("../../lib/lab-cert-storage", () => ({
   prepareCertificateForStorage: vi.fn(),
 }));
 
+vi.mock("../../lib/audit-log", () => ({ writeLog: vi.fn() }));
+vi.mock("../../lib/ip-geo", () => ({ enrichLogsWithGeo: vi.fn() }));
+vi.mock("../../lib/telegram", () => ({ notifyUserFromTemplate: vi.fn() }));
+
 import labTestsRouter from "../lab-tests";
+import organiserAdminRouter from "../organiser-admin";
 
 function buildApp(): Express {
   const app = express();
   app.use(express.json());
   app.use(labTestsRouter);
+  app.use(organiserAdminRouter);
   return app;
 }
 
@@ -190,5 +201,34 @@ describe("lab-test warehouse persistence", () => {
       });
     });
     mockState.extracted = null;
+  });
+
+  it("returns the derived warehouse for historic organiser rows without exposing certificate blobs", async () => {
+    mockState.selectedRows = [{
+      id: 43,
+      url: null,
+      peptideName: "SS-31 50mg",
+      supplier: "Uther",
+      labName: "Janoshik",
+      batchCode: "US-SS50-0831",
+      warehouse: null,
+      purityPct: "99.2",
+      testDate: null,
+      pending: true,
+      organiserId: "organiser",
+      groupBuyId: "gb-1",
+      createdAt: new Date("2025-01-01T00:00:00Z"),
+      pdfBlob: "private certificate data",
+    }];
+    await withServer(async baseUrl => {
+      const response = await fetch(`${baseUrl}/admin/organiser-lab-tests`);
+      expect(response.status).toBe(200);
+      const rows = await response.json() as Array<Record<string, unknown>>;
+      expect(rows[0]).toMatchObject({
+        batchCode: "US-SS50-0831",
+        warehouse: "US",
+      });
+      expect(rows[0]).not.toHaveProperty("pdfBlob");
+    });
   });
 });

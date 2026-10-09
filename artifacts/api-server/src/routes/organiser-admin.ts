@@ -17,6 +17,7 @@ import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { enrichLogsWithGeo } from "../lib/ip-geo";
 import { notifyUserFromTemplate } from "../lib/telegram";
+import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 
 const router: IRouter = Router();
 
@@ -592,7 +593,21 @@ router.get("/admin/organiser-lab-tests", async (req, res): Promise<void> => {
   const { status, organiserId } = req.query;
 
   const rows = await db
-    .select()
+    .select({
+      id: labTestsTable.id,
+      url: labTestsTable.url,
+      peptideName: labTestsTable.peptideName,
+      supplier: labTestsTable.supplier,
+      labName: labTestsTable.labName,
+      batchCode: labTestsTable.batchCode,
+      warehouse: labTestsTable.warehouse,
+      purityPct: labTestsTable.purityPct,
+      testDate: labTestsTable.testDate,
+      pending: labTestsTable.pending,
+      organiserId: labTestsTable.organiserId,
+      groupBuyId: labTestsTable.groupBuyId,
+      createdAt: labTestsTable.createdAt,
+    })
     .from(labTestsTable)
     .where(isNotNull(labTestsTable.organiserId))
     .orderBy(desc(labTestsTable.createdAt));
@@ -602,7 +617,10 @@ router.get("/admin/organiser-lab-tests", async (req, res): Promise<void> => {
   if (status === "approved") filtered = filtered.filter(r => !r.pending);
   if (organiserId) filtered = filtered.filter(r => r.organiserId === String(organiserId));
 
-  res.json(filtered);
+  res.json(filtered.map(row => ({
+    ...row,
+    warehouse: row.warehouse ?? parseLabTestBatchCode(row.batchCode).warehouse,
+  })));
 });
 
 // ── POST /admin/organiser-lab-tests/:id/approve ──────────────────────────────
