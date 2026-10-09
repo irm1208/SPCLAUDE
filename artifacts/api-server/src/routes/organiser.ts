@@ -303,39 +303,7 @@ router.get("/organiser/group-buys", requireOrganiser, async (req, res): Promise<
   const username = req.organiser!.telegramUsername;
 
   const rows = await db
-    .select({
-      id: labTestsTable.id,
-      janoshikId: labTestsTable.janoshikId,
-      url: labTestsTable.url,
-      peptideName: labTestsTable.peptideName,
-      mgAmount: labTestsTable.mgAmount,
-      nominalDose: labTestsTable.nominalDose,
-      massUnit: labTestsTable.massUnit,
-      supplier: labTestsTable.supplier,
-      batchCode: labTestsTable.batchCode,
-      warehouse: labTestsTable.warehouse,
-      labName: labTestsTable.labName,
-      testType: labTestsTable.testType,
-      productCategory: labTestsTable.productCategory,
-      purityPct: labTestsTable.purityPct,
-      endotoxinEuMg: labTestsTable.endotoxinEuMg,
-      sterilityPass: labTestsTable.sterilityPass,
-      testDate: labTestsTable.testDate,
-      notes: labTestsTable.notes,
-      heavyMetalAs: labTestsTable.heavyMetalAs,
-      heavyMetalCd: labTestsTable.heavyMetalCd,
-      heavyMetalPb: labTestsTable.heavyMetalPb,
-      heavyMetalHg: labTestsTable.heavyMetalHg,
-      isThirdPartyTest: labTestsTable.isThirdPartyTest,
-      pending: labTestsTable.pending,
-      submittedBy: labTestsTable.submittedBy,
-      organiserId: labTestsTable.organiserId,
-      groupBuyId: labTestsTable.groupBuyId,
-      blendComponents: labTestsTable.blendComponents,
-      aiExtracted: labTestsTable.aiExtracted,
-      aiExtractedAt: labTestsTable.aiExtractedAt,
-      createdAt: labTestsTable.createdAt,
-    })
+    .select()
     .from(groupBuysTable)
     .where(gbOwner(req))
     .orderBy(desc(groupBuysTable.createdAt));
@@ -1869,7 +1837,39 @@ router.get("/organiser/lab-tests", requireOrganiser, async (req, res): Promise<v
   const username = req.organiser!.telegramUsername;
 
   const rows = await db
-    .select()
+    .select({
+      id: labTestsTable.id,
+      janoshikId: labTestsTable.janoshikId,
+      url: labTestsTable.url,
+      peptideName: labTestsTable.peptideName,
+      mgAmount: labTestsTable.mgAmount,
+      nominalDose: labTestsTable.nominalDose,
+      massUnit: labTestsTable.massUnit,
+      supplier: labTestsTable.supplier,
+      batchCode: labTestsTable.batchCode,
+      warehouse: labTestsTable.warehouse,
+      labName: labTestsTable.labName,
+      testType: labTestsTable.testType,
+      productCategory: labTestsTable.productCategory,
+      purityPct: labTestsTable.purityPct,
+      endotoxinEuMg: labTestsTable.endotoxinEuMg,
+      sterilityPass: labTestsTable.sterilityPass,
+      testDate: labTestsTable.testDate,
+      notes: labTestsTable.notes,
+      heavyMetalAs: labTestsTable.heavyMetalAs,
+      heavyMetalCd: labTestsTable.heavyMetalCd,
+      heavyMetalPb: labTestsTable.heavyMetalPb,
+      heavyMetalHg: labTestsTable.heavyMetalHg,
+      isThirdPartyTest: labTestsTable.isThirdPartyTest,
+      pending: labTestsTable.pending,
+      submittedBy: labTestsTable.submittedBy,
+      organiserId: labTestsTable.organiserId,
+      groupBuyId: labTestsTable.groupBuyId,
+      blendComponents: labTestsTable.blendComponents,
+      aiExtracted: labTestsTable.aiExtracted,
+      aiExtractedAt: labTestsTable.aiExtractedAt,
+      createdAt: labTestsTable.createdAt,
+    })
     .from(labTestsTable)
     .where(sql`${labTestsTable.organiserId} = ${username}`)
     .orderBy(desc(labTestsTable.createdAt));
