@@ -20,6 +20,19 @@ export interface BatchPrefixEntry {
   dose?: string;
 }
 
+export type LabTestWarehouse = "US" | "UK";
+
+/** Warehouse prefixes are recognized only at the beginning of the code. */
+export function getLabTestWarehouse(batchCode: string | null | undefined): LabTestWarehouse | null {
+  const match = /^(US|UK)-/i.exec(batchCode?.trim() ?? "");
+  return match ? match[1].toUpperCase() as LabTestWarehouse : null;
+}
+
+/** Removes a recognized warehouse tag, preserving unknown prefixes verbatim. */
+export function stripWarehousePrefix(batchCode: string): string {
+  return batchCode.trim().replace(/^(?:US|UK)-/i, "").trim();
+}
+
 // Source of truth: vendor prefix → compound → dose table.
 export const BATCH_PREFIX_TABLE: BatchPrefixEntry[] = [
   { prefix: "51Q10", compound: "5-Amino-1-methylquinolinium", dose: "10mg" },
@@ -308,7 +321,7 @@ function escapeRegExp(s: string): string {
 export function batchCodeMatchesPrefix(batchCode: string, prefix: string): boolean {
   if (!batchCode || !prefix) return false;
   const re = new RegExp("^" + escapeRegExp(prefix) + "([^a-z0-9]|$)", "i");
-  return re.test(batchCode.trim());
+  return re.test(stripWarehousePrefix(batchCode));
 }
 
 /** True when any of the batch codes matches any of the prefixes. */

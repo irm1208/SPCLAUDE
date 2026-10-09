@@ -114,6 +114,7 @@ export interface ApiLabTest {
   purityPct?: number | string | null;
   labName?: string | null;
   batchCode?: string | null;
+  warehouse?: "US" | "UK" | null;
   url?: string | null;
   groupBuyId?: string | null;
   pending?: boolean;

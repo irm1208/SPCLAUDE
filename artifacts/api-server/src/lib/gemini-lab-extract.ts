@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { promisify } from "util";
 import { callSageAI, type ContentPart } from "./sage-ai";
+import { parseLabTestBatchCode } from "./lab-test-warehouse";
 
 const execFileAsync = promisify(execFile);
 
@@ -321,6 +322,7 @@ function parseUzorakOrder(
     heavyMetalPb: null,
     heavyMetalHg: null,
     batchCode: batch ?? null,
+    warehouse: parseLabTestBatchCode(batch).warehouse,
     testDate,
     testType,
     productCategory: "peptide",
@@ -904,6 +906,7 @@ async function runSageExtraction(parts: LabFilePart[]): Promise<ExtractedCoAData
       heavyMetalPb: parsed.heavy_metal_pb ? String(parsed.heavy_metal_pb).trim() : null,
       heavyMetalHg: parsed.heavy_metal_hg ? String(parsed.heavy_metal_hg).trim() : null,
       batchCode: parsed.batch_code ? String(parsed.batch_code).trim() : null,
+      warehouse: parseLabTestBatchCode(parsed.batch_code ? String(parsed.batch_code) : null).warehouse,
       testDate: parsed.test_date ? String(parsed.test_date).trim() : null,
       testType,
       productCategory,
@@ -931,6 +934,7 @@ export interface ExtractedCoAData {
   heavyMetalPb: string | null;
   heavyMetalHg: string | null;
   batchCode: string | null;
+  warehouse: "US" | "UK" | null;
   testDate: string | null;
   testType: string | null;
   productCategory: string | null;

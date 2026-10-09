@@ -1,4 +1,5 @@
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
+import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 import {
   assertNoActiveRefund,
   assertNoActiveRefunds,
@@ -8402,7 +8403,10 @@ router.patch("/admin/lab-tests/bulk-batch-code", async (req, res): Promise<void>
   }
   await db
     .update(labTestsTable)
-    .set({ batchCode: batchCode.trim() })
+    .set({
+      batchCode: batchCode.trim(),
+      warehouse: parseLabTestBatchCode(batchCode).warehouse,
+    })
     .where(inArray(labTestsTable.id, ids));
   res.json({ updated: ids.length });
 });
@@ -9722,11 +9726,16 @@ router.post("/admin/batch-code-prefixes/apply-to-tests", async (req, res): Promi
   let updated = 0;
   for (const test of allTests) {
     if (!test.batchCode) continue;
-    const rawPrefix = test.batchCode.split("-")[0].toUpperCase();
+    const productBatchCode = parseLabTestBatchCode(test.batchCode).productBatchCode ?? "";
+    const rawPrefix = productBatchCode.split("-")[0].toUpperCase();
     const match = prefixMap.get(rawPrefix);
     if (!match) continue;
     await db.update(labTestsTable)
-      .set({ peptideName: match.compoundName, nominalDose: match.nominalDose || null })
+      .set({
+        peptideName: match.compoundName,
+        nominalDose: match.nominalDose || null,
+        warehouse: parseLabTestBatchCode(test.batchCode).warehouse,
+      })
       .where(eq(labTestsTable.id, test.id));
     updated++;
   }

@@ -1,3 +1,5 @@
+import { stripWarehousePrefix } from "./batch-prefixes";
+
 export const UTHER_BATCH_CODES: Record<string, string> = {
   // Semaglutide
   "OZ5":"Semaglutide 5mg","OZ10":"Semaglutide 10mg","OZ20":"Semaglutide 20mg",
@@ -77,5 +79,16 @@ export function resolveUtherName(
 ): string {
   if (!batchCode) return fallback;
   if (supplier.trim().toUpperCase() !== "UTHER") return fallback;
-  return UTHER_BATCH_CODES[batchCode.trim().toUpperCase()] ?? fallback;
+  const productCode = stripWarehousePrefix(batchCode).toUpperCase();
+  if (UTHER_BATCH_CODES[productCode]) return UTHER_BATCH_CODES[productCode];
+  let bestMatch: string | null = null;
+  let bestName = fallback;
+  for (const [prefix, name] of Object.entries(UTHER_BATCH_CODES)) {
+    const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp("^" + escaped + "([^A-Z0-9]|$)", "i").test(productCode) && prefix.length > (bestMatch?.length ?? 0)) {
+      bestMatch = prefix;
+      bestName = name;
+    }
+  }
+  return bestName;
 }

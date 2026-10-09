@@ -15,7 +15,7 @@ import { PROTOCOLS } from "@/data/protocols";
 import { PageLayout } from "@/components/PageLayout";
 import { PEPTIDE_GROUPS, getCanonicalGroup, getPeptideDisplayName } from "@/lib/peptide-groups";
 import { resolveUtherName } from "@/lib/uther-batch-codes";
-import { doseForBatchCode, resolveBatchPrefixName } from "@/lib/batch-prefixes";
+import { doseForBatchCode, getLabTestWarehouse, resolveBatchPrefixName, type LabTestWarehouse } from "@/lib/batch-prefixes";
 import type { PeptideGroup } from "@/lib/peptide-groups";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import {
@@ -41,6 +41,7 @@ export interface LabTest {
   massUnit: string | null;
   supplier: string;
   batchCode: string | null;
+  warehouse?: LabTestWarehouse | null;
   labName: string;
   testType: string | null;
   productCategory: string | null;
@@ -1815,6 +1816,7 @@ const BLANK_FORM = {
   productCategory: "",
   isThirdPartyTest: true,
   batchCode: "",
+  warehouse: null as LabTestWarehouse | null,
   notes: "",
   submittedBy: "",
   mgAmount: "",
@@ -1851,6 +1853,7 @@ function SubmitSection() {
       testType: (ex.testType as string) || f.testType,
       productCategory: (ex.productCategory as string) || f.productCategory,
       batchCode: (ex.batchCode as string)?.trim() || f.batchCode,
+      warehouse: (ex.warehouse as LabTestWarehouse | null) ?? getLabTestWarehouse((ex.batchCode as string)?.trim() || f.batchCode),
       mgAmount: ex.mgAmount != null ? String(ex.mgAmount) : f.mgAmount,
       purityPct: ex.purityPct != null ? String(ex.purityPct) : f.purityPct,
       testDate: (ex.testDate as string)?.trim() || f.testDate,
@@ -2216,10 +2219,11 @@ function SubmitSection() {
               type="text"
               placeholder="Optional"
               value={form.batchCode}
-              onChange={set("batchCode")}
+              onChange={e => setForm(f => ({ ...f, batchCode: e.target.value, warehouse: getLabTestWarehouse(e.target.value) }))}
               className={inputCls}
               style={inputStyle}
             />
+            {(form.warehouse ?? getLabTestWarehouse(form.batchCode)) && <p className="mt-1 text-xs text-blue-500">{form.warehouse ?? getLabTestWarehouse(form.batchCode)} warehouse</p>}
           </div>
         </div>
       </div>

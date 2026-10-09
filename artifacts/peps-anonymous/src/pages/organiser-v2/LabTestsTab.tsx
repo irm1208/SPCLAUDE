@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { V2_CARD_BORDER } from "./theme";
 import { organiserApi } from "./api/organiser-api";
+import { getLabTestWarehouse, type LabTestWarehouse } from "@/lib/batch-prefixes";
 import {
   FlaskConical, Loader2, Trash2, Check, CheckCircle2, X,
   Upload, ExternalLink, Sparkles, ChevronDown, ChevronRight,
@@ -20,6 +21,7 @@ interface OrgLabTest {
   supplier: string | null;
   labName: string | null;
   batchCode: string | null;
+  warehouse: LabTestWarehouse | null;
   purityPct: string | null;
   testDate: string | null;
   pending: boolean;
@@ -42,7 +44,7 @@ type LabReviewRow = {
   fileName: string;
   status: "pending" | "extracting" | "done" | "error";
   error?: string;
-  url: string; peptideName: string; labName: string; batchCode: string; purityPct: string;
+  url: string; peptideName: string; labName: string; batchCode: string; warehouse: LabTestWarehouse | null; purityPct: string;
   testDate: string; janoshikId: string; mgAmount: string; testType: string;
   productCategory: string; endotoxinEuMg: string; sterilityPass: string;
   heavyMetalAs: string; heavyMetalCd: string; heavyMetalPb: string; heavyMetalHg: string;
@@ -55,7 +57,7 @@ interface LabTestsTabProps {
 // No sample data — loaded from API
 
 const DEFAULT_FORM = {
-  url: "", peptideName: "", labName: "Janoshik", batchCode: "", purityPct: "", testDate: "",
+  url: "", peptideName: "", labName: "Janoshik", batchCode: "", warehouse: null as LabTestWarehouse | null, purityPct: "", testDate: "",
   janoshikId: "", mgAmount: "", testType: "", productCategory: "", endotoxinEuMg: "", sterilityPass: "",
   heavyMetalAs: "", heavyMetalCd: "", heavyMetalPb: "", heavyMetalHg: "",
 };
@@ -115,6 +117,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           supplier: t.supplier ?? null,
           labName: t.labName ?? null,
           batchCode: t.batchCode ?? null,
+          warehouse: t.warehouse ?? getLabTestWarehouse(t.batchCode),
           purityPct: t.purityPct != null ? String(t.purityPct) : null,
           testDate: t.testDate ?? null,
           pending: t.pending !== false,
@@ -155,7 +158,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
     const startIdx = reviewRows.length;
     const newRows: LabReviewRow[] = urls.map(u => ({
       fileName: u, status: "pending",
-      url: u, peptideName: "", labName: "Janoshik", batchCode: "", purityPct: "",
+      url: u, peptideName: "", labName: "Janoshik", batchCode: "", warehouse: null, purityPct: "",
       testDate: "", janoshikId: "", mgAmount: "", testType: "",
       productCategory: "", endotoxinEuMg: "", sterilityPass: "",
       heavyMetalAs: "", heavyMetalCd: "", heavyMetalPb: "", heavyMetalHg: "",
@@ -177,6 +180,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           peptideName: extracted.peptideName ?? r.peptideName,
           labName: extracted.labName ?? r.labName,
           batchCode: extracted.batchCode ?? r.batchCode,
+          warehouse: extracted.warehouse ?? getLabTestWarehouse(extracted.batchCode ?? r.batchCode),
           purityPct: extracted.purityPct != null ? String(extracted.purityPct) : r.purityPct,
           testDate: extracted.testDate ?? r.testDate,
           janoshikId: extracted.janoshikId ?? janoshikIdFromUrl(urls[i]),
@@ -198,7 +202,11 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
   };
 
   const updateReviewRow = (i: number, k: keyof LabReviewRow, v: string) => {
-    setReviewRows(rows => rows.map((r, j) => j === i ? { ...r, [k]: v } : r));
+    setReviewRows(rows => rows.map((r, j) => j === i ? {
+      ...r,
+      [k]: v,
+      ...(k === "batchCode" ? { warehouse: getLabTestWarehouse(v) } : {}),
+    } : r));
   };
   const removeReviewRow = (i: number) => setReviewRows(rows => rows.filter((_, j) => j !== i));
 
@@ -233,6 +241,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
           id: typeof created.id === "number" ? created.id : parseInt(String(created.id)),
           url: created.url ?? null, peptideName: created.peptideName ?? row.peptideName,
           supplier: null, labName: created.labName ?? null, batchCode: created.batchCode ?? null,
+          warehouse: created.warehouse ?? getLabTestWarehouse(created.batchCode ?? null),
           purityPct: created.purityPct != null ? String(created.purityPct) : null,
           testDate: created.testDate ?? null, pending: true, groupBuyId: String(selectedGbId ?? ""),
           janoshikId: created.janoshikId ?? null, mgAmount: created.mgAmount ?? null,
@@ -275,6 +284,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
         peptideName: extracted.peptideName ?? f.peptideName,
         labName: extracted.labName ?? f.labName,
         batchCode: extracted.batchCode ?? f.batchCode,
+        warehouse: extracted.warehouse ?? getLabTestWarehouse(extracted.batchCode ?? f.batchCode),
         purityPct: extracted.purityPct != null ? String(extracted.purityPct) : f.purityPct,
         testDate: extracted.testDate ?? f.testDate,
         janoshikId: extracted.janoshikId ?? f.janoshikId,
@@ -325,6 +335,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
         id: typeof created.id === "number" ? created.id : parseInt(String(created.id)),
         url: created.url ?? null, peptideName: created.peptideName ?? form.peptideName.trim(),
         supplier: null, labName: created.labName ?? null, batchCode: created.batchCode ?? null,
+        warehouse: created.warehouse ?? getLabTestWarehouse(created.batchCode ?? null),
         purityPct: created.purityPct != null ? String(created.purityPct) : null,
         testDate: created.testDate ?? null, pending: true, groupBuyId: String(selectedGbId ?? ""),
         janoshikId: created.janoshikId ?? null, mgAmount: created.mgAmount ?? null,
@@ -506,7 +517,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
                         <td className="px-1 py-1.5"><input value={row.labName} onChange={e => updateReviewRow(i, "labName", e.target.value)} placeholder="Lab" className={`${cellInputCls} w-20`} style={inputStyle} /></td>
                         <td className="px-1 py-1.5"><input type="number" value={row.purityPct} onChange={e => updateReviewRow(i, "purityPct", e.target.value)} placeholder="%" className={`${cellInputCls} w-16`} style={inputStyle} /></td>
                         <td className="px-1 py-1.5"><input type="number" value={row.mgAmount} onChange={e => updateReviewRow(i, "mgAmount", e.target.value)} placeholder="mg" className={`${cellInputCls} w-14`} style={inputStyle} /></td>
-                        <td className="px-1 py-1.5"><input value={row.batchCode} onChange={e => updateReviewRow(i, "batchCode", e.target.value)} placeholder="Batch" className={`${cellInputCls} w-20`} style={inputStyle} /></td>
+                        <td className="px-1 py-1.5"><input value={row.batchCode} onChange={e => updateReviewRow(i, "batchCode", e.target.value)} placeholder="Batch" className={`${cellInputCls} w-20`} style={inputStyle} />{(row.warehouse ?? getLabTestWarehouse(row.batchCode)) && <span className="block text-[10px] text-blue-600">{row.warehouse ?? getLabTestWarehouse(row.batchCode)} warehouse</span>}</td>
                         <td className="px-1 py-1.5"><input type="date" value={row.testDate} onChange={e => updateReviewRow(i, "testDate", e.target.value)} className={`${cellInputCls} w-32`} style={inputStyle} /></td>
                         <td className="px-1 py-1.5">
                           <select value={row.sterilityPass} onChange={e => updateReviewRow(i, "sterilityPass", e.target.value)} className={`${cellInputCls} appearance-none w-20`} style={inputStyle}>
@@ -639,7 +650,8 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
                 <input type="text" value={form.janoshikId} onChange={(e) => setForm({ ...form, janoshikId: e.target.value })} placeholder="J-12345" className={inputCls} style={inputStyle} />
               </Field>
               <Field label="Batch Code">
-                <input type="text" value={form.batchCode} onChange={(e) => setForm({ ...form, batchCode: e.target.value })} placeholder="B240301" className={inputCls} style={inputStyle} />
+                <input type="text" value={form.batchCode} onChange={(e) => setForm({ ...form, batchCode: e.target.value, warehouse: getLabTestWarehouse(e.target.value) })} placeholder="B240301" className={inputCls} style={inputStyle} />
+                {(form.warehouse ?? getLabTestWarehouse(form.batchCode)) && <p className="mt-1 text-xs text-blue-600">{form.warehouse ?? getLabTestWarehouse(form.batchCode)} warehouse</p>}
               </Field>
               <Field label="mg Amount">
                 <input type="number" value={form.mgAmount} onChange={(e) => setForm({ ...form, mgAmount: e.target.value })} placeholder="e.g. 5" min="0" step="0.01" className={inputCls} style={inputStyle} />
@@ -731,7 +743,7 @@ export default function LabTestsTab({ selectedGbId }: LabTestsTabProps = {}) {
                           )}
                         </div>
                         <p className="text-[12px] mt-0.5" style={{ color: "var(--t-subtle)" }}>
-                          {test.labName || "Unknown lab"} • {test.batchCode || "No batch"} • {test.testDate || "No date"}
+                          {test.labName || "Unknown lab"} • {test.batchCode || "No batch"}{(test.warehouse ?? getLabTestWarehouse(test.batchCode)) ? ` · ${test.warehouse ?? getLabTestWarehouse(test.batchCode)} warehouse` : ""} • {test.testDate || "No date"}
                         </p>
                       </div>
                     </div>

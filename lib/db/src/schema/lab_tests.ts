@@ -10,6 +10,7 @@ export const labTestsTable = pgTable("lab_tests", {
   massUnit: text("mass_unit").default("mg"),
   supplier: text("supplier").notNull().default("Uther"),
   batchCode: text("batch_code"),
+  warehouse: text("warehouse"),
   // Lab metadata
   labName: text("lab_name").notNull().default("Janoshik"),
   testType: text("test_type"),

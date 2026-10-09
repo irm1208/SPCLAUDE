@@ -20,6 +20,7 @@ import {
   type GroupBuy,
 } from "@workspace/db";
 import { eq, and, or, sql, desc, asc, inArray, ilike, isNull, isNotNull, gt } from "drizzle-orm";
+import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 import { randomUUID, randomBytes } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
 import { requireOrganiser } from "../middleware/require-organiser";
@@ -302,7 +303,39 @@ router.get("/organiser/group-buys", requireOrganiser, async (req, res): Promise<
   const username = req.organiser!.telegramUsername;
 
   const rows = await db
-    .select()
+    .select({
+      id: labTestsTable.id,
+      janoshikId: labTestsTable.janoshikId,
+      url: labTestsTable.url,
+      peptideName: labTestsTable.peptideName,
+      mgAmount: labTestsTable.mgAmount,
+      nominalDose: labTestsTable.nominalDose,
+      massUnit: labTestsTable.massUnit,
+      supplier: labTestsTable.supplier,
+      batchCode: labTestsTable.batchCode,
+      warehouse: labTestsTable.warehouse,
+      labName: labTestsTable.labName,
+      testType: labTestsTable.testType,
+      productCategory: labTestsTable.productCategory,
+      purityPct: labTestsTable.purityPct,
+      endotoxinEuMg: labTestsTable.endotoxinEuMg,
+      sterilityPass: labTestsTable.sterilityPass,
+      testDate: labTestsTable.testDate,
+      notes: labTestsTable.notes,
+      heavyMetalAs: labTestsTable.heavyMetalAs,
+      heavyMetalCd: labTestsTable.heavyMetalCd,
+      heavyMetalPb: labTestsTable.heavyMetalPb,
+      heavyMetalHg: labTestsTable.heavyMetalHg,
+      isThirdPartyTest: labTestsTable.isThirdPartyTest,
+      pending: labTestsTable.pending,
+      submittedBy: labTestsTable.submittedBy,
+      organiserId: labTestsTable.organiserId,
+      groupBuyId: labTestsTable.groupBuyId,
+      blendComponents: labTestsTable.blendComponents,
+      aiExtracted: labTestsTable.aiExtracted,
+      aiExtractedAt: labTestsTable.aiExtractedAt,
+      createdAt: labTestsTable.createdAt,
+    })
     .from(groupBuysTable)
     .where(gbOwner(req))
     .orderBy(desc(groupBuysTable.createdAt));
@@ -1841,7 +1874,10 @@ router.get("/organiser/lab-tests", requireOrganiser, async (req, res): Promise<v
     .where(sql`${labTestsTable.organiserId} = ${username}`)
     .orderBy(desc(labTestsTable.createdAt));
 
-  res.json(rows);
+  res.json(rows.map(row => ({
+    ...row,
+    warehouse: row.warehouse ?? parseLabTestBatchCode(row.batchCode).warehouse,
+  })));
 });
 
 // POST /api/organiser/lab-tests/extract — AI-extract lab test data from a PDF/image or URL
@@ -1990,6 +2026,9 @@ Rules:
       extracted = {};
     }
 
+    extracted.warehouse = parseLabTestBatchCode(
+      typeof extracted.batchCode === "string" ? extracted.batchCode : null,
+    ).warehouse;
     res.json(extracted);
   } catch (err) {
     console.error("[organiser:lab-tests/extract] Sage extraction error:", err);
@@ -2009,7 +2048,7 @@ router.get("/organiser/lab-tests/:id", requireOrganiser, async (req, res): Promi
     .where(and(eq(labTestsTable.id, id), sql`${labTestsTable.organiserId} = ${username}`));
 
   if (!row) { res.status(404).json({ error: "Lab test not found" }); return; }
-  res.json(row);
+  res.json({ ...row, warehouse: row.warehouse ?? parseLabTestBatchCode(row.batchCode).warehouse });
 });
 
 // POST /api/organiser/lab-tests — submit a lab test
@@ -2059,6 +2098,7 @@ router.post("/organiser/lab-tests", requireOrganiser, async (req, res): Promise<
     supplier: supplier ? String(supplier).trim() : username,
     labName: labName ? String(labName).trim() : "Janoshik",
     batchCode: batchCode ? String(batchCode).trim() : null,
+    warehouse: parseLabTestBatchCode(batchCode ? String(batchCode) : null).warehouse,
     testType: testType ? String(testType).trim() : null,
     productCategory: productCategory ? String(productCategory).trim() : null,
     purityPct: purityPct != null ? parseFloat(String(purityPct)) : null,
@@ -2162,6 +2202,7 @@ router.post("/organiser/lab-tests/bulk-janoshik", requireOrganiser, async (req, 
         supplier: supplier ? String(supplier).trim() : username,
         labName: "Janoshik",
         batchCode: extracted?.batchCode ?? null,
+        warehouse: parseLabTestBatchCode(extracted?.batchCode ?? null).warehouse,
         testType: extracted?.testType ?? null,
         productCategory: extracted?.productCategory ?? null,
         purityPct: extracted?.purityPct ?? null,

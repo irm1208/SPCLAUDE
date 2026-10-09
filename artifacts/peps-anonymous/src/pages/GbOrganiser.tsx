@@ -29,7 +29,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { IntlShippingTab } from "@/components/IntlShippingTab";
 import { GbQrCodesPanel } from "@/components/GbQrCodesPanel";
 import { LabReportPopup } from "@/components/LabTestsPopup";
-import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
+import { resolveProductBatchPrefixes, anyBatchCodeMatches, getLabTestWarehouse, type LabTestWarehouse } from "@/lib/batch-prefixes";
 import { useAccount, useLogout, useAccountOrders } from "@/hooks/use-account";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
@@ -223,6 +223,7 @@ interface OrgLabTest {
   supplier: string | null;
   labName: string | null;
   batchCode: string | null;
+  warehouse?: LabTestWarehouse | null;
   purityPct: string | null;
   testDate: string | null;
   pending: boolean;
@@ -10661,7 +10662,7 @@ type LabReviewRow = {
   fileName: string;
   status: "pending" | "extracting" | "done" | "error";
   error?: string;
-  url: string; peptideName: string; labName: string; batchCode: string; purityPct: string;
+  url: string; peptideName: string; labName: string; batchCode: string; warehouse: LabTestWarehouse | null; purityPct: string;
   testDate: string; janoshikId: string; mgAmount: string; testType: string;
   productCategory: string; endotoxinEuMg: string; sterilityPass: string;
   heavyMetalAs: string; heavyMetalCd: string; heavyMetalPb: string; heavyMetalHg: string;
@@ -10685,7 +10686,7 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
   const [labExtractedData, setLabExtractedData] = useState<Record<string, unknown> | null>(null);
 
   const defaultForm = {
-    url: "", peptideName: "", labName: "Janoshik", batchCode: "", purityPct: "", testDate: "",
+    url: "", peptideName: "", labName: "Janoshik", batchCode: "", warehouse: null as LabTestWarehouse | null, purityPct: "", testDate: "",
     janoshikId: "", mgAmount: "", testType: "", productCategory: "", endotoxinEuMg: "", sterilityPass: "",
     heavyMetalAs: "", heavyMetalCd: "", heavyMetalPb: "", heavyMetalHg: "",
   };
@@ -10715,7 +10716,7 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
     setError(""); setBulkExtracting(true);
     const newRows: LabReviewRow[] = urls.map(u => ({
       fileName: u, status: "pending",
-      url: u, peptideName: "", labName: "Janoshik", batchCode: "", purityPct: "",
+      url: u, peptideName: "", labName: "Janoshik", batchCode: "", warehouse: null, purityPct: "",
       testDate: "", janoshikId: "", mgAmount: "", testType: "",
       productCategory: "", endotoxinEuMg: "", sterilityPass: "",
       heavyMetalAs: "", heavyMetalCd: "", heavyMetalPb: "", heavyMetalHg: "",
@@ -10739,6 +10740,7 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
             ...r, status: "done",
             peptideName: data.peptideName ?? "", labName: data.labName ?? "Janoshik",
             batchCode: data.batchCode ?? "", purityPct: data.purityPct != null ? String(data.purityPct) : "",
+            warehouse: data.warehouse ?? getLabTestWarehouse(data.batchCode),
             testDate: data.testDate ?? "", janoshikId: data.janoshikId ?? "",
             mgAmount: data.mgAmount != null ? String(data.mgAmount) : "",
             testType: data.testType ?? "", productCategory: data.productCategory ?? "",
@@ -10759,7 +10761,9 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
   };
 
   const updateReviewRow = (i: number, k: keyof LabReviewRow, v: string) => {
-    setReviewRows(rows => rows.map((r, j) => j === i ? { ...r, [k]: v } : r));
+    setReviewRows(rows => rows.map((r, j) => j === i ? {
+      ...r, [k]: v, ...(k === "batchCode" ? { warehouse: getLabTestWarehouse(v) } : {}),
+    } : r));
   };
   const removeReviewRow = (i: number) => setReviewRows(rows => rows.filter((_, j) => j !== i));
 
@@ -10820,6 +10824,7 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
             peptideName: (data.peptideName as string) ?? f.peptideName,
             labName: (data.labName as string) ?? f.labName,
             batchCode: (data.batchCode as string) ?? f.batchCode,
+            warehouse: (data.warehouse as LabTestWarehouse | null) ?? getLabTestWarehouse((data.batchCode as string) ?? f.batchCode),
             purityPct: data.purityPct != null ? String(data.purityPct) : f.purityPct,
             testDate: (data.testDate as string) ?? f.testDate,
             janoshikId: (data.janoshikId as string) ?? f.janoshikId,
@@ -10940,7 +10945,7 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
                             <td className="px-1 py-1"><input value={row.labName} onChange={e => updateReviewRow(i, "labName", e.target.value)} placeholder="Lab" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} /></td>
                             <td className="px-1 py-1"><input type="number" value={row.purityPct} onChange={e => updateReviewRow(i, "purityPct", e.target.value)} placeholder="%" className={`${inputCls} text-[11px] h-7 py-0 w-16`} style={inputStyle} /></td>
                             <td className="px-1 py-1"><input type="number" value={row.mgAmount} onChange={e => updateReviewRow(i, "mgAmount", e.target.value)} placeholder="mg" className={`${inputCls} text-[11px] h-7 py-0 w-14`} style={inputStyle} /></td>
-                            <td className="px-1 py-1"><input value={row.batchCode} onChange={e => updateReviewRow(i, "batchCode", e.target.value)} placeholder="Batch" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} /></td>
+                            <td className="px-1 py-1"><input value={row.batchCode} onChange={e => updateReviewRow(i, "batchCode", e.target.value)} placeholder="Batch" className={`${inputCls} text-[11px] h-7 py-0 w-20`} style={inputStyle} />{(row.warehouse ?? getLabTestWarehouse(row.batchCode)) && <span className="block text-[10px] text-blue-500">{row.warehouse ?? getLabTestWarehouse(row.batchCode)} warehouse</span>}</td>
                             <td className="px-1 py-1"><input type="text" inputMode="numeric" value={row.testDate} onChange={e => updateReviewRow(i, "testDate", e.target.value)} placeholder="DD/MM/YYYY" className={`${inputCls} text-[11px] h-7 py-0 w-28`} style={inputStyle} /></td>
                             <td className="px-1 py-1">
                               <select value={row.sterilityPass} onChange={e => updateReviewRow(i, "sterilityPass", e.target.value)} className={`${inputCls} appearance-none text-[11px] h-7 py-0 w-20`} style={inputStyle}>
@@ -11010,7 +11015,7 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Lab Name"><input value={form.labName} onChange={e => setForm(f => ({ ...f, labName: e.target.value }))} placeholder="Janoshik" className={inputCls} style={inputStyle} /></Field>
                   <Field label="Janoshik ID"><input value={form.janoshikId} onChange={e => setForm(f => ({ ...f, janoshikId: e.target.value }))} placeholder="J-12345" className={inputCls} style={inputStyle} /></Field>
-                  <Field label="Batch Code"><input value={form.batchCode} onChange={e => setForm(f => ({ ...f, batchCode: e.target.value }))} placeholder="B240301" className={inputCls} style={inputStyle} /></Field>
+                  <Field label="Batch Code"><input value={form.batchCode} onChange={e => setForm(f => ({ ...f, batchCode: e.target.value, warehouse: getLabTestWarehouse(e.target.value) }))} placeholder="B240301" className={inputCls} style={inputStyle} />{(form.warehouse ?? getLabTestWarehouse(form.batchCode)) && <span className="block mt-1 text-xs text-blue-500">{form.warehouse ?? getLabTestWarehouse(form.batchCode)} warehouse</span>}</Field>
                   <Field label="mg Amount"><input type="number" value={form.mgAmount} onChange={e => setForm(f => ({ ...f, mgAmount: e.target.value }))} placeholder="e.g. 5" min="0" step="0.01" className={inputCls} style={inputStyle} /></Field>
                   <Field label="Purity %"><input type="number" value={form.purityPct} onChange={e => setForm(f => ({ ...f, purityPct: e.target.value }))} placeholder="98.5" min="0" max="100" step="0.01" className={inputCls} style={inputStyle} /></Field>
                   <Field label="Test Date"><input type="text" inputMode="numeric" value={form.testDate} onChange={e => setForm(f => ({ ...f, testDate: e.target.value }))} placeholder="DD/MM/YYYY" className={inputCls} style={inputStyle} /></Field>
@@ -11058,7 +11063,7 @@ export function LabTestsTabOrg({ gb }: { gb: OrganiserGB }) {
                 {t.labName && <span>{t.labName}</span>}
                 {t.purityPct && <span>{t.purityPct}% purity</span>}
                 {t.mgAmount && <span>{t.mgAmount}mg</span>}
-                {t.batchCode && <span>Batch: {t.batchCode}</span>}
+                {t.batchCode && <span>Batch: {t.batchCode}{(t.warehouse ?? getLabTestWarehouse(t.batchCode)) ? ` · ${t.warehouse ?? getLabTestWarehouse(t.batchCode)} warehouse` : ""}</span>}
                 {t.janoshikId && <span>ID: {t.janoshikId}</span>}
                 {t.testDate && <span>{new Date(t.testDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</span>}
                 {t.sterilityPass != null && <span>Sterility: {t.sterilityPass ? "Pass" : "Fail"}</span>}

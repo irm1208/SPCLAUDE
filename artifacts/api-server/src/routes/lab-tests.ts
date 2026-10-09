@@ -22,6 +22,7 @@ import {
   resolveUzorakPreviewBytes,
 } from "../lib/gemini-lab-extract";
 import { prepareCertificateBase64, prepareCertificateForStorage } from "../lib/lab-cert-storage";
+import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -182,14 +183,14 @@ export const UTHER_BATCH_CODES: Record<string, string> = {
  */
 function resolveUtherName(supplier: string, batchCode: string | null | undefined, fallback: string): string {
   if (supplier.toLowerCase() === "uther" && batchCode) {
-    const upper = batchCode.trim().toUpperCase();
+    const upper = parseLabTestBatchCode(batchCode).productBatchCode?.toUpperCase() ?? "";
     // 1. Exact match
     if (UTHER_BATCH_CODES[upper]) return UTHER_BATCH_CODES[upper];
     // 2. Longest prefix match (e.g. "TE10-0722" → key "TE10")
     let best: string | null = null;
     let bestLen = 0;
     for (const key of Object.keys(UTHER_BATCH_CODES)) {
-      if (upper.startsWith(key) && key.length > bestLen) {
+      if (new RegExp("^" + key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z0-9]|$)", "i").test(upper) && key.length > bestLen) {
         best = UTHER_BATCH_CODES[key];
         bestLen = key.length;
       }
@@ -272,7 +273,7 @@ router.get("/lab-tests", async (req, res) => {
         .slice(0, 60);
       if (prefixes.length > 0) {
         const ors = prefixes.map(
-          p => sql`coalesce(${labTestsTable.batchCode}, '') ~* ${"^" + escapeRe(p) + "([^a-z0-9]|$)"}`,
+          p => sql`regexp_replace(coalesce(${labTestsTable.batchCode}, ''), '^(US|UK)-', '', 'i') ~* ${"^" + escapeRe(p) + "([^a-z0-9]|$)"}`,
         );
         conditions.push((ors.length === 1 ? ors[0] : or(...ors)) as SQL<unknown>);
       }
@@ -319,6 +320,7 @@ router.get("/lab-tests", async (req, res) => {
         massUnit: labTestsTable.massUnit,
         supplier: labTestsTable.supplier,
         batchCode: labTestsTable.batchCode,
+        warehouse: labTestsTable.warehouse,
         labName: labTestsTable.labName,
         testType: labTestsTable.testType,
         productCategory: labTestsTable.productCategory,
@@ -351,7 +353,10 @@ router.get("/lab-tests", async (req, res) => {
       .limit(limit)
       .offset(offset);
 
-    res.json(rows);
+    res.json(rows.map(row => ({
+      ...row,
+      warehouse: row.warehouse ?? parseLabTestBatchCode(row.batchCode).warehouse,
+    })));
   } catch (err) {
     console.error("[lab-tests] GET /lab-tests error:", err);
     res.status(500).json({ error: "Failed to fetch lab tests" });
@@ -561,6 +566,7 @@ router.post("/lab-tests/submit-pdf", upload.single("file"), async (req, res) => 
       productCategory: productCategory && String(productCategory).trim() ? String(productCategory).trim() : null,
       mgAmount: mgAmount != null && mgAmount !== "" ? parseFloat(mgAmount) : null,
       batchCode: batchCode ? String(batchCode).trim() : null,
+      warehouse: parseLabTestBatchCode(batchCode ? String(batchCode) : null).warehouse,
       purityPct: purityPct != null && purityPct !== "" ? parseFloat(purityPct) : null,
       endotoxinEuMg: endotoxinEuMg != null && endotoxinEuMg !== "" ? parseFloat(endotoxinEuMg) : null,
       sterilityPass: sterilityPass === true || sterilityPass === "true" ? true : sterilityPass === false || sterilityPass === "false" ? false : null,
@@ -618,6 +624,7 @@ router.post("/lab-tests/submit", async (req, res) => {
       productCategory: productCategory && typeof productCategory === "string" && productCategory.trim() ? productCategory.trim() : null,
       mgAmount: mgAmount != null && mgAmount !== "" ? parseFloat(mgAmount) : null,
       batchCode: batchCode ? String(batchCode).trim() : null,
+      warehouse: parseLabTestBatchCode(batchCode ? String(batchCode) : null).warehouse,
       purityPct: purityPct != null && purityPct !== "" ? parseFloat(purityPct) : null,
       endotoxinEuMg: endotoxinEuMg != null && endotoxinEuMg !== "" ? parseFloat(endotoxinEuMg) : null,
       sterilityPass: sterilityPass === true || sterilityPass === "true" ? true : sterilityPass === false || sterilityPass === "false" ? false : null,
@@ -877,7 +884,7 @@ router.get("/lab-tests/:id", async (req, res) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    res.json(test);
+    res.json({ ...test, warehouse: test.warehouse ?? parseLabTestBatchCode(test.batchCode).warehouse });
   } catch {
     res.status(500).json({ error: "Failed to fetch test" });
   }
@@ -897,6 +904,7 @@ router.get("/admin/lab-tests/pending", async (req, res) => {
       massUnit: labTestsTable.massUnit,
       supplier: labTestsTable.supplier,
       batchCode: labTestsTable.batchCode,
+      warehouse: labTestsTable.warehouse,
       labName: labTestsTable.labName,
       testType: labTestsTable.testType,
       productCategory: labTestsTable.productCategory,
@@ -921,7 +929,10 @@ router.get("/admin/lab-tests/pending", async (req, res) => {
     }).from(labTestsTable)
       .where(eq(labTestsTable.pending, true))
       .orderBy(desc(labTestsTable.id));
-    res.json(rows);
+    res.json(rows.map(row => ({
+      ...row,
+      warehouse: row.warehouse ?? parseLabTestBatchCode(row.batchCode).warehouse,
+    })));
   } catch {
     res.status(500).json({ error: "Failed to fetch pending tests" });
   }
@@ -954,7 +965,10 @@ router.post("/admin/lab-tests/:id/approve", async (req, res) => {
     else if (req.body.testType === null) updates.testType = null;
     if (productCategory != null) updates.productCategory = String(productCategory).trim();
     else if (req.body.productCategory === null) updates.productCategory = null;
-    if (batchCode != null) updates.batchCode = String(batchCode).trim();
+    if (batchCode !== undefined) {
+      updates.batchCode = batchCode == null ? null : String(batchCode).trim() || null;
+      updates.warehouse = parseLabTestBatchCode(updates.batchCode).warehouse;
+    }
     if (purityPct != null) updates.purityPct = parseFloat(purityPct);
     else if (req.body.purityPct === null) updates.purityPct = null;
     if (endotoxinEuMg != null) updates.endotoxinEuMg = parseFloat(endotoxinEuMg);
@@ -1007,6 +1021,7 @@ router.post("/admin/lab-tests/:id/approve", async (req, res) => {
         if (!row.heavyMetalPb && extracted.heavyMetalPb) fill.heavyMetalPb = extracted.heavyMetalPb;
         if (!row.heavyMetalHg && extracted.heavyMetalHg) fill.heavyMetalHg = extracted.heavyMetalHg;
         if (!row.batchCode && extracted.batchCode) fill.batchCode = extracted.batchCode;
+        if (!row.batchCode && extracted.batchCode) fill.warehouse = parseLabTestBatchCode(extracted.batchCode).warehouse;
         if (!row.testDate && extracted.testDate) fill.testDate = extracted.testDate;
         if (!row.testType && extracted.testType) fill.testType = extracted.testType;
         if (!row.productCategory && extracted.productCategory) fill.productCategory = extracted.productCategory;
@@ -1145,6 +1160,7 @@ router.post("/admin/lab-tests/with-pdf", upload.single("file"), async (req, res)
       testType: testType ? String(testType).trim() : null,
       productCategory: productCategory ? String(productCategory).trim() : null,
       batchCode: resolvedBatchCode,
+      warehouse: parseLabTestBatchCode(resolvedBatchCode).warehouse,
       purityPct: purityPct != null && purityPct !== "" ? parseFloat(purityPct) : null,
       endotoxinEuMg: endotoxinEuMg != null && endotoxinEuMg !== "" ? parseFloat(endotoxinEuMg) : null,
       sterilityPass: sterilityPass != null ? (sterilityPass === "true" || sterilityPass === true) : null,
@@ -1305,6 +1321,7 @@ router.post("/admin/lab-tests/bookmarklet-import", upload.array("files", 6), asy
       heavyMetalPb: extracted.heavyMetalPb ?? null,
       heavyMetalHg: extracted.heavyMetalHg ?? null,
       batchCode: importBatchCode,
+      warehouse: parseLabTestBatchCode(importBatchCode).warehouse,
       testDate: extracted.testDate ?? null,
       testType: extracted.testType ?? null,
       productCategory: extracted.productCategory ?? null,
@@ -1433,6 +1450,7 @@ router.post("/admin/lab-tests", async (req, res) => {
       testType: testType ? String(testType).trim() : null,
       productCategory: productCategory ? String(productCategory).trim() : null,
       batchCode: resolvedBatchCode,
+      warehouse: parseLabTestBatchCode(resolvedBatchCode).warehouse,
       purityPct: purityPct != null ? parseFloat(purityPct) : null,
       endotoxinEuMg: endotoxinEuMg != null ? parseFloat(endotoxinEuMg) : null,
       sterilityPass: sterilityPass != null ? Boolean(sterilityPass) : null,
@@ -1480,7 +1498,9 @@ router.put("/admin/lab-tests/:id", async (req, res) => {
 
     // Resolve supplier/batchCode first (needed for Uther name normalisation)
     const resolvedSupplier = supplier != null ? String(supplier).trim() : null;
-    const resolvedBatchCode = batchCode != null ? String(batchCode).trim() || null : undefined;
+    const resolvedBatchCode = batchCode !== undefined
+      ? (batchCode == null ? null : String(batchCode).trim() || null)
+      : undefined;
     if (resolvedSupplier != null) updates.supplier = resolvedSupplier;
     if (resolvedBatchCode !== undefined) updates.batchCode = resolvedBatchCode;
 
@@ -1493,6 +1513,7 @@ router.put("/admin/lab-tests/:id", async (req, res) => {
       const nameFallback = peptideName != null ? String(peptideName).trim() : existing.peptideName;
       const effectiveSupplier = resolvedSupplier ?? existing.supplier;
       const effectiveBatchCode = resolvedBatchCode !== undefined ? resolvedBatchCode : existing.batchCode;
+      updates.warehouse = parseLabTestBatchCode(effectiveBatchCode).warehouse;
       updates.peptideName = resolveUtherName(effectiveSupplier, effectiveBatchCode, nameFallback);
     }
 
@@ -1636,7 +1657,10 @@ router.post("/admin/lab-tests/:id/extract", async (req, res) => {
     if (extracted.heavyMetalCd) updates.heavyMetalCd = extracted.heavyMetalCd;
     if (extracted.heavyMetalPb) updates.heavyMetalPb = extracted.heavyMetalPb;
     if (extracted.heavyMetalHg) updates.heavyMetalHg = extracted.heavyMetalHg;
-    if (extracted.batchCode) updates.batchCode = extracted.batchCode;
+    if (extracted.batchCode) {
+      updates.batchCode = extracted.batchCode;
+      updates.warehouse = parseLabTestBatchCode(extracted.batchCode).warehouse;
+    }
     if (extracted.testDate) updates.testDate = extracted.testDate;
     if (extracted.testType) updates.testType = extracted.testType;
     if (extracted.productCategory) updates.productCategory = extracted.productCategory;
@@ -1739,7 +1763,10 @@ router.post("/admin/lab-tests/extract-all", async (req, res) => {
             if (extracted.heavyMetalCd) updates.heavyMetalCd = extracted.heavyMetalCd;
             if (extracted.heavyMetalPb) updates.heavyMetalPb = extracted.heavyMetalPb;
             if (extracted.heavyMetalHg) updates.heavyMetalHg = extracted.heavyMetalHg;
-            if (extracted.batchCode) updates.batchCode = extracted.batchCode;
+            if (extracted.batchCode) {
+              updates.batchCode = extracted.batchCode;
+              updates.warehouse = parseLabTestBatchCode(extracted.batchCode).warehouse;
+            }
             if (extracted.testDate) updates.testDate = extracted.testDate;
             if (extracted.testType) updates.testType = extracted.testType;
             if (extracted.productCategory) updates.productCategory = extracted.productCategory;
@@ -1893,6 +1920,7 @@ router.post("/admin/lab-tests/bulk-import", async (req, res) => {
           heavyMetalPb: extracted.heavyMetalPb ?? null,
           heavyMetalHg: extracted.heavyMetalHg ?? null,
           batchCode: importBatchCode,
+          warehouse: parseLabTestBatchCode(importBatchCode).warehouse,
           testDate: extracted.testDate ?? null,
           testType: extracted.testType ?? null,
           productCategory: extracted.productCategory ?? null,

@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 import { Button, Input, Label, Card } from "@/components/ui";
 import { getCanonicalGroup } from "@/lib/peptide-groups";
-import { UTHER_BATCH_CODES } from "@/lib/uther-batch-codes";
+import { resolveUtherName } from "@/lib/uther-batch-codes";
+import { getLabTestWarehouse, stripWarehousePrefix } from "@/lib/batch-prefixes";
 import { adminAuth } from "@/lib/admin-auth";
 
 
@@ -48,6 +49,7 @@ interface LabTest {
   massUnit: string | null;
   supplier: string;
   batchCode: string | null;
+  warehouse?: "US" | "UK" | null;
   labName: string;
   testType: string | null;
   productCategory: string | null;
@@ -153,6 +155,7 @@ function EditModal({ test, secret, onClose, onSaved }: {
     testType: test?.testType ?? "",
     productCategory: test?.productCategory ?? "",
     batchCode: test?.batchCode ?? "",
+    warehouse: test?.warehouse ?? getLabTestWarehouse(test?.batchCode),
     purityPct: test?.purityPct?.toString() ?? "",
     endotoxinEuMg: test?.endotoxinEuMg?.toString() ?? "",
     sterilityPass: test?.sterilityPass === null ? "" : test?.sterilityPass ? "true" : "false",
@@ -215,6 +218,7 @@ function EditModal({ test, secret, onClose, onSaved }: {
           sterilityPass: ex.sterilityPass != null ? String(ex.sterilityPass) : f.sterilityPass,
           testDate: ex.testDate?.trim() || f.testDate,
           batchCode: newBatchCode || f.batchCode,
+          warehouse: ex.warehouse ?? getLabTestWarehouse(newBatchCode || f.batchCode),
           testType: ex.testType || f.testType,
           productCategory: ex.productCategory || f.productCategory,
           heavyMetalAs: ex.heavyMetalAs?.trim() || f.heavyMetalAs,
@@ -262,6 +266,7 @@ function EditModal({ test, secret, onClose, onSaved }: {
         sterilityPass: ex.sterilityPass != null ? String(ex.sterilityPass) : f.sterilityPass,
         testDate: ex.testDate?.trim() || f.testDate,
         batchCode: ex.batchCode?.trim() || f.batchCode,
+        warehouse: ex.warehouse ?? getLabTestWarehouse(ex.batchCode?.trim() || f.batchCode),
         testType: ex.testType || f.testType,
         productCategory: ex.productCategory || f.productCategory,
         heavyMetalAs: ex.heavyMetalAs?.trim() || f.heavyMetalAs,
@@ -478,11 +483,12 @@ function EditModal({ test, secret, onClose, onSaved }: {
                 value={form.batchCode}
                 onChange={e => {
                   const val = e.target.value;
-                  const rawPrefix = val.split("-")[0].toUpperCase();
+                  const rawPrefix = stripWarehousePrefix(val).split("-")[0].toUpperCase();
                   const match = batchPrefixes.find(p => p.prefix.toUpperCase() === rawPrefix);
                   setForm(f => ({
                     ...f,
                     batchCode: val,
+                    warehouse: getLabTestWarehouse(val),
                     peptideName: match ? match.compoundName : f.peptideName,
                     nominalDose: match ? (match.nominalDose || f.nominalDose) : f.nominalDose,
                   }));
@@ -490,8 +496,9 @@ function EditModal({ test, secret, onClose, onSaved }: {
                 placeholder="ZE10-0318"
                 className={fieldClass}
               />
+              {(form.warehouse ?? getLabTestWarehouse(form.batchCode)) && <p className="mt-1 text-[10px] text-blue-400">{form.warehouse ?? getLabTestWarehouse(form.batchCode)} warehouse</p>}
               {form.supplier.toLowerCase() === "uther" && form.batchCode.trim() && (() => {
-                const canonical = UTHER_BATCH_CODES[form.batchCode.trim().toUpperCase()];
+                const canonical = resolveUtherName(form.supplier, form.batchCode, "");
                 return canonical ? (
                   <p className="text-[10px] text-amber-400 mt-1">
                     Uther code → <span className="font-bold">{canonical}</span> (name will be auto-set on save)
@@ -767,7 +774,7 @@ function PendingCard({ test, secret, onAction }: { test: LabTest; secret: string
                 </span>
               )}
               {test.mgAmount && <span className="text-xs text-slate-500">{test.mgAmount}{test.massUnit ?? "mg"}</span>}
-              {test.batchCode && <span className="text-xs text-slate-400 font-mono">{test.batchCode}</span>}
+              {test.batchCode && <span className="text-xs text-slate-400 font-mono">{test.batchCode}{(test.warehouse ?? getLabTestWarehouse(test.batchCode)) ? ` · ${test.warehouse ?? getLabTestWarehouse(test.batchCode)} warehouse` : ""}</span>}
             </div>
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">
               {test.purityPct != null && <span className="text-xs font-bold text-green-700">Purity {test.purityPct}%</span>}
@@ -1576,7 +1583,7 @@ function MassApplyBatchCodePanel({ tests, secret, onDone }: { tests: LabTest[]; 
                 <input type="checkbox" checked={selectedIds.has(t.id)} onChange={() => toggle(t.id)} className="accent-blue-600 w-3.5 h-3.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <span className="text-xs font-semibold text-slate-700 truncate block">{t.peptideName}</span>
-                  <span className="text-[10px] text-slate-400">{t.supplier}{t.batchCode ? ` · ${t.batchCode}` : " · no batch"}</span>
+                  <span className="text-[10px] text-slate-400">{t.supplier}{t.batchCode ? ` · ${t.batchCode}${(t.warehouse ?? getLabTestWarehouse(t.batchCode)) ? ` · ${t.warehouse ?? getLabTestWarehouse(t.batchCode)} warehouse` : ""}` : " · no batch"}</span>
                 </div>
                 <span className="text-[10px] text-slate-400 shrink-0">{t.testDate ?? ""}</span>
               </label>
@@ -2488,7 +2495,7 @@ export function LabTestsTab({ secret }: { secret: string }) {
                         <Sparkles className="w-2.5 h-2.5" /> AI
                       </span>
                     )}
-                    {t.batchCode && <span className="text-xs text-slate-400 font-mono">{t.batchCode}</span>}
+                    {t.batchCode && <span className="text-xs text-slate-400 font-mono">{t.batchCode}{(t.warehouse ?? getLabTestWarehouse(t.batchCode)) ? ` · ${t.warehouse ?? getLabTestWarehouse(t.batchCode)} warehouse` : ""}</span>}
                   </div>
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     {t.purityPct != null && (

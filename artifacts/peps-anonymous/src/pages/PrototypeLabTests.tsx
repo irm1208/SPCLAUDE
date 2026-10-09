@@ -14,7 +14,7 @@ import { PROTOCOLS } from "@/data/protocols";
 import { PageLayout } from "@/components/PageLayout";
 import { PEPTIDE_GROUPS, getCanonicalGroup, getPeptideDisplayName } from "@/lib/peptide-groups";
 import { resolveUtherName } from "@/lib/uther-batch-codes";
-import { resolveBatchPrefixName } from "@/lib/batch-prefixes";
+import { getLabTestWarehouse, resolveBatchPrefixName, type LabTestWarehouse } from "@/lib/batch-prefixes";
 import type { PeptideGroup } from "@/lib/peptide-groups";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import {
@@ -40,6 +40,7 @@ interface LabTest {
   massUnit: string | null;
   supplier: string;
   batchCode: string | null;
+  warehouse?: LabTestWarehouse | null;
   labName: string;
   testType: string | null;
   productCategory: string | null;
@@ -1259,6 +1260,7 @@ function SubmitSection() {
     productCategory: "",
     isThirdPartyTest: true,
     batchCode: "",
+    warehouse: null as LabTestWarehouse | null,
     notes: "",
     submittedBy: "",
     mgAmount: "",
@@ -1299,6 +1301,7 @@ function SubmitSection() {
         testType: ex.testType || f.testType,
         productCategory: ex.productCategory || f.productCategory,
         batchCode: ex.batchCode?.trim() || f.batchCode,
+        warehouse: ex.warehouse ?? getLabTestWarehouse(ex.batchCode?.trim() || f.batchCode),
         mgAmount: ex.mgAmount != null ? String(ex.mgAmount) : f.mgAmount,
         purityPct: ex.purityPct != null ? String(ex.purityPct) : f.purityPct,
         testDate: ex.testDate?.trim() || f.testDate,
@@ -1370,7 +1373,7 @@ function SubmitSection() {
           </p>
         </div>
         <button
-          onClick={() => { setSuccess(false); setForm({ url: "", peptideName: "", supplier: "", labName: "Janoshik", testType: "", productCategory: "", isThirdPartyTest: true, batchCode: "", notes: "", submittedBy: "", mgAmount: "", massUnit: "mg", purityPct: "", endotoxinEuMg: "", sterilityPass: "", testDate: "", heavyMetalArsenic: "", heavyMetalCadmium: "", heavyMetalLead: "", heavyMetalMercury: "" }); }}
+          onClick={() => { setSuccess(false); setForm({ url: "", peptideName: "", supplier: "", labName: "Janoshik", testType: "", productCategory: "", isThirdPartyTest: true, batchCode: "", warehouse: null, notes: "", submittedBy: "", mgAmount: "", massUnit: "mg", purityPct: "", endotoxinEuMg: "", sterilityPass: "", testDate: "", heavyMetalArsenic: "", heavyMetalCadmium: "", heavyMetalLead: "", heavyMetalMercury: "" }); }}
           className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
           style={{ background: "var(--t-blue)" }}
         >
@@ -1517,10 +1520,11 @@ function SubmitSection() {
               type="text"
               placeholder="Optional"
               value={form.batchCode}
-              onChange={set("batchCode")}
+              onChange={e => setForm(f => ({ ...f, batchCode: e.target.value, warehouse: getLabTestWarehouse(e.target.value) }))}
               className={inputCls}
               style={inputStyle}
             />
+            {(form.warehouse ?? getLabTestWarehouse(form.batchCode)) && <p className="mt-1 text-xs text-blue-500">{form.warehouse ?? getLabTestWarehouse(form.batchCode)} warehouse</p>}
           </div>
         </div>
       </div>
