@@ -3,10 +3,15 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import { getTableName } from "drizzle-orm";
 
 const state = vi.hoisted(() => ({
   accountWrites: 0,
   cookies: 0,
+  transactions: 0,
+  signupRequiresInvite: false,
+  inviteCode: null as null | { code: string; isActive: boolean; maxUses: number | null; usageCount: number },
+  createdAccounts: [] as Array<Record<string, unknown>>,
   linkedAccount: null as null | {
     telegramUsername: string; accountStatus: string; hasPassword: boolean; discordId: string;
   },
@@ -15,33 +20,97 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@workspace/db", async () => {
   const schema = await import("@workspace/db/schema");
+  function valuesIn(condition: { queryChunks?: Array<unknown> }): unknown[] {
+    return (condition.queryChunks ?? []).flatMap(chunk => {
+      if (typeof chunk !== "object" || chunk === null || !("value" in chunk)) return [];
+      const value = (chunk as { value: unknown }).value;
+      return Array.isArray(value) ? value : [value];
+    });
+  }
   const db = {
-    select: () => ({
-      from: () => ({
-        where: async (condition: { queryChunks?: Array<unknown> }) => {
-          const chunks = condition.queryChunks ?? [];
-          const matchesDiscordId = chunks.includes(schema.accountsTable.discordId)
-            && chunks.some(chunk =>
-              typeof chunk === "object"
-              && chunk !== null
-              && "value" in chunk
-              && chunk.value === state.linkedAccount?.discordId
-            );
-          return state.linkedAccount && matchesDiscordId ? [state.linkedAccount] : [];
+    select: () => {
+      let tableName = "";
+      return {
+        from: (table: unknown) => {
+          tableName = getTableName(table as never);
+          return {
+            where: async (condition: { queryChunks?: Array<unknown> }) => {
+              const chunks = condition.queryChunks ?? [];
+              const values = valuesIn(condition);
+              if (tableName === "accounts" && chunks.includes(schema.accountsTable.discordId)) {
+                const discordId = String(values.at(-1) ?? "");
+                return state.linkedAccount?.discordId === discordId ? [state.linkedAccount] : [];
+              }
+              if (tableName === "site_config" && chunks.includes(schema.siteConfigTable.key)) {
+                return values.includes("signup_requires_invite")
+                  ? [{ key: "signup_requires_invite", value: state.signupRequiresInvite ? "true" : "false" }]
+                  : [];
+              }
+              if (tableName === "invite_codes" && chunks.includes(schema.inviteCodesTable.code)) {
+                const code = String(values.at(-1) ?? "");
+                return state.inviteCode?.code === code ? [state.inviteCode] : [];
+              }
+              return [];
+            },
+          };
         },
-      }),
-    }),
-    update: () => ({
-      set: () => ({
-        where: async () => { state.accountWrites += 1; },
-      }),
-    }),
-    insert: () => ({
-      values: () => {
-        state.accountWrites += 1;
-        return { onConflictDoUpdate: async () => undefined };
-      },
-    }),
+      };
+    },
+    update: (table: unknown) => {
+      const tableName = getTableName(table as never);
+      return {
+        set: (patch: Record<string, unknown>) => {
+          let applied = false;
+          const apply = () => {
+            if (applied) return;
+            applied = true;
+            state.accountWrites += 1;
+            if (tableName === "invite_codes" && state.inviteCode) {
+              state.inviteCode.usageCount += 1;
+            }
+            if (tableName === "accounts" && state.linkedAccount) {
+              Object.assign(state.linkedAccount, patch);
+            }
+          };
+          const query: any = {
+            where() { return query; },
+            then(resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) {
+              apply();
+              return Promise.resolve(undefined).then(resolve, reject);
+            },
+            async returning() {
+              apply();
+              return state.inviteCode ? [{ code: state.inviteCode.code }] : [];
+            },
+          };
+          return query;
+        },
+      };
+    },
+    insert: (table: unknown) => {
+      const tableName = getTableName(table as never);
+      return {
+        values: (value: Record<string, unknown>) => {
+          const insert = {
+            async onConflictDoNothing() {
+              state.accountWrites += 1;
+              if (tableName === "accounts") state.createdAccounts.push(structuredClone(value));
+              return undefined;
+            },
+            async returning() {
+              state.accountWrites += 1;
+              if (tableName === "accounts") state.createdAccounts.push(structuredClone(value));
+              return [{ discordId: value.discordId }];
+            },
+          };
+          return insert;
+        },
+      };
+    },
+    async transaction(callback: (tx: any) => Promise<unknown>) {
+      state.transactions += 1;
+      return callback(db);
+    },
   };
   return { ...schema, db };
 });
@@ -73,17 +142,21 @@ describe("mounted Discord login", () => {
     state.linkedAccount = null;
     state.accountWrites = 0;
     state.cookies = 0;
+    state.transactions = 0;
+    state.signupRequiresInvite = false;
+    state.inviteCode = null;
+    state.createdAccounts = [];
     state.issuedUsername = null;
   });
 
-  async function discordCallback() {
+  async function discordCallback(inviteCode?: string) {
     const app = express();
     app.use(discordRouter);
     const server: Server = await new Promise(resolve => {
       const listening = app.listen(0, () => resolve(listening));
     });
     try {
-      const signedState = jwt.sign({ action: "login" }, "discord-test-secret");
+      const signedState = jwt.sign({ action: "login", inviteCode }, "discord-test-secret");
       const { port } = server.address() as AddressInfo;
       const response = await fetch(
         `http://127.0.0.1:${port}/account/discord/oauth-callback?code=oauth-code&state=${encodeURIComponent(signedState)}`,
@@ -95,12 +168,38 @@ describe("mounted Discord login", () => {
     }
   }
 
-  it("does not create an account for an unlinked Discord identity", async () => {
+  it("creates a verified Discord account and opens first-login setup", async () => {
     const result = await discordCallback();
-    expect(result.status).toBe(302);
-    expect(result.location).toContain("No%20account%20is%20linked");
-    expect(state.accountWrites).toBe(0);
+    expect(result).toEqual({ status: 302, location: "/account?s=profile&discord_setup=1" });
+    expect(state.createdAccounts).toHaveLength(1);
+    expect(state.createdAccounts[0]).toMatchObject({
+      telegramUsername: "discord:discord-unlinked",
+      discordId: "discord-unlinked",
+      discordUsername: "unlinked",
+      accountStatus: "active",
+      verificationMethod: "discord",
+    });
+    expect(state.createdAccounts[0]?.verifiedAt).toBeInstanceOf(Date);
+    expect(state.cookies).toBe(1);
+    expect(state.issuedUsername).toBe("discord:discord-unlinked");
+  });
+
+  it("honors the invite-only signup gate for first-time Discord identities", async () => {
+    state.signupRequiresInvite = true;
+    const result = await discordCallback();
+    expect(result.location).toContain("invite");
+    expect(state.createdAccounts).toHaveLength(0);
     expect(state.cookies).toBe(0);
+  });
+
+  it("claims a valid required invite in the same transaction as Discord account creation", async () => {
+    state.signupRequiresInvite = true;
+    state.inviteCode = { code: "JOINME", isActive: true, maxUses: 1, usageCount: 0 };
+    const result = await discordCallback("JOINME");
+    expect(result.location).toBe("/account?s=profile&discord_setup=1");
+    expect(state.transactions).toBe(1);
+    expect(state.inviteCode.usageCount).toBe(1);
+    expect(state.createdAccounts[0]).toMatchObject({ signupInviteCode: "JOINME" });
   });
 
   it.each([
@@ -109,9 +208,7 @@ describe("mounted Discord login", () => {
     { telegramUsername: "chosen_name", hasPassword: false },
   ])("offers setup for incomplete linked account %j", async account => {
     state.linkedAccount = { ...account, accountStatus: "active", discordId: "discord-unlinked" };
-    expect(await discordCallback()).toEqual({
-      status: 302, location: "/account?s=profile&discord_setup=1",
-    });
+    expect(await discordCallback()).toEqual({ status: 302, location: "/account?s=profile&discord_setup=1" });
     expect(state.cookies).toBe(1);
   });
 
@@ -119,7 +216,9 @@ describe("mounted Discord login", () => {
     state.linkedAccount = {
       telegramUsername: "chosen_name", hasPassword: true, accountStatus: "active", discordId: "discord-unlinked",
     };
-    expect(await discordCallback()).toEqual({ status: 302, location: "/account" });
+    expect(await discordCallback()).toEqual({
+      status: 302, location: "/account?s=profile&discord_setup=1",
+    });
     expect(state.cookies).toBe(1);
     expect(state.issuedUsername).toBe("chosen_name");
   });
