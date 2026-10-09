@@ -282,6 +282,41 @@ test("Discord callback marker opens a popup immediately and skipping removes the
   assert.equal(new URLSearchParams(dom.window.location.search).has("discord_setup"), false);
 });
 
+test("skipping setup persists the choice before closing the popup", async () => {
+  dom.window.history.replaceState({}, "", "/account?s=profile&discord_setup=1");
+  const requests: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = async (url, init) => {
+    const path = String(url);
+    if (path.endsWith("/me")) return new Response(JSON.stringify(accountFixture), { status: 200 });
+    requests.push({ url: path, method: init?.method ?? "GET" });
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  };
+  await mountChildren(<Router><DiscordLoginSetupModal /></Router>);
+  await settle();
+  await act(async () => {
+    fireEvent.click(document.querySelector('[data-testid="discord-setup-continue-discord"]')!);
+  });
+  await settle();
+  assert.deepEqual(requests, [{ url: "/api/account/discord/setup-skip", method: "POST" }]);
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+});
+
+test("keeps the setup open and reports an error if the skip choice cannot be saved", async () => {
+  dom.window.history.replaceState({}, "", "/account?s=profile&discord_setup=1");
+  globalThis.fetch = async url => {
+    if (String(url).endsWith("/me")) return new Response(JSON.stringify(accountFixture), { status: 200 });
+    return new Response(JSON.stringify({ error: "Could not save your choice" }), { status: 503 });
+  };
+  await mountChildren(<Router><DiscordLoginSetupModal /></Router>);
+  await settle();
+  await act(async () => {
+    fireEvent.click(document.querySelector('[data-testid="discord-setup-continue-discord"]')!);
+  });
+  await settle();
+  assert.ok(document.querySelector('[role="dialog"]'), "The dialog should remain open so the user can retry");
+  assert.match(document.querySelector('[data-testid="discord-setup-skip-error"]')?.textContent ?? "", /Could not save your choice/);
+});
+
 test("returning Discord users with site credentials still see Telegram setup on sign-in", async () => {
   dom.window.history.replaceState({}, "", "/account?s=profile&discord_setup=1");
   globalThis.fetch = async url => new Response(JSON.stringify(

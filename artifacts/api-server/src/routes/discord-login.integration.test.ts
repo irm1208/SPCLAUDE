@@ -7,6 +7,7 @@ import { getTableName } from "drizzle-orm";
 
 const state = vi.hoisted(() => ({
   accountWrites: 0,
+  accountSessionUsername: null as string | null,
   cookies: 0,
   transactions: 0,
   signupRequiresInvite: false,
@@ -14,6 +15,7 @@ const state = vi.hoisted(() => ({
   createdAccounts: [] as Array<Record<string, unknown>>,
   linkedAccount: null as null | {
     telegramUsername: string; accountStatus: string; hasPassword: boolean; discordId: string;
+    discordSetupSkippedAt?: Date | null;
   },
   issuedUsername: null as string | null,
 }));
@@ -110,7 +112,11 @@ vi.mock("@workspace/db", async () => {
 });
 vi.mock("../middleware/account-auth", () => ({
   getJwtSecret: () => "discord-test-secret",
-  requireAccount: (_req: any, res: any) => res.status(401).end(),
+  requireAccount: (req: any, res: any, next: () => void) => {
+    if (!state.accountSessionUsername) return res.status(401).end();
+    req.account = { telegramUsername: state.accountSessionUsername };
+    next();
+  },
   issueAccountCookieForAccount: async (_res: unknown, username: string) => {
     state.cookies += 1;
     state.issuedUsername = username;
@@ -136,6 +142,7 @@ describe("mounted Discord login", () => {
   beforeEach(() => {
     state.linkedAccount = null;
     state.accountWrites = 0;
+    state.accountSessionUsername = null;
     state.cookies = 0;
     state.transactions = 0;
     state.signupRequiresInvite = false;
@@ -144,24 +151,59 @@ describe("mounted Discord login", () => {
     state.issuedUsername = null;
   });
 
-  async function discordCallback(inviteCode?: string) {
+  async function requestDiscord(method: string, path: string) {
     const app = express();
     app.use(discordRouter);
     const server: Server = await new Promise(resolve => {
       const listening = app.listen(0, () => resolve(listening));
     });
     try {
-      const signedState = jwt.sign({ action: "login", inviteCode }, "discord-test-secret");
       const { port } = server.address() as AddressInfo;
-      const response = await fetch(
-        `http://127.0.0.1:${port}/account/discord/oauth-callback?code=oauth-code&state=${encodeURIComponent(signedState)}`,
-        { redirect: "manual" },
-      );
-      return { status: response.status, location: response.headers.get("location") };
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, { method, redirect: "manual" });
+      return {
+        status: response.status,
+        location: response.headers.get("location"),
+        body: await response.text(),
+      };
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
   }
+
+  async function discordCallback(inviteCode?: string) {
+    const signedState = jwt.sign({ action: "login", inviteCode }, "discord-test-secret");
+    const result = await requestDiscord(
+      "GET",
+      `/account/discord/oauth-callback?code=oauth-code&state=${encodeURIComponent(signedState)}`,
+    );
+    return { status: result.status, location: result.location };
+  }
+
+  it("persists an authenticated user's choice to skip Discord setup", async () => {
+    state.linkedAccount = {
+      telegramUsername: "existing_name", accountStatus: "active", hasPassword: true,
+      discordId: "discord-unlinked", discordSetupSkippedAt: null,
+    };
+    state.accountSessionUsername = "existing_name";
+
+    const result = await requestDiscord("POST", "/account/discord/setup-skip");
+
+    expect(result.status).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({ ok: true });
+    expect(state.linkedAccount.discordSetupSkippedAt).toBeInstanceOf(Date);
+  });
+
+  it("does not allow an anonymous request to save the Discord setup skip", async () => {
+    state.linkedAccount = {
+      telegramUsername: "existing_name", accountStatus: "active", hasPassword: true,
+      discordId: "discord-unlinked", discordSetupSkippedAt: null,
+    };
+
+    const result = await requestDiscord("POST", "/account/discord/setup-skip");
+
+    expect(result.status).toBe(401);
+    expect(state.linkedAccount.discordSetupSkippedAt).toBeNull();
+  });
 
   it("creates a verified Discord account and opens first-login setup", async () => {
     const result = await discordCallback();
@@ -204,6 +246,15 @@ describe("mounted Discord login", () => {
   ])("offers setup for incomplete linked account %j", async account => {
     state.linkedAccount = { ...account, accountStatus: "active", discordId: "discord-unlinked" };
     expect(await discordCallback()).toEqual({ status: 302, location: "/account?s=profile&discord_setup=1" });
+    expect(state.cookies).toBe(1);
+  });
+
+  it("does not show the setup popup again after the account has chosen to skip it", async () => {
+    state.linkedAccount = {
+      telegramUsername: "existing_name", hasPassword: true, accountStatus: "active",
+      discordId: "discord-unlinked", discordSetupSkippedAt: new Date(),
+    };
+    expect(await discordCallback()).toEqual({ status: 302, location: "/account?s=profile" });
     expect(state.cookies).toBe(1);
   });
 
