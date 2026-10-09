@@ -85,15 +85,43 @@ export function DiscordLoginSetupModal() {
   const search = useSearch();
   const [, setLocation] = useLocation();
   const [busy, setBusy] = useState(false);
+  const [skipPending, setSkipPending] = useState(false);
+  const [skipError, setSkipError] = useState("");
   const [activeStep, setActiveStep] = useState<"credentials" | "telegram">("credentials");
   const prompted = new URLSearchParams(search).get("discord_setup") === "1";
   if (!prompted || !isLoggedIn || !account?.discordLinked) return null;
 
-  function dismiss() {
-    if (busy) return;
+  function dismiss(force = false) {
+    if (!force && (busy || skipPending)) return;
     const url = new URL(window.location.href);
     url.searchParams.delete("discord_setup");
     setLocation(`${url.pathname}${url.search}${url.hash}`, { replace: true });
+  }
+  async function skipSetup() {
+    if (busy || skipPending) return;
+    setSkipError("");
+    setSkipPending(true);
+    try {
+      const response = await fetch("/api/account/discord/setup-skip", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        let message = "Could not save your choice. Please try again.";
+        try {
+          const body = await response.json() as { error?: unknown };
+          if (typeof body.error === "string" && body.error) message = body.error;
+        } catch {
+          // Keep the actionable fallback when the server response is not JSON.
+        }
+        throw new Error(message);
+      }
+      dismiss(true);
+    } catch (error) {
+      setSkipError(error instanceof Error ? error.message : "Could not save your choice. Please try again.");
+    } finally {
+      setSkipPending(false);
+    }
   }
   const credentialsReady = getDiscordSetupStep(account) === "complete";
   const telegramStep = activeStep === "telegram";
@@ -166,11 +194,14 @@ export function DiscordLoginSetupModal() {
         </div>
         <div data-testid="discord-setup-sticky-footer" className="shrink-0 border-t px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:px-6"
           style={{ background: "var(--t-bg)", borderColor: "var(--t-border)" }}>
+          {skipError && <p data-testid="discord-setup-skip-error" role="alert" className="mb-2 text-xs text-red-600">
+            {skipError}
+          </p>}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-            <button data-testid="discord-setup-continue-discord" type="button" disabled={busy}
-              onClick={dismiss} className="min-h-10 rounded-xl border border-dashed px-3 text-sm font-semibold disabled:opacity-50"
+            <button data-testid="discord-setup-continue-discord" type="button" disabled={busy || skipPending}
+              onClick={() => void skipSetup()} className="min-h-10 rounded-xl border border-dashed px-3 text-sm font-semibold disabled:opacity-50"
               style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-blue-deep)" }}>
-              Skip setup — continue with Discord
+              {skipPending ? "Saving choice…" : "Skip setup — continue with Discord"}
             </button>
             {credentialsReady && !telegramStep && <button data-testid="discord-setup-next" type="button"
               onClick={() => setActiveStep("telegram")} className="min-h-11 rounded-xl px-4 text-sm font-bold text-white"

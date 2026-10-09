@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable, inviteCodesTable } from "@workspace/db";
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { writeLog } from "../lib/audit-log";
 import { getJwtSecret, issueAccountCookieForAccount, requireAccount } from "../middleware/account-auth";
 import { requireAdmin } from "../middleware/require-admin";
@@ -91,6 +91,24 @@ router.get("/account/discord/status", requireAccount, async (req, res): Promise<
     discordAvatar: account.discordAvatar ?? null,
     discordId: account.discordId ?? null,
   });
+});
+
+// POST /api/account/discord/setup-skip — remember that this account prefers Discord sign-in
+router.post("/account/discord/setup-skip", requireAccount, async (req, res): Promise<void> => {
+  const tg = req.account!.telegramUsername;
+  const [updated] = await db.update(accountsTable)
+    .set({ discordSetupSkippedAt: new Date() })
+    .where(and(
+      eq(accountsTable.telegramUsername, tg),
+      isNotNull(accountsTable.discordId),
+    ))
+    .returning({ telegramUsername: accountsTable.telegramUsername });
+
+  if (!updated) {
+    res.status(409).json({ error: "A linked Discord account is required" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 // ── Login flow (log in / sign up via Discord) ─────────────────────────────────
@@ -218,6 +236,7 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
         telegramUsername: accountsTable.telegramUsername,
         accountStatus: accountsTable.accountStatus,
         hasPassword: sql<boolean>`${accountsTable.passwordHash} IS NOT NULL`,
+        discordSetupSkippedAt: accountsTable.discordSetupSkippedAt,
       })
       .from(accountsTable)
       .where(eq(accountsTable.discordId, discordUser.id));
@@ -241,7 +260,9 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
         .where(eq(accountsTable.telegramUsername, byDiscord.telegramUsername));
 
       await issueAccountCookieForAccount(res, byDiscord.telegramUsername);
-      res.redirect("/account?s=profile&discord_setup=1");
+      res.redirect(byDiscord.discordSetupSkippedAt
+        ? "/account?s=profile"
+        : "/account?s=profile&discord_setup=1");
       return;
     }
 
@@ -289,9 +310,14 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
           const [existing] = await tx.select({
             telegramUsername: accountsTable.telegramUsername,
             accountStatus: accountsTable.accountStatus,
+            discordSetupSkippedAt: accountsTable.discordSetupSkippedAt,
           }).from(accountsTable).where(eq(accountsTable.discordId, discordUser.id));
           if (!existing || existing.accountStatus !== "active") throw new Error("Unable to create this Discord account.");
-          return { username: existing.telegramUsername, created: false };
+          return {
+            username: existing.telegramUsername,
+            created: false,
+            setupSkipped: !!existing.discordSetupSkippedAt,
+          };
         }
         if (inviteCode) {
           const [claimed] = await tx.update(inviteCodesTable)
@@ -301,14 +327,14 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
             .returning({ code: inviteCodesTable.code });
           if (!claimed) throw new Error("This invite code is invalid, inactive, or fully used.");
         }
-        return { username, created: true };
+        return { username, created: true, setupSkipped: false };
       });
       await issueAccountCookieForAccount(res, result.username);
       if (result.created) {
         writeLog("login", "info", "account_discord_signup", "New account verified through Discord OAuth",
           { telegramUsername: result.username, verificationMethod: "discord" }, req.ip).catch(() => {});
       }
-      res.redirect("/account?s=profile&discord_setup=1");
+      res.redirect(result.setupSkipped ? "/account?s=profile" : "/account?s=profile&discord_setup=1");
     } catch (error) {
       const message = error instanceof Error && /invite code/.test(error.message)
         ? error.message : "Unable to create this Discord account. Please try again.";

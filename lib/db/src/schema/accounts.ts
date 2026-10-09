@@ -122,6 +122,7 @@ export const accountsTable = pgTable("accounts", {
   discordAccessToken: text("discord_access_token"),
   discordRefreshToken: text("discord_refresh_token"),
   discordTokenExpiresAt: timestamp("discord_token_expires_at", { withTimezone: true }),
+  discordSetupSkippedAt: timestamp("discord_setup_skipped_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

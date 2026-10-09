@@ -80,6 +80,13 @@ vi.mock("@workspace/db", async () => {
             },
             async returning() {
               apply();
+              if (tableName === "accounts") {
+                return state.linkedAccount
+                  && state.linkedAccount.telegramUsername === state.accountSessionUsername
+                  && state.linkedAccount.discordId
+                  ? [{ telegramUsername: state.linkedAccount.telegramUsername }]
+                  : [];
+              }
               return state.inviteCode ? [{ code: state.inviteCode.code }] : [];
             },
           };
