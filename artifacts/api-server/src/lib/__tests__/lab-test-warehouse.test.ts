@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ListLabTestsResponseItem } from "../../../../../lib/api-zod/src/generated/api";
 import { parseLabTestBatchCode } from "../lab-test-warehouse";
 
 describe("parseLabTestBatchCode", () => {
@@ -26,5 +27,25 @@ describe("parseLabTestBatchCode", () => {
       warehouse: null,
       productBatchCode: null,
     });
+  });
+});
+
+describe("generated LabTest API contract", () => {
+  const baseRecord = {
+    id: 1,
+    url: "https://example.test/coa",
+    peptideName: "SS-31",
+    supplier: "Uther",
+    labName: "Janoshik",
+    isThirdPartyTest: true,
+    pending: false,
+    createdAt: new Date("2025-01-01T00:00:00Z"),
+  };
+
+  it("accepts US, UK, and nullable warehouse values and rejects unknown values", () => {
+    expect(ListLabTestsResponseItem.safeParse({ ...baseRecord, warehouse: "US" }).success).toBe(true);
+    expect(ListLabTestsResponseItem.safeParse({ ...baseRecord, warehouse: "UK" }).success).toBe(true);
+    expect(ListLabTestsResponseItem.safeParse({ ...baseRecord, warehouse: null }).success).toBe(true);
+    expect(ListLabTestsResponseItem.safeParse({ ...baseRecord, warehouse: "EU" }).success).toBe(false);
   });
 });

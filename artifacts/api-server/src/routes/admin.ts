@@ -8417,9 +8417,9 @@ router.get("/admin/lab-tests/export", async (req, res): Promise<void> => {
 
   const tests = await db.select().from(labTestsTable).orderBy(desc(labTestsTable.id));
 
-  const header = "id,peptideName,supplier,purityPct,testDate,labName,testType,mgAmount,batchCode,endotoxinEuMg,sterilityPass,pending\n";
+  const header = "id,peptideName,supplier,purityPct,testDate,labName,testType,mgAmount,batchCode,warehouse,endotoxinEuMg,sterilityPass,pending\n";
   const rows = tests.map(t =>
-    [t.id, t.peptideName, t.supplier, t.purityPct ?? "", t.testDate ?? "", t.labName, t.testType ?? "", t.mgAmount ?? "", t.batchCode ?? "", t.endotoxinEuMg ?? "", t.sterilityPass ?? "", t.pending]
+    [t.id, t.peptideName, t.supplier, t.purityPct ?? "", t.testDate ?? "", t.labName, t.testType ?? "", t.mgAmount ?? "", t.batchCode ?? "", t.warehouse ?? parseLabTestBatchCode(t.batchCode).warehouse ?? "", t.endotoxinEuMg ?? "", t.sterilityPass ?? "", t.pending]
       .map(v => `"${String(v ?? "").replace(/"/g, '""')}"`)
       .join(",")
   ).join("\n");

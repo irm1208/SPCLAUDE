@@ -257,6 +257,14 @@ export interface ErrorResponse {
   error: string;
 }
 
+export type LabTestWarehouse = typeof LabTestWarehouse[keyof typeof LabTestWarehouse] | null;
+
+
+export const LabTestWarehouse = {
+  US: 'US',
+  UK: 'UK',
+} as const;
+
 export type LabTestTestType = typeof LabTestTestType[keyof typeof LabTestTestType] | null;
 
 
@@ -286,6 +294,7 @@ export interface LabTest {
   mgAmount?: number | null;
   supplier: string;
   batchCode?: string | null;
+  warehouse?: LabTestWarehouse;
   labName: string;
   testType?: LabTestTestType;
   productCategory?: LabTestProductCategory;

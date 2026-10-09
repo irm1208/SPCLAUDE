@@ -7,6 +7,7 @@
  */
 import type { LabTestProductCategory } from './labTestProductCategory';
 import type { LabTestTestType } from './labTestTestType';
+import type { LabTestWarehouse } from './labTestWarehouse';
 
 export interface LabTest {
   id: number;
@@ -16,6 +17,7 @@ export interface LabTest {
   mgAmount?: number | null;
   supplier: string;
   batchCode?: string | null;
+  warehouse?: LabTestWarehouse;
   labName: string;
   testType?: LabTestTestType;
   productCategory?: LabTestProductCategory;

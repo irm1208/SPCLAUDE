@@ -37,6 +37,7 @@ export * from './labTestMetricsOverall';
 export * from './labTestProductCategory';
 export * from './labTestSubmitRequest';
 export * from './labTestTestType';
+export * from './labTestWarehouse';
 export * from './listLabTestsIsThirdParty';
 export * from './listLabTestsParams';
 export * from './listLabTestsProductCategory';
