@@ -85,6 +85,7 @@ export function DiscordLoginSetupModal() {
   const search = useSearch();
   const [, setLocation] = useLocation();
   const [busy, setBusy] = useState(false);
+  const [activeStep, setActiveStep] = useState<"credentials" | "telegram">("credentials");
   const prompted = new URLSearchParams(search).get("discord_setup") === "1";
   if (!prompted || !isLoggedIn || !account?.discordLinked) return null;
 
@@ -95,33 +96,106 @@ export function DiscordLoginSetupModal() {
     setLocation(`${url.pathname}${url.search}${url.hash}`, { replace: true });
   }
   const credentialsReady = getDiscordSetupStep(account) === "complete";
+  const telegramStep = activeStep === "telegram";
   return (
     <Dialog open onOpenChange={open => { if (!open) dismiss(); }}>
       <DialogContent data-testid="discord-login-setup-modal"
-        className="w-[calc(100%_-_1.5rem)] max-w-lg max-h-[calc(100dvh_-_2rem)] overflow-y-auto rounded-2xl p-5 sm:p-6"
+        className="flex w-[calc(100%_-_1rem)] max-w-lg max-h-[calc(100dvh-1rem)] flex-col overflow-hidden rounded-3xl p-0 sm:max-h-[calc(100dvh-2rem)]"
         onPointerDownOutside={event => event.preventDefault()}
         style={{ background: "var(--t-bg)", color: "var(--t-text)", borderColor: "var(--t-border)" }}>
-        <div className="pr-7 space-y-2">
-          <DialogTitle className="text-xl font-bold">Set up another way to sign in</DialogTitle>
-          <DialogDescription className="text-sm" style={{ color: "var(--t-muted)" }}>
-            Choose a site username and password, and connect Telegram. You can skip setup and keep signing in with Discord.
+        <div className="shrink-0 border-b px-5 pb-4 pt-5 pr-12 sm:px-6 sm:pt-6"
+          style={{ borderColor: "var(--t-border)" }}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: "#2D6BCC" }}>
+            Sign-in setup
+          </p>
+          <DialogTitle className="mt-1.5 text-xl font-bold tracking-tight sm:text-2xl">
+            {telegramStep ? "Connect Telegram" : "Set up your Peps login"}
+          </DialogTitle>
+          <DialogDescription className="mt-1.5 text-sm leading-5" style={{ color: "var(--t-muted)" }}>
+            {telegramStep
+              ? "Use Telegram to sign in without Discord. Your Discord login stays linked."
+              : "Add a username and password so you can sign in without Discord. Your Discord login stays linked."}
           </DialogDescription>
+          {account.discordUsername && <p className="mt-2 text-xs font-medium" style={{ color: "var(--t-muted)" }}>
+            Currently signed in as <span style={{ color: "var(--t-text)" }}>@{account.discordUsername.replace(/^@/, "")}</span>
+          </p>}
+
+          <div data-testid="discord-setup-progress" className="mt-5 flex items-center gap-2"
+            aria-label={`Step ${telegramStep ? 2 : 1} of 2`}>
+            <div className="flex min-w-0 items-center gap-2" aria-current={!telegramStep ? "step" : undefined}>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                style={{ background: !telegramStep || credentialsReady ? "#1B3A7A" : "var(--t-surface2)" }}>
+                {credentialsReady ? "✓" : "1"}
+              </span>
+              <span className="truncate text-xs font-semibold"
+                style={{ color: !telegramStep ? "var(--t-text)" : "var(--t-muted)" }}>Username &amp; password</span>
+            </div>
+            <span aria-hidden="true" className="h-px min-w-4 flex-1" style={{ background: "var(--t-border)" }} />
+            <div className="flex shrink-0 items-center gap-2" aria-current={telegramStep ? "step" : undefined}>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold"
+                style={{
+                  background: telegramStep ? "#1B3A7A" : "var(--t-surface2)",
+                  color: telegramStep ? "#fff" : "var(--t-muted)",
+                }}>2</span>
+              <span className="text-xs font-semibold"
+                style={{ color: telegramStep ? "var(--t-text)" : "var(--t-muted)" }}>Telegram</span>
+            </div>
+          </div>
         </div>
-        {credentialsReady ? <section className="rounded-xl border p-4 space-y-1" style={{ borderColor: "var(--t-border)" }}>
-          <h3 className="text-sm font-bold">Username and password login ready</h3>
-          <p className="text-xs" style={{ color: "var(--t-muted)" }}>Site username: @{account.telegramUsername.replace(/^@/, "")}</p>
-        </section> : <DiscordCredentialsSetup account={account}
-          continuationUrl="/account?s=profile&discord_setup=1" onBusyChange={setBusy} />}
-        <TelegramLoginSetup key={account.telegramUsername} accountIdentifier={account.telegramUsername} />
-        <LinkedDiscordIdentity account={account} />
-        <button data-testid="discord-setup-continue-discord" type="button" disabled={busy}
-          onClick={dismiss} className="w-full min-h-11 rounded-xl text-sm font-bold disabled:opacity-50"
-          style={{ background: "var(--t-blue-deep)", color: "#fff" }}>
-          {credentialsReady ? "Continue to my account" : "Continue with Discord — skip setup"}
-        </button>
-        <p className="text-xs text-center" style={{ color: "var(--t-muted)" }}>
-          You can return to Account Settings to finish setup at any time.
-        </p>
+        <div data-testid="discord-setup-step-content" className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+          {telegramStep
+            ? <div className="space-y-3">
+              <TelegramLoginSetup key={account.telegramUsername} accountIdentifier={account.telegramUsername} />
+              <LinkedDiscordIdentity account={account} compact />
+            </div>
+            : <div className="space-y-3">
+              {credentialsReady
+                ? <section className="rounded-2xl border p-4"
+                  style={{ background: "var(--t-surface)", borderColor: "var(--t-border)" }}>
+                  <p className="text-sm font-bold">Username and password are ready</p>
+                  <p className="mt-1 text-sm" style={{ color: "var(--t-muted)" }}>
+                    Your Peps sign-in is <span className="font-semibold" style={{ color: "var(--t-text)" }}>
+                      @{account.telegramUsername.replace(/^@/, "")}
+                    </span>
+                  </p>
+                </section>
+                : <DiscordCredentialsSetup account={account}
+                  continuationUrl="/account?s=profile&discord_setup=1" onBusyChange={setBusy} />}
+              <LinkedDiscordIdentity account={account} compact />
+            </div>}
+        </div>
+        <div data-testid="discord-setup-sticky-footer" className="shrink-0 border-t px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 sm:px-6"
+          style={{ background: "var(--t-bg)", borderColor: "var(--t-border)" }}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+            <button data-testid="discord-setup-continue-discord" type="button" disabled={busy}
+              onClick={dismiss} className="min-h-10 rounded-xl border border-dashed px-3 text-sm font-semibold disabled:opacity-50"
+              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-blue-deep)" }}>
+              Skip setup — continue with Discord
+            </button>
+            {credentialsReady && !telegramStep && <button data-testid="discord-setup-next" type="button"
+              onClick={() => setActiveStep("telegram")} className="min-h-11 rounded-xl px-4 text-sm font-bold text-white"
+              style={{ background: "#1B3A7A" }}>
+              Continue to Telegram
+            </button>}
+            {telegramStep && <div className="flex gap-2">
+              <button data-testid="discord-setup-back" type="button" onClick={() => setActiveStep("credentials")}
+                className="min-h-11 rounded-xl border px-3 text-sm font-semibold"
+                style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+                Back
+              </button>
+              <button data-testid="discord-setup-finish" type="button" disabled={busy} onClick={dismiss}
+                className="min-h-11 flex-1 rounded-xl px-4 text-sm font-bold text-white disabled:opacity-50"
+                style={{ background: "#1B3A7A" }}>
+                Finish setup
+              </button>
+            </div>}
+          </div>
+          <p className="mt-2 text-center text-[11px] leading-4" style={{ color: "var(--t-muted)" }}>
+            {telegramStep
+              ? "Telegram linking is optional. You can change sign-in methods later in Account Settings."
+              : "You can return to Account Settings to finish setup at any time."}
+          </p>
+        </div>
       </DialogContent>
     </Dialog>
   );

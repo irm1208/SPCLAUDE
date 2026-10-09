@@ -271,7 +271,9 @@ test("Discord callback marker opens a popup immediately and skipping removes the
   const modal = document.querySelector('[role="dialog"]');
   assert.ok(modal, "Expected a popup, not just an inline profile form");
   assert.match(modal.textContent ?? "", /Create a password/);
-  assert.match(modal.textContent ?? "", /Link Telegram/);
+  assert.equal(modal.querySelector('[data-testid="discord-setup-progress"]')?.getAttribute("aria-label"), "Step 1 of 2");
+  assert.doesNotMatch(modal.querySelector('[data-testid="discord-setup-step-content"]')?.textContent ?? "", /Link Telegram/);
+  assert.ok(modal.querySelector('[data-testid="discord-setup-continue-discord"]'));
   await act(async () => {
     fireEvent.click(document.querySelector('[data-testid="discord-setup-continue-discord"]')!);
   });
@@ -289,9 +291,53 @@ test("returning Discord users with site credentials still see Telegram setup on 
   await settle();
   const modal = document.querySelector('[role="dialog"]');
   assert.ok(modal);
-  assert.match(modal.textContent ?? "", /Username and password login ready/);
-  assert.match(modal.textContent ?? "", /Telegram connected/);
+  assert.match(modal.textContent ?? "", /Username and password are ready/);
+  assert.equal(modal.querySelector('[data-testid="discord-setup-progress"]')?.getAttribute("aria-label"), "Step 1 of 2");
+  assert.doesNotMatch(modal.textContent ?? "", /Telegram connected/);
   assert.equal(document.querySelector('[data-testid="input-discord-password"]'), null);
+  await act(async () => fireEvent.click(document.querySelector('[data-testid="discord-setup-next"]')!));
+  await settle();
+  assert.match(modal.textContent ?? "", /Telegram connected/);
+});
+
+test("guided setup shows only the active step and pins the Discord skip action", async () => {
+  dom.window.history.replaceState({}, "", "/account?s=profile&discord_setup=1");
+  globalThis.fetch = async url => new Response(JSON.stringify(
+    String(url).endsWith("/me") ? accountFixture : { linked: false }
+  ), { status: 200 });
+  await mountChildren(<Router><DiscordLoginSetupModal /></Router>);
+  await settle();
+  const modal = document.querySelector('[role="dialog"]');
+  const stepContent = modal?.querySelector('[data-testid="discord-setup-step-content"]');
+  const footer = modal?.querySelector('[data-testid="discord-setup-sticky-footer"]');
+  assert.equal(modal?.querySelector('[data-testid="discord-setup-progress"]')?.getAttribute("aria-label"), "Step 1 of 2");
+  assert.ok(stepContent);
+  assert.match(stepContent.textContent ?? "", /Create a password/);
+  assert.doesNotMatch(stepContent.textContent ?? "", /Link Telegram/);
+  assert.ok(stepContent.querySelector('[data-testid="linked-discord-identity"]'));
+  assert.match(stepContent.textContent ?? "", /@PepsUser/);
+  assert.match(stepContent.textContent ?? "", /@discord:42/);
+  assert.ok(footer, "Skip/continue actions should remain outside the scrolling step content");
+  assert.ok(footer.querySelector('[data-testid="discord-setup-continue-discord"]'));
+});
+
+test("completed credentials advance to Telegram and the user can return to account details", async () => {
+  dom.window.history.replaceState({}, "", "/account?s=profile&discord_setup=1");
+  globalThis.fetch = async url => new Response(JSON.stringify(
+    String(url).endsWith("/me")
+      ? { ...accountFixture, telegramUsername: "chosen_name", hasPassword: true }
+      : { linked: false }
+  ), { status: 200 });
+  await mountChildren(<Router><DiscordLoginSetupModal /></Router>);
+  await settle();
+  assert.match(document.querySelector('[data-testid="discord-setup-step-content"]')?.textContent ?? "", /Username and password are ready/);
+  await act(async () => fireEvent.click(document.querySelector('[data-testid="discord-setup-next"]')!));
+  const stepContent = document.querySelector('[data-testid="discord-setup-step-content"]');
+  assert.equal(document.querySelector('[data-testid="discord-setup-progress"]')?.getAttribute("aria-label"), "Step 2 of 2");
+  assert.match(stepContent?.textContent ?? "", /Link Telegram/);
+  assert.match(stepContent?.textContent ?? "", /Linked Discord/);
+  await act(async () => fireEvent.click(document.querySelector('[data-testid="discord-setup-back"]')!));
+  assert.equal(document.querySelector('[data-testid="discord-setup-progress"]')?.getAttribute("aria-label"), "Step 1 of 2");
 });
 
 test("ordinary account visits do not reopen the Discord popup", async () => {
