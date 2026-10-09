@@ -4,6 +4,7 @@ import { PoolLeaderDashboard } from "@/components/PoolLeaderDashboard";
 import { AccountPoolContributions } from "@/components/AccountPoolContributions";
 import { WholesaleAccessSection } from "@/components/WholesaleAccessSection";
 import { DiscordCredentialsSetup } from "@/components/account/DiscordCredentialsSetup";
+import { LinkedDiscordIdentity } from "@/components/account/LinkedDiscordIdentity";
 import { getDiscordSetupStep } from "@/lib/discord-credentials-setup";
 import { COUNTRY_LIST } from "@/data/countries";
 import { useLocation, useSearch } from "wouter";
@@ -9427,10 +9428,10 @@ export default function CustomerPortal() {
             </div>
           </motion.div>
 
-          {account && <DiscordCredentialsSetup
+          {account && <LinkedDiscordIdentity account={account} />}
+          {account && !cameFromDiscordSetup && <DiscordCredentialsSetup
             key={account.telegramUsername}
             account={account}
-            onSkip={cameFromDiscordSetup ? () => setLocation("/account?s=home") : undefined}
           />}
 
           {/* ── Change Username ── */}

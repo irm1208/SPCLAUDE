@@ -18,6 +18,7 @@ import {
 } from "@/hooks/use-account";
 import { BottomTabs } from "@/components/BottomTabs";
 import { DiscordCredentialsSetup } from "@/components/account/DiscordCredentialsSetup";
+import { LinkedDiscordIdentity } from "@/components/account/LinkedDiscordIdentity";
 import { fmtC } from "@/lib/currency";
 import { getDiscordSetupStep } from "@/lib/discord-credentials-setup";
 import { accountRequiresVerification } from "@/lib/account-verification-flow";
@@ -719,6 +720,7 @@ function ProfileTab({ username }: { username: string }) {
         </button>
       </form>
 
+      {account && <LinkedDiscordIdentity account={account} />}
       {account && <DiscordCredentialsSetup key={account.telegramUsername} account={account} />}
 
       {/* Password change */}

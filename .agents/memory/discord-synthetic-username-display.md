@@ -6,8 +6,7 @@ description: How Discord-only accounts' identifiers are stored and why raw displ
 Discord-only signups (no prior Telegram account) are stored with a synthetic
 `telegramUsername = "discord:<id>"` (the accounts table's primary identifier
 column, reused rather than adding a new PK). The real Discord username lives
-in a separate `discordUsername` column and is NOT returned by `/account/me`
-by default.
+in a separate `discordUsername` column.
 
 **Why:** several own-account display surfaces (header, sidebar, mobile nav,
 profile page, order page) read `account.telegramUsername` directly and would

@@ -426,6 +426,7 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
       isWholesale: accountsTable.isWholesale,
       wholesaleInvitePromptSeenAt: accountsTable.wholesaleInvitePromptSeenAt,
       discordUsername: accountsTable.discordUsername,
+      discordId: accountsTable.discordId,
       hasPassword: sql<boolean>`${accountsTable.passwordHash} IS NOT NULL`,
       discordLinked: sql<boolean>`${accountsTable.discordId} IS NOT NULL`,
     })
@@ -453,6 +454,7 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
   res.json({
     telegramUsername: tg,
     discordUsername: acct?.discordUsername ?? null,
+    discordId: acct?.discordId ?? null,
     hasPassword: acct?.hasPassword === true,
     discordLinked: acct?.discordLinked === true,
     healthDataConsent: acct?.healthDataConsent ?? false,

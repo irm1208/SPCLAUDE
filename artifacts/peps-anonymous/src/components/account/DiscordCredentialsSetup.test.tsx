@@ -11,8 +11,13 @@ import { JSDOM } from "../../../../../node_modules/.pnpm/jsdom@26.1.0_bufferutil
 import { fireEvent } from "../../../../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/index.js";
 import { DiscordCredentialsSetup } from "./DiscordCredentialsSetup";
 import type { AccountMe } from "../../hooks/use-account";
+import { getAccountHandle } from "../../hooks/use-account";
+import { LinkedDiscordIdentity } from "./LinkedDiscordIdentity";
 
 let createRoot: typeof import("react-dom/client").createRoot;
+let Router: typeof import("wouter").Router;
+let DiscordLoginSetupModal: typeof import("./DiscordLoginSetupModal").DiscordLoginSetupModal;
+let TelegramLoginSetup: typeof import("./DiscordLoginSetupModal").TelegramLoginSetup;
 let dom: JSDOM;
 let container: HTMLDivElement;
 let root: Root | undefined;
@@ -26,6 +31,7 @@ const accountFixture: AccountMe = {
   accountStatus: "active",
   hasPassword: false,
   discordLinked: true,
+  discordId: "42",
 };
 
 function render(account: AccountMe, skip = false) {
@@ -40,15 +46,28 @@ function render(account: AccountMe, skip = false) {
 }
 
 before(async () => {
-  dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
+  dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
   const globals = globalThis as unknown as Record<string, unknown>;
   for (const name of ["window", "document", "navigator", "location", "history", "addEventListener", "removeEventListener", "dispatchEvent", "HTMLElement", "HTMLInputElement", "HTMLButtonElement", "HTMLFormElement", "Event", "Node", "DOMException"]) {
     globals[name] = (dom.window as unknown as Record<string, unknown>)[name];
   }
   globals.IS_REACT_ACT_ENVIRONMENT = true;
+  for (const name of ["MutationObserver", "CustomEvent", "HTMLAnchorElement", "HTMLSelectElement", "HTMLTextAreaElement", "NodeFilter", "SVGElement"]) {
+    globals[name] = (dom.window as unknown as Record<string, unknown>)[name];
+  }
+  globals.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+  globals.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
+  globals.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
+  globals.addEventListener = dom.window.addEventListener.bind(dom.window);
+  globals.removeEventListener = dom.window.removeEventListener.bind(dom.window);
+  globals.dispatchEvent = dom.window.dispatchEvent.bind(dom.window);
   originalWindow = globalThis.window;
   originalFetch = globalThis.fetch;
   createRoot = (await import("react-dom/client")).createRoot;
+  // Radix captures document availability at module load; import only after DOM
+  // setup so its portal/layout effects behave as they do in the browser.
+  Router = (await import("wouter")).Router;
+  ({ DiscordLoginSetupModal, TelegramLoginSetup } = await import("./DiscordLoginSetupModal"));
 });
 
 after(() => {
@@ -65,19 +84,29 @@ afterEach(async () => {
     root = undefined;
   }
   globalThis.fetch = originalFetch;
+  globalThis.window = originalWindow;
+  dom.window.history.replaceState({}, "", "/");
 });
 
-async function mount(account: AccountMe) {
+async function mountChildren(children: React.ReactNode) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => {
     root?.render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <DiscordCredentialsSetup account={account} />
+        {children}
       </QueryClientProvider>,
     );
   });
+}
+
+async function mount(account: AccountMe) {
+  await mountChildren(<DiscordCredentialsSetup account={account} />);
+}
+
+async function settle() {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
 }
 
 function input(id: string): HTMLInputElement {
@@ -186,4 +215,105 @@ test("switching accounts resets form state", async () => {
     );
   });
   assert.equal(input("input-discord-password").value, "");
+});
+
+test("Discord handles show the provider username, with the internal ID only in the linked section", () => {
+  assert.equal(getAccountHandle(accountFixture), "PepsUser");
+  assert.equal(getAccountHandle({ ...accountFixture, discordUsername: null }), "Discord member");
+  const html = renderToStaticMarkup(<LinkedDiscordIdentity account={accountFixture} />);
+  assert.match(html, /Linked Discord/);
+  assert.match(html, /@PepsUser/);
+  assert.match(html, /@discord:42/);
+});
+
+test("Telegram setup generates a real link and renders the bot deep link", async () => {
+  const calls: string[] = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push(`${options?.method ?? "GET"} ${url}`);
+    return new Response(JSON.stringify(String(url).endsWith("/link-init")
+      ? { code: "AABBCCDD", expiresAt: new Date(Date.now() + 900000).toISOString(),
+        deepLink: "https://t.me/example_bot?start=AABBCCDD", botUrl: "https://t.me/example_bot" }
+      : { linked: false }), { status: 200 });
+  };
+  await mountChildren(<TelegramLoginSetup accountIdentifier="discord:42" />);
+  await settle();
+  const button = container.querySelector('[data-testid="discord-setup-link-telegram"]');
+  assert.ok(button);
+  await act(async () => { fireEvent.click(button); });
+  await settle();
+  const link = container.querySelector('[data-testid="discord-setup-open-telegram"]') as HTMLAnchorElement;
+  assert.equal(link?.href, "https://t.me/example_bot?start=AABBCCDD");
+  assert.ok(calls.includes("POST /api/account/telegram/link-init"));
+  assert.match(container.textContent ?? "", /\/link AABBCCDD/);
+});
+
+test("Telegram setup reports link failures instead of claiming it connected", async () => {
+  globalThis.fetch = async (url) => new Response(JSON.stringify(
+    String(url).endsWith("/link-init") ? { error: "Bot unavailable" } : { linked: false }
+  ), { status: String(url).endsWith("/link-init") ? 503 : 200 });
+  await mountChildren(<TelegramLoginSetup accountIdentifier="discord:42" />);
+  await settle();
+  await act(async () => {
+    fireEvent.click(container.querySelector('[data-testid="discord-setup-link-telegram"]')!);
+  });
+  await settle();
+  assert.match(container.textContent ?? "", /Bot unavailable/);
+  assert.doesNotMatch(container.textContent ?? "", /Telegram connected/);
+});
+
+test("Discord callback marker opens a popup immediately and skipping removes the marker", async () => {
+  dom.window.history.replaceState({}, "", "/account?s=profile&discord_setup=1");
+  globalThis.fetch = async url => new Response(JSON.stringify(
+    String(url).endsWith("/me") ? accountFixture : { linked: false }
+  ), { status: 200 });
+  await mountChildren(<Router><DiscordLoginSetupModal /></Router>);
+  await settle();
+  const modal = document.querySelector('[role="dialog"]');
+  assert.ok(modal, "Expected a popup, not just an inline profile form");
+  assert.match(modal.textContent ?? "", /Create a password/);
+  assert.match(modal.textContent ?? "", /Link Telegram/);
+  await act(async () => {
+    fireEvent.click(document.querySelector('[data-testid="discord-setup-continue-discord"]')!);
+  });
+  await settle();
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  assert.equal(new URLSearchParams(dom.window.location.search).has("discord_setup"), false);
+});
+
+test("returning Discord users with site credentials still see Telegram setup on sign-in", async () => {
+  dom.window.history.replaceState({}, "", "/account?s=profile&discord_setup=1");
+  globalThis.fetch = async url => new Response(JSON.stringify(
+    String(url).endsWith("/me") ? { ...accountFixture, telegramUsername: "chosen_name", hasPassword: true } : { linked: true }
+  ), { status: 200 });
+  await mountChildren(<Router><DiscordLoginSetupModal /></Router>);
+  await settle();
+  const modal = document.querySelector('[role="dialog"]');
+  assert.ok(modal);
+  assert.match(modal.textContent ?? "", /Username and password login ready/);
+  assert.match(modal.textContent ?? "", /Telegram connected/);
+  assert.equal(document.querySelector('[data-testid="input-discord-password"]'), null);
+});
+
+test("ordinary account visits do not reopen the Discord popup", async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify(accountFixture), { status: 200 });
+  await mountChildren(<Router><DiscordLoginSetupModal /></Router>);
+  await settle();
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+});
+
+test("saving a site username inside the popup preserves the setup marker across identity refresh", async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true, newUsername: "new_member" }), { status: 200 });
+  let navigatedTo = "";
+  globalThis.window = new Proxy(originalWindow, {
+    get(target, key) {
+      if (key === "location") return { replace: (url: string) => { navigatedTo = url; } };
+      return Reflect.get(target, key);
+    },
+  });
+  await mountChildren(<DiscordCredentialsSetup account={{ ...accountFixture, hasPassword: true }}
+    continuationUrl="/account?s=profile&discord_setup=1" />);
+  changeInput("input-discord-site-username", "new_member");
+  changeInput("input-discord-password", "existing-password");
+  await submitForm();
+  assert.equal(navigatedTo, "/account?s=profile&discord_setup=1");
 });

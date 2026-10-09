@@ -1,8 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
-import { accountsTable, siteConfigTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { accountsTable, siteConfigTable, inviteCodesTable } from "@workspace/db";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { writeLog } from "../lib/audit-log";
 import { getJwtSecret, issueAccountCookieForAccount, requireAccount } from "../middleware/account-auth";
 import { requireAdmin } from "../middleware/require-admin";
 import {
@@ -101,7 +102,9 @@ router.get("/account/discord/login-url", async (req, res): Promise<void> => {
     return;
   }
   const redirectUri = getOAuthRedirectUri(req);
-  const state = signState({ action: "login" });
+  const inviteCode = typeof req.query.inviteCode === "string"
+    ? req.query.inviteCode.trim().toUpperCase().slice(0, 64) : undefined;
+  const state = signState({ action: "login", ...(inviteCode ? { inviteCode } : {}) });
   const url = buildDiscordAuthUrl(redirectUri, state);
   res.json({ url });
 });
@@ -121,7 +124,7 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
       // First-timer hit prompt=none — send them to the consent screen once
       const action = (stateData?.action as string) ?? "login";
       const redirectUri = getOAuthRedirectUri(req);
-      const newState = signState({ action, firstAuth: true });
+      const newState = signState({ ...stateData, action, firstAuth: true });
       const url = buildDiscordAuthUrl(redirectUri, newState, ["identify"], "consent");
       res.redirect(url);
       return;
@@ -207,7 +210,7 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
     return;
   }
 
-  // ── LOGIN: only pre-existing linked accounts may authenticate via Discord ─
+  // ── LOGIN / SIGNUP: verified Discord identity, never a username-based claim ─
   if (action === "login") {
     // Look up by discord_id
     const [byDiscord] = await db
@@ -233,19 +236,84 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
           discordUsername: discordUser.username,
           discordAvatar: discordUser.avatar,
           lastLoginAt: new Date(),
+           lastLoginIp: req.ip ?? null,
         })
         .where(eq(accountsTable.telegramUsername, byDiscord.telegramUsername));
 
       await issueAccountCookieForAccount(res, byDiscord.telegramUsername);
-      const needsCredentialSetup = !byDiscord.hasPassword
-        || byDiscord.telegramUsername.replace(/^@/, "").startsWith("discord:");
-      res.redirect(needsCredentialSetup
-        ? "/account?s=profile&discord_setup=1"
-        : "/account");
+      res.redirect("/account?s=profile&discord_setup=1");
       return;
     }
 
-    res.redirect(`/login?discord_error=${encodeURIComponent("No account is linked to this Discord profile. Please sign up and verify your account first.")}`);
+    try {
+      const result = await db.transaction(async tx => {
+        const [inviteSetting] = await tx.select({ value: siteConfigTable.value })
+          .from(siteConfigTable).where(eq(siteConfigTable.key, "signup_requires_invite"));
+        const requiresInvite = inviteSetting?.value === "true";
+        const providedCode = typeof stateData.inviteCode === "string"
+          ? stateData.inviteCode.trim().toUpperCase() : "";
+        if (requiresInvite && !providedCode) throw new Error("An invite code is required for new Discord accounts.");
+
+        let inviteCode: string | null = null;
+        if (providedCode) {
+          const [invite] = await tx.select().from(inviteCodesTable)
+            .where(eq(inviteCodesTable.code, providedCode));
+          const valid = invite?.isActive
+            && (invite.maxUses === null || invite.usageCount < invite.maxUses);
+          if (requiresInvite && !valid) throw new Error("This invite code is invalid, inactive, or fully used.");
+          if (valid) inviteCode = invite.code;
+        }
+
+        const now = new Date();
+        const username = `discord:${discordUser.id}`;
+        const [inserted] = await tx.insert(accountsTable).values({
+          telegramUsername: username,
+          accountStatus: "active",
+          discordId: discordUser.id,
+          discordUsername: discordUser.username,
+          discordAvatar: discordUser.avatar,
+          discordAccessToken: tokens.access_token,
+          discordRefreshToken: tokens.refresh_token,
+          discordTokenExpiresAt: expiresAt,
+          verificationRequiredAt: now,
+          verifiedAt: now,
+          verificationMethod: "discord",
+          lastLoginAt: now,
+          lastLoginIp: req.ip ?? null,
+          ...(inviteCode ? { signupInviteCode: inviteCode } : {}),
+        }).onConflictDoNothing().returning({ telegramUsername: accountsTable.telegramUsername });
+
+        if (!inserted) {
+          // Concurrent callbacks for the same provider identity must not create
+          // duplicate accounts or consume the invite twice.
+          const [existing] = await tx.select({
+            telegramUsername: accountsTable.telegramUsername,
+            accountStatus: accountsTable.accountStatus,
+          }).from(accountsTable).where(eq(accountsTable.discordId, discordUser.id));
+          if (!existing || existing.accountStatus !== "active") throw new Error("Unable to create this Discord account.");
+          return { username: existing.telegramUsername, created: false };
+        }
+        if (inviteCode) {
+          const [claimed] = await tx.update(inviteCodesTable)
+            .set({ usageCount: sql`${inviteCodesTable.usageCount} + 1` })
+            .where(and(eq(inviteCodesTable.code, inviteCode), eq(inviteCodesTable.isActive, true),
+              or(isNull(inviteCodesTable.maxUses), lt(inviteCodesTable.usageCount, inviteCodesTable.maxUses))))
+            .returning({ code: inviteCodesTable.code });
+          if (!claimed) throw new Error("This invite code is invalid, inactive, or fully used.");
+        }
+        return { username, created: true };
+      });
+      await issueAccountCookieForAccount(res, result.username);
+      if (result.created) {
+        writeLog("login", "info", "account_discord_signup", "New account verified through Discord OAuth",
+          { telegramUsername: result.username, verificationMethod: "discord" }, req.ip).catch(() => {});
+      }
+      res.redirect("/account?s=profile&discord_setup=1");
+    } catch (error) {
+      const message = error instanceof Error && /invite code/.test(error.message)
+        ? error.message : "Unable to create this Discord account. Please try again.";
+      res.redirect(`/login?discord_error=${encodeURIComponent(message)}`);
+    }
     return;
   }
 

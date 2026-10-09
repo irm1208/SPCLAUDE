@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import React, { useEffect, useRef } from "react";
 import { useAccount, useTelegramAutoLogin } from "@/hooks/use-account";
+import { DiscordLoginSetupModal } from "@/components/account/DiscordLoginSetupModal";
 import {
   ACCOUNT_ACTIVITY_RETRY_INTERVAL_MS,
   shouldRefreshAccountSession,
@@ -315,6 +316,7 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Router />
+            <DiscordLoginSetupModal />
           </WouterRouter>
           <Toaster />
         </TooltipProvider>

@@ -6,6 +6,7 @@ export interface AccountMe {
   telegramUsername: string;
   verificationRequired?: boolean;
   discordUsername?: string | null;
+  discordId?: string | null;
   hasPassword?: boolean;
   discordLinked?: boolean;
   accountStatus?: string;
@@ -73,7 +74,7 @@ export function isDiscordOnlyAccount(telegramUsername: string | null | undefined
 export function getAccountHandle(account: Pick<AccountMe, "telegramUsername" | "discordUsername"> | null | undefined): string {
   if (!account) return "";
   const raw = account.telegramUsername.replace(/^@/, "");
-  if (isDiscordOnlyAccount(raw) && account.discordUsername) return account.discordUsername;
+  if (isDiscordOnlyAccount(raw)) return account.discordUsername || "Discord member";
   return raw;
 }
 

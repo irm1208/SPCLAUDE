@@ -38,8 +38,7 @@ vi.mock("@workspace/db", async () => {
               const chunks = condition.queryChunks ?? [];
               const values = valuesIn(condition);
               if (tableName === "accounts" && chunks.includes(schema.accountsTable.discordId)) {
-                const discordId = String(values.at(-1) ?? "");
-                return state.linkedAccount?.discordId === discordId ? [state.linkedAccount] : [];
+                return state.linkedAccount && values.includes(state.linkedAccount.discordId) ? [state.linkedAccount] : [];
               }
               if (tableName === "site_config" && chunks.includes(schema.siteConfigTable.key)) {
                 return values.includes("signup_requires_invite")
@@ -47,8 +46,7 @@ vi.mock("@workspace/db", async () => {
                   : [];
               }
               if (tableName === "invite_codes" && chunks.includes(schema.inviteCodesTable.code)) {
-                const code = String(values.at(-1) ?? "");
-                return state.inviteCode?.code === code ? [state.inviteCode] : [];
+                return state.inviteCode && values.includes(state.inviteCode.code) ? [state.inviteCode] : [];
               }
               return [];
             },
@@ -92,11 +90,7 @@ vi.mock("@workspace/db", async () => {
       return {
         values: (value: Record<string, unknown>) => {
           const insert = {
-            async onConflictDoNothing() {
-              state.accountWrites += 1;
-              if (tableName === "accounts") state.createdAccounts.push(structuredClone(value));
-              return undefined;
-            },
+            onConflictDoNothing() { return insert; },
             async returning() {
               state.accountWrites += 1;
               if (tableName === "accounts") state.createdAccounts.push(structuredClone(value));
@@ -123,6 +117,7 @@ vi.mock("../middleware/account-auth", () => ({
   },
 }));
 vi.mock("../middleware/require-admin", () => ({ requireAdmin: () => false }));
+vi.mock("../lib/audit-log", () => ({ writeLog: async () => undefined }));
 vi.mock("../lib/discord", () => ({
   getDiscordCredentials: async () => ({}),
   invalidateDiscordCache: () => undefined,
@@ -212,6 +207,38 @@ describe("mounted Discord login", () => {
     expect(state.cookies).toBe(1);
   });
 
+  it.each([
+    { code: "JOINME", isActive: false, maxUses: 10, usageCount: 0 },
+    { code: "JOINME", isActive: true, maxUses: 1, usageCount: 1 },
+  ])("does not create an account with an inactive or exhausted required invite %j", async invite => {
+    state.signupRequiresInvite = true;
+    state.inviteCode = invite;
+    const result = await discordCallback("JOINME");
+    expect(result.location).toContain("invite");
+    expect(state.createdAccounts).toHaveLength(0);
+    expect(state.cookies).toBe(0);
+  });
+
+  it("does not require or consume signup invites for an existing Discord account", async () => {
+    state.signupRequiresInvite = true;
+    state.linkedAccount = {
+      telegramUsername: "existing_name", hasPassword: true, accountStatus: "active", discordId: "discord-unlinked",
+    };
+    expect((await discordCallback()).location).toBe("/account?s=profile&discord_setup=1");
+    expect(state.createdAccounts).toHaveLength(0);
+    expect(state.transactions).toBe(0);
+    expect(state.cookies).toBe(1);
+  });
+
+  it("never signs in a suspended linked Discord account", async () => {
+    state.linkedAccount = {
+      telegramUsername: "suspended_name", hasPassword: true, accountStatus: "suspended", discordId: "discord-unlinked",
+    };
+    expect((await discordCallback()).location).toContain("suspended");
+    expect(state.createdAccounts).toHaveLength(0);
+    expect(state.cookies).toBe(0);
+  });
+
   it("keeps Discord login working after the site username has been renamed", async () => {
     state.linkedAccount = {
       telegramUsername: "chosen_name", hasPassword: true, accountStatus: "active", discordId: "discord-unlinked",
@@ -232,13 +259,13 @@ describe("mounted Discord login", () => {
     expect(state.cookies).toBe(0);
   });
 
-  it("rejects an account linked to a different Discord identity", async () => {
+  it("creates a separate account rather than claiming a different linked Discord identity", async () => {
     state.linkedAccount = {
       telegramUsername: "other_user", hasPassword: true, accountStatus: "active", discordId: "different-discord-id",
     };
     const result = await discordCallback();
-    expect(result.location).toContain("No%20account%20is%20linked");
-    expect(state.accountWrites).toBe(0);
-    expect(state.cookies).toBe(0);
+    expect(result.location).toBe("/account?s=profile&discord_setup=1");
+    expect(state.issuedUsername).toBe("discord:discord-unlinked");
+    expect(state.linkedAccount.telegramUsername).toBe("other_user");
   });
 });

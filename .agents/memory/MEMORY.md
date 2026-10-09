@@ -3,6 +3,8 @@
 - [Organiser V2 placeholder data traps](organiser-v2-placeholder-data.md) — mapApiGroupBuy fills fake fallbacks (maxMembers=1, counts 0); wire V2 tabs from raw API values via props, never SampleGB counts.
 - [Organiser V2 drawer portal CSS scoping](ov2-drawer-portal-scoping.md) — mobile drawer is a portalled Sheet; `.organiser-v2 .ov2-sidebar-drawer` selectors never match it, use compound `.organiser-v2.ov2-sidebar-drawer`.
 - [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
+- [Discord signup verification policy](discord-signup-verification-policy.md) — successful Discord OAuth replaces email verification and CAPTCHA for new Discord accounts; invite-only signup still applies.
+- [Browser test import order](browser-test-import-order.md) — initialize jsdom before importing browser-only libraries; early Radix/Wouter imports can silently disable portals or history updates.
 - [Lab test extract blob preference](lab-test-extract-blob-preference.md) — CoA re-extract (single+batch) must try stored pdfBlob before external url; Cloudflare-blocked sources always fail otherwise even with a local copy.
 - [GB entry-fee join gate](gb-entry-fee-join-gate.md) — membership only inserted after fee confirmed (402 ENTRY_FEE_REQUIRED gate in join handler); any new join path must route through same gate.
 - [GB entry-fee confirm atomicity](gb-entry-fee-confirm-atomicity.md) — confirm status-update + membership-grant must be one transaction w/ idempotent retry, or payment shows confirmed forever with no membership.

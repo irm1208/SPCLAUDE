@@ -1,23 +1,27 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { AccountMe } from "../../hooks/use-account";
 import { getDiscordSetupStep, submitDiscordSetup } from "../../lib/discord-credentials-setup";
 
 export function DiscordCredentialsSetup({
-  account, onSkip,
-}: { account: AccountMe; onSkip?: () => void }) {
-  return <DiscordCredentialsSetupForm key={account.telegramUsername} account={account} onSkip={onSkip} />;
+  account, onSkip, continuationUrl, onBusyChange,
+}: { account: AccountMe; onSkip?: () => void; continuationUrl?: string; onBusyChange?: (busy: boolean) => void }) {
+  return <DiscordCredentialsSetupForm key={account.telegramUsername} account={account} onSkip={onSkip}
+    continuationUrl={continuationUrl} onBusyChange={onBusyChange} />;
 }
 
 function DiscordCredentialsSetupForm({
-  account, onSkip,
-}: { account: AccountMe; onSkip?: () => void }) {
+  account, onSkip, continuationUrl = "/account?s=profile", onBusyChange,
+}: { account: AccountMe; onSkip?: () => void; continuationUrl?: string; onBusyChange?: (busy: boolean) => void }) {
   const qc = useQueryClient();
   const [passwordCreated, setPasswordCreated] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const step = getDiscordSetupStep({
     ...account, hasPassword: passwordCreated ? true : account.hasPassword,
@@ -49,7 +53,7 @@ function DiscordCredentialsSetupForm({
           : "Password saved. You can now use your site username and password to sign in." });
       } else {
         setUsername("");
-        window.location.replace("/account?s=profile");
+        window.location.replace(continuationUrl);
       }
     } catch (error) {
       setMessage({ ok: false, text: error instanceof Error ? error.message : "Could not save login details" });

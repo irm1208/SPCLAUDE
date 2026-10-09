@@ -13,7 +13,9 @@ type Tab = "login" | "signup";
 type Step = "form" | "set-password" | "telegram-prompt" | "join-group-buy" | "forgot-step1" | "forgot-step2" | "forgot-done";
 
 // ── Discord OAuth button ────────────────────────────────────────────────────
-function DiscordLoginButton() {
+function DiscordLoginButton({ inviteRequired, inviteCode, onInviteCodeChange, showInviteInput = true }: {
+  inviteRequired: boolean; inviteCode: string; onInviteCodeChange: (code: string) => void; showInviteInput?: boolean;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +34,9 @@ function DiscordLoginButton() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/account/discord/login-url");
+      const params = new URLSearchParams();
+      if (inviteCode.trim()) params.set("inviteCode", inviteCode.trim());
+      const res = await fetch(`/api/account/discord/login-url${params.size ? `?${params}` : ""}`);
       if (!res.ok) {
         setLoading(false);
         setError("Discord login isn't available right now — contact support if this persists.");
@@ -50,6 +54,12 @@ function DiscordLoginButton() {
 
   return (
     <div className="space-y-2">
+      {inviteRequired && showInviteInput && <label className="block text-xs" style={{ color: "var(--t-muted)" }}>
+        Invite code for a new Discord account (not needed for existing accounts)
+        <input value={inviteCode} onChange={event => onInviteCodeChange(event.target.value.toUpperCase())}
+          maxLength={64} autoComplete="off" className="mt-1 h-11 w-full rounded-xl border px-3 text-sm"
+          style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }} />
+      </label>}
       <button
         type="button"
         onClick={handleDiscordLogin}
@@ -586,7 +596,7 @@ export default function Login() {
                   <div className="flex-1 h-px" style={{ background: T.border }} />
                 </div>
 
-                <DiscordLoginButton />
+                <DiscordLoginButton inviteRequired={inviteRequired} inviteCode={inviteCode} onInviteCodeChange={setInviteCode} />
               </motion.form>
             )}
 
@@ -964,7 +974,8 @@ export default function Login() {
                   <div className="flex-1 h-px" style={{ background: T.border }} />
                 </div>
 
-                <DiscordLoginButton />
+                <DiscordLoginButton inviteRequired={inviteRequired} inviteCode={inviteCode}
+                  onInviteCodeChange={setInviteCode} showInviteInput={false} />
               </motion.form>
             )}
 

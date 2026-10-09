@@ -8,7 +8,7 @@ import {
   BookMarked, GraduationCap, Calculator as CalcIcon, Sparkles, MessageCircle,
 } from "lucide-react";
 import { useGetProducts, useListLabTests } from "@workspace/api-client-react";
-import { useAccount, useAccountNotifications } from "@/hooks/use-account";
+import { getAccountHandle, useAccount, useAccountNotifications } from "@/hooks/use-account";
 import { useThemeStore } from "@/hooks/use-theme";
 import { HubBottomNav } from "@/components/HubBottomNav";
 import { SaltPepsMark } from "@/components/SaltPepsMark";
@@ -214,7 +214,9 @@ export function DashboardShell({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const initial = (username || "U").slice(0, 1).toUpperCase();
+  const { account } = useAccount();
+  const displayUsername = account?.telegramUsername === username ? getAccountHandle(account) : username;
+  const initial = (displayUsername || "U").slice(0, 1).toUpperCase();
 
   // ── Live global search (local data + product & lab-test APIs) ──
   const searching = dq.length > 0;
@@ -302,7 +304,6 @@ export function DashboardShell({
   ];
 
   // ── Role-gated workspaces + extra sections (mirrors the mobile "More" menu) ──
-  const { account } = useAccount();
   type SideLink = { id: string; label: string; Icon: React.ElementType; active?: boolean; badge?: string; go: () => void };
   const workspaceItems: SideLink[] = [
     ...(account?.organiserStatus === "approved"
@@ -1022,8 +1023,8 @@ export function DashboardShell({
                   >
                     <span className="flex items-center justify-center rounded-full text-white shrink-0" style={{ width: 34, height: 34, background: ACCENT, fontWeight: 700, fontSize: 14 }}>{initial}</span>
                     <span className="hidden md:flex flex-col items-start leading-tight min-w-0">
-                      <span className="font-bold truncate" style={{ fontSize: 12.5, maxWidth: 120 }}>{username}</span>
-                      <span className="truncate" style={{ fontSize: 11, color: T.subtle, maxWidth: 120 }}>@{username}</span>
+                      <span className="font-bold truncate" style={{ fontSize: 12.5, maxWidth: 120 }}>{displayUsername}</span>
+                      <span className="truncate" style={{ fontSize: 11, color: T.subtle, maxWidth: 120 }}>@{displayUsername}</span>
                     </span>
                     <ChevronDown className="w-4 h-4 shrink-0 transition-transform hidden md:block" style={{ color: T.subtle, transform: menu === "profile" ? "rotate(180deg)" : "none" }} />
                   </button>
@@ -1032,8 +1033,8 @@ export function DashboardShell({
                       <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} />
                       <div className="absolute right-0 z-50 mt-2 rounded-lg overflow-hidden" style={{ top: "100%", width: 220, background: T.panel, border: `1px solid ${T.border}`, boxShadow: "0 12px 32px rgba(16,17,33,.16)" }}>
                         <div className="px-3.5 py-3" style={{ borderBottom: `1px solid ${T.borderSoft}` }}>
-                          <p className="font-bold truncate" style={{ fontSize: 13 }}>{username}</p>
-                          <p className="truncate" style={{ fontSize: 11.5, color: T.subtle }}>@{username}</p>
+                          <p className="font-bold truncate" style={{ fontSize: 13 }}>{displayUsername}</p>
+                          <p className="truncate" style={{ fontSize: 11.5, color: T.subtle }}>@{displayUsername}</p>
                         </div>
                         <div className="py-1.5">
                           {([
