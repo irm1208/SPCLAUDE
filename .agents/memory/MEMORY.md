@@ -140,3 +140,4 @@
 - [Worktree dependency links](worktree-dependency-links.md) — an isolated worktree may lack package-level workspace symlinks even while the main workspace's node_modules is populated.
 - [Minified storage SDK AbortSignal](storage-sdk-abortsignal-minify.md) — node-fetch v2 rejects minified abort-controller signals; preserve names in the API production bundle.
 - [Account identity refresh](account-identity-refresh.md) — username changes need refreshed account-scoped caches after the renewed cookie, not just client-side navigation.
+- [Lab-test warehouse codes](lab-test-warehouse-codes.md) — US/UK batch prefixes identify warehouses, not different products; preserve product and dose matching.

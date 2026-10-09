@@ -20443,7 +20443,7 @@ type AdminShareOrganiserPayment = {
   currency: string | null;
   network: string | null;
   confirmedAt: string | null;
-  amountDue: number;
+  amountDue: number | null;
 };
 type AdminShareDetail = {
   id: string; status: string; creatorUsername: string;
@@ -22191,11 +22191,16 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
 
                               {/* Amount due */}
                               <div style={{ color: "var(--adm-muted)" }}>
-                                Amount due: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>{money(op.amountDue)}</span>
+                                Amount due: <span className="font-semibold" style={{ color: "var(--adm-text)" }}>{op.amountDue === null ? "Pending" : money(op.amountDue)}</span>
                                 <span className="ml-1" style={{ color: "var(--adm-muted)" }}>
-                                  ({money(detail.combinedSubtotal)} products + {money(detail.totalVendorShipping ?? 0)} shipping)
+                                  ({money(detail.combinedSubtotal)} products + {detail.totalVendorShipping === null ? "Pending" : money(detail.totalVendorShipping)} shipping)
                                 </span>
                               </div>
+                              {op.amountDue === null && (
+                                <p style={{ color: "var(--adm-muted)" }}>
+                                  The platform payment amount is not final yet. Vendor shipping must be finalised before confirming payment.
+                                </p>
+                              )}
 
                               {/* Submitted tx details (pending or confirmed) */}
                               {(isPending || isConfirmed) && op.txHash && (
@@ -22216,7 +22221,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                               {isPending && (
                                 <button
                                   onClick={() => confirmOrgPayment(row.id)}
-                                  disabled={confirmingOrgPay === row.id}
+                                  disabled={confirmingOrgPay === row.id || op.amountDue === null}
                                   className="mt-1 px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity"
                                   style={{ background: "#16a34a" }}
                                 >
