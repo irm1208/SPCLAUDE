@@ -18,6 +18,7 @@ import { resolveUtherName } from "@/lib/uther-batch-codes";
 import { doseForBatchCode, getLabTestWarehouse, resolveBatchPrefixName, type LabTestWarehouse } from "@/lib/batch-prefixes";
 import type { PeptideGroup } from "@/lib/peptide-groups";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
+import { isLabTestFailed, failsLabTestPurity, labTestPurityThreshold } from "@/lib/lab-test-quality";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, ReferenceArea, ComposedChart, Line, TooltipProps,
@@ -158,8 +159,8 @@ function computeMetricsFromTests(tests: LabTest[]): Metrics {
   const purities = tests.filter(t => t.purityPct != null).map(t => t.purityPct!);
   const avgPurityRaw = purities.length > 0 ? purities.reduce((a, b) => a + b, 0) / purities.length : null;
   const avgPurity = avgPurityRaw != null ? Math.round(avgPurityRaw * 1000) / 1000 : null;
-  const goodPurity = tests.filter(t => t.purityPct != null && t.purityPct >= 99).length;
-  const lowPurity = tests.filter(t => t.purityPct != null && t.purityPct < 99).length;
+  const goodPurity = tests.filter(t => t.purityPct != null && !failsLabTestPurity(t)).length;
+  const lowPurity = tests.filter(failsLabTestPurity).length;
   const thirdParty = tests.filter(t => t.isThirdPartyTest).length;
   const vendorTests = tests.filter(t => !t.isThirdPartyTest).length;
 
@@ -226,12 +227,8 @@ export function parseBatchDate(batchCode: string | null): string | null {
   return `${MONTH_NAMES[d.month - 1]} ${ordinal(d.day)} ${d.year}`;
 }
 
-function isHGHPeptide(name: string): boolean {
-  return getCanonicalGroup(name)?.canonical === "HGH";
-}
-
 function purityTier(pct: number, peptideName?: string): { color: string; bg: string; border: string; label: string } {
-  const threshold = peptideName && isHGHPeptide(peptideName) ? 96 : 99;
+  const threshold = labTestPurityThreshold(peptideName);
   if (pct >= threshold) return { color: "#059669", bg: "color-mix(in srgb, #059669 10%, transparent)", border: "color-mix(in srgb, #059669 30%, transparent)", label: "Good" };
   return { color: "#DC2626", bg: "color-mix(in srgb, #DC2626 10%, transparent)", border: "color-mix(in srgb, #DC2626 30%, transparent)", label: "Low" };
 }
@@ -1139,7 +1136,7 @@ function MetricsTab({ allTests, testsLoading, onCompoundClick }: { allTests: Lab
     if (mf.source === "vendor") filtered = filtered.filter(t => !t.isThirdPartyTest);
     if (mf.source === "third_party") filtered = filtered.filter(t => t.isThirdPartyTest);
     if (mf.testType) filtered = filtered.filter(t => t.testType === mf.testType);
-    if (mf.failedOnly) filtered = filtered.filter(t => (t.purityPct != null && t.purityPct < 99) || t.sterilityPass === false || (t.endotoxinEuMg != null && t.endotoxinEuMg > 5));
+    if (mf.failedOnly) filtered = filtered.filter(isLabTestFailed);
     return computeMetricsFromTests(filtered);
   }, [allTests, mf]);
 
@@ -1169,8 +1166,8 @@ function MetricsTab({ allTests, testsLoading, onCompoundClick }: { allTests: Lab
 
   const { overall, byCompound, bySupplier } = filteredMetrics;
   const purityChartData = overall.withPurity > 0 ? [
-    { name: "Good ≥99%", value: overall.goodPurity, fill: "#059669" },
-    { name: "Low <99%",  value: overall.lowPurity,  fill: "#DC2626" },
+    { name: "Purity pass", value: overall.goodPurity, fill: "#059669" },
+    { name: "Low purity",  value: overall.lowPurity,  fill: "#DC2626" },
   ] : [];
 
   const sterilityTotal = overall.sterilityPass + overall.sterilityFail;
@@ -1609,8 +1606,8 @@ function CompareTab({ allTests, initialCompound, initialSource, initialVendor }:
               {metric === "purity" && (
                 <div className="flex items-center gap-3 text-[10px] flex-wrap">
                   <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> ≥99% Excellent</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> ≥95% Acceptable</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> &lt;95% Low</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> ≥{labTestPurityThreshold(trendName)}% Acceptable</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> &lt;{labTestPurityThreshold(trendName)}% Low</span>
                 </div>
               )}
               {metric === "endotoxin" && (
@@ -1625,7 +1622,7 @@ function CompareTab({ allTests, initialCompound, initialSource, initialVendor }:
             {/* Science description */}
             {metric === "purity" && (
               <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>
-                Purity % by HPLC/MS. ≥99% = pharmaceutical-grade consistency (Excellent). ≥95% = minimum acceptable research standard. &lt;95% = low purity, degradation or synthesis issues possible.
+                Purity % by HPLC/MS. On this site, purity passes at ≥98% (HGH: ≥96%). Results below the applicable threshold are flagged as low purity.
               </p>
             )}
             {metric === "endotoxin" && (
@@ -1671,8 +1668,8 @@ function CompareTab({ allTests, initialCompound, initialSource, initialVendor }:
                 {/* Shaded tier bands — purity */}
                 {metric === "purity" && <>
                   <ReferenceArea y1={99} y2={102}  fill="#059669" fillOpacity={0.18} ifOverflow="hidden" />
-                  <ReferenceArea y1={95} y2={99}   fill="#f59e0b" fillOpacity={0.15} ifOverflow="hidden" />
-                  <ReferenceArea y1={0}  y2={95}   fill="#ef4444" fillOpacity={0.10} ifOverflow="hidden" />
+                  <ReferenceArea y1={labTestPurityThreshold(trendName)} y2={99} fill="#f59e0b" fillOpacity={0.15} ifOverflow="hidden" />
+                  <ReferenceArea y1={0} y2={labTestPurityThreshold(trendName)} fill="#ef4444" fillOpacity={0.10} ifOverflow="hidden" />
                 </>}
 
                 {/* Shaded tier bands — endotoxin */}
@@ -1686,8 +1683,8 @@ function CompareTab({ allTests, initialCompound, initialSource, initialVendor }:
                 {metric === "purity" && <>
                   <ReferenceLine y={99} stroke="#059669" strokeDasharray="5 3" strokeWidth={1.2}
                     label={{ value: "≥99% Excellent", position: "insideTopLeft", fontSize: 9, fill: "#059669", dy: -2 }} />
-                  <ReferenceLine y={95} stroke="#f59e0b" strokeDasharray="5 3" strokeWidth={1.2}
-                    label={{ value: "≥95% Acceptable", position: "insideTopLeft", fontSize: 9, fill: "#f59e0b", dy: -2 }} />
+                  <ReferenceLine y={labTestPurityThreshold(trendName)} stroke="#f59e0b" strokeDasharray="5 3" strokeWidth={1.2}
+                    label={{ value: `≥${labTestPurityThreshold(trendName)}% Acceptable`, position: "insideTopLeft", fontSize: 9, fill: "#f59e0b", dy: -2 }} />
                 </>}
 
                 {/* Reference lines — endotoxin */}
@@ -2479,7 +2476,7 @@ export default function LabTests({ bare }: { bare?: boolean } = {}) {
       if (filters.lab && t.labName.toLowerCase() !== filters.lab.toLowerCase()) return false;
       if (filters.compoundName && buildTestTitle(t) !== filters.compoundName) return false;
       if (filters.testType && t.testType !== filters.testType) return false;
-      if (filters.failedOnly && !((t.purityPct != null && t.purityPct < 99) || t.sterilityPass === false || (t.endotoxinEuMg != null && t.endotoxinEuMg > 5))) return false;
+      if (filters.failedOnly && !isLabTestFailed(t)) return false;
       if (filters.search) {
         const norm = filters.search.toLowerCase().replace(/[^a-z0-9]/gi, "");
         const nameNorm = t.peptideName.toLowerCase().replace(/[^a-z0-9]/gi, "");

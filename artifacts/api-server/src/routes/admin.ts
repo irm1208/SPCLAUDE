@@ -1,4 +1,5 @@
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
+import adminProductStockRouter from "./admin-product-stock";
 import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 import {
   assertNoActiveRefund,
@@ -2747,6 +2748,8 @@ router.get("/admin/group-summary/breakdown", async (req, res): Promise<void> => 
 });
 
 // ─── GET /api/admin/products ──────────────────────────────────
+router.use(adminProductStockRouter);
+
 router.get("/admin/products", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 

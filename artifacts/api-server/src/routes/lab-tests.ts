@@ -23,6 +23,7 @@ import {
 } from "../lib/gemini-lab-extract";
 import { prepareCertificateBase64, prepareCertificateForStorage } from "../lib/lab-cert-storage";
 import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
+import { labTestPurityThresholdSql } from "../lib/lab-test-quality";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -391,8 +392,8 @@ router.get("/lab-tests/metrics", async (req, res) => {
       sterilityPass: sql<number>`sum(case when ${labTestsTable.sterilityPass} = true then 1 else 0 end)::int`,
       sterilityFail: sql<number>`sum(case when ${labTestsTable.sterilityPass} = false then 1 else 0 end)::int`,
       avgPurity: sql<number>`round(avg(${labTestsTable.purityPct})::numeric, 1)`,
-      goodPurity: sql<number>`sum(case when ${labTestsTable.purityPct} >= 99 then 1 else 0 end)::int`,
-      lowPurity: sql<number>`sum(case when ${labTestsTable.purityPct} < 99 then 1 else 0 end)::int`,
+      goodPurity: sql<number>`sum(case when ${labTestsTable.purityPct} >= ${labTestPurityThresholdSql(sql`${labTestsTable.peptideName}`)} then 1 else 0 end)::int`,
+      lowPurity: sql<number>`sum(case when ${labTestsTable.purityPct} < ${labTestPurityThresholdSql(sql`${labTestsTable.peptideName}`)} then 1 else 0 end)::int`,
       thirdParty: sql<number>`sum(case when ${labTestsTable.isThirdPartyTest} = true then 1 else 0 end)::int`,
       vendorTests: sql<number>`sum(case when ${labTestsTable.isThirdPartyTest} = false then 1 else 0 end)::int`,
     }).from(labTestsTable).where(where);

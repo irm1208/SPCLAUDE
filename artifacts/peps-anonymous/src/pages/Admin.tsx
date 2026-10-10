@@ -70,6 +70,8 @@ import {
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 import { getCreditAdjustedTotal, hasAppliedCredit } from "@/lib/credit-payment";
 import { getSelectedProducts, toggleProductSelection, toggleVisibleSelection } from "./admin-product-selection";
+import { BulkProductStockDialog, type StockProduct } from "@/components/admin/BulkProductStockDialog";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -5133,6 +5135,7 @@ function parseCsvLine(line: string): string[] {
 }
 
 function ProductsTab({ secret }: { secret: string }) {
+  const queryClient = useQueryClient();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -5146,6 +5149,7 @@ function ProductsTab({ secret }: { secret: string }) {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState("");
+  const [stockSelection, setStockSelection] = useState<StockProduct[] | null>(null);
   const [vendorFilter, setVendorFilter] = useState("");
   const [deduping, setDeduping] = useState(false);
   type DupeGroup = { keep: { id: string; name: string; vendor: string | null; price: number }; remove: { id: string; name: string; vendor: string | null; price: number; orderCount: number }[] };
@@ -5677,6 +5681,15 @@ function ProductsTab({ secret }: { secret: string }) {
         <Button variant="destructive" onClick={() => { setBulkDeleteError(""); setMsg(""); setShowBulkDeleteConfirm(true); }} disabled={!selectedCount}>
           Delete selected
         </Button>
+        <Button data-testid="button-bulk-product-stock" variant="outline" disabled={!selectedCount || saving || bulkDeleting}
+          onClick={() => { setMsg(""); setStockSelection(selectedProducts.map(product => ({ ...product }))); }} className="gap-2">
+          <Package className="h-4 w-4" />Stock actions
+        </Button>
+        {selectedCount > 0 && selectedProducts.some(product => !visibleIds.includes(product.id)) && (
+          <span className="text-xs text-muted-foreground">
+            Includes {selectedProducts.filter(product => !visibleIds.includes(product.id)).length} selected outside the current filter
+          </span>
+        )}
         {msg && <div className={cn("text-sm px-1", msg.startsWith("Error:") ? "text-red-600" : "text-green-600")}>{msg}</div>}
         <Button variant="outline" className="gap-2" onClick={exportCsv} title="Export all products as CSV">
           <Download className="w-4 h-4" />Export CSV
@@ -6064,6 +6077,19 @@ function ProductsTab({ secret }: { secret: string }) {
           </Card>
         </div>
       )}
+      {stockSelection && <BulkProductStockDialog products={stockSelection} secret={secret}
+        onClose={() => setStockSelection(null)} onSaved={result => {
+          const stockById = new Map(result.products.map(product => [product.id, product.stock]));
+          setProducts(previous => previous.map(product => stockById.has(product.id)
+            ? { ...product, stock: stockById.get(product.id)! } : product));
+          setStockSelection(null);
+          setEditingId(null);
+          setMsg(`Updated stock for ${result.products.length} product${result.products.length === 1 ? "" : "s"}`
+            + (result.skippedIds.length ? `; skipped ${result.skippedIds.length} without tracked stock` : ""));
+          void queryClient.invalidateQueries({
+            predicate: query => query.queryKey.some(key => typeof key === "string" && /products|low-stock/.test(key)),
+          });
+        }} />}
     </div>
   );
 }

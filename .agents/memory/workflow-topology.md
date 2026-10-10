@@ -5,6 +5,12 @@ description: Which workflows are canonical vs redundant duplicates that fight ov
 
 # Run topology
 
+Avoid duplicate API/web services during heavy builds; an operating-system-killed build is not necessarily a source-code error.
+
+**Why:** Duplicate development services and a large language-server process consumed enough memory for a frontend build to time out, then be killed during chunk rendering. Stopping the duplicate artifact services, restarting the canonical service, and using a bounded Node heap allowed the unchanged build to pass.
+
+**How to apply:** Inspect running workflows and process memory before changing application code in response to exit 137. Retain the canonical preview, stop redundant services rather than adding more, and consider a bounded build heap to encourage garbage collection.
+
 The `.replit` run button is "Project", which starts only TWO workflows in parallel:
 - **Start application** (`bash start.sh`) — itself launches the API server (8080),
   the peps-anonymous web/Vite dev server on **21504** (21503 is reserved for the

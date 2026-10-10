@@ -5,6 +5,7 @@ import { ReportModal, parseBatchDate } from "@/pages/LabTests";
 import { getCanonicalGroup, getPeptideDisplayName, splitBlendComponents } from "@/lib/peptide-groups";
 import { resolveUtherName } from "@/lib/uther-batch-codes";
 import { resolveBatchPrefixName } from "@/lib/batch-prefixes";
+import { labTestPurityThreshold } from "@/lib/lab-test-quality";
 
 export interface LabTest {
   id: number;
@@ -65,15 +66,13 @@ function resolveTestCompoundName(t: LabTest): string {
 type TestResult = "pass" | "fail" | "unknown";
 
 function purityColorForPeptide(pct: number, peptideName: string): string {
-  const isHGH = getCanonicalGroup(peptideName)?.canonical === "HGH";
-  if (isHGH) return pct >= 96 ? "#059669" : "#DC2626";
-  return pct >= 98 ? "#059669" : pct >= 95 ? "#2563EB" : "#DC2626";
+  return pct >= labTestPurityThreshold(peptideName) ? "#059669" : "#DC2626";
 }
 
 function getTestResult(t: LabTest): TestResult {
   if (t.sterilityPass === false) return "fail";
   if (t.purityPct != null) {
-    const passThreshold = getCanonicalGroup(t.peptideName)?.canonical === "HGH" ? 96 : 95;
+    const passThreshold = labTestPurityThreshold(t.peptideName);
     if (t.purityPct >= passThreshold) return "pass";
     return "fail";
   }

@@ -10,6 +10,7 @@
     "test": "tsx --test src/lib/admin-auth.test.ts src/lib/account-verification-flow.test.ts && pnpm run test:discord-credentials && pnpm run test:refund-queue",
     "test:discord-credentials": "tsx --test src/lib/discord-credentials-setup.test.ts src/components/account/DiscordCredentialsSetup.test.tsx src/pages/discord-credentials-settings.test.ts",
     "test:refund-queue": "pnpm exec vitest run src/components/GroupBuyRefundQueue.test.ts",
+    "test:product-stock": "tsx --tsconfig tsconfig.tests.json --test src/components/admin/BulkProductStockDialog.test.tsx src/pages/admin-products-stock-contract.test.ts src/pages/admin-product-selection.test.ts src/pages/admin-products-bulk-delete-contract.test.ts",
     "test:dispatch": "node --experimental-strip-types src/pages/organiser-v2/dispatch/model.test.ts",
     "test:overview": "node --experimental-strip-types src/pages/organiser-v2/overview-model.test.ts",
     "test:workspace-theme": "node --experimental-strip-types src/pages/organiser-v2/workspace-theme.test.ts",

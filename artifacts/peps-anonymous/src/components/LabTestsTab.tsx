@@ -11,16 +11,11 @@ import { getCanonicalGroup } from "@/lib/peptide-groups";
 import { resolveUtherName } from "@/lib/uther-batch-codes";
 import { getLabTestWarehouse, stripWarehousePrefix } from "@/lib/batch-prefixes";
 import { adminAuth } from "@/lib/admin-auth";
+import { isLabTestFailed, labTestPurityThreshold } from "@/lib/lab-test-quality";
 
-
-function isHGH(name: string): boolean {
-  const group = getCanonicalGroup(name);
-  return group?.canonical === "HGH";
-}
 
 function purityColorClass(pct: number, peptideName: string): string {
-  if (isHGH(peptideName)) return pct >= 96 ? "text-green-600" : "text-red-600";
-  return pct >= 98 ? "text-green-600" : pct >= 95 ? "text-blue-600" : "text-red-600";
+  return pct >= labTestPurityThreshold(peptideName) ? "text-green-600" : "text-red-600";
 }
 
 const LAB_NAMES = ["Janoshik", "Uzorak", "Peptidetest", "Testides", "Chromate", "Analiza Bialek"];
@@ -1975,14 +1970,7 @@ export function LabTestsTab({ secret }: { secret: string }) {
     }
   };
 
-  const isFailed = (t: LabTest) => {
-    const purityThreshold = isHGH(t.peptideName) ? 96 : 95;
-    return (
-      (t.purityPct != null && t.purityPct < purityThreshold) ||
-      t.sterilityPass === false ||
-      (t.endotoxinEuMg != null && t.endotoxinEuMg > 5)
-    );
-  };
+  const isFailed = isLabTestFailed;
 
   const handleCertUploadClick = (id: number) => {
     certUploadTargetId.current = id;
@@ -2606,10 +2594,11 @@ export function LabTestsTab({ secret }: { secret: string }) {
                         />
                       )}
                       {(previewStates[t.id] === "iframe" || previewStates[t.id] === "link") && (() => {
-                        const purityColor = t.purityPct != null ? (t.purityPct >= 99 ? "#059669" : "#DC2626") : null;
-                        const purityBg   = t.purityPct != null ? (t.purityPct >= 99 ? "rgba(5,150,105,0.10)" : "rgba(220,38,38,0.10)") : null;
-                        const purityBorder = t.purityPct != null ? (t.purityPct >= 99 ? "rgba(5,150,105,0.28)" : "rgba(220,38,38,0.28)") : null;
-                        const purityLabel  = t.purityPct != null ? (t.purityPct >= 99 ? "Good" : "Low") : null;
+                        const purityPass = t.purityPct != null && t.purityPct >= labTestPurityThreshold(t.peptideName);
+                        const purityColor = t.purityPct != null ? (purityPass ? "#059669" : "#DC2626") : null;
+                        const purityBg   = t.purityPct != null ? (purityPass ? "rgba(5,150,105,0.10)" : "rgba(220,38,38,0.10)") : null;
+                        const purityBorder = t.purityPct != null ? (purityPass ? "rgba(5,150,105,0.28)" : "rgba(220,38,38,0.28)") : null;
+                        const purityLabel  = t.purityPct != null ? (purityPass ? "Good" : "Low") : null;
                         return (
                           <div className="w-full flex flex-col gap-2 py-1">
                             {/* Metrics row */}
