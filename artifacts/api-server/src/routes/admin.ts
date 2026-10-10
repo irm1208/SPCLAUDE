@@ -1,5 +1,6 @@
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import adminProductStockRouter from "./admin-product-stock";
+import { resolveEditedProductId } from "../lib/admin-order-product-links";
 import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 import {
   assertNoActiveRefund,
@@ -3315,13 +3316,23 @@ router.put("/admin/orders/:id/line-items", async (req: any, res: any) => {
 
   const { updated, newLineItems } = await db.transaction(async tx => {
   await assertNoActiveRefund(tx, req.params.id);
+  // Preserve existing links before replacement; restore legacy missing links only
+  // when the catalogue has one exact name match. Custom/ambiguous items stay unlinked.
+  const existingItems = await tx.select({
+    productName: orderLineItemsTable.productName,
+    productId: orderLineItemsTable.productId,
+  }).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, req.params.id));
+  const catalog = await tx.select({
+    id: productsTable.id,
+    name: productsTable.name,
+  }).from(productsTable);
   // Replace all line items
   await tx.delete(orderLineItemsTable).where(refundMutableOrderWhere(eq(orderLineItemsTable.orderId, req.params.id), orderLineItemsTable.orderId));
   await tx.insert(orderLineItemsTable).values(
     validated.map(li => ({
       id: randomUUID(),
       orderId: req.params.id,
-      productId: "",
+      productId: resolveEditedProductId(li.productName, existingItems, catalog),
       productName: li.productName,
       quantity: li.quantity.toFixed(2),
       unitPrice: li.unitPrice.toFixed(2),

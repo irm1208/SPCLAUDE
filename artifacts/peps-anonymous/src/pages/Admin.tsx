@@ -8457,7 +8457,9 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     const productMap = new Map<string, { name: string; productId: string | null; qty: number; revenue: number }>();
     for (const order of selected) {
       for (const li of (order.lineItems ?? [])) {
-        const key = li.productId ?? li.productName.trim().toLowerCase();
+        // Match the FS3 summary's name-based grouping, including legacy edited
+        // lines whose product ID was cleared. Never merge unrelated empty IDs.
+        const key = li.productName.trim().toLowerCase();
         const existing = productMap.get(key);
         const revenue = (li.unitPrice ?? 0) * li.quantity;
         if (existing) { existing.qty += li.quantity; existing.revenue += revenue; }
