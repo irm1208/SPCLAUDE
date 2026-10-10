@@ -13,10 +13,12 @@ test("non-HGH purity fails strictly below 98%, including the former acceptable b
   assert.equal(labTestPurityThreshold("Unknown compound"), 98);
 });
 
-test("HGH and its existing aliases retain the 96% boundary", () => {
+test("HGH and its existing aliases fail strictly below 95%", () => {
   for (const peptideName of ["HGH", "hgh", "Human Growth Hormone", "Growth Hormone", "Somatropin"]) {
-    assert.equal(labTestPurityThreshold(peptideName), 96);
-    assert.equal(failsLabTestPurity({ peptideName, purityPct: 95.99 }), true);
+    assert.equal(labTestPurityThreshold(peptideName), 95);
+    assert.equal(failsLabTestPurity({ peptideName, purityPct: 94.99 }), true);
+    assert.equal(failsLabTestPurity({ peptideName, purityPct: 95 }), false);
+    assert.equal(failsLabTestPurity({ peptideName, purityPct: 95.99 }), false);
     assert.equal(failsLabTestPurity({ peptideName, purityPct: 96 }), false);
     assert.equal(failsLabTestPurity({ peptideName, purityPct: 97.99 }), false);
   }
@@ -29,7 +31,7 @@ test("unknown purity is not counted as a failure or a purity pass", () => {
 });
 
 test("sterility and endotoxin failure rules are unchanged", () => {
-  const sample = { peptideName: "HGH", purityPct: 96, sterilityPass: true, endotoxinEuMg: 5 };
+  const sample = { peptideName: "HGH", purityPct: 95, sterilityPass: true, endotoxinEuMg: 5 };
   assert.equal(isLabTestFailed(sample), false);
   assert.equal(isLabTestFailed({ ...sample, sterilityPass: false }), true);
   assert.equal(isLabTestFailed({ ...sample, endotoxinEuMg: 5.01 }), true);

@@ -6,5 +6,5 @@ const HGH_ALIASES = ["hgh", "humangrowthhormone", "growthhormone", "somatropin"]
 export function labTestPurityThresholdSql(peptideName: SQL): SQL<number> {
   return sql<number>`case when regexp_replace(lower(${peptideName}), '[^a-z0-9]', '', 'g')
     in (${sql.join(HGH_ALIASES.map(alias => sql`${alias}`), sql`, `)})
-    then 96 else 98 end`;
+    then 95 else 98 end`;
 }

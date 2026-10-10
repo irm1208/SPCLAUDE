@@ -3,7 +3,7 @@ import { getCanonicalGroup } from "./peptide-groups";
 type PurityResult = { peptideName: string; purityPct: number | null };
 
 export function labTestPurityThreshold(peptideName?: string): number {
-  return getCanonicalGroup(peptideName ?? "")?.canonical === "HGH" ? 96 : 98;
+  return getCanonicalGroup(peptideName ?? "")?.canonical === "HGH" ? 95 : 98;
 }
 
 export function failsLabTestPurity(test: PurityResult): boolean {

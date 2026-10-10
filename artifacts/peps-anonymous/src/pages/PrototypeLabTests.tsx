@@ -1958,7 +1958,7 @@ function MetricsTab({ allTests, testsLoading, onCompoundClick }: { allTests: Lab
           <h3 className="text-sm font-bold mb-2" style={{ color: "var(--t-muted)" }}>TOP COMPOUNDS (by test count)</h3>
           <div className="flex items-center gap-4 mb-3 flex-wrap">
             {[
-              { color: "#059669", label: "Good ≥98% (HGH ≥96%)" },
+              { color: "#059669", label: "Good ≥98% (HGH ≥95%)" },
               { color: "#DC2626", label: "Low purity / Fail" },
               { color: "#64748b", label: "No purity data" },
             ].map(l => (
@@ -2348,7 +2348,7 @@ function CompareTab({ allTests, initialCompound, initialSource, initialVendor }:
             {/* Science description */}
             {metric === "purity" && (
               <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>
-                Purity % by HPLC/MS. On this site, purity passes at ≥98% (HGH: ≥96%). Results below the applicable threshold are flagged as low purity.
+                Purity % by HPLC/MS. On this site, purity passes at ≥98% (HGH: ≥95%). Results below the applicable threshold are flagged as low purity.
               </p>
             )}
             {metric === "endotoxin" && (

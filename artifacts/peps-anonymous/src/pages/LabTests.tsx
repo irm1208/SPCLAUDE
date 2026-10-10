@@ -1622,7 +1622,7 @@ function CompareTab({ allTests, initialCompound, initialSource, initialVendor }:
             {/* Science description */}
             {metric === "purity" && (
               <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>
-                Purity % by HPLC/MS. On this site, purity passes at ≥98% (HGH: ≥96%). Results below the applicable threshold are flagged as low purity.
+                Purity % by HPLC/MS. On this site, purity passes at ≥98% (HGH: ≥95%). Results below the applicable threshold are flagged as low purity.
               </p>
             )}
             {metric === "endotoxin" && (

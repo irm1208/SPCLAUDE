@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 describe("lab-test metrics purity threshold", () => {
   it("uses the requested default and keeps HGH's threshold", () => {
     const query = new PgDialect().sqlToQuery(labTestPurityThresholdSql(sql`peptide_name`));
-    expect(query.sql).toContain("then 96 else 98 end");
+    expect(query.sql).toContain("then 95 else 98 end");
     expect(query.sql).toContain("regexp_replace");
     expect(query.params).toEqual(["hgh", "humangrowthhormone", "growthhormone", "somatropin"]);
     expect(query.params).not.toContain("hghfrag176191");
