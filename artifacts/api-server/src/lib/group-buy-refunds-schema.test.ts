@@ -254,7 +254,7 @@ describe("group buy refund schema contract", () => {
     expect(foreignKeys).toEqual(expect.arrayContaining([
       { relation: "order_id->orders.id", onDelete: "restrict", onUpdate: "restrict" },
       { relation: "group_buy_id->group_buys.id", onDelete: "restrict", onUpdate: "restrict" },
-      { relation: "account_id->accounts.telegram_username", onDelete: "restrict", onUpdate: "restrict" },
+      { relation: "account_id->accounts.telegram_username", onDelete: "restrict", onUpdate: "cascade" },
     ]));
   });
 

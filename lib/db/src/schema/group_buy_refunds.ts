@@ -34,7 +34,10 @@ export const groupBuyRefundsTable = pgTable("group_buy_refunds", {
   id: text("id").primaryKey(),
   orderId: text("order_id").notNull().references(() => ordersTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
   groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onUpdate: "restrict", onDelete: "restrict" }),
-  accountId: text("account_id").notNull().references(() => accountsTable.telegramUsername, { onUpdate: "restrict", onDelete: "restrict" }),
+  // Usernames are mutable login identifiers. Keep completed refunds attached to
+  // their account on rename; account deletion stays blocked for financial history.
+  // Rename handlers separately reject active refunds before updating the account.
+  accountId: text("account_id").notNull().references(() => accountsTable.telegramUsername, { onUpdate: "cascade", onDelete: "restrict" }),
   method: text("method").notNull(),
   status: text("status").notNull().default("requested"),
   amountUsd: numeric("amount_usd", { precision: 10, scale: 2 }).notNull(),

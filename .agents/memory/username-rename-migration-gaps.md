@@ -12,3 +12,9 @@ Any column storing `telegramUsername` as plain text (no FK + `onUpdate: cascade`
 - For columns with a `UNIQUE(other_id, username)` constraint (e.g. `wholesale_share_members`), guard the migration UPDATE with a `NOT EXISTS` check so a rename never aborts on a hypothetical conflict — it just leaves that one row unmigrated instead.
 - For already-corrupted production rows from before the fix shipped: prefer a **self-healing read path** over a manual production UPDATE. If another already-migrated column on the same entity (e.g. `orders.telegramUsername`) still reflects the current username, join through it to find and repair stranded rows lazily on next access — this needs no direct production write (which is disallowed via `executeSql`) and fixes every past occurrence, not just the one reported.
 - Self-heal writes must be set-based (single `UPDATE ... FROM ... RETURNING`, not a per-row loop) and must only report success from confirmed `RETURNING` rows — never synthesize an in-memory "healed" object, or a failed/blocked write can be mistaken for authorization.
+
+Financial-history retention must not make the mutable login username permanently immutable. Keep account ownership references renameable while keeping deletion restricted and money snapshots unchanged.
+
+**Why:** A completed refund prevented a Discord member from choosing a site username: the rename reached the accounts update but a restrictive refund ownership foreign key rejected it. Completed financial history is not an active-refund mutation.
+
+**How to apply:** Keep active-refund checks in rename transactions. When introducing financial ownership relationships, distinguish renaming the same account from changing refund ownership, deleting history, or modifying money; verify completed history survives a rename unchanged.
