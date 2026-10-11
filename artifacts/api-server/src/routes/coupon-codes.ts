@@ -274,6 +274,13 @@ router.post("/coupons/validate", requireAccount, async (req, res): Promise<void>
   if (problem) { res.json({ valid: false, error: problem }); return; }
   const discountValue = Number(coupon.discountValue);
   const discountAmount = calculateCouponDiscount(coupon, context);
+  let currency: string | null = null;
+  if (coupon.groupBuyId) {
+    const [group] = await db.select({ currency: groupBuysTable.currency }).from(groupBuysTable)
+      .where(eq(groupBuysTable.id, coupon.groupBuyId));
+    if (!group) { res.json({ valid: false, error: "This coupon's group buy is no longer available" }); return; }
+    currency = group.currency;
+  }
 
   res.json({
     valid: true,
@@ -282,6 +289,7 @@ router.post("/coupons/validate", requireAccount, async (req, res): Promise<void>
     discountType: coupon.discountType,
     discountValue,
     discountAmount,
+    currency,
     description: coupon.description,
   });
 });

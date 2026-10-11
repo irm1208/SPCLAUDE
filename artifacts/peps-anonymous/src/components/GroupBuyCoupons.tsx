@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Plus, Pencil, Trash2, RefreshCw, Tag, X, Save, AlertCircle } from "lucide-react";
 import { Button, Input, Label, cn } from "@/components/ui";
-import { currSym } from "@/lib/currency";
+import { formatGroupCouponAmount, groupCouponCurrency } from "@/lib/group-buy-coupon-currency";
 
 export type Coupon = {
   id: string; groupBuyId: string; code: string; description: string | null;
@@ -87,7 +87,7 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
 const selectCls = "w-full h-10 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary";
 
 export function GroupBuyCoupons({ endpoint, currency }: { endpoint: string; currency?: string | null }) {
-  const sym = currSym(currency);
+  const couponCurrency = groupCouponCurrency(currency);
   const [coupons, setCoupons] = useState<Coupon[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -170,7 +170,7 @@ export function GroupBuyCoupons({ endpoint, currency }: { endpoint: string; curr
     }
   };
 
-  const fmtDiscount = (c: Coupon) => c.discountType === "percentage" ? `${c.discountValue}% off` : `${sym}${c.discountValue.toFixed(2)} off`;
+  const fmtDiscount = (c: Coupon) => c.discountType === "percentage" ? `${c.discountValue}% off` : `${formatGroupCouponAmount(c.discountValue, couponCurrency)} off`;
   const expired = (c: Coupon) => !!c.expiresAt && new Date(c.expiresAt).getTime() < Date.now();
 
   const form = editing && (
@@ -193,11 +193,11 @@ export function GroupBuyCoupons({ endpoint, currency }: { endpoint: string; curr
           <Label htmlFor="cpn-type" className="text-xs">Discount type</Label>
           <select id="cpn-type" value={draft.discountType} onChange={e => set("discountType", e.target.value as Draft["discountType"])} className={selectCls}>
             <option value="percentage">Percentage of product subtotal</option>
-            <option value="fixed">Fixed amount ({currency || sym})</option>
+            <option value="fixed">Fixed amount ({couponCurrency})</option>
           </select>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="cpn-value" className="text-xs">Discount value {draft.discountType === "percentage" ? "(%)" : `(${sym})`}</Label>
+          <Label htmlFor="cpn-value" className="text-xs">Discount value {draft.discountType === "percentage" ? "(%)" : `(${couponCurrency})`}</Label>
           <Input id="cpn-value" type="number" inputMode="decimal" min="0" max={draft.discountType === "percentage" ? 100 : undefined} step="0.01" value={draft.discountValue} onChange={e => set("discountValue", e.target.value)} placeholder={draft.discountType === "percentage" ? "1 - 100" : "0.00"} />
         </div>
         <div className="space-y-1">
@@ -209,7 +209,7 @@ export function GroupBuyCoupons({ endpoint, currency }: { endpoint: string; curr
           <Input id="cpn-per" type="number" min="1" step="1" value={draft.maxUsesPerAccount} onChange={e => set("maxUsesPerAccount", e.target.value)} placeholder="Unlimited" />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="cpn-min" className="text-xs">Minimum product subtotal ({sym})</Label>
+          <Label htmlFor="cpn-min" className="text-xs">Minimum product subtotal ({couponCurrency})</Label>
           <Input id="cpn-min" type="number" min="0" step="0.01" value={draft.minSubtotal} onChange={e => set("minSubtotal", e.target.value)} placeholder="0" />
         </div>
         <div className="space-y-1">
@@ -248,6 +248,7 @@ export function GroupBuyCoupons({ endpoint, currency }: { endpoint: string; curr
         </div>
       </div>
       <p className="text-[11px] text-muted-foreground">Coupons only work on this group buy. Discounts apply to the product subtotal only, not shipping, tips or fees. Used coupons can be disabled but not deleted.</p>
+      <p className="text-[11px] text-muted-foreground">Fixed discounts and minimum spend are in {couponCurrency}, the group buy&apos;s currency.</p>
 
       {editing === "new" && form}
 
@@ -285,7 +286,7 @@ export function GroupBuyCoupons({ endpoint, currency }: { endpoint: string; curr
                       {c.description && <p className="text-xs text-muted-foreground break-words">{c.description}</p>}
                       <p className="text-[11px] text-muted-foreground">
                         Used {c.usageCount}{c.maxUses != null ? ` / ${c.maxUses}` : " (unlimited)"} · {c.maxUsesPerAccount != null ? `${c.maxUsesPerAccount} per account` : "unlimited per account"}
-                        {c.minSubtotal > 0 && ` · min ${sym}${c.minSubtotal.toFixed(2)}`}
+                        {c.minSubtotal > 0 && ` · min ${formatGroupCouponAmount(c.minSubtotal, couponCurrency)}`}
                         {c.expiresAt && ` · ${expired(c) ? "expired" : "expires"} ${new Date(c.expiresAt).toLocaleString()}`}
                       </p>
                     </div>

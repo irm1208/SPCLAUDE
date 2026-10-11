@@ -6,6 +6,7 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
+import { formatGroupCouponAmount } from "@/lib/group-buy-coupon-currency";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateOrder, useUpdateOrder } from "@workspace/api-client-react";
@@ -179,6 +180,7 @@ export default function Review() {
   const [couponInput, setCouponInput] = useState("");
   const [couponCode, setCouponCode] = useState<string | null>(null);
   const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponCurrency, setCouponCurrency] = useState<string | null>(null);
   const [couponApplying, setCouponApplying] = useState(false);
   const [couponMsg, setCouponMsg] = useState("");
 
@@ -197,16 +199,18 @@ export default function Review() {
       if (res.ok && data.valid) {
         setCouponCode(code);
         setCouponDiscount(data.discountAmount ?? 0);
-        setCouponMsg(`${data.discountType === "percentage" ? `${data.discountValue}% discount` : `${formatPrice(Number(data.discountValue))} off`} applied ✓`);
+        const appliedCurrency = data.currency || gbCurrency || "USD";
+        setCouponCurrency(appliedCurrency);
+        setCouponMsg(`${data.discountType === "percentage" ? `${data.discountValue}% discount` : `${formatGroupCouponAmount(Number(data.discountValue), appliedCurrency)} off`} applied ✓`);
       } else {
-        setCouponCode(null); setCouponDiscount(0);
+        setCouponCode(null); setCouponDiscount(0); setCouponCurrency(null);
         setCouponMsg(data.error ?? "Invalid or expired coupon code");
       }
     } catch { setCouponMsg("Failed to validate coupon"); }
     setCouponApplying(false);
   };
 
-  const removeCoupon = () => { setCouponCode(null); setCouponDiscount(0); setCouponInput(""); setCouponMsg(""); };
+  const removeCoupon = () => { setCouponCode(null); setCouponDiscount(0); setCouponCurrency(null); setCouponInput(""); setCouponMsg(""); };
 
   const isPending = isCreating || isUpdating;
 
@@ -554,7 +558,7 @@ export default function Review() {
               {couponDiscount > 0 && (
                 <div className="flex justify-between text-sm font-medium text-green-600">
                   <span>Coupon ({couponCode})</span>
-                  <span>−{formatPrice(couponDiscount)}</span>
+                  <span>−{formatGroupCouponAmount(couponDiscount, couponCurrency || gbCurrency || "USD")}</span>
                 </div>
               )}
               {account && creditsAvailable > 0 && !creditsAllowed && (

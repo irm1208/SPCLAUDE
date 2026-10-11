@@ -9,6 +9,12 @@ Group-buy coupons discount the product subtotal at order creation; legacy global
 
 **How to apply:** Validate against the actual server-resolved group buy, including inherited group identity for additions. Keep code identity and group scope immutable; codes remain globally unique under the existing constraint.
 
+Fixed coupon amounts and minimum spend are denominated in the group buy's currency, not an independently chosen or default USD currency.
+
+**Why:** The user stated, “The coupon has to be in the currency of the group buy.”
+
+**How to apply:** Inherit the owning group's currency. Keep currency codes explicit in monetary labels, and do not represent unsupported or token currencies using a dollar fallback. Percentage coupons remain percentages of the group buy's product subtotal.
+
 Lock the coupon row and recheck current eligibility and per-customer usage inside the same transaction as order persistence, redemption history, and the usage increment.
 
 **Why:** A validation request is only a quote. Separate reads and later increments let simultaneous submissions exceed limits or consume a coupon on a failed order write.
