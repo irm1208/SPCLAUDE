@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { organiserApi, type ApiGroupBuy } from "./api/organiser-api";
+import { GroupBuyCoupons } from "@/components/GroupBuyCoupons";
 import {
   AlertTriangle, Archive, CalendarDays, Check, CheckCircle2, CircleDot,
   ClipboardList, Copy, Eye, FileText, Image, Info, KeyRound, Loader2, Plus,
-  Save, Settings, Trash2, Upload, Users, X, type LucideIcon,
+  Save, Settings, Tag, Trash2, Upload, Users, X, type LucideIcon,
 } from "lucide-react";
 import "./gb-settings-atlas.css";
 
@@ -31,7 +32,7 @@ interface GbSettingsState {
   infoCards: InfoCard[];
 }
 
-type SettingsSectionId = "identity" | "lifecycle" | "access" | "image" | "cards" | "danger";
+type SettingsSectionId = "identity" | "lifecycle" | "access" | "coupons" | "image" | "cards" | "danger";
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -62,6 +63,13 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Access & entry fee",
     description: "Join code, visibility and entry fee",
     icon: KeyRound,
+  },
+  {
+    id: "coupons",
+    label: "Coupons",
+    title: "Coupons",
+    description: "Create and manage discounts specific to this group buy",
+    icon: Tag,
   },
   {
     id: "image",
@@ -233,6 +241,7 @@ function SaveButton({ saving, saved, onClick, label = "Save Changes" }: {
 export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string } = {}) {
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<GbSettingsState | null>(null);
+  const [couponCurrency, setCouponCurrency] = useState("USD");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("identity");
   const settingsRailRef = useRef<HTMLElement | null>(null);
@@ -261,7 +270,9 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
     organiserApi.groupBuy(selectedGbId)
       .then(groupBuy => {
         if (!cancelled) {
-          setSettings(settingsFromApi(groupBuy));
+          const loadedSettings = settingsFromApi(groupBuy);
+          setSettings(loadedSettings);
+          setCouponCurrency(loadedSettings.currency);
           setCardImageUrl((groupBuy as Record<string, unknown>)["telegramImageUrl"] as string | null ?? null);
         }
       })
@@ -284,7 +295,9 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
     setDone(false);
     try {
       const updated = await organiserApi.updateGroupBuy(selectedGbId, settingsPayload(settings));
-      setSettings(settingsFromApi(updated));
+      const savedSettings = settingsFromApi(updated);
+      setSettings(savedSettings);
+      setCouponCurrency(savedSettings.currency);
       await queryClient.invalidateQueries({ queryKey: ["organiser", "group-buys"] });
       setDone(true);
       setTimeout(() => setDone(false), 2500);
@@ -768,6 +781,14 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
           label="Save Member Cards"
         />
             </div>
+          ) : null}
+
+          {activeSection === "coupons" ? (
+            <GroupBuyCoupons
+              key={selectedGbId}
+              endpoint={`/api/organiser/group-buys/${encodeURIComponent(selectedGbId)}/coupons`}
+              currency={couponCurrency}
+            />
           ) : null}
 
           {activeSection === "danger" ? (

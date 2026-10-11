@@ -144,3 +144,4 @@
 - [Lab-test purity policy](lab-test-purity-policy.md) — fail below 98% for non-HGH; HGH fails below 95%, with exactly 95% passing.
 - [Group-buy credit opt-out](group-buy-credit-policy.md) — disable new credit deductions, never unwind credits already applied or reject completed-operation replays.
 - [Group-buy coupons](group-buy-coupons.md) — scoped product-only discounts, immutable identity, preserved redemption history, and transactional usage limits.
+- [Active organiser UI](organiser-active-ui-paths.md) — verify the actual routed settings screen; legacy editor changes do not prove controls are available in the current dashboard.
