@@ -433,7 +433,7 @@ function OrderFormShell({ children }: { children: React.ReactNode }) {
 
 export default function OrderForm() {
   const [, setLocation] = useLocation();
-  const [productView, setProductView] = useState<"picker" | "list">("picker");
+  const [productView, setProductView] = useState<"picker" | "list">("list");
   const search = useSearch();
   const searchParams = new URLSearchParams(search);
   const gbId = searchParams.get("gbId") ?? null;
@@ -1053,15 +1053,16 @@ export default function OrderForm() {
   // logged-out visitors keep the plain public layout.
   const useDashChrome = isLoggedIn || accountLoading;
   const Chrome = useDashChrome ? OrderFormShell : PageLayout;
+  const contentWidth = gbId ? "max-w-3xl" : "max-w-2xl";
 
   return (
     <Chrome>
     <div className="flex-1 flex flex-col" style={{ background: "var(--t-bg)", fontFamily: "'Inter', sans-serif" }}>
-      <div className="px-4 pt-4 max-w-2xl mx-auto w-full">
+      <div className={`px-4 pt-4 ${contentWidth} mx-auto w-full`}>
         <SiteAnnouncements />
       </div>
       {isPreview && (
-        <div className="px-4 pt-4 max-w-2xl mx-auto w-full">
+        <div className={`px-4 pt-4 ${contentWidth} mx-auto w-full`}>
           <div className="flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[13px]" style={{ background: "#FFF7E6", border: "1px solid #F5D48F", color: "#7A5A0E" }}>
             <Eye className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
@@ -1185,7 +1186,7 @@ export default function OrderForm() {
           </motion.div>
         )}
       </AnimatePresence>
-      <main className="flex-1 px-4 py-5 pb-24 max-w-2xl mx-auto w-full space-y-4">
+      <main className={`flex-1 px-4 py-5 pb-24 ${contentWidth} mx-auto w-full space-y-4`}>
 
         {/* GB title + progress steps — only shown for group buy orders */}
         {gbId && pageTitle && (

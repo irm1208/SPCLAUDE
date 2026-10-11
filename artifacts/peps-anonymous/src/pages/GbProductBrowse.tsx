@@ -87,7 +87,7 @@ export function GbProductBrowse({
               const selected = quantity > 0;
               const unavailable = cap?.status === "full" || product.maxPerCustomer === 0;
               return (
-                <div key={product.id} className="flex min-w-0 flex-wrap items-center gap-3 border-b border-white/10 bg-[#162231] px-3 py-3 last:border-b-0">
+                <div key={product.id} className="flex min-w-0 flex-wrap items-center gap-3 border-b border-white/10 odd:bg-[#162231] even:bg-[#1A2736] px-3 py-3 last:border-b-0">
                   <div className="min-w-[9rem] flex-1">
                     <p className="break-words text-sm font-medium leading-snug text-white">{product.name}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
