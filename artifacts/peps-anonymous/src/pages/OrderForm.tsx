@@ -11,6 +11,7 @@ import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
 import { calculateOrderFormTotal } from "@/lib/order-form-total";
 import { OrderFormTotal } from "@/components/OrderFormTotal";
 import { OrderItemsSummary } from "@/components/OrderItemsSummary";
+import { OrderSidePanel } from "@/components/OrderSidePanel";
 import { Card, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
@@ -1457,6 +1458,16 @@ export default function OrderForm() {
                   hidePrices={hideOrderFormPrices}
                   loading={isLoadingProducts}
                   stickyTop={useDashChrome ? 72 : 0}
+                  orderSummary={
+                    <OrderSidePanel
+                      items={draft.lineItems.filter(item => item.productId)}
+                      total={grandTotal}
+                      formatPrice={formatPrice}
+                      hidePrices={hideOrderFormPrices}
+                      hideTotal={hideOrderTotal}
+                      shippingPending={shippingPending}
+                    />
+                  }
                 />
               </div>
             )}
@@ -1465,6 +1476,7 @@ export default function OrderForm() {
               collapsed={!!gbId && productView === "list"}
               quantity={browseTotal}
               productCount={draft.lineItems.filter(item => item.productId).length}
+              total={hideOrderTotal || hideOrderFormPrices ? undefined : formatPrice(grandTotal)}
             >
             {gbId && productView === "list" && !draft.lineItems.some(item => item.productId) && (
               <p className="text-sm text-white/65">Select products above to start your order.</p>

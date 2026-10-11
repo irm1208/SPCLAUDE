@@ -31,3 +31,18 @@ test("empty and single-item summaries remain clear", () => {
     <p>Product</p>
   </OrderItemsSummary>), /Your order \(1 kit\)/);
 });
+
+test("shows the live estimated total in the collapsed heading", () => {
+  const html = renderToStaticMarkup(<OrderItemsSummary collapsed quantity={3} productCount={2} total="$125.50">
+    <p>Selected products</p>
+  </OrderItemsSummary>);
+  assert.match(html, /<summary[\s\S]*Estimated total[\s\S]*\$125\.50[\s\S]*<\/summary>/);
+  assert.doesNotMatch(html, /<details[^>]*open/);
+});
+
+test("omits the total when prices are hidden", () => {
+  const html = renderToStaticMarkup(<OrderItemsSummary collapsed quantity={3} productCount={2}>
+    <p>Selected products</p>
+  </OrderItemsSummary>);
+  assert.doesNotMatch(html, /Estimated total/);
+});

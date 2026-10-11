@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Plus, Search } from "lucide-react";
 import { groupProductsForBrowse, type BrowseProduct } from "./gb-product-browse";
 
@@ -11,7 +11,7 @@ const stockLabel = { available: "In stock", limited: "Medium", low: "Low", full:
 const stockColor = { available: "#6EE7B7", limited: "#FCD34D", low: "#FDBA74", full: "#FCA5A5" };
 
 export function GbProductBrowse({
-  products, categoryOrder, capacity, quantities, onAdjust, canIncrease, formatPrice, hidePrices, loading, stickyTop = 0,
+  products, categoryOrder, capacity, quantities, onAdjust, canIncrease, formatPrice, hidePrices, loading, stickyTop = 0, orderSummary,
 }: {
   products: BrowseProduct[];
   categoryOrder: string[];
@@ -23,6 +23,7 @@ export function GbProductBrowse({
   hidePrices: boolean;
   loading: boolean;
   stickyTop?: number;
+  orderSummary?: ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -41,6 +42,7 @@ export function GbProductBrowse({
   return (
     <section aria-label="Browse all group-buy products" className="space-y-3">
       <div aria-label="Product filters" className="sticky z-10 space-y-3 bg-[#1C2B3D] py-3 shadow-[0_6px_12px_-8px_rgba(0,0,0,0.5)]" style={{ top: stickyTop }}>
+      {orderSummary}
       <div className="relative">
         <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/45" />
         <input
@@ -91,7 +93,7 @@ export function GbProductBrowse({
               const selected = quantity > 0;
               const unavailable = cap?.status === "full" || product.maxPerCustomer === 0;
               return (
-                <div key={product.id} className="flex min-w-0 flex-wrap items-center gap-3 border-b border-white/10 odd:bg-[#162231] even:bg-[#1A2736] px-3 py-3 last:border-b-0">
+                <div key={product.id} className="flex min-w-0 flex-wrap items-center gap-3 border-b border-white/10 odd:bg-[#162231] even:bg-[#182433] px-3 py-3 last:border-b-0">
                   <div className="min-w-[9rem] flex-1">
                     <p className="break-words text-sm font-medium leading-snug text-white">{product.name}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
