@@ -24,8 +24,18 @@ export function GbProductBrowse({
   loading: boolean;
 }) {
   const [query, setQuery] = useState("");
-  const groups = groupProductsForBrowse(products, query, categoryOrder);
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [hideOutOfStock, setHideOutOfStock] = useState(false);
   const capacityByName = new Map(capacity?.map(item => [item.productName.trim().toLowerCase(), item]) ?? []);
+  const categories = groupProductsForBrowse(products, "", categoryOrder).map(group => group.category);
+  // A removed category should not leave the refreshed catalogue looking empty.
+  const activeCategory = categories.includes(selectedCategory) ? selectedCategory : "";
+  const visibleProducts = products.filter(product => {
+    if (activeCategory && (product.category || "Uncategorised") !== activeCategory) return false;
+    if (hideOutOfStock && (capacityByName.get(product.name.trim().toLowerCase())?.status === "full" || product.maxPerCustomer === 0)) return false;
+    return true;
+  });
+  const groups = groupProductsForBrowse(visibleProducts, query, categoryOrder);
 
   return (
     <section aria-label="Browse all group-buy products" className="space-y-3">
@@ -40,9 +50,32 @@ export function GbProductBrowse({
           className="w-full rounded-xl border border-white/15 bg-[#162231] py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-[#5B8DEF]"
         />
       </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex min-w-0 items-center gap-2 text-sm text-white/80">
+          <span className="shrink-0">Category</span>
+          <select
+            aria-label="Filter by category"
+            value={activeCategory}
+            onChange={event => setSelectedCategory(event.target.value)}
+            className="min-w-0 w-full sm:w-56 rounded-lg border border-white/15 bg-[#162231] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#5B8DEF]"
+          >
+            <option value="">All categories</option>
+            {categories.map(category => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">
+          <input
+            type="checkbox"
+            checked={hideOutOfStock}
+            onChange={event => setHideOutOfStock(event.target.checked)}
+            className="h-4 w-4 shrink-0 accent-[#2D6BCC] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5B8DEF]"
+          />
+          Hide out-of-stock items
+        </label>
+      </div>
       {groups.length === 0 ? (
         <p className="rounded-xl border border-white/10 p-4 text-sm text-white/65">
-          {loading ? "Loading products…" : products.length === 0 ? "No products available in this group buy." : "No products match your search."}
+          {loading ? "Loading products…" : products.length === 0 ? "No products available in this group buy." : "No products match your filters."}
         </p>
       ) : groups.map(({ category, products: items }) => (
         <div key={category}>
