@@ -1,3 +1,5 @@
+import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -166,6 +168,7 @@ interface Order {
   amountDue?: number; balancePaymentStatus?: string | null; balanceTxHash?: string | null; balanceConfirmedAt?: string | null;
   paymentUsdAmount?: number | null;
   currency?: string | null; groupBuyId?: string | null; groupBuyName?: string | null;
+  multipleGbOrderCount?: number; additionOfOrderId?: string | null;
   shippingCountry?: string | null; ipAddress?: string | null; geoCity?: string | null; geoCountry?: string | null;
   accountCountry?: string | null;
   reshipperUsername?: string | null;
@@ -706,6 +709,8 @@ function OrdersTab({ secret }: { secret: string }) {
   const [savingItems, setSavingItems] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>([]);
   const [gbFilter, setGbFilter] = useState("");
+  const [multipleOnly, setMultipleOnly] = useState(false);
+  const [multipleOrderPeople, setMultipleOrderPeople] = useState(0);
   const [gbs, setGbs] = useState<{ id: string; name: string; status?: string }[]>([]);
   const [countryFilter, setCountryFilter] = useState<string[]>([]);
   const [allCountries, setAllCountries] = useState<string[]>([]);
@@ -1110,6 +1115,7 @@ function OrdersTab({ secret }: { secret: string }) {
     try {
       const params = new URLSearchParams();
       if (gbFilter) params.set("groupBuyId", gbFilter);
+      if (multipleOnly) params.set("multipleOrdersOnly", "true");
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (paymentStatusFilter !== "all") params.set("paymentStatus", paymentStatusFilter);
       if (paymentMethodFilter !== "all") params.set("paymentMethod", paymentMethodFilter);
@@ -1130,8 +1136,9 @@ function OrdersTab({ secret }: { secret: string }) {
       let body: unknown;
       try { body = await res.json(); } catch { body = null; }
       if (body && typeof body === "object" && !Array.isArray(body) && "orders" in (body as any)) {
-        const resp = body as { orders: Order[]; pagination: typeof pagination };
+        const resp = body as { orders: Order[]; pagination: typeof pagination; multipleOrderPeople?: number };
         setOrders(resp.orders);
+        setMultipleOrderPeople(resp.multipleOrderPeople ?? 0);
         setPagination(resp.pagination);
       } else if (Array.isArray(body)) {
         // Legacy fallback
@@ -1149,7 +1156,7 @@ function OrdersTab({ secret }: { secret: string }) {
       setSelected(new Set());
       setSelectAllPages(false);
     }
-  }, [secret, gbFilter, statusFilter, paymentStatusFilter, paymentMethodFilter, creditFilter, reshipperFilter, countryFilter, routingFilter, batchLockedFilter, balanceDueReview, dateFrom, dateTo, debouncedSearch, currentPage, vendorFilter, pageSize]);
+  }, [secret, gbFilter, statusFilter, paymentStatusFilter, paymentMethodFilter, creditFilter, reshipperFilter, countryFilter, routingFilter, batchLockedFilter, balanceDueReview, dateFrom, dateTo, debouncedSearch, currentPage, vendorFilter, pageSize, multipleOnly]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1227,6 +1234,7 @@ function OrdersTab({ secret }: { secret: string }) {
   // Client-side filters (applied to the current page results for filters not sent to server)
   // Note: vendorFilter is now server-side; kept here as no-op (always true) so variable stays used
   const filtered = orders.filter(o => {
+    if (multipleOnly && !isMultipleGbOrder(o)) return false;
     const matchVendor = true; // vendor filter is now applied server-side via ?vendor= param
     const payDate = o.paymentConfirmedAt ? new Date(o.paymentConfirmedAt) : null;
     const matchPayFrom = !payDateFrom || (payDate != null && payDate >= new Date(payDateFrom));
@@ -1736,6 +1744,7 @@ function OrdersTab({ secret }: { secret: string }) {
       if (dateTo) params.set("dateTo", dateTo);
       if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
       if (vendorFilter) params.set("vendor", vendorFilter);
+      if (multipleOnly) params.set("multipleOrdersOnly", "true");
       const res = await fetch(apiUrl(`/admin/orders/ids?${params.toString()}`), { headers: { "x-admin-secret": secret } });
       if (res.ok) {
         const data: { ids: string[] } = await res.json();
@@ -1788,8 +1797,9 @@ function OrdersTab({ secret }: { secret: string }) {
         setSaving(null);
         return;
       }
-      setOrders(prev => prev.map(o => o.id === orderId ? data : o));
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...data } : o));
       setEditing(prev => { const n = { ...prev }; delete n[orderId]; return n; });
+      await load();
       setMsg("Saved ✓"); setTimeout(() => setMsg(""), 2000);
     } catch { setMsg("Save failed — network error"); setTimeout(() => setMsg(""), 3000); }
     setSaving(null);
@@ -3160,6 +3170,9 @@ function OrdersTab({ secret }: { secret: string }) {
         </div>
       )}
       {/* Pagination controls */}
+      <GbMultipleOrderNotice people={multipleOrderPeople} checked={multipleOnly}
+        scope={gbFilter ? "this group buy" : "these group buys"}
+        onChange={value => { setMultipleOnly(value); setCurrentPage(1); setSelected(new Set()); setSelectAllPages(false); }} />
       <div className="flex items-center justify-between gap-2 py-1 px-1">
         {pagination && pagination.totalPages > 1 ? (
           <>
@@ -3269,7 +3282,7 @@ function OrdersTab({ secret }: { secret: string }) {
           const hasChanges = Object.keys(editing[order.id] ?? {}).length > 0;
           const isSelected = selected.has(order.id);
           return (
-            <Card key={order.id} className={cn("overflow-hidden transition-colors", isSelected && "ring-2 ring-primary/40", nested && "border-l-2 border-teal-300")}>
+            <Card key={order.id} className={cn("overflow-hidden transition-colors", isMultipleGbOrder(order) && "gb-multiple-order-row", isSelected && "ring-2 ring-primary/40", nested && "border-l-2 border-teal-300")}>
               <div className="flex items-center gap-2 p-4">
                 <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(order.id)}
                   className="w-4 h-4 rounded accent-primary cursor-pointer shrink-0" />
@@ -3292,9 +3305,10 @@ function OrdersTab({ secret }: { secret: string }) {
                   <CalendarDays className="w-3 h-3 opacity-50" />
                   {new Date(order.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
                 </span>
-                <span className="text-sm text-muted-foreground flex-1 flex items-center gap-1 min-w-0">
+                <span className="text-sm text-muted-foreground flex-1 flex flex-wrap items-center gap-1 min-w-0">
                   <User className="w-3 h-3 shrink-0 opacity-50" />
                   <span className="truncate">{order.telegramUsername}</span>
+                  <GbMultipleOrderBadge order={order} />
                   {!gbFilter && order.groupBuyId && (() => {
                     const gbName = gbs.find(g => g.id === order.groupBuyId)?.name ?? order.groupBuyId;
                     return (

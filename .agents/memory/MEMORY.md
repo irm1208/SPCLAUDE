@@ -1,3 +1,4 @@
+- [GB multiple-order review](gb-multiple-order-policy.md) — recurring repeated orders disrupt organiser counts; flag for review in organiser/Admin, without automatic reconciliation.
 - [Vite 504 dep optimisation on .replit.dev](vite-504-dep-optimization.md) — clearing .vite cache causes 504s via edge proxy; fix is optimizeDeps.entries listing all pages.
 - [Multi-chain crypto payment rails](multi-chain-crypto-rails.md) — chain choice stored as paymentCryptoNetwork; CHAIN_WALLET_CONFIGS drives all resolution; getAdminCryptoOptions() exported for auto-verifier; pickedOption={currency,network} replaces pickedCurrency in PaymentPanel.
 - [Organiser V2 placeholder data traps](organiser-v2-placeholder-data.md) — mapApiGroupBuy fills fake fallbacks (maxMembers=1, counts 0); wire V2 tabs from raw API values via props, never SampleGB counts.

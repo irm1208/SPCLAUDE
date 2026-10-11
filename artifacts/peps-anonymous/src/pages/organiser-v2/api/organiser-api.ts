@@ -354,6 +354,8 @@ export function mapApiOrder(value: ApiOrganiserOrder): OrganiserOrder {
     id: value.id,
     code: typeof value.code === "string" ? value.code : undefined,
     memberUsername: username,
+    multipleGbOrderCount: numberValue(value.multipleGbOrderCount),
+    additionOfOrderId: typeof value.additionOfOrderId === "string" ? value.additionOfOrderId : undefined,
     memberName: typeof value.shippingName === "string" && value.shippingName.trim()
       ? value.shippingName.trim()
       : displayName(username),

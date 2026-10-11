@@ -1,0 +1,17 @@
+.gb-multiple-order-notice {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 12px 14px; margin-bottom: 12px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #E9A020 35%, transparent);
+  background: color-mix(in srgb, #E9A020 7%, var(--t-surface, #F8FAFC));
+  color: var(--t-text, #374151); font-size: 13px;
+}
+.gb-multiple-order-notice small { display: block; margin-top: 4px; color: var(--t-subtle, #6B7280); }
+.gb-multiple-order-notice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.gb-multiple-order-row.gb-multiple-order-row { border-inline-start: 3px solid #E9A020; }
+.gb-multiple-order-badge, .gb-addon-order-badge {
+  display: inline-flex; align-items: center; border-radius: 6px;
+  padding: 3px 7px; font-size: 11px; font-weight: 700;
+  line-height: 1.4; white-space: normal; text-align: left;
+}
+.gb-multiple-order-badge { max-width: 100%; background: color-mix(in srgb, #E9A020 15%, transparent); color: var(--t-text, #374151); }
+.gb-addon-order-badge { background: color-mix(in srgb, #2D6BCC 12%, transparent); color: var(--t-blue, #2D6BCC); }

@@ -38,6 +38,8 @@ export interface OrganiserOrder {
   status: OrderStatus;
   apiStatus?: string;
   paymentStatus?: string;
+  multipleGbOrderCount?: number;
+  additionOfOrderId?: string;
   products: OrderProduct[];
   total: number;
   paymentMethod: string;
@@ -154,6 +156,9 @@ export function normalizeOrder(value: unknown, fallbackId?: string): OrganiserOr
     memberName,
     status,
     paymentStatus: optionalString(value, "paymentStatus"),
+    apiStatus: optionalString(value, "apiStatus"),
+    multipleGbOrderCount: Number.isFinite(Number(value["multipleGbOrderCount"])) ? Number(value["multipleGbOrderCount"]) : 0,
+    additionOfOrderId: optionalString(value, "additionOfOrderId"),
     products,
     total,
     paymentMethod,

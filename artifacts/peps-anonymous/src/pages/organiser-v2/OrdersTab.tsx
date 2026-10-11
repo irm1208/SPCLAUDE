@@ -25,6 +25,8 @@ import {
   AtlasStatusBadge,
 } from "./AtlasUi";
 import CompactOrderList from "./CompactOrderList";
+import { GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import OrdersMobileWorkspace from "./OrdersMobileWorkspace";
 import OrdersFilterSurface from "./OrdersFilterSurface";
 import { applyMobileOrderAction, buildMobileOrdersModel, type MobileOrderAction, type MobileOrderView } from "./orders-mobile-model";
@@ -64,6 +66,7 @@ const DEFAULT_FILTER_VALUES: OrderFilterValues = {
 
 export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }: { selectedGbId?: string; highlightId?: string; onOpenDispatch?: () => void } = {}) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [multipleOnly, setMultipleOnly] = useState(false);
   const [statusFilters, setStatusFilters] = useState<OrderStatusFilter[]>(["all"]);
   const [countryFilters, setCountryFilters] = useState<string[]>([]);
   const [paymentMethodFilters, setPaymentMethodFilters] = useState<string[]>([]);
@@ -88,6 +91,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
   const orderRepository = useOrderRepository();
   const orders = useOrders();
+  const multiplePeople = new Set(orders.filter(isMultipleGbOrder).map(order => order.memberUsername.trim().replace(/^@+/, "").toLowerCase())).size;
   const mobileModel = useMemo(() => buildMobileOrdersModel(orders), [orders]);
 
   // Edit modal
@@ -446,8 +450,8 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   };
 
   const filteredOrders = useMemo(
-    () => filterOrders(orders, appliedFilters, searchQuery),
-    [orders, appliedFilters, searchQuery],
+    () => filterOrders(orders, appliedFilters, searchQuery).filter(order => !multipleOnly || isMultipleGbOrder(order)),
+    [orders, appliedFilters, searchQuery, multipleOnly],
   );
   const draftPreviewOrders = useMemo(
     () => filterOrders(orders, draftFilters, searchQuery),
@@ -580,10 +584,11 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
   return (
     <div className="approved-order-desk">
+      <GbMultipleOrderNotice people={multiplePeople} checked={multipleOnly} onChange={value => { setMultipleOnly(value); if (value) setMobileView("all"); setSelectedOrders([]); }} />
       <div className="orders-mobile-view">
         <OrdersMobileWorkspace
           model={mobileModel}
-          orders={mobileView === "all" ? filteredOrders : orders}
+          orders={mobileView === "all" ? filteredOrders : orders.filter(order => !multipleOnly || isMultipleGbOrder(order))}
           view={mobileView}
           searchQuery={searchQuery}
           activeFilterCount={activeFilterCount}

@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { fmtMoney } from "./data";
 import type { OrganiserOrder } from "./domain/order";
 import { AtlasStatusBadge } from "./AtlasUi";
+import { GbMultipleOrderBadge } from "@/components/GbMultipleOrders";
+import { isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
@@ -113,7 +115,7 @@ export default function CompactOrderList({
         const isExpanded = expandedId === order.id;
         return (
           <div
-            className="orders-compact-row"
+            className={`orders-compact-row${isMultipleGbOrder(order) ? " gb-multiple-order-row" : ""}`}
             data-order-id={order.id}
             data-selected={selectedSet.has(order.id) || undefined}
             data-expanded={isExpanded || undefined}
@@ -144,6 +146,7 @@ export default function CompactOrderList({
             >
               <span className="orders-compact-cell orders-compact-user" data-label="User name">
                 <strong>@{order.memberUsername}</strong>
+                <GbMultipleOrderBadge order={order} />
               </span>
               <span className="orders-compact-cell" data-label="QTY">
                 <strong>{orderQuantity(order)}</strong>

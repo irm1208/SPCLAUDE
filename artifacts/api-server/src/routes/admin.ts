@@ -1,6 +1,7 @@
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import adminProductStockRouter from "./admin-product-stock";
 import { resolveEditedProductId } from "../lib/admin-order-product-links";
+import { getGbOrderCounts, gbOrderPersonKey, multipleGbOrdersWhere, countMultipleGbOrderPeople } from "../lib/gb-multiple-orders";
 import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 import {
   assertNoActiveRefund,
@@ -396,6 +397,8 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
 
   const conditions: any[] = [isNull(ordersTable.deletedAt), activeSharedOrderMembershipWhere()];
   if (groupBuyId) conditions.push(eq(ordersTable.groupBuyId, groupBuyId));
+  const showMultipleMetadata = scopeTypeQ !== "reshipper";
+  if (showMultipleMetadata && req.query.multipleOrdersOnly === "true") conditions.push(multipleGbOrdersWhere());
 
   // Status filter
   if (statusQ && statusQ !== "all") conditions.push(eq(ordersTable.status, statusQ));
@@ -568,6 +571,9 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
     .offset(offset);
 
   const orderIds = orders.map((o) => o.id);
+  const multipleCounts = await getGbOrderCounts(showMultipleMetadata
+    ? orders.flatMap(o => o.groupBuyId ? [o.groupBuyId] : []) : []);
+  const multipleOrderPeople = showMultipleMetadata ? await countMultipleGbOrderPeople(whereClause) : 0;
   const allLineItems =
     orderIds.length > 0
       ? await db.select().from(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, orderIds))
@@ -745,6 +751,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
       const { paymentScreenshot, ...rest } = o as any;
       return {
         ...rest,
+        multipleGbOrderCount: o.groupBuyId ? multipleCounts.get(gbOrderPersonKey(o.groupBuyId, o.telegramUsername)) ?? 0 : 0,
         hasPaymentScreenshot: paymentScreenshot !== null && paymentScreenshot !== undefined,
         geoCity: (geo as any).city ?? null,
         geoCountry: (geo as any).country ?? null,
@@ -756,6 +763,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
       total: Number(total),
       totalPages: Math.ceil(Number(total) / pageSize),
     },
+    multipleOrderPeople,
   });
   } catch (err) {
     console.error("[admin] GET /admin/orders error:", err);
@@ -782,6 +790,7 @@ router.get("/admin/orders/ids", async (req, res): Promise<void> => {
 
     const conditions: any[] = [isNull(ordersTable.deletedAt), activeSharedOrderMembershipWhere()];
     if (groupBuyId) conditions.push(eq(ordersTable.groupBuyId, groupBuyId));
+    if (req.query.multipleOrdersOnly === "true") conditions.push(multipleGbOrdersWhere());
     if (statusQ && statusQ !== "all") conditions.push(eq(ordersTable.status, statusQ));
     if (payStatusQ && payStatusQ !== "all") {
       if (payStatusQ === "confirmed") conditions.push(or(eq(ordersTable.paymentStatus, "confirmed"), eq(ordersTable.paymentStatus, "test_confirmed")));

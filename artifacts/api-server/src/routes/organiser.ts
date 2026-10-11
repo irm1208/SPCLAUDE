@@ -1,3 +1,4 @@
+import { getGbOrderCounts, gbOrderPersonKey } from "../lib/gb-multiple-orders";
 import { assertNoActiveRefund, assertNoActiveRefunds, RefundMutationBlockedError, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request } from "express";
 import { validAllowCreditsSetting } from "../lib/group-buy-credit-policy";
@@ -2364,6 +2365,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
       paymentStatus: ordersTable.paymentStatus,
       grandTotal: ordersTable.grandTotal,
       creditsApplied: ordersTable.creditsApplied,
+      additionOfOrderId: ordersTable.additionOfOrderId,
       productSubtotal: ordersTable.productSubtotal,
       deliveryPrice: ordersTable.deliveryPrice,
       tip: ordersTable.tip,
@@ -2445,6 +2447,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
     }
   }
 
+  const multipleCounts = await getGbOrderCounts([id]);
   res.json(orders.map(o => {
     const txHash = o.paymentTxHash ?? null;
     const { paymentScreenshot, balanceScreenshot, ...rest } = o as any;
@@ -2455,6 +2458,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
 
     return {
       ...rest,
+      multipleGbOrderCount: multipleCounts.get(gbOrderPersonKey(id, o.telegramUsername)) ?? 0,
       grandTotal: parseFloat(String(o.grandTotal)),
       creditsApplied: parseFloat(String(o.creditsApplied ?? "0")),
       productSubtotal: parseFloat(String(o.productSubtotal)),
