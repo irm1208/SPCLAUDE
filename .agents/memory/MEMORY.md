@@ -142,3 +142,5 @@
 - [Account identity refresh](account-identity-refresh.md) — username changes need refreshed account-scoped caches after the renewed cookie, not just client-side navigation.
 - [Lab-test warehouse codes](lab-test-warehouse-codes.md) — US/UK batch prefixes identify warehouses, not different products; preserve product and dose matching.
 - [Lab-test purity policy](lab-test-purity-policy.md) — fail below 98% for non-HGH; HGH fails below 95%, with exactly 95% passing.
+- [Group-buy credit opt-out](group-buy-credit-policy.md) — disable new credit deductions, never unwind credits already applied or reject completed-operation replays.
+- [Group-buy coupons](group-buy-coupons.md) — scoped product-only discounts, immutable identity, preserved redemption history, and transactional usage limits.

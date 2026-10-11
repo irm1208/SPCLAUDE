@@ -7,6 +7,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useDraftStore } from "@/hooks/use-draft-store";
+import { useToast } from "@/hooks/use-toast";
 import { useCreateOrder, useUpdateOrder } from "@workspace/api-client-react";
 import { useMyGroupBuys, useAccount, useAccountOrders, useCountryLegs, useLogout } from "@/hooks/use-account";
 import { RulesetModal } from "@/components/RulesetModal";
@@ -55,6 +56,7 @@ function ReviewShell({ children }: { children: ReactNode }) {
 }
 
 export default function Review() {
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const draft = useDraftStore();
   const [error, setError] = useState("");
@@ -189,13 +191,13 @@ export default function Review() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ code, orderTotal: productSubtotal + (isTopUp ? 0 : draft.deliveryPrice) + (vendorShippingIsKnown ? vendorShippingAmount! : 0) + draft.tip + draft.testingContribution }),
+        body: JSON.stringify({ code, groupBuyId: draft.groupBuyId, productSubtotal, orderTotal: productSubtotal + (isTopUp ? 0 : draft.deliveryPrice) + (vendorShippingIsKnown ? vendorShippingAmount! : 0) + draft.tip + draft.testingContribution }),
       });
       const data = await res.json();
       if (res.ok && data.valid) {
         setCouponCode(code);
         setCouponDiscount(data.discountAmount ?? 0);
-        setCouponMsg(`${data.discountType === "percentage" ? `${data.discountValue}% discount` : `$${parseFloat(data.discountValue).toFixed(2)} off`} applied ✓`);
+        setCouponMsg(`${data.discountType === "percentage" ? `${data.discountValue}% discount` : `${formatPrice(Number(data.discountValue))} off`} applied ✓`);
       } else {
         setCouponCode(null); setCouponDiscount(0);
         setCouponMsg(data.error ?? "Invalid or expired coupon code");
@@ -214,7 +216,8 @@ export default function Review() {
     Math.max(0, productSubtotal + effectiveDeliveryPrice + effectiveVendorShipping + draft.tip + draft.testingContribution + adminFeeAmount - couponDiscount).toFixed(2)
   );
   const creditsAvailable = account?.credits ?? 0;
-  const creditsApplied = account && creditsAvailable > 0 && useCredits
+  const creditsAllowed = !draft.groupBuyId || activeGb?.allowCredits === true;
+  const creditsApplied = account && creditsAvailable > 0 && useCredits && creditsAllowed
     ? safeMinMoney(creditsAvailable, grandTotal)
     : 0;
   const amountDue = safeSubtractMoneyClamped(grandTotal, creditsApplied);
@@ -238,6 +241,7 @@ export default function Review() {
       testingContribution: draft.testingContribution,
       grandTotal,
       couponCode: couponCode ?? undefined,
+      couponDiscountQuoted: couponCode ? couponDiscount : undefined,
       creditsApplied: creditsApplied > 0 ? creditsApplied : undefined,
       notes: draft.notes || null,
       groupBuyId: draft.groupBuyId ?? undefined,
@@ -275,10 +279,18 @@ export default function Review() {
       vendorShippingIsTbd?: boolean | null;
       tip?: number; testingContribution?: number; grandTotal?: number;
       creditsApplied?: number; adminFee?: number; adminFeeLabel?: string | null;
+      creditPolicyBlocked?: boolean;
       notes?: string | null;
       lineItems?: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
     }) => {
       const oid = data.id ?? existingOrderId ?? "";
+      if (data.creditPolicyBlocked) {
+        toast({
+          title: "Store credits unavailable",
+          description: "This group buy no longer allows credits. Your order was saved without using credits; the remaining payment amount reflects this.",
+          variant: "destructive",
+        });
+      }
       if (data.mergedIntoExistingOrder) {
         draft.clearDraft();
         setLocation(resolveOrderSubmitDestination(data, existingOrderId));
@@ -545,7 +557,14 @@ export default function Review() {
                   <span>−{formatPrice(couponDiscount)}</span>
                 </div>
               )}
-              {account && creditsAvailable > 0 && (
+              {account && creditsAvailable > 0 && !creditsAllowed && (
+                <p className="pt-2 text-sm text-gray-500">
+                  {activeGb?.allowCredits === false
+                    ? "Store credits cannot be used for this group buy."
+                    : "Store credits are unavailable until this group buy’s settings can be verified."}
+                </p>
+              )}
+              {account && creditsAvailable > 0 && creditsAllowed && (
                 <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                   <label className="flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-gray-700">
                     <input

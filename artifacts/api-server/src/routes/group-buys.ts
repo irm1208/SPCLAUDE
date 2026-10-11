@@ -202,6 +202,7 @@ const GB_SELECT_COLS = {
   maxKitsPerCustomer: groupBuysTable.maxKitsPerCustomer,
   maxKitsTotal: groupBuysTable.maxKitsTotal,
   allowHalfKits: groupBuysTable.allowHalfKits,
+  allowCredits: groupBuysTable.allowCredits,
   allowOrderAddons: groupBuysTable.allowOrderAddons,
   allowEditOrderWhenClosed: groupBuysTable.allowEditOrderWhenClosed,
   allowEditAddressWhenClosed: groupBuysTable.allowEditAddressWhenClosed,

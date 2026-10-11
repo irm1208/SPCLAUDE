@@ -31,6 +31,7 @@ import { GbQrCodesPanel } from "@/components/GbQrCodesPanel";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches, getLabTestWarehouse, type LabTestWarehouse } from "@/lib/batch-prefixes";
 import { useAccount, useLogout, useAccountOrders } from "@/hooks/use-account";
+import { GroupBuyCoupons } from "@/components/GroupBuyCoupons";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { cn } from "@/lib/utils";
@@ -133,6 +134,7 @@ export interface OrganiserGB {
   entryFeeLabel: string | null;
   sharedShippingCountries: string[] | null;
   allowHalfKits: boolean;
+  allowCredits: boolean;
   allowEditOrderWhenClosed: boolean;
   allowEditAddressWhenClosed: boolean;
   allowDeleteOrderWhenClosed: boolean;
@@ -4163,6 +4165,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
     entryFeeAmount: gb?.entryFeeAmount?.toString() ?? "",
     entryFeeLabel: gb?.entryFeeLabel ?? "",
     allowHalfKits: gb?.allowHalfKits ?? true,
+    allowCredits: gb?.allowCredits ?? true,
     allowEditOrderWhenClosed: gb?.allowEditOrderWhenClosed ?? true,
     allowEditAddressWhenClosed: gb?.allowEditAddressWhenClosed ?? true,
     allowDeleteOrderWhenClosed: gb?.allowDeleteOrderWhenClosed ?? true,
@@ -4383,6 +4386,7 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
         entryFeeAmount: form.entryFeeAmount.trim() ? parseFloat(form.entryFeeAmount) : null,
         entryFeeLabel: form.entryFeeLabel.trim() || null,
         allowHalfKits: form.allowHalfKits,
+        allowCredits: form.allowCredits,
         allowEditOrderWhenClosed: form.allowEditOrderWhenClosed,
         allowEditAddressWhenClosed: form.allowEditAddressWhenClosed,
         allowDeleteOrderWhenClosed: form.allowDeleteOrderWhenClosed,
@@ -4792,6 +4796,11 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
               </Field>
             </div>
             <ToggleRow label="Allow half kits" hint="Let customers order 0.5 increments on the order form" value={form.allowHalfKits} onChange={v => set("allowHalfKits", v)} />
+            <ToggleRow label="Allow store credits" hint="Members can use their store credit balance on this group buy. Turning this off does not remove credits already applied to existing orders." value={form.allowCredits} onChange={v => set("allowCredits", v)} />
+            {gb && <div onKeyDown={event => {
+              // Coupon inputs must not accidentally submit the surrounding GB settings form.
+              if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault();
+            }}><GroupBuyCoupons key={gb.id} endpoint={`/api/organiser/group-buys/${gb.id}/coupons`} currency={gb.currency} /></div>}
             <div className="rounded-xl border p-3 space-y-1" style={{ borderColor: "hsl(var(--border))" }}>
               <p className="text-xs font-semibold text-foreground">Customer permissions when GB closed</p>
               <p className="text-[11px] text-muted-foreground mb-2">All on by default. Disable any to block that action once this GB's status is Closed.</p>

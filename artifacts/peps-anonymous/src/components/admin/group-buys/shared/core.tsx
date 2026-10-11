@@ -58,6 +58,7 @@ export type GroupBuy = Record<string, unknown> & {
   paymentMessage?: string | null;
   paymentMessageEnabled?: boolean;
   paymentsEnabled?: boolean;
+  allowCredits?: boolean;
   directShippingPaymentsEnabled?: boolean;
   qrUploadInpostEnabled?: boolean;
   qrUploadRoyalMailEnabled?: boolean;

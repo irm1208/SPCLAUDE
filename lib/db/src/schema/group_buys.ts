@@ -90,6 +90,7 @@ export const groupBuysTable = pgTable("group_buys", {
   adminFeeCountries: text("admin_fee_countries"),
   sharedShippingCountries: text("shared_shipping_countries"),
   allowHalfKits: boolean("allow_half_kits").notNull().default(true),
+  allowCredits: boolean("allow_credits").notNull().default(true),
   // Per-action customer permissions when the parent GB is in status "closed".
   // Default true = current behaviour (everything allowed). Set any to false to
   // block that customer action once the GB is closed. Admin and organiser

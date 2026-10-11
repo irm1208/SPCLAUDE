@@ -1,13 +1,91 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type RequestHandler } from "express";
 import { db } from "@workspace/db";
-import { couponCodesTable, couponRedemptionsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { couponCodesTable, couponRedemptionsTable, groupBuysTable } from "@workspace/db";
+import { eq, desc, and, or, isNull } from "drizzle-orm";
 import { requireAdmin } from "../middleware/require-admin";
 import { requireAccount } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
 import { randomUUID } from "crypto";
+import { requireOrganiser } from "../middleware/require-organiser";
+import { calculateCouponDiscount, CouponError, couponProblem, parseGroupCouponInput } from "../lib/group-buy-coupon-policy";
+import { couponAccountUses } from "../lib/coupon-redemption";
 
 const router: IRouter = Router();
+
+const formatCoupon = (coupon: typeof couponCodesTable.$inferSelect) => ({
+  ...coupon, discountValue: Number(coupon.discountValue), minSubtotal: Number(coupon.minSubtotal),
+});
+
+// Both roles use identical CRUD; only the server-established authorisation differs.
+for (const role of ["organiser", "admin"] as const) {
+  const scoped = Router({ mergeParams: true });
+  const auth: RequestHandler = role === "organiser" ? requireOrganiser : (req, res, next) => {
+    if (requireAdmin(req, res)) next();
+  };
+  scoped.use(auth, async (req, res, next) => {
+    const id = String(req.params.groupBuyId);
+    const [group] = await db.select({ id: groupBuysTable.id }).from(groupBuysTable).where(
+      role === "admin" || req.organiser?.isAdmin
+        ? eq(groupBuysTable.id, id)
+        : and(eq(groupBuysTable.id, id), eq(groupBuysTable.organiserId, req.organiser!.telegramUsername)),
+    );
+    if (!group) { res.status(404).json({ error: "Group buy not found" }); return; }
+    next();
+  });
+  scoped.get<{ groupBuyId: string }>("/", async (req, res) => {
+    const coupons = await db.select().from(couponCodesTable)
+      .where(eq(couponCodesTable.groupBuyId, String(req.params.groupBuyId)))
+      .orderBy(desc(couponCodesTable.createdAt));
+    res.json(coupons.map(formatCoupon));
+  });
+  scoped.post<{ groupBuyId: string }>("/", async (req, res, next) => {
+    try {
+      const settings = parseGroupCouponInput(req.body);
+      const [created] = await db.insert(couponCodesTable).values({
+        ...settings, id: randomUUID(), groupBuyId: String(req.params.groupBuyId),
+      }).returning();
+      writeLog("change", "info", "group_buy_coupon_created", "Created group-buy coupon", {
+        groupBuyId: created.groupBuyId, couponId: created.id, role,
+      }).catch(() => {});
+      res.status(201).json(formatCoupon(created));
+    } catch (error) {
+      if (error instanceof CouponError) { res.status(400).json({ error: error.message }); return; }
+      const dbError = error as { code?: string; cause?: { code?: string } };
+      if ((dbError.cause?.code ?? dbError.code) === "23505") { res.status(409).json({ error: "This coupon code already exists. Choose a unique code." }); return; }
+      next(error);
+    }
+  });
+  scoped.patch<{ groupBuyId: string; couponId: string }>("/:couponId", async (req, res, next) => {
+    try {
+      const updated = await db.transaction(async tx => {
+        const predicate = and(eq(couponCodesTable.id, String(req.params.couponId)), eq(couponCodesTable.groupBuyId, String(req.params.groupBuyId)));
+        const [existing] = await tx.select().from(couponCodesTable).where(predicate).for("update");
+        if (!existing) return null;
+        const settings = parseGroupCouponInput({ ...existing, ...req.body, code: existing.code });
+        if (req.body?.maxUses !== undefined && settings.maxUses != null && settings.maxUses < existing.usageCount) throw new CouponError("The total limit cannot be lower than the number of uses already redeemed");
+        const { code: immutableCode, ...updates } = settings;
+        const [row] = await tx.update(couponCodesTable).set(updates).where(predicate).returning();
+        return row;
+      });
+      if (!updated) { res.status(404).json({ error: "Coupon not found" }); return; }
+      writeLog("change", "info", "group_buy_coupon_updated", "Updated group-buy coupon", { groupBuyId: updated.groupBuyId, couponId: updated.id, role }).catch(() => {});
+      res.json(formatCoupon(updated));
+    } catch (error) {
+      if (error instanceof CouponError) { res.status(400).json({ error: error.message }); return; }
+      next(error);
+    }
+  });
+  scoped.delete<{ groupBuyId: string; couponId: string }>("/:couponId", async (req, res) => {
+    const predicate = and(eq(couponCodesTable.id, String(req.params.couponId)), eq(couponCodesTable.groupBuyId, String(req.params.groupBuyId)));
+    const [existing] = await db.select({ id: couponCodesTable.id }).from(couponCodesTable).where(predicate);
+    if (!existing) { res.status(404).json({ error: "Coupon not found" }); return; }
+    const deleted = await db.delete(couponCodesTable).where(and(predicate, eq(couponCodesTable.usageCount, 0))).returning({ id: couponCodesTable.id });
+    if (!deleted.length) { res.status(409).json({ error: "Used coupons cannot be deleted. Disable this coupon instead." }); return; }
+    writeLog("change", "info", "group_buy_coupon_deleted", "Deleted unused group-buy coupon", { groupBuyId: String(req.params.groupBuyId), couponId: existing.id, role }).catch(() => {});
+    res.json({ ok: true });
+  });
+  router.use(`/${role}/group-buys/:groupBuyId/coupons`, scoped);
+}
 
 // ── GET /admin/coupon-codes — list all coupons ─────────────────
 router.get("/admin/coupon-codes", async (req, res): Promise<void> => {
@@ -147,7 +225,13 @@ router.delete("/admin/coupon-codes/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  await db.delete(couponCodesTable).where(eq(couponCodesTable.id, id));
+  const deleted = await db.delete(couponCodesTable)
+    .where(and(eq(couponCodesTable.id, id), or(isNull(couponCodesTable.groupBuyId), eq(couponCodesTable.usageCount, 0))))
+    .returning({ id: couponCodesTable.id });
+  if (!deleted.length) {
+    res.status(409).json({ error: "Used group-buy coupons cannot be deleted. Disable the coupon instead." });
+    return;
+  }
 
   writeLog("change", "info", "admin_coupon_deleted",
     `Admin deleted coupon code "${existing.code}"`,
@@ -161,7 +245,7 @@ router.delete("/admin/coupon-codes/:id", async (req, res): Promise<void> => {
 // Returns { valid, discountType, discountValue, description } or { valid: false, error }
 // Does NOT consume the coupon — consumption happens at order creation.
 router.post("/coupons/validate", requireAccount, async (req, res): Promise<void> => {
-  const { code, orderTotal } = req.body;
+  const { code, orderTotal, groupBuyId, productSubtotal } = req.body;
 
   if (!code || typeof code !== "string") {
     res.status(400).json({ error: "code is required" });
@@ -180,25 +264,16 @@ router.post("/coupons/validate", requireAccount, async (req, res): Promise<void>
     return;
   }
 
-  if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
-    res.json({ valid: false, error: "This coupon has expired" });
-    return;
-  }
-
-  if (coupon.maxUses !== null && coupon.usageCount >= coupon.maxUses) {
-    res.json({ valid: false, error: "This coupon has reached its usage limit" });
-    return;
-  }
-
-  const discountValue = parseFloat(String(coupon.discountValue));
-  const total = parseFloat(String(orderTotal ?? 0));
-
-  let discountAmount = 0;
-  if (coupon.discountType === "percentage") {
-    discountAmount = parseFloat(((total * discountValue) / 100).toFixed(2));
-  } else {
-    discountAmount = Math.min(discountValue, total);
-  }
+  const context = {
+    groupBuyId: typeof groupBuyId === "string" ? groupBuyId : null,
+    productSubtotal: Number(productSubtotal ?? (coupon.groupBuyId ? NaN : orderTotal ?? 0)),
+    total: Number(orderTotal ?? 0),
+    usesByAccount: coupon.maxUsesPerAccount != null ? await couponAccountUses(db, coupon.id, req.account!.telegramUsername) : 0,
+  };
+  const problem = couponProblem(coupon, context);
+  if (problem) { res.json({ valid: false, error: problem }); return; }
+  const discountValue = Number(coupon.discountValue);
+  const discountAmount = calculateCouponDiscount(coupon, context);
 
   res.json({
     valid: true,

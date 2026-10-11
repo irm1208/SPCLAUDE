@@ -204,6 +204,7 @@ interface OrderDetail {
   groupBuyPaymentsEnabled: boolean | null;
   groupBuyDirectShippingPaymentsEnabled?: boolean | null;
   groupBuyAllowOrderAddons?: boolean;
+  groupBuyAllowCredits?: boolean;
   groupBuyDeleteLocked?: boolean;
   customShippingRequiresAddress?: boolean;
   customShippingRequiresQrCode?: boolean;
@@ -2803,7 +2804,7 @@ export default function AccountOrderDetail() {
                   {/* Store Credits banner */}
                   {accountCredits > 0 &&
                    safeMinMoney(accountCredits, safeSubtractMoneyClamped(order.grandTotal, order.creditsApplied ?? 0)) > 0 &&
-                   order.paymentStatus === "unpaid" && order.status !== "Cancelled" && (
+                   order.paymentStatus === "unpaid" && order.status !== "Cancelled" && order.groupBuyAllowCredits !== false && (
                     <div
                       className="rounded-lg px-4 py-3 flex items-center justify-between gap-3"
                       style={{ background: "rgba(22,163,74,0.08)", border: "1.5px solid rgba(22,163,74,0.3)" }}

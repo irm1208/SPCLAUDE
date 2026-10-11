@@ -206,6 +206,7 @@ export function useSignup() {
 
 export interface GroupBuySummary {
   id: string;
+  allowCredits?: boolean;
   name: string;
   status: string;
   description: string | null;

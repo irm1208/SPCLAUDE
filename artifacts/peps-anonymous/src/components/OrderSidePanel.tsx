@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ShoppingCart, Minus, Plus, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { OrderPanelDelivery, type PanelDeliveryChoices } from "./OrderPanelDelivery";
 
 type OrderPanelProps = {
   items: {
@@ -23,9 +24,10 @@ type OrderPanelProps = {
   onRemove?: (id: string) => void;
   editingDisabled?: boolean;
   watermark?: ReactNode;
+  delivery?: PanelDeliveryChoices;
 };
 
-export function OrderPanelContents({ items, total, formatPrice, hidePrices, hideTotal, shippingPending, onQuantityChange, onRemove, editingDisabled, watermark }: OrderPanelProps) {
+export function OrderPanelContents({ items, total, formatPrice, hidePrices, hideTotal, shippingPending, onQuantityChange, onRemove, editingDisabled, watermark, delivery }: OrderPanelProps) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {watermark}
@@ -96,6 +98,7 @@ export function OrderPanelContents({ items, total, formatPrice, hidePrices, hide
             ))}
           </ul>
         )}
+        {delivery && <OrderPanelDelivery {...delivery} disabled={editingDisabled} hidePrices={hidePrices} formatPrice={formatPrice} />}
       </div>
       {!hidePrices && !hideTotal && (
         <div className="border-t pt-4" style={{ borderColor: "var(--t-border)" }}>
@@ -128,7 +131,7 @@ export function OrderSidePanel(props: OrderPanelProps) {
         style={{ background: "var(--t-surface)", color: "var(--t-text)", borderColor: "var(--t-border)" }}>
         <SheetHeader>
           <SheetTitle style={{ color: "var(--t-text)" }}>Your order</SheetTitle>
-          <SheetDescription style={{ color: "var(--t-muted)" }}>Edit quantities or remove products here. Your order total updates automatically.</SheetDescription>
+          <SheetDescription style={{ color: "var(--t-muted)" }}>Edit products and choose delivery here. Your order total updates automatically.</SheetDescription>
         </SheetHeader>
         <OrderPanelContents {...props} />
         <button type="button" className="mt-4 w-full rounded-xl bg-[#1B3A7A] px-4 py-3 text-sm font-bold text-white"

@@ -10,6 +10,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
+import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
 import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
 import { eq, and, or, asc, desc, sql, isNull, isNotNull, gt, lt, inArray } from "drizzle-orm";
 import { randomUUID, createHash, randomInt } from "crypto";
@@ -829,7 +830,7 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
   }
   type SpendResult =
     | { kind: "ok"; deducted: string; remaining: string; orderCode: string; confirmedOrder: boolean; idempotent: boolean }
-    | { kind: "account_not_found" | "order_not_found" | "order_not_owned" | "operation_key_conflict" };
+    | { kind: "account_not_found" | "order_not_found" | "order_not_owned" | "operation_key_conflict" | "credits_disabled" };
   const runCreditSpend = async () => db.transaction(async tx => {
     const altTg = tg.startsWith("@") ? tg.slice(1) : `@${tg}`;
     const [acct] = await tx.select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
@@ -844,6 +845,7 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
       grandTotal: ordersTable.grandTotal,
       creditsApplied: ordersTable.creditsApplied,
       paymentStatus: ordersTable.paymentStatus,
+      groupBuyId: ordersTable.groupBuyId,
     })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId))
@@ -871,6 +873,11 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
         idempotent: true,
       };
     }
+    if (!await groupBuyCreditsAllowed(orderRow.groupBuyId, async id => {
+      const [group] = await tx.select({ allowCredits: groupBuysTable.allowCredits })
+        .from(groupBuysTable).where(eq(groupBuysTable.id, id)).for("share");
+      return group?.allowCredits;
+    })) return { kind: "credits_disabled" as const };
     const orderGrandTotalCents = usdToCents(String(orderRow.grandTotal));
     const orderCreditsAppliedCents = usdToCents(String(orderRow.creditsApplied ?? "0"));
     const remainingOrderCents = orderGrandTotalCents > orderCreditsAppliedCents
@@ -935,6 +942,7 @@ router.post("/account/use-credits", requireAccount, async (req, res): Promise<vo
   if (result.kind === "order_not_found") { res.status(404).json({ error: "Order not found" }); return; }
   if (result.kind === "order_not_owned") { res.status(403).json({ error: "Order does not belong to this account" }); return; }
   if (result.kind === "operation_key_conflict") { res.status(409).json({ error: "operationKey was already used for another order" }); return; }
+  if (result.kind === "credits_disabled") { res.status(403).json({ error: "Store credits cannot be used for this group buy", code: "GROUP_BUY_CREDITS_DISABLED" }); return; }
   if (result.kind !== "ok") { res.status(500).json({ error: "Unable to apply credits" }); return; }
   if (result.confirmedOrder) maybeSubmitSharedOrder(orderId).catch(() => {});
   res.json({ ok: true, idempotent: result.idempotent, deducted: Number(result.deducted), remaining: Number(result.remaining) });
@@ -2256,6 +2264,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
   let groupBuyPaymentsEnabled: boolean | null = null;
   let groupBuyDirectShippingPaymentsEnabled: boolean | null = null;
   let groupBuyAllowOrderAddons = true;
+  let groupBuyAllowCredits = true;
   let customShippingRequiresAddress = false;
   let customShippingRequiresQrCode = false;
   let groupBuyQrUploadInpostEnabled = false;
@@ -2278,11 +2287,13 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
         vendorShippingAmount: groupBuysTable.vendorShippingAmount,
         cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled,
         allowOrderAddons: groupBuysTable.allowOrderAddons,
+        allowCredits: groupBuysTable.allowCredits,
         shippingOptions: groupBuysTable.shippingOptions,
       })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
     groupBuyAllowOrderAddons = gb?.allowOrderAddons ?? true;
+    groupBuyAllowCredits = gb?.allowCredits ?? false;
     groupBuyPaymentsEnabled = gb?.paymentsEnabled ?? true;
     groupBuyDirectShippingPaymentsEnabled = gb?.directShippingPaymentsEnabled ?? null;
     // Resolve per-option flags from the chosen custom shipping option
@@ -2434,6 +2445,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     groupBuyCryptoRefundsEnabled,
     groupBuyDirectShippingPaymentsEnabled,
     groupBuyAllowOrderAddons,
+    groupBuyAllowCredits,
     groupBuyDeleteLocked,
     customShippingRequiresAddress,
     customShippingRequiresQrCode,

@@ -545,8 +545,7 @@ export default function OrderForm() {
   const draft = useDraftStore();
 
   // Calculate direct shipping cost reactively from current kit count + vendor tier pricing
-  const calcDirectShippingCost = useMemo((): number | null => {
-    if (draft.deliveryMethodId !== "__direct_shipping") return null;
+  const estimatedDirectShippingCost = useMemo((): number | null => {
     if (!directShippingInfo?.enabled || !("tiers" in directShippingInfo)) return null;
     const info = directShippingInfo as any;
     if (!info.tiers || !info.tierBounds?.length) return null;
@@ -567,7 +566,9 @@ export default function OrderForm() {
       remaining -= inPkg;
     }
     return parseFloat(total.toFixed(2));
-  }, [draft.deliveryMethodId, draft.lineItems, directShippingInfo]);
+  }, [draft.lineItems, directShippingInfo]);
+  // A quote can be displayed before selection, but only selected direct delivery may update the draft.
+  const calcDirectShippingCost = draft.deliveryMethodId === "__direct_shipping" ? estimatedDirectShippingCost : null;
 
   // Sync calculated cost into draft.deliveryPrice so the total stays correct as kits change
   useEffect(() => {
@@ -1050,10 +1051,22 @@ export default function OrderForm() {
   };
 
   const handleDeliverySelect = (methodId: string) => {
+    if (isPreview || isTopUp) return;
     const method = deliveryMethods.find(m => m.id === methodId);
     if (method) {
       draft.setDeliveryMethod(method.id, method.name, method.price);
       draft.setDirectShippingRequested(false);
+    }
+  };
+
+  const handlePanelDeliverySelect = (methodId: string) => {
+    if (isPreview || isTopUp) return;
+    if (methodId === "__direct_shipping") {
+      if (!directShippingInfo?.enabled) return;
+      draft.setDeliveryMethod("__direct_shipping", "Direct Shipping to Home", 0);
+      draft.setDirectShippingRequested(true);
+    } else {
+      handleDeliverySelect(methodId);
     }
   };
 
@@ -1508,6 +1521,26 @@ export default function OrderForm() {
                       onRemove={handlePanelRemove}
                       editingDisabled={isPreview}
                       watermark={<PriceWatermark username={getAccountHandle(account)} />}
+                      delivery={{
+                        options: [
+                          ...deliveryMethods.map(method => ({
+                            id: method.id, name: method.name, price: method.price,
+                            description: (method as any).infoEnabled === true
+                              ? (method as any).infoText || method.description || getDeliveryFallbackInfo(method.name) : null,
+                            requiresAddress: gbShippingOptions.find(option => option.id === method.id)?.requiresAddress ?? false,
+                          })),
+                          ...(directShippingInfo?.enabled ? [{
+                            id: "__direct_shipping", name: "Direct to Home",
+                            price: browseTotal > 0 ? estimatedDirectShippingCost : null,
+                            description: "Shipped directly by the vendor.",
+                            requiresAddress: true,
+                          }] : []),
+                        ],
+                        selectedId: draft.deliveryMethodId,
+                        onSelect: handlePanelDeliverySelect,
+                        loading: isLoadingMethods || isLoadingGbInfo,
+                        lockedName: isTopUp ? draft.deliveryMethod || "Previous order delivery" : undefined,
+                      }}
                     />
                   }
                 />

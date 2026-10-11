@@ -19,6 +19,7 @@ import { lookupBatchPrefix, findMatchingPeptide } from "@/data/batchPrefixes";
 import { CARRIERS_17TRACK } from "@/lib/carriers";
 import { resolveCountry, apiUrl, INFO_CARD_TYPE_OPTIONS, InfoCardsEditor, ShippingOptionsEditor, CRYPTO_CURRENCIES, TROCADOR_COINS, CRYPTO_NETWORKS, DEFAULT_CRYPTO_NETWORKS, GbPaymentGatewayInlineContent, EU_COUNTRIES, POPULAR_COUNTRIES, GBP_TO_USD, GB_STATUS_STYLES, CopyIdBadge, StatusBadge } from "../shared/core";
 import { GBForm } from "../GbForm";
+import { GroupBuyCoupons } from "@/components/GroupBuyCoupons";
 import { Switch, SettingsSection, SettingsRow } from "../shared/settings-ui";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
 import type { AdminReshipperAssignment } from "./ReshippersPanel";
@@ -601,7 +602,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
     { value: "closed", label: "Closed", active: "bg-red-600 text-white border-red-600", inactive: "bg-background text-slate-500 border-border hover:bg-red-50" },
   ];
 
-  const [detailsSubTab, setDetailsSubTab] = useState<"general" | "payments" | "ordering" | "shipping" | "access">("general");
+  const [detailsSubTab, setDetailsSubTab] = useState<"general" | "payments" | "ordering" | "shipping" | "access" | "coupons">("general");
 
   const DETAILS_SUB_TABS = [
     { id: "general" as const, label: "General", icon: Settings },
@@ -609,6 +610,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
     { id: "ordering" as const, label: "Ordering", icon: ShoppingCart },
     { id: "shipping" as const, label: "Shipping", icon: Truck },
     { id: "access" as const, label: "Access", icon: KeyRound },
+    { id: "coupons" as const, label: "Coupons", icon: Tag },
   ];
 
   return (
@@ -644,6 +646,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
       </select>
 
       <div className="flex-1 min-w-0 max-w-3xl space-y-10">
+        {detailsSubTab === "coupons" && <GroupBuyCoupons key={gb.id} endpoint={apiUrl(`/admin/group-buys/${gb.id}/coupons`)} currency={gb.currency} />}
 
       {/* ── GENERAL ── */}
       {detailsSubTab === "general" && <div className="space-y-6">
@@ -1017,6 +1020,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
         <div className="rounded-xl border divide-y" style={{ borderColor: "hsl(var(--border))" }}>
           {([
             { field: "allowOrderAddons", label: "Order Add-ons", desc: "Members can add more items or increase quantities in their existing order.", val: gb.allowOrderAddons ?? true },
+            { field: "allowCredits", label: "Allow store credits", desc: "Members can spend store credits on this group buy. Disabling preserves credits already applied to existing orders.", val: gb.allowCredits ?? true },
           ] as { field: string; label: string; desc: string; val: boolean }[]).map(({ field, label, desc, val }) => (
             <div key={field} className="flex items-center justify-between px-3 py-2.5 gap-3">
               <div className="min-w-0">

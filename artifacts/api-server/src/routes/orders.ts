@@ -1,4 +1,7 @@
-import { assertNoActiveRefund, refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
+import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
+import { calculateCouponDiscount, CouponError, couponProblem, couponQuoteMatches } from "../lib/group-buy-coupon-policy";
+import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/coupon-redemption";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { createHash, timingSafeEqual } from "crypto";
@@ -21,7 +24,6 @@ import {
   ruleAcceptancesTable,
   siteConfigTable,
   couponCodesTable,
-  couponRedemptionsTable,
   creditTransactionsTable,
   EDITABLE_STATUSES,
   type OrderStatus,
@@ -448,6 +450,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     shippingAddress: clientShippingAddress,
     reshipperUsername: clientPreferredReshipper,
     couponCode: clientCouponCode,
+    couponDiscountQuoted,
     creditsApplied: clientCreditsApplied,
     directShippingRequested: clientDirectShippingRequested,
     directShippingCost: clientDirectShippingCost,
@@ -686,6 +689,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         organiserId: groupBuysTable.organiserId,
         sharedShippingCountries: groupBuysTable.sharedShippingCountries,
         allowExtraOrders: groupBuysTable.allowExtraOrders,
+        allowCredits: groupBuysTable.allowCredits,
         adminFeeEnabled: groupBuysTable.adminFeeEnabled,
         adminFeeType: groupBuysTable.adminFeeType,
         adminFeeAmount: groupBuysTable.adminFeeAmount,
@@ -698,6 +702,10 @@ router.post("/orders", async (req, res): Promise<void> => {
 
     if (!gb || (gb.status !== "active" && !gb.allowExtraOrders && !membership.allowExtraOrder)) {
       res.status(403).json({ error: "This group buy is not currently accepting orders" });
+      return;
+    }
+    if (typeof clientCreditsApplied === "number" && clientCreditsApplied > 0 && gb.allowCredits === false) {
+      res.status(403).json({ error: "Store credits cannot be used for this group buy", code: "GROUP_BUY_CREDITS_DISABLED" });
       return;
     }
     vendorShippingIsTbdForOrder = resolveNewOrderVendorShippingIsTbd({
@@ -951,6 +959,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   let appliedCouponCode: string | null = null;
   let couponDiscount = 0;
   let resolvedCouponId: string | null = null;
+  const couponContext = { groupBuyId: normalizedGroupBuyId, productSubtotal, total: baseGrandTotal };
 
   if (clientCouponCode && typeof clientCouponCode === "string") {
     const normalizedCode = clientCouponCode.trim().toUpperCase();
@@ -959,20 +968,17 @@ router.post("/orders", async (req, res): Promise<void> => {
       .from(couponCodesTable)
       .where(eq(couponCodesTable.code, normalizedCode));
 
-    if (coupon && coupon.isActive) {
-      const now = new Date();
-      const notExpired = !coupon.expiresAt || new Date(coupon.expiresAt) > now;
-      const underLimit = coupon.maxUses == null || (coupon.usageCount ?? 0) < coupon.maxUses;
-      if (notExpired && underLimit) {
-        if (coupon.discountType === "percentage") {
-          couponDiscount = Number(((baseGrandTotal * parseFloat(String(coupon.discountValue))) / 100).toFixed(2));
-        } else {
-          couponDiscount = Math.min(parseFloat(String(coupon.discountValue)), baseGrandTotal);
-        }
-        appliedCouponCode = normalizedCode;
-        resolvedCouponId = coupon.id;
-      }
+    if (!coupon) { res.status(400).json({ error: "Invalid coupon code" }); return; }
+    const usesByAccount = coupon.maxUsesPerAccount != null ? await couponAccountUses(db, coupon.id, tg) : 0;
+    const problem = couponProblem(coupon, { ...couponContext, usesByAccount });
+    if (problem) { res.status(400).json({ error: problem }); return; }
+    couponDiscount = calculateCouponDiscount(coupon, couponContext);
+    if (!couponQuoteMatches(couponDiscountQuoted, couponDiscount)) {
+      res.status(409).json({ error: "The coupon calculation changed. Refresh your order and reapply the code before submitting." });
+      return;
     }
+    appliedCouponCode = normalizedCode;
+    resolvedCouponId = coupon.id;
   }
 
   const grandTotal = Number(Math.max(0, baseGrandTotal + gbAdminFee + gbKitFees - couponDiscount).toFixed(2));
@@ -980,6 +986,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   if (additionParent) {
     const sessionUsername = getAccountFromCookie(req);
     const mergeOutcome = await db.transaction(async (tx) => {
+      const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
       const creditRequested = Boolean(sessionUsername && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0);
       const [lockedAccount] = creditRequested
         ? await tx.select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
@@ -995,7 +1002,14 @@ router.post("/orders", async (req, res): Promise<void> => {
         .from(ordersTable)
         .where(eq(ordersTable.id, additionParent.id))
         .for("update");
-      if (lockedParent) await assertNoActiveRefunds(tx, [lockedParent.id]);
+      if (lockedParent) await assertNoActiveRefund(tx, lockedParent.id);
+      if (creditRequested && lockedParent && !await groupBuyCreditsAllowed(lockedParent.groupBuyId, async id => {
+        const [group] = await tx.select({ allowCredits: groupBuysTable.allowCredits })
+          .from(groupBuysTable).where(eq(groupBuysTable.id, id)).for("share");
+        return group?.allowCredits;
+      })) {
+        return { error: "Store credits cannot be used for this group buy" } as const;
+      }
 
       if (
         !lockedParent
@@ -1136,20 +1150,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         .returning();
       if (!updatedParent) throw new RefundMutationBlockedError(lockedParent.id);
 
-      if (resolvedCouponId && appliedCouponCode) {
-        await tx.insert(couponRedemptionsTable).values({
-          id: randomUUID(),
-          couponId: resolvedCouponId,
-          couponCode: appliedCouponCode,
-          orderId: lockedParent.id,
-          telegramUsername: tg,
-          discountApplied: couponDiscount.toFixed(2),
-        });
-        await tx
-          .update(couponCodesTable)
-          .set({ usageCount: sql`${couponCodesTable.usageCount} + 1` })
-          .where(eq(couponCodesTable.id, resolvedCouponId));
-      }
+      if (couponClaim) await recordCouponRedemption(tx, couponClaim, lockedParent.id, tg, couponDiscount);
 
       return {
         updatedParent,
@@ -1157,6 +1158,9 @@ router.post("/orders", async (req, res): Promise<void> => {
         addedAmountDue,
         appliedCredits,
       } as const;
+    }).catch(error => {
+      if (error instanceof CouponError) return { error: error.message } as const;
+      throw error;
     });
 
     if ("error" in mergeOutcome) {
@@ -1384,7 +1388,9 @@ router.post("/orders", async (req, res): Promise<void> => {
     codeRoutingType = "reshipper";
   }
 
-  const [order] = await db
+  const creation = await db.transaction(async tx => {
+  const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
+  const [order] = await tx
     .insert(ordersTable)
     .values({
       id: orderId,
@@ -1437,31 +1443,27 @@ router.post("/orders", async (req, res): Promise<void> => {
     lineTotal: (parseFloat(String(li.quantity)) * parseFloat(String(li.unitPrice))).toFixed(2),
   }));
 
-  const insertedLineItems = await db
+  const insertedLineItems = await tx
     .insert(orderLineItemsTable)
     .values(lineItemsToInsert)
     .returning();
 
   // Record coupon redemption if one was applied
-  if (resolvedCouponId && appliedCouponCode) {
-    await db.insert(couponRedemptionsTable).values({
-      id: randomUUID(),
-      couponId: resolvedCouponId,
-      couponCode: appliedCouponCode,
-      orderId,
-      telegramUsername: tg,
-      discountApplied: couponDiscount.toFixed(2),
-    });
-    await db.update(couponCodesTable)
-      .set({ usageCount: sql`${couponCodesTable.usageCount} + 1` })
-      .where(eq(couponCodesTable.id, resolvedCouponId));
-  }
+  if (couponClaim) await recordCouponRedemption(tx, couponClaim, orderId, tg, couponDiscount);
+  return { order, insertedLineItems, lineItemsToInsert };
+  }).catch(error => {
+    if (error instanceof CouponError) return { error: error.message } as const;
+    throw error;
+  });
+  if ("error" in creation) { res.status(400).json({ error: creation.error }); return; }
+  const { order, insertedLineItems, lineItemsToInsert } = creation;
 
   // ── Apply store credits atomically during order creation ──────────────
   // If the client sent a creditsApplied amount and the request carries a valid
   // account session, re-verify the balance server-side and stamp it on the order.
   let appliedCredits = 0;
   let appliedCreditsUsd = "0.00";
+  let creditPolicyBlocked = false;
   const sessionUsernameForCredits = getAccountFromCookie(req);
   if (sessionUsernameForCredits && clientCreditsApplied && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0) {
     const requestedCreditsCents = usdToCents(String(clientCreditsApplied));
@@ -1480,6 +1482,14 @@ router.post("/orders", async (req, res): Promise<void> => {
       if (!acctRow) throw new Error("account_not_found");
       if (!lockedOrder) throw new Error("order_not_found");
       if (requestedCreditsCents <= 0n) return;
+      if (!await groupBuyCreditsAllowed(normalizedGroupBuyId, async id => {
+        const [group] = await tx.select({ allowCredits: groupBuysTable.allowCredits })
+          .from(groupBuysTable).where(eq(groupBuysTable.id, id)).for("share");
+        return group?.allowCredits;
+      })) {
+        creditPolicyBlocked = true;
+        return; // Order is saved without credits; no wallet debit or credit transaction is made.
+      }
 
       const availableCreditsCents = usdToCents(String(acctRow.credits ?? "0"));
       const orderTotalCents = usdToCents(grandTotal.toFixed(2));
@@ -1511,6 +1521,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     { ...(order as unknown as Record<string, unknown>), creditsApplied: appliedCredits },
     insertedLineItems as unknown as Record<string, unknown>[],
   );
+  if (creditPolicyBlocked) (formatted as Record<string, unknown>).creditPolicyBlocked = true;
   pushToGoogleSheets(formatted).catch(() => {});
 
   writeLog("order", "info", "order_created",

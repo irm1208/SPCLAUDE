@@ -442,6 +442,13 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   if (body.hidePricesOnOrderForm !== undefined) updates.hidePricesOnOrderForm = Boolean(body.hidePricesOnOrderForm);
   if (body.hideOrderTotalOnOrderForm !== undefined) updates.hideOrderTotalOnOrderForm = Boolean(body.hideOrderTotalOnOrderForm);
   if (body.allowHalfKits !== undefined) updates.allowHalfKits = Boolean(body.allowHalfKits);
+  if (body.allowCredits !== undefined) {
+    if (typeof body.allowCredits !== "boolean") {
+      res.status(400).json({ error: "allowCredits must be a boolean" });
+      return;
+    }
+    updates.allowCredits = body.allowCredits;
+  }
   if (body.allowReshipperCode !== undefined) updates.allowReshipperCode = Boolean(body.allowReshipperCode);
   if (allowExtraOrders !== undefined) updates.allowExtraOrders = Boolean(allowExtraOrders);
   if (sharedShippingCountries !== undefined) {

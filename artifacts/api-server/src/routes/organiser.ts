@@ -1,5 +1,6 @@
 import { assertNoActiveRefund, assertNoActiveRefunds, RefundMutationBlockedError, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request } from "express";
+import { validAllowCreditsSetting } from "../lib/group-buy-credit-policy";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
 import {
@@ -313,6 +314,10 @@ router.get("/organiser/group-buys", requireOrganiser, async (req, res): Promise<
 
 // POST /api/organiser/group-buys — create a GB
 router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise<void> => {
+  if (!validAllowCreditsSetting(req.body.allowCredits)) {
+    res.status(400).json({ error: "allowCredits must be a boolean" });
+    return;
+  }
   const username = req.organiser!.telegramUsername;
   if (req.body && Object.prototype.hasOwnProperty.call(req.body, "cryptoRefundsEnabled")) {
     res.status(403).json({ code: "admin_only_setting", error: "admin_only_setting" });
@@ -417,6 +422,7 @@ router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise
     entryFeeAmount: entryFeeAmount != null && entryFeeAmount !== "" ? parseFloat(String(entryFeeAmount)).toFixed(2) as any : undefined,
     entryFeeLabel: entryFeeLabel ? String(entryFeeLabel).trim() : undefined,
     allowHalfKits: allowHalfKits != null ? Boolean(allowHalfKits) : true,
+    allowCredits: req.body.allowCredits ?? true,
     orderPageMessage: orderPageMessage ? String(orderPageMessage).trim() : undefined,
   }).returning();
 
@@ -671,6 +677,7 @@ router.post("/organiser/group-buys/:id/clone", requireOrganiser, async (req, res
       minKitsPerPerson: source.minKitsPerPerson ?? undefined,
       orderPageMessage: source.orderPageMessage ?? undefined,
       allowHalfKits: source.allowHalfKits ?? true,
+      allowCredits: source.allowCredits ?? true,
       allowHalfKitsEnabled: (source as Record<string, unknown>).allowHalfKitsEnabled ?? undefined,
       allowEditOrderWhenClosed: source.allowEditOrderWhenClosed ?? undefined,
       allowEditAddressWhenClosed: source.allowEditAddressWhenClosed ?? undefined,
@@ -900,6 +907,11 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
     (updates as Record<string, unknown>)["sharedShippingCountries"] = Array.isArray(sharedShippingCountries) ? JSON.stringify(sharedShippingCountries) : null;
   }
   if (allowHalfKits !== undefined) updates.allowHalfKits = Boolean(allowHalfKits);
+  if (!validAllowCreditsSetting(req.body.allowCredits)) {
+    res.status(400).json({ error: "allowCredits must be a boolean" });
+    return;
+  }
+  if (req.body.allowCredits !== undefined) updates.allowCredits = req.body.allowCredits;
   if (allowEditOrderWhenClosed !== undefined) updates.allowEditOrderWhenClosed = Boolean(allowEditOrderWhenClosed);
   if (allowEditAddressWhenClosed !== undefined) updates.allowEditAddressWhenClosed = Boolean(allowEditAddressWhenClosed);
   if (allowDeleteOrderWhenClosed !== undefined) updates.allowDeleteOrderWhenClosed = Boolean(allowDeleteOrderWhenClosed);

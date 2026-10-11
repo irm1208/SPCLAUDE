@@ -182,3 +182,50 @@ test("panel edits update the shared draft, line prices and total, and removal sh
   assert.match(dialog.textContent!, /No products added yet/);
   assert.match(dialog.textContent!, /\$7\.00/);
 });
+
+test("delivery selection updates the shared draft, total, and direct-shipping flag", async () => {
+  useDraftStore.setState({
+    lineItems: [{ ...props.items[0], productId: "product-a", unitPrice: 50 }],
+    deliveryMethodId: "royal", deliveryMethod: "Royal Mail", deliveryPrice: 7,
+    directShippingRequested: false,
+  });
+  const methods = [
+    { id: "royal", name: "Royal Mail", price: 7 },
+    { id: "inpost", name: "InPost", price: 3 },
+    { id: "__direct_shipping", name: "Direct to Home", price: null, requiresAddress: true },
+  ];
+  function DeliveryPanel() {
+    const draft = useDraftStore();
+    return <Panel {...props}
+      total={100 + draft.deliveryPrice}
+      shippingPending={draft.directShippingRequested}
+      delivery={{
+        options: methods, selectedId: draft.deliveryMethodId,
+        onSelect: id => {
+          const method = methods.find(option => option.id === id)!;
+          draft.setDeliveryMethod(method.id, method.name, method.price ?? 0);
+          draft.setDirectShippingRequested(id === "__direct_shipping");
+        },
+      }}
+    />;
+  }
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => root!.render(<DeliveryPanel />));
+  await act(async () => fireEvent.click(document.querySelector('button[aria-label="Open your order"]')!));
+  const dialog = document.querySelector('[role="dialog"]')!;
+  await act(async () => fireEvent.click(dialog.querySelector('input[value="inpost"]')!));
+  assert.equal(useDraftStore.getState().deliveryMethodId, "inpost");
+  assert.equal(useDraftStore.getState().deliveryPrice, 3);
+  assert.equal(useDraftStore.getState().directShippingRequested, false);
+  assert.match(dialog.textContent!, /\$103\.00/);
+  assert.equal((dialog.querySelector('input[value="inpost"]') as HTMLInputElement).checked, true);
+  await act(async () => fireEvent.click(dialog.querySelector('input[value="__direct_shipping"]')!));
+  assert.equal(useDraftStore.getState().directShippingRequested, true);
+  assert.match(dialog.textContent!, /Quote required/);
+  assert.match(dialog.textContent!, /Shipping has not been quoted/);
+  await act(async () => fireEvent.click(dialog.querySelector('input[value="royal"]')!));
+  assert.equal(useDraftStore.getState().directShippingRequested, false);
+  assert.match(dialog.textContent!, /\$107\.00/);
+});

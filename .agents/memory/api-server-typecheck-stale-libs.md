@@ -5,6 +5,12 @@ description: Why per-artifact typecheck reports phantom "property does not exist
 
 # Artifact typecheck uses stale lib/db (lib/api-zod) declarations
 
+Composite builds that fail on `.ts` test imports can leave all schema declarations stale, even when runtime schema imports and bundling work.
+
+**Why:** The artifact typechecker reads built declarations; a failed composite build does not refresh them. The DB project emits declarations only, so TypeScript permits `allowImportingTsExtensions` there.
+
+**How to apply:** If `tsc --build` stops at TS5097 in a DB test import, refresh declarations with `pnpm --filter @workspace/db exec tsc -p tsconfig.json --allowImportingTsExtensions` before diagnosing missing schema properties. Do not conceal stale-type errors with casts.
+
 Artifacts (e.g. `@workspace/api-server`) typecheck via TS project `references` to
 `lib/db` and `lib/api-zod`. Those lib tsconfigs are `composite` + `emitDeclarationOnly`,
 emitting `dist/*.d.ts`. A per-artifact `tsc -p tsconfig.json --noEmit` reads the
