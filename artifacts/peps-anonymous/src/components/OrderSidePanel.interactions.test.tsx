@@ -51,7 +51,15 @@ async function mount() {
 
 test("opens a right-side order panel and reflects live draft updates", async () => {
   await mount();
-  const trigger = [...document.querySelectorAll("button")].find(button => button.textContent?.includes("View your order"))!;
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Open your order"]')!;
+  assert.ok(trigger);
+  assert.ok(trigger.classList.contains("fixed"));
+  assert.ok(trigger.classList.contains("right-0"));
+  assert.equal(trigger.parentElement, document.body, "fixed tab must escape clipping and scrolling ancestors");
+  assert.equal(trigger.textContent?.trim(), "", "side button should be icon-only");
+  assert.ok(trigger.querySelector("svg"));
+  assert.ok(trigger.classList.contains("h-12"));
+  assert.ok(trigger.classList.contains("w-11"));
   await act(async () => fireEvent.click(trigger));
   assert.match(document.querySelector('[role="dialog"]')!.textContent!, /SS31 50mg/);
   assert.match(document.querySelector('[role="dialog"]')!.textContent!, /\$107\.00/);
@@ -65,7 +73,7 @@ test("opens a right-side order panel and reflects live draft updates", async () 
 
 test("edit selected items closes the panel and opens the separate bottom section", async () => {
   await mount();
-  const trigger = [...document.querySelectorAll("button")].find(button => button.textContent?.includes("View your order"))!;
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Open your order"]')!;
   await act(async () => fireEvent.click(trigger));
   const edit = [...document.querySelectorAll("button")].find(button => button.textContent === "Edit selected items")!;
   await act(async () => {

@@ -11,6 +11,7 @@ import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
 import { calculateOrderFormTotal } from "@/lib/order-form-total";
 import { OrderFormTotal } from "@/components/OrderFormTotal";
 import { OrderItemsSummary } from "@/components/OrderItemsSummary";
+import { OrderItemActions } from "@/components/OrderItemActions";
 import { OrderSidePanel } from "@/components/OrderSidePanel";
 import { Card, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
@@ -1523,9 +1524,9 @@ export default function OrderForm() {
                         ? `Max ${effectiveMax}/cust`
                         : null;
                     return (
-                    <div className="flex flex-col gap-3 overflow-hidden">
+                    <div className="flex min-w-0 flex-col gap-3">
                       {gbId && productView === "list" ? (
-                        <p className="text-sm font-semibold text-white">{item.productName}</p>
+                        <p className="break-words text-sm font-semibold text-white">{item.productName}</p>
                       ) : (
                         <SearchableProductSelect
                           products={products}
@@ -1629,7 +1630,16 @@ export default function OrderForm() {
                         );
                       })()}
 
-                      <div className="flex items-center gap-3">
+                      <OrderItemActions hints={itemAllowHalfKits || limitLabel != null ? <>
+                        {itemAllowHalfKits && (
+                          <p className="text-[11px] leading-snug opacity-70 font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>Quantity is in kits. Half kits are allowed (e.g. 0.5).</p>
+                        )}
+                        {limitLabel != null && (
+                          <p className="text-[10px] leading-snug font-semibold" style={{ color: atMax ? "#f97316" : "rgba(255,255,255,0.5)" }}>
+                            {limitLabel}
+                          </p>
+                        )}
+                      </> : undefined}>
                         <div className="flex flex-col items-start shrink-0">
                           <div
                             className="flex items-center h-10 rounded-lg overflow-hidden"
@@ -1668,18 +1678,10 @@ export default function OrderForm() {
                               }}
                             >+</button>
                           </div>
-                          {itemAllowHalfKits && (
-                            <p className="text-[11px] mt-1.5 leading-snug opacity-70 font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>Quantity is in kits. Half kits are allowed (e.g. 0.5).</p>
-                          )}
-                          {limitLabel != null && (
-                            <p className="text-[10px] mt-1.5 leading-none font-semibold" style={{ color: atMax ? "#f97316" : "rgba(255,255,255,0.5)" }}>
-                              {limitLabel}
-                            </p>
-                          )}
                         </div>
 
                         {!hideOrderFormPrices && (
-                          <div className="flex-1 text-right">
+                           <div className="min-w-[5rem] flex-1 text-right">
                             <p className="font-semibold text-[15px] tracking-tight" style={{ color: "#ffffff" }}>{formatPrice(item.lineTotal)}</p>
                             {item.unitPrice > 0 && (
                               <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.6)" }}>{formatPrice(item.unitPrice)} each</p>
@@ -1691,7 +1693,7 @@ export default function OrderForm() {
                           <button
                             type="button"
                             aria-label={`Remove ${item.productName || "product"} from order`}
-                            className="p-2 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition-all"
+                            className="shrink-0 p-2 rounded-md opacity-60 hover:opacity-100 hover:bg-white/10 transition-all"
                             style={{ color: "rgba(255,255,255,0.75)" }}
                             onClick={() => {
                               if (draft.lineItems.length === 1) {
@@ -1704,7 +1706,7 @@ export default function OrderForm() {
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
-                      </div>
+                      </OrderItemActions>
                     </div>
                     ); })()}
                     {draft.lineItems.length > 1 && item !== draft.lineItems[draft.lineItems.length - 1] && (

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ShoppingCart } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
@@ -52,20 +53,13 @@ export function OrderSidePanel(props: OrderPanelProps) {
   const editOnClose = useRef(false);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <button type="button" className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#5B8DEF]/35 bg-[#20344B] px-3 py-2.5 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5B8DEF]">
-          <span className="flex items-center gap-2 text-sm font-semibold">
-            <ShoppingCart aria-hidden="true" className="h-4 w-4 shrink-0" />
-            View your order ({props.items.length})
-          </span>
-          {!props.hidePrices && !props.hideTotal && (
-            <span className="text-right">
-              <span className="block text-[10px] text-white/65">Estimated total</span>
-              <span className="block text-sm font-bold tabular-nums" aria-live="polite">{props.formatPrice(props.total)}</span>
-            </span>
-          )}
+      {typeof document !== "undefined" && createPortal(<SheetTrigger asChild>
+        <button type="button" aria-label="Open your order" title="Your order"
+          className="fixed right-0 top-1/2 z-[54] flex h-12 w-11 -translate-y-1/2 items-center justify-center rounded-l-2xl text-white shadow-xl transition-[filter] hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5B8DEF]"
+          style={{ background: "var(--t-blue, #2D6BCC)" }}>
+          <ShoppingCart aria-hidden="true" className="h-4 w-4" />
         </button>
-      </SheetTrigger>
+      </SheetTrigger>, document.body)}
       <SheetContent side="right" overlayClassName="z-[70]" className="z-[80] flex w-[92vw] max-w-[420px] flex-col sm:max-w-[420px]"
         onCloseAutoFocus={event => {
           if (!editOnClose.current) return;
