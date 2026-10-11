@@ -136,6 +136,18 @@
 .products-split__bulk input,
 .products-split__bulk select { min-height: 36px; }
 .products-split__bulk button { min-height: 36px; }
+.products-split__bulk .products-split__stock-action { grid-template-columns: auto minmax(145px, 1fr); }
+.products-split__catalogue > header { flex-wrap: wrap; gap: 8px; }
+.products-split__catalogue > header > button {
+  padding: 6px 10px;
+  border: 1px solid var(--t-border);
+  border-radius: 6px;
+  background: var(--t-surface);
+  color: var(--t-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.products-split__catalogue > header > button:disabled { opacity: .5; cursor: not-allowed; }
 
 .products-split__workspace {
   display: grid;

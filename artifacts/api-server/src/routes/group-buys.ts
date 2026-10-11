@@ -783,7 +783,10 @@ router.get("/group-buys/:id/capacity", requireAccount, async (req, res): Promise
     const rows = await db.execute(sql`
       SELECT
         p.name                          AS product_name,
-        p.stock                         AS stock,
+        CASE WHEN gbp.stock_override_unlimited THEN NULL
+             ELSE COALESCE(gbp.stock_override, p.stock::numeric) END AS stock,
+        gbp.stock_override_unlimited AS unlimited,
+        gbp.stock_override IS NOT NULL AS stock_overridden,
         COUNT(DISTINCT m.id)            AS mapping_count,
         COALESCE(ord.total_ordered, 0)  AS total_ordered
       FROM   group_buy_products gbp
@@ -799,7 +802,7 @@ router.get("/group-buys/:id/capacity", requireAccount, async (req, res): Promise
       ) ord ON ord.product_id = p.id
       WHERE  gbp.group_buy_id = ${gbId}
         AND  gbp.active = true
-      GROUP  BY p.id, p.name, p.stock, ord.total_ordered
+      GROUP  BY p.id, p.name, p.stock, ord.total_ordered, gbp.stock_override, gbp.stock_override_unlimited
       ORDER  BY p.name
     `);
 
@@ -812,11 +815,13 @@ router.get("/group-buys/:id/capacity", requireAccount, async (req, res): Promise
         let fillPercent = 0;
         let status: "available" | "limited" | "low" | "full" = "available";
 
-        if (stock > 0) {
+        if (r.unlimited) {
+          status = "available";
+        } else if (stock > 0) {
           // Works for both Qiyunle-mapped and manually-stocked products
           fillPercent = Math.min(100, Math.round((totalOrdered / stock) * 100));
-          status = fillPercent >= 95 ? "full" : fillPercent >= 75 ? "low" : fillPercent >= 50 ? "limited" : "available";
-        } else if (mapped || totalOrdered > 0) {
+          status = (r.stock_overridden ? totalOrdered >= stock : fillPercent >= 95) ? "full" : fillPercent >= 75 ? "low" : fillPercent >= 50 ? "limited" : "available";
+        } else if (mapped || r.stock_overridden || totalOrdered > 0) {
           // Stock is 0 or negative (oversold). If we know about the product
           // (mapped to Qiyunle, or already has orders), surface it as OOS so
           // the dropdown stops showing a green "In Stock" dot.
@@ -824,9 +829,9 @@ router.get("/group-buys/:id/capacity", requireAccount, async (req, res): Promise
           status = "full";
         }
 
-        return { productName: r.product_name, totalOrdered, stock, fillPercent, status, mapped };
+        return { productName: r.product_name, totalOrdered, stock, fillPercent, status, mapped, stockOverridden: r.stock_overridden, unlimited: r.unlimited };
       })
-      .filter(r => r.stock > 0 || r.mapped || r.totalOrdered > 0); // include manually-stocked, mapped, or ordered
+      .filter(r => r.stockOverridden || r.unlimited || r.stock > 0 || r.mapped || r.totalOrdered > 0);
 
     // Sort: tightest stock first, then by totalOrdered desc
     const order = { full: 0, low: 1, limited: 2, available: 3 } as const;

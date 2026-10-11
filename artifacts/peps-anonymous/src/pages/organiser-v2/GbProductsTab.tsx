@@ -30,6 +30,7 @@ import {
 } from "./api/organiser-api";
 
 type ProductRecord = ApiProduct & {
+  feePerKit?: number | string | null;
   priceOverride?: number | string | null;
 };
 
@@ -76,7 +77,7 @@ function toDraft(product: ProductRecord | null): ProductDraft {
     price: String(Number(product.price ?? 0)),
     stock: product.stock === null || product.stock === undefined ? "" : String(product.stock),
     maxPerCustomer: product.maxPerCustomer == null ? "" : String(product.maxPerCustomer),
-    feePerKit: (product as Record<string, unknown>).feePerKit == null ? "" : String((product as Record<string, unknown>).feePerKit),
+    feePerKit: product.feePerKit == null ? "" : String(product.feePerKit),
     halfKitEnabled: Boolean(product.halfKitEnabled),
   };
 }
@@ -117,8 +118,8 @@ function parseDraft(draft: ProductDraft): { body?: Record<string, unknown>; erro
   if (!draft.price.trim() || !Number.isFinite(price) || price < 0) {
     return { error: "Price must be zero or more." };
   }
-  if (draft.stock.trim() && (!Number.isInteger(Number(draft.stock)) || Number(draft.stock) < 0)) {
-    return { error: "Stock must be a whole number or blank for unlimited." };
+  if (draft.stock.trim() && (!Number.isInteger(Number(draft.stock) * 2) || Number(draft.stock) < 0)) {
+    return { error: "Stock must be a whole or half-kit number, or blank for unlimited." };
   }
   if (
     draft.maxPerCustomer.trim() &&
@@ -161,6 +162,10 @@ export default function GbProductsTab({
   const [stock, setStock] = useState<StockFilter>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStock, setBulkStock] = useState("");
+  const [stockMode, setStockMode] = useState<"set" | "increase" | "decrease">("set");
+  const stockGroupRef = useRef(selectedGbId);
+  const stockLoadRef = useRef(0);
+  stockGroupRef.current = selectedGbId;
   const [bulkVendor, setBulkVendor] = useState("");
   const [feedback, setFeedback] = useState<Feedback>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -174,26 +179,32 @@ export default function GbProductsTab({
       : false;
 
   const loadProducts = useCallback(async () => {
+    const requestId = ++stockLoadRef.current;
     setLoading(true);
     setFeedback(null);
     try {
       const rows = await organiserApi.products(selectedGbId);
+      if (stockGroupRef.current !== selectedGbId || requestId !== stockLoadRef.current) return;
       const next = rows as ProductRecord[];
       setProducts(next);
       setSelectedId(current => current && next.some(product => product.id === current)
         ? current
         : next[0]?.id ?? null);
     } catch (error) {
+      if (stockGroupRef.current !== selectedGbId || requestId !== stockLoadRef.current) return;
       setFeedback({
         message: error instanceof Error ? error.message : "Products could not be loaded.",
         tone: "error",
       });
     } finally {
-      setLoading(false);
+      if (stockGroupRef.current === selectedGbId && requestId === stockLoadRef.current) setLoading(false);
     }
   }, [selectedGbId]);
 
   useEffect(() => {
+    setSaving(false);
+    setSelectedIds(new Set());
+    setBulkStock("");
     void loadProducts();
   }, [loadProducts]);
 
@@ -251,25 +262,30 @@ export default function GbProductsTab({
     }
     setSaving(true);
     try {
-      const { maxPerCustomer, feePerKit, ...ownedFields } = result.body;
+      const { maxPerCustomer, feePerKit, stock, ...ownedFields } = result.body;
       if (adding) {
-        const created = await organiserApi.createProduct(selectedGbId, ownedFields);
+        const created = await organiserApi.createProduct(selectedGbId, { ...ownedFields, stock });
         const [ownedProduct] = await Promise.all([
           organiserApi.updateOwnedProduct(created.id, ownedFields),
           organiserApi.updateProduct(selectedGbId, created.id, { maxPerCustomer, feePerKit }),
         ]);
-        const saved = { ...created, ...ownedProduct, maxPerCustomer } as ProductRecord;
+        const saved = { ...created, ...ownedProduct, stock, maxPerCustomer, feePerKit } as ProductRecord;
         setProducts(current => [...current, saved]);
         setSelectedId(saved.id);
         setAdding(false);
         setDraft(toDraft(saved));
         setFeedback({ message: `${saved.name} added.`, tone: "success" });
       } else if (selectedProduct) {
-        const [ownedProduct] = await Promise.all([
-          organiserApi.updateOwnedProduct(selectedProduct.id, ownedFields),
-          organiserApi.updateProduct(selectedGbId, selectedProduct.id, { maxPerCustomer, feePerKit }),
-        ]);
-        const updated = { ...selectedProduct, ...ownedProduct, maxPerCustomer } as ProductRecord;
+        const original = parseDraft(toDraft(selectedProduct)).body;
+        const originalValues: Record<string, unknown> = original ?? {};
+        const changedOwnedFields = Object.fromEntries(Object.entries(ownedFields)
+          .filter(([key, value]) => value !== originalValues[key]));
+        await organiserApi.updateProduct(selectedGbId, selectedProduct.id, {
+          maxPerCustomer, feePerKit, ...(stock !== original?.stock ? { stock } : {}),
+        });
+        const ownedProduct = Object.keys(changedOwnedFields).length
+          ? await organiserApi.updateOwnedProduct(selectedProduct.id, changedOwnedFields) : {};
+        const updated = { ...selectedProduct, ...ownedProduct, stock, maxPerCustomer, feePerKit } as ProductRecord;
         setProducts(current => current.map(product => product.id === updated.id ? updated : product));
         setDraft(toDraft(updated));
         setFeedback({ message: `${updated.name} saved.`, tone: "success" });
@@ -313,6 +329,34 @@ export default function GbProductsTab({
       else next.add(productId);
       return next;
     });
+  }
+
+  async function applyStock() {
+    if (!selectedIds.size || saving) return;
+    if (dirty) { setFeedback({ message: "Save or cancel your product edits before updating stock.", tone: "error" }); return; }
+    const quantity = bulkStock.trim() ? Number(bulkStock) : NaN;
+    if (!Number.isFinite(quantity) || quantity < 0 || !Number.isInteger(quantity * 2) || (stockMode !== "set" && quantity === 0)) {
+      setFeedback({ message: "Enter a valid whole or half-kit quantity. Increases and decreases must be greater than zero.", tone: "error" });
+      return;
+    }
+    const groupId = selectedGbId;
+    setSaving(true);
+    try {
+      const result = await organiserApi.updateStock(groupId, {
+        productIds: selectedIds.size === products.length ? "all" : [...selectedIds],
+        mode: stockMode, quantity,
+      });
+      if (stockGroupRef.current !== groupId) return;
+      const changed = new Map(result.products.map(product => [product.id, product]));
+      setProducts(current => current.map(product => changed.has(product.id) ? { ...product, ...changed.get(product.id)! } : product));
+      setSelectedIds(new Set());
+      setBulkStock("");
+      setFeedback({ message: `Available stock updated for ${result.updatedCount} products in this group buy only.`, tone: "success" });
+    } catch (error) {
+      if (stockGroupRef.current === groupId) setFeedback({ message: error instanceof Error ? error.message : "Stock update failed.", tone: "error" });
+    } finally {
+      if (stockGroupRef.current === groupId) setSaving(false);
+    }
   }
 
   async function applyBulk(patch: Record<string, unknown>, message: string) {
@@ -418,7 +462,7 @@ export default function GbProductsTab({
               <label><span>Category</span><input value={draft.category} list={`product-categories-${placement}`} onChange={event => setDraft(current => ({ ...current, category: event.target.value }))} /><datalist id={`product-categories-${placement}`}>{categories.map(item => <option key={item}>{item}</option>)}</datalist></label>
               <label><span>Size / mg</span><input value={draft.mgSize} onChange={event => setDraft(current => ({ ...current, mgSize: event.target.value }))} placeholder="10 mg" /></label>
               <label><span>Price</span><input type="number" min="0" step="0.01" value={draft.price} onChange={event => setDraft(current => ({ ...current, price: event.target.value }))} required /></label>
-              <label><span>Stock</span><input type="number" min="0" step="1" value={draft.stock} onChange={event => setDraft(current => ({ ...current, stock: event.target.value }))} placeholder="Unlimited" /></label>
+              <label><span>Stock allocation (includes ordered kits)</span><input type="number" min="0" step="0.5" value={draft.stock} onChange={event => setDraft(current => ({ ...current, stock: event.target.value }))} placeholder="Unlimited" /></label>
               <label><span>Max per customer</span><input type="number" min="1" step="1" value={draft.maxPerCustomer} onChange={event => setDraft(current => ({ ...current, maxPerCustomer: event.target.value }))} placeholder="No limit" /></label>
               <label><span>Fee per kit ($)</span><input type="number" min="0" step="0.01" value={draft.feePerKit} onChange={event => setDraft(current => ({ ...current, feePerKit: event.target.value }))} placeholder="None" /></label>
               <fieldset className="products-split__toggles products-split__wide"><legend>Availability</legend><label><span><strong>Half kits</strong><small>Allow half-kit reservations.</small></span><input type="checkbox" checked={draft.halfKitEnabled} onChange={event => setDraft(current => ({ ...current, halfKitEnabled: event.target.checked }))} /></label></fieldset>
@@ -486,14 +530,16 @@ export default function GbProductsTab({
         <button type="button" className="products-split__icon-button" aria-label="Clear product filters" onClick={clearFilters}><FilterX aria-hidden="true" /></button>
       </section>
 
-      {selectedIds.size > 0 ? (
+      {!loading && products.length > 0 ? (
         <section className="products-split__bulk" data-testid="products-bulk-toolbar" aria-label="Bulk product actions">
           <strong>{selectedIds.size} selected</strong>
-          <label><span>Set stock</span><input value={bulkStock} onChange={event => setBulkStock(event.target.value)} placeholder="Unlimited" inputMode="numeric" /></label>
-          <button type="button" onClick={() => void applyBulk({ stock: bulkStock.trim() ? Number(bulkStock) : null }, `Stock updated for ${selectedIds.size} products.`)}>Apply stock</button>
+          <label className="products-split__stock-action"><span>Available stock</span><select disabled={saving} value={stockMode} onChange={event => setStockMode(event.target.value as typeof stockMode)}><option value="set">Set quantity</option><option value="increase">Increase by</option><option value="decrease">Decrease by</option></select></label>
+          <label><span>Kits</span><input disabled={saving} type="number" min="0" step="0.5" value={bulkStock} onChange={event => setBulkStock(event.target.value)} placeholder="Quantity" inputMode="decimal" /></label>
+          <button type="button" disabled={saving || !selectedIds.size || !bulkStock.trim()} onClick={() => void applyStock()}>{saving ? "Updating…" : "Update stock"}</button>
+          <small>Group-buy only. Already ordered kits are preserved.</small>
           <label><span>Set vendor</span><select value={bulkVendor} onChange={event => setBulkVendor(event.target.value)}><option value="">Choose vendor</option>{vendors.map(item => <option key={item}>{item}</option>)}</select></label>
-          <button type="button" disabled={!bulkVendor} onClick={() => void applyBulk({ vendor: bulkVendor }, `Vendor updated for ${selectedIds.size} products.`)}>Apply vendor</button>
-          <button type="button" className="products-split__icon-button" aria-label="Clear selection" onClick={() => setSelectedIds(new Set())}><X aria-hidden="true" /></button>
+          <button type="button" disabled={saving || !selectedIds.size || !bulkVendor} onClick={() => void applyBulk({ vendor: bulkVendor }, `Vendor updated for ${selectedIds.size} products.`)}>Apply vendor</button>
+          <button type="button" disabled={saving} className="products-split__icon-button" aria-label="Clear selection" onClick={() => setSelectedIds(new Set())}><X aria-hidden="true" /></button>
         </section>
       ) : null}
 
@@ -501,7 +547,11 @@ export default function GbProductsTab({
         <section className="products-split__catalogue" aria-label="Product catalogue">
           <header>
             <div><h3>Product catalogue</h3><p>{filteredProducts.length} matching products</p></div>
-            <label><input type="checkbox" checked={filteredProducts.length > 0 && filteredProducts.every(product => selectedIds.has(product.id))} onChange={event => setSelectedIds(event.target.checked ? new Set(filteredProducts.map(product => product.id)) : new Set())} /> Select all</label>
+            <label><input type="checkbox" disabled={saving || loading} checked={filteredProducts.length > 0 && filteredProducts.every(product => selectedIds.has(product.id))} ref={element => { if (element) element.indeterminate = filteredProducts.some(product => selectedIds.has(product.id)) && !filteredProducts.every(product => selectedIds.has(product.id)); }} onChange={event => {
+              const checked = event.target.checked;
+              setSelectedIds(current => { const next = new Set(current); filteredProducts.forEach(product => checked ? next.add(product.id) : next.delete(product.id)); return next; });
+            }} /> Select visible ({filteredProducts.length})</label>
+            <button type="button" disabled={saving || loading || !products.length} onClick={() => setSelectedIds(new Set(products.map(product => product.id)))}>Select all ({products.length})</button>
           </header>
           <div className="products-split__list">
             {loading ? <div className="products-split__empty"><Loader2 className="animate-spin" aria-hidden="true" /><p>Loading products...</p></div> : null}
@@ -511,7 +561,7 @@ export default function GbProductsTab({
             {filteredProducts.map(product => (
               <Fragment key={product.id}>
                 <article className="products-split__row" data-current={!adding && product.id === selectedId}>
-                  <label className="products-split__select"><span className="sr-only">Select {product.name}</span><input type="checkbox" checked={selectedIds.has(product.id)} onChange={() => toggleSelection(product.id)} /></label>
+                  <label className="products-split__select"><span className="sr-only">Select {product.name}</span><input type="checkbox" disabled={saving} checked={selectedIds.has(product.id)} onChange={() => toggleSelection(product.id)} /></label>
                   <button type="button" onClick={() => chooseProduct(product.id)} aria-current={!adding && product.id === selectedId ? "true" : undefined}>
                     <span className="products-split__row-main"><strong>{product.name}</strong><small>{product.vendor || "Unassigned"} / {product.category || "Uncategorised"}</small></span>
                     <span className="products-split__row-metrics"><strong>{currency} {Number(product.price ?? 0).toFixed(2)}</strong><small>{soldSummary(product)}</small><em data-status={productStatus(product)}>{statusLabel(product)}</em></span>

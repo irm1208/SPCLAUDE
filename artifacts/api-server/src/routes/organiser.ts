@@ -1,6 +1,7 @@
 import { assertNoActiveRefund, assertNoActiveRefunds, RefundMutationBlockedError, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request } from "express";
 import { validAllowCreditsSetting } from "../lib/group-buy-credit-policy";
+import { lockGroupStock, setGroupStockCap, stockQuantity, stockSelection, updateGroupStock, GroupStockError, type StockMode } from "../lib/group-buy-stock";
 import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
 import {
@@ -1140,7 +1141,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
       price: productsTable.price,
       category: productsTable.category,
       mgSize: productsTable.mgSize,
-      stock: productsTable.stock,
+      stock: sql<string | null>`CASE WHEN ${groupBuyProductsTable.stockOverrideUnlimited} THEN NULL ELSE COALESCE(${groupBuyProductsTable.stockOverride}, ${productsTable.stock}::numeric) END`,
       halfKitEnabled: productsTable.halfKitEnabled,
     })
     .from(groupBuyProductsTable)
@@ -1161,7 +1162,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
   `);
   const soldByProduct = new Map<string, number>(
     (soldRows.rows as Array<{ product_id: string; sold: string }>)
-      .map(r => [String(r.product_id), Math.round(parseFloat(String(r.sold)) || 0)])
+      .map(r => [String(r.product_id), parseFloat(String(r.sold)) || 0])
   );
 
   res.json(rows.map(r => ({
@@ -1170,6 +1171,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
     price: parseFloat(String(r.price)),
     priceOverride: r.priceOverride != null ? parseFloat(String(r.priceOverride)) : null,
     feePerKit: r.feePerKit != null ? parseFloat(String(r.feePerKit)) : null,
+    stock: r.stock == null ? null : Number(r.stock),
     sold: soldByProduct.get(r.productId) ?? 0,
   })));
 });
@@ -1208,6 +1210,7 @@ router.post("/organiser/group-buys/:id/products", requireOrganiser, async (req, 
 
   const productId = `prod-${randomUUID().split("-")[0]}`;
 
+  const stockCap = stock == null ? null : stockQuantity(stock);
   const result = await db.transaction(async (tx) => {
     const [product] = await tx.insert(productsTable).values({
       id: productId,
@@ -1219,7 +1222,7 @@ router.post("/organiser/group-buys/:id/products", requireOrganiser, async (req, 
       sourceGroupBuyId: id,
       organiserId: username,
       mgSize: mgSize ? String(mgSize).trim() : null,
-      stock: stock != null ? parseInt(String(stock)) : null,
+      stock: null,
     }).returning();
 
     await tx.insert(groupBuyProductsTable).values({
@@ -1227,6 +1230,8 @@ router.post("/organiser/group-buys/:id/products", requireOrganiser, async (req, 
       groupBuyId: id,
       productId,
       active: true,
+      stockOverride: stockCap == null ? null : String(stockCap),
+      stockOverrideUnlimited: stockCap === null,
       priceOverride: priceOverride != null ? String(parseFloat(String(priceOverride)).toFixed(2)) : undefined,
       feePerKit: bodyFeePerKit != null && bodyFeePerKit !== "" ? String(parseFloat(String(bodyFeePerKit)).toFixed(2)) : undefined,
     });
@@ -1241,34 +1246,58 @@ router.post("/organiser/group-buys/:id/products", requireOrganiser, async (req, 
     price: parseFloat(String(result.price)),
     active: result.active,
     category: result.category ?? null,
-    stock: result.stock ?? null,
+    stock: stockCap,
     sourceGroupBuyId: result.sourceGroupBuyId,
     organiserId: result.organiserId,
   });
 });
 
 // PATCH /api/organiser/group-buys/:id/products/:productId — update product or GB-link fields
+router.post("/organiser/group-buys/:id/products/stock", requireOrganiser, async (req, res): Promise<void> => {
+  const id = String(req.params.id);
+  const ids = stockSelection(req.body.productIds);
+  const mode = req.body.mode;
+  if (!["set", "increase", "decrease"].includes(mode)) throw new GroupStockError("Choose set, increase or decrease.");
+  const quantity = stockQuantity(req.body.quantity);
+  const products = await db.transaction(async tx => {
+    await lockGroupStock(tx, id);
+    const [group] = await tx.select({ id: groupBuysTable.id }).from(groupBuysTable)
+      .where(gbOwner(req, id)).for("share");
+    if (!group) throw new GroupStockError("Group buy not found.", 404);
+    return updateGroupStock(tx, id, ids, mode as StockMode, quantity);
+  });
+  writeLog("change", "info", "organiser_group_stock_updated",
+    `Organiser updated stock for ${products.length} products in GB ${id}`,
+    { gbId: id, username: req.organiser!.telegramUsername, mode, quantity, productIds: products.map(p => p.id) }).catch(() => {});
+  res.json({ products, updatedCount: products.length });
+});
+
 router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = String(req.params["id"]); const productId = String(req.params["productId"]);
 
+  const changedFields = await db.transaction(async tx => {
+  await lockGroupStock(tx, id);
   // Verify GB belongs to this organiser
-  const [gb] = await db
+  const [gb] = await tx
     .select({ id: groupBuysTable.id })
     .from(groupBuysTable)
-    .where(gbOwner(req, id));
+    .where(gbOwner(req, id)).for("share");
 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
+  const [link] = await tx.select({ id: groupBuyProductsTable.id }).from(groupBuyProductsTable)
+    .where(and(eq(groupBuyProductsTable.groupBuyId, id), eq(groupBuyProductsTable.productId, productId)));
+  if (!link) throw new GroupStockError("Product is not part of this group buy.", 404);
 
   const { name, price, category, stock, active, priceOverride, mgSize, maxPerCustomer, feePerKit: patchFeePerKit } = req.body;
 
   const hasProductFields = name !== undefined || price !== undefined || category !== undefined
-    || stock !== undefined || active !== undefined || mgSize !== undefined;
+    || active !== undefined || mgSize !== undefined;
 
   // Product-level fields require ownership of the product
   const productUpdates: Record<string, unknown> = {};
   if (hasProductFields) {
-    const [ownedProduct] = await db
+    const [ownedProduct] = await tx
       .select({ id: productsTable.id })
       .from(productsTable)
       .where(and(eq(productsTable.id, productId), eq(productsTable.organiserId, username)));
@@ -1283,16 +1312,16 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
     }
     if (category !== undefined) productUpdates.category = category ? String(category).trim() : null;
     if (mgSize !== undefined) productUpdates.mgSize = mgSize ? String(mgSize).trim() : null;
-    if (stock !== undefined) productUpdates.stock = stock != null ? parseInt(String(stock)) : null;
     if (active !== undefined) productUpdates.active = Boolean(active);
 
     if (Object.keys(productUpdates).length > 0) {
-      await db.update(productsTable).set(productUpdates).where(eq(productsTable.id, productId));
+      await tx.update(productsTable).set(productUpdates).where(eq(productsTable.id, productId));
     }
   }
 
   // GB-link fields (priceOverride, maxPerCustomer, feePerKit) — only GB ownership required
   const gbLinkUpdates: { priceOverride?: string | null; maxPerCustomer?: number | null; feePerKit?: string | null } = {};
+  if (stock !== undefined) await setGroupStockCap(tx, id, productId, stock);
   if (priceOverride !== undefined) {
     gbLinkUpdates.priceOverride = priceOverride != null && priceOverride !== ""
       ? String(parseFloat(String(priceOverride)).toFixed(2))
@@ -1307,15 +1336,18 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
       : null;
   }
   if (Object.keys(gbLinkUpdates).length > 0) {
-    await db
+    await tx
       .update(groupBuyProductsTable)
       .set(gbLinkUpdates)
       .where(and(eq(groupBuyProductsTable.groupBuyId, id), eq(groupBuyProductsTable.productId, productId)));
   }
 
+  return [...Object.keys(productUpdates), ...(stock !== undefined ? ["stock"] : []), ...(priceOverride !== undefined ? ["priceOverride"] : []), ...(maxPerCustomer !== undefined ? ["maxPerCustomer"] : []), ...(patchFeePerKit !== undefined ? ["feePerKit"] : [])];
+  });
+  if (!changedFields) return;
   writeLog("change", "info", "organiser_product_updated",
     `Organiser @${username} updated product ${productId} in GB ${id}`,
-    { gbId: id, productId, username, changedFields: [...Object.keys(productUpdates), ...(priceOverride !== undefined ? ["priceOverride"] : []), ...(maxPerCustomer !== undefined ? ["maxPerCustomer"] : []), ...(patchFeePerKit !== undefined ? ["feePerKit"] : [])] },
+    { gbId: id, productId, username, changedFields },
   ).catch(() => {});
 
   res.json({ ok: true });

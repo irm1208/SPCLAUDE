@@ -466,6 +466,10 @@ export function createOrganiserApi(fetcher: typeof fetch = fetch) {
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/products/${encodeURIComponent(productId)}`,
     { method: "PATCH", body },
   ),
+  updateStock: (groupBuyId: string, body: { productIds: string[] | "all"; mode: "set" | "increase" | "decrease"; quantity: number }) =>
+    request<{ products: Array<{ id: string; stock: number | null; sold: number }>; updatedCount: number }>(
+      `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/products/stock`, { method: "POST", body },
+    ),
   updateOwnedProduct: (productId: string, body: Record<string, unknown>) => request<ApiProduct>(
     `/organiser/products/${encodeURIComponent(productId)}`,
     { method: "PUT", body },

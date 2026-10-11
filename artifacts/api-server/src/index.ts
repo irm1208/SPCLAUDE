@@ -582,6 +582,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS is_new boolean NOT NULL DEFAULT false`);
     // group_buy_products — per-customer quantity cap
     await db.execute(sql`ALTER TABLE group_buy_products ADD COLUMN IF NOT EXISTS max_per_customer integer`);
+    await db.execute(sql`ALTER TABLE group_buy_products ADD COLUMN IF NOT EXISTS stock_override numeric(14,2)`);
+    await db.execute(sql`ALTER TABLE group_buy_products ADD COLUMN IF NOT EXISTS stock_override_unlimited boolean NOT NULL DEFAULT false`);
     // Seed test catalog — compound-specific analysis tests from Janoshik + standalone tests.
     // Prices are always force-updated from seed (admin can override via UI after).
     type SeedTest = { id: string; code: string; name: string; price: string; sort: number; category: string; section: string | null };

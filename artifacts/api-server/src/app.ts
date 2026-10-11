@@ -79,6 +79,7 @@ app.use([
   "/api/admin/dispatch/:gbId/ocr-image",
   "/api/admin/dispatch/:gbId/save-dispatch-image",
 ], express.json({ limit: "40mb" }));
+app.use("/api/organiser/group-buys/:id/products/stock", express.json({ limit: "1mb" }));
 app.use(express.json({ limit: "64kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 

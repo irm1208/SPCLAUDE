@@ -1,6 +1,7 @@
 import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
 import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
 import { calculateCouponDiscount, CouponError, couponProblem, couponQuoteMatches } from "../lib/group-buy-coupon-policy";
+import { assertGroupStock } from "../lib/group-buy-stock";
 import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/coupon-redemption";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
@@ -986,6 +987,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   if (additionParent) {
     const sessionUsername = getAccountFromCookie(req);
     const mergeOutcome = await db.transaction(async (tx) => {
+      await assertGroupStock(tx, normalizedGroupBuyId, clientLineItems);
       const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
       const creditRequested = Boolean(sessionUsername && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0);
       const [lockedAccount] = creditRequested
@@ -1389,6 +1391,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const creation = await db.transaction(async tx => {
+  await assertGroupStock(tx, normalizedGroupBuyId, clientLineItems);
   const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
   const [order] = await tx
     .insert(ordersTable)
@@ -2298,6 +2301,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   const oldLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
 
   const { updatedOrder, insertedLineItems, lineItemsToInsert } = await db.transaction(async tx => {
+  await assertGroupStock(tx, order.groupBuyId, clientLineItems, rawId);
   const [lockedOrder] = await tx.select({ id: ordersTable.id }).from(ordersTable)
     .where(eq(ordersTable.id, rawId)).for("update");
   if (!lockedOrder) throw new Error("Order no longer exists.");
