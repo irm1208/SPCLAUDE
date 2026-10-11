@@ -7,6 +7,9 @@ import { findProtocol, type Protocol } from "@/data/protocols";
 import { COUNTRIES } from "@/data/countries";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
+import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
+import { calculateOrderFormTotal } from "@/lib/order-form-total";
+import { OrderFormTotal } from "@/components/OrderFormTotal";
 import { Card, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
@@ -889,9 +892,49 @@ export default function OrderForm() {
   const productSubtotal = parseFloat(
     draft.lineItems.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2)
   );
-  const grandTotal = parseFloat(
-    (productSubtotal + (draft.additionOfOrderId !== null ? 0 : draft.deliveryPrice) + (productSubtotal > 0 ? draft.vendorShipping : 0) + draft.tip + draft.testingContribution).toFixed(2)
+  const isTopUp = draft.additionOfOrderId !== null;
+  const isNewOrder = !draft.orderId;
+  const configuredAdminFee = resolveReviewAdminFee({
+    enabled: myGb?.adminFeeEnabled,
+    feeType: myGb?.adminFeeType,
+    baseAmount: myGb?.adminFeeAmount,
+    label: myGb?.adminFeeLabel,
+    countryOverrides: myGb?.adminFeeCountries,
+    shippingCountry: draft.shippingCountry,
+    fallbackCountry: myCountryLeg?.countryName ?? account?.country,
+    productSubtotal,
+  });
+  // Match Review Order: percentage fees are recalculated only for new orders or
+  // existing orders that already have a fee; direct shipping and top-ups are exempt.
+  const recalculateFee = isNewOrder || (
+    myGb?.adminFeeType === "percent"
+    && (myGb.adminFeeEnabled || myGb.adminFeeCountries?.some(entry => entry.enabled))
+    && draft.adminFee > 0
   );
+  const totalAdminFee = isTopUp || draft.directShippingRequested
+    ? 0 : recalculateFee ? configuredAdminFee.amount : draft.adminFee;
+  const totalAdminFeeLabel = recalculateFee ? configuredAdminFee.label : draft.adminFeeLabel;
+  const isWholesale = draft.orderType === "wholesale";
+  const shippingAmount = isWholesale
+    ? draft.vendorShipping
+    : isNewOrder ? myGb?.vendorShippingAmount ?? null
+      : draft.vendorShipping > 0 ? draft.vendorShipping : null;
+  const shippingEnabled = isWholesale || !!myGb?.vendorShippingEnabled;
+  const totalVendorShipping = !isTopUp && shippingEnabled && shippingAmount != null && shippingAmount > 0
+    ? shippingAmount : 0;
+  const shippingPending = !isTopUp && (
+    (shippingEnabled && shippingAmount == null)
+    || (draft.directShippingRequested && draft.deliveryPrice === 0)
+  );
+  const grandTotal = calculateOrderFormTotal({
+    lineTotals: draft.lineItems.map(item => item.lineTotal),
+    deliveryPrice: draft.deliveryPrice,
+    vendorShipping: totalVendorShipping,
+    tip: draft.tip,
+    testingContribution: draft.testingContribution,
+    adminFee: totalAdminFee,
+    isTopUp,
+  });
 
   const fuzzyPrice = (name: string): number => {
     const pricedProducts = products.filter(p => p.price > 0);
@@ -2218,6 +2261,20 @@ export default function OrderForm() {
             )}
           </AnimatePresence>
         </section>
+
+        <OrderFormTotal
+          total={grandTotal}
+          products={productSubtotal}
+          delivery={isTopUp ? 0 : draft.deliveryPrice}
+          vendorShipping={totalVendorShipping}
+          adminFee={totalAdminFee}
+          adminFeeLabel={totalAdminFeeLabel}
+          tip={draft.tip}
+          testing={draft.testingContribution}
+          shippingPending={shippingPending}
+          formatPrice={formatPrice}
+          hidden={hideOrderTotal || hideOrderFormPrices}
+        />
 
         {/* ── Review Order button ────────────────────────────────────────────── */}
         {(() => {
