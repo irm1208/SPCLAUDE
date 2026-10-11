@@ -10,6 +10,7 @@ import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-pr
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
 import { calculateOrderFormTotal } from "@/lib/order-form-total";
 import { OrderFormTotal } from "@/components/OrderFormTotal";
+import { OrderItemsSummary } from "@/components/OrderItemsSummary";
 import { Card, cn } from "@/components/ui";
 import { PageLayout } from "@/components/PageLayout";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
@@ -1403,7 +1404,7 @@ export default function OrderForm() {
         )}
 
         <section className="space-y-3">
-          <div className="rounded-3xl p-5 relative overflow-hidden" style={{ background: "#1C2B3D", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.06)" }}>
+          <div className="rounded-3xl p-5 relative overflow-clip" style={{ background: "#1C2B3D", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.06)" }}>
             <div className="absolute top-0 right-0 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: "rgba(59,130,246,0.08)", filter: "blur(70px)" }} />
             <div className="relative z-10">
             <div className="flex items-center justify-between mb-3">
@@ -1455,10 +1456,19 @@ export default function OrderForm() {
                   formatPrice={formatPrice}
                   hidePrices={hideOrderFormPrices}
                   loading={isLoadingProducts}
+                  stickyTop={useDashChrome ? 72 : 0}
                 />
               </div>
             )}
 
+            <OrderItemsSummary
+              collapsed={!!gbId && productView === "list"}
+              quantity={browseTotal}
+              productCount={draft.lineItems.filter(item => item.productId).length}
+            >
+            {gbId && productView === "list" && !draft.lineItems.some(item => item.productId) && (
+              <p className="text-sm text-white/65">Select products above to start your order.</p>
+            )}
             <div className={`space-y-3 relative${gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal ? " opacity-40 pointer-events-none select-none" : ""}`}>
               <PriceWatermark username={getAccountHandle(account)} variant="dark" />
               <AnimatePresence initial={false}>
@@ -1647,7 +1657,7 @@ export default function OrderForm() {
                             >+</button>
                           </div>
                           {itemAllowHalfKits && (
-                            <p className="text-[10px] mt-1.5 leading-none opacity-70 font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>For half kits add .5</p>
+                            <p className="text-[11px] mt-1.5 leading-snug opacity-70 font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>Quantity is in kits. Half kits are allowed (e.g. 0.5).</p>
                           )}
                           {limitLabel != null && (
                             <p className="text-[10px] mt-1.5 leading-none font-semibold" style={{ color: atMax ? "#f97316" : "rgba(255,255,255,0.5)" }}>
@@ -1692,6 +1702,7 @@ export default function OrderForm() {
                 ))}
               </AnimatePresence>
             </div>
+            </OrderItemsSummary>
 
             {(!gbId || productView === "picker") && <button
               type="button"

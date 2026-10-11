@@ -11,7 +11,7 @@ const stockLabel = { available: "In stock", limited: "Medium", low: "Low", full:
 const stockColor = { available: "#6EE7B7", limited: "#FCD34D", low: "#FDBA74", full: "#FCA5A5" };
 
 export function GbProductBrowse({
-  products, categoryOrder, capacity, quantities, onAdjust, canIncrease, formatPrice, hidePrices, loading,
+  products, categoryOrder, capacity, quantities, onAdjust, canIncrease, formatPrice, hidePrices, loading, stickyTop = 0,
 }: {
   products: BrowseProduct[];
   categoryOrder: string[];
@@ -22,6 +22,7 @@ export function GbProductBrowse({
   formatPrice: (price: number) => string;
   hidePrices: boolean;
   loading: boolean;
+  stickyTop?: number;
 }) {
   const [query, setQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -39,6 +40,7 @@ export function GbProductBrowse({
 
   return (
     <section aria-label="Browse all group-buy products" className="space-y-3">
+      <div aria-label="Product filters" className="sticky z-10 space-y-3 bg-[#1C2B3D] py-3 shadow-[0_6px_12px_-8px_rgba(0,0,0,0.5)]" style={{ top: stickyTop }}>
       <div className="relative">
         <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/45" />
         <input
@@ -72,6 +74,8 @@ export function GbProductBrowse({
           />
           Hide out-of-stock items
         </label>
+      </div>
+      <p className="text-xs leading-relaxed text-white/65">Quantities are in kits. Expand “Your order” to enter half-kit quantities where allowed.</p>
       </div>
       {groups.length === 0 ? (
         <p className="rounded-xl border border-white/10 p-4 text-sm text-white/65">

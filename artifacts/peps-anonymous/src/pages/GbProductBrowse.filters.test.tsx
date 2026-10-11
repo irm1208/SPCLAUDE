@@ -105,3 +105,16 @@ test("search combines with category and stock filters without removing category 
   await act(async () => fireEvent.change(search, { target: { value: "Alpha" } }));
   assert.ok(document.querySelector('[aria-label="Add Alpha to order"]'));
 });
+
+test("search and all filters share a sticky toolbar and selected quantity controls stay usable", async () => {
+  await mount();
+  const toolbar = document.querySelector('[aria-label="Product filters"]');
+  assert.ok(toolbar);
+  assert.ok(toolbar.classList.contains("sticky"));
+  assert.ok(toolbar.contains(categorySelector()));
+  assert.ok(toolbar.contains(hideCheckbox()));
+  assert.ok(toolbar.querySelector('[aria-label="Search group-buy products"]'));
+  assert.match(document.body.textContent!, /Quantities are in kits/);
+  await act(async () => fireEvent.click(document.querySelector('[aria-label="Decrease Beta quantity"]')!));
+  assert.deepEqual(adjustments, [["b", -1]]);
+});
