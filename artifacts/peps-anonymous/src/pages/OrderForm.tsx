@@ -9,6 +9,7 @@ import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
 import { calculateOrderFormTotal } from "@/lib/order-form-total";
+import { clampOrderPanelQuantity } from "@/lib/order-panel-quantity";
 import { OrderFormTotal } from "@/components/OrderFormTotal";
 import { OrderItemsSummary } from "@/components/OrderItemsSummary";
 import { OrderItemActions } from "@/components/OrderItemActions";
@@ -20,7 +21,7 @@ import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useGetProducts, useGetDeliveryMethods, useGetSiteConfig } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
-import { useDraftStore } from "@/hooks/use-draft-store";
+import { useDraftStore, type DraftLineItem } from "@/hooks/use-draft-store";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useAccount, useMyGroupBuys, useCountryLegs, useAssignMyCountryLeg, useAccountOrders, useLogout, getAccountHandle, type GroupBuySummary } from "@/hooks/use-account";
 import { PriceWatermark } from "@/components/PriceWatermark";
@@ -1012,6 +1013,42 @@ export default function OrderForm() {
     else handleQuickAdd(productId);
   };
 
+  const getPanelQuantityRules = (item: DraftLineItem, currentItems = draft.lineItems) => {
+    const product = products.find(p => p.id === item.productId);
+    const otherQuantity = currentItems.reduce((sum, line) => sum + (line.productId && line.id !== item.id ? line.quantity : 0), 0);
+    const max = Math.min(
+      product && "maxPerCustomer" in product ? product.maxPerCustomer ?? Infinity : Infinity,
+      gbMaxKitsPerCustomer == null ? Infinity : gbMaxKitsPerCustomer - gbKitsOrderedByUser - otherQuantity,
+      gbMaxKitsTotal == null ? Infinity : gbMaxKitsTotal - gbKitsOrderedTotal - otherQuantity,
+    );
+    return {
+      allowHalfKits: (product as any)?.halfKitEnabled ?? gbAllowHalfKits,
+      maxQuantity: Number.isFinite(max) ? Math.max(0, max) : undefined,
+      increaseDisabled: isLoadingProducts || !product || (stockViewEnabled && gbCapacity.some(cap =>
+        cap.productName.trim().toLowerCase() === product.name.trim().toLowerCase() && cap.status === "full")),
+    };
+  };
+
+  const handlePanelQuantityChange = (id: string, requested: number) => {
+    if (isPreview) return;
+    const currentItems = useDraftStore.getState().lineItems;
+    const item = currentItems.find(line => line.id === id && line.productId);
+    if (!item) return;
+    const quantity = clampOrderPanelQuantity(requested, item.quantity, getPanelQuantityRules(item, currentItems));
+    if (quantity != null && quantity !== item.quantity) draft.updateLineItem(id, { quantity });
+  };
+
+  const handlePanelRemove = (id: string) => {
+    if (isPreview) return;
+    const currentItems = useDraftStore.getState().lineItems;
+    if (!currentItems.some(line => line.id === id)) return;
+    if (currentItems.length === 1) {
+      draft.updateLineItem(id, { productId: "", productName: "", unitPrice: 0, quantity: 1 });
+    } else {
+      draft.removeLineItem(id);
+    }
+  };
+
   const handleDeliverySelect = (methodId: string) => {
     const method = deliveryMethods.find(m => m.id === methodId);
     if (method) {
@@ -1461,12 +1498,16 @@ export default function OrderForm() {
                   stickyTop={useDashChrome ? 72 : 0}
                   orderSummary={
                     <OrderSidePanel
-                      items={draft.lineItems.filter(item => item.productId)}
+                      items={draft.lineItems.filter(item => item.productId).map(item => ({ ...item, ...getPanelQuantityRules(item) }))}
                       total={grandTotal}
                       formatPrice={formatPrice}
                       hidePrices={hideOrderFormPrices}
                       hideTotal={hideOrderTotal}
                       shippingPending={shippingPending}
+                      onQuantityChange={handlePanelQuantityChange}
+                      onRemove={handlePanelRemove}
+                      editingDisabled={isPreview}
+                      watermark={<PriceWatermark username={getAccountHandle(account)} />}
                     />
                   }
                 />
