@@ -26,3 +26,9 @@ Organiser/Admin can adjust each half-kit offer’s price, starting at half the c
 **Why:** The user selected the adjustable-price option.
 
 **How to apply:** Use the group buy’s currency and show the offered price before claim confirmation.
+
+Unpaid claims remain reserved until the organiser/Admin releases them manually; there is no automatic payment deadline or expiry.
+
+**Why:** The user chose manual release.
+
+**How to apply:** Provide a management view for unpaid claims and an explicit release action rather than a scheduled expiry.
