@@ -14,3 +14,9 @@ Once a half is claimed, remove it from the available list and add it to the clai
 **Why:** The user explicitly described this claiming flow.
 
 **How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice.
+
+Both paid and unpaid orders can receive claimed halves. Paid orders keep their confirmed payment and receive an additional amount due for the half kit.
+
+**Why:** The user selected “Paid and unpaid orders” with this payment handling.
+
+**How to apply:** Never reset a paid order to unpaid or make the member pay the original order again.
