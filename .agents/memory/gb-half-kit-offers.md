@@ -38,3 +38,9 @@ Organiser/Admin may add an extra delivery or vendor-shipping charge to each half
 **Why:** The user chose “Allow an extra shipping charge.”
 
 **How to apply:** Show all additional charges and the total before claim confirmation; do not silently duplicate the existing order’s shipping charges.
+
+Half-kit offers do not accept coupons. Members may use credits only when the group buy permits them.
+
+**Why:** The user selected “No coupons; allow credits if the GB permits.”
+
+**How to apply:** Preserve existing order discounts and credits; do not redeem another coupon or extend an existing coupon discount to the offered half.
