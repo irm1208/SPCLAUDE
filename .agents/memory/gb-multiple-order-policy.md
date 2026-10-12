@@ -9,14 +9,8 @@ Highlight potential repeated orders for review rather than automatically deletin
 
 **How to apply:** Keep legitimate additions distinguishable from separate orders and retain existing financial records unless the user explicitly asks for a reconciliation action.
 
-The user approved manual merging of orders from the same person in the same group buy, limited to unpaid, unprocessed orders. Show a confirmation preview and retain original orders in history; do not merge automatically.
+The scope remains multiple-order highlighting only, not order merging.
 
-**Why:** The user explicitly chose the unpaid, unprocessed scope after payment-record risks were explained.
+**Why:** The user withdrew the proposed merging feature: “Dismiss the merge orders.”
 
-**How to apply:** Apply this limit to both organiser dashboards and Admin. Paid orders require a separately approved reconciliation design.
-
-For manual merges, charge delivery and vendor shipping once rather than summing those fees from the selected orders.
-
-**Why:** The user chose one delivery fee and specifically instructed, “Merge the delivery fees especially the vendor shipping fees.”
-
-**How to apply:** Show the resulting shipping charges in the confirmation preview. Do not assume a historical quote covers a larger combined parcel.
+**How to apply:** Do not treat earlier merge-design approvals as permission to implement merging. Keep the existing highlighting unchanged unless the user requests a new change.
