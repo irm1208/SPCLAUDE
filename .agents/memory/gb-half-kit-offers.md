@@ -32,3 +32,9 @@ Unpaid claims remain reserved until the organiser/Admin releases them manually; 
 **Why:** The user chose manual release.
 
 **How to apply:** Provide a management view for unpaid claims and an explicit release action rather than a scheduled expiry.
+
+Organiser/Admin may add an extra delivery or vendor-shipping charge to each half-kit offer.
+
+**Why:** The user chose “Allow an extra shipping charge.”
+
+**How to apply:** Show all additional charges and the total before claim confirmation; do not silently duplicate the existing order’s shipping charges.
