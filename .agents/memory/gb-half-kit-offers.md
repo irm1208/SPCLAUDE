@@ -20,3 +20,9 @@ Both paid and unpaid orders can receive claimed halves. Paid orders keep their c
 **Why:** The user selected “Paid and unpaid orders” with this payment handling.
 
 **How to apply:** Never reset a paid order to unpaid or make the member pay the original order again.
+
+Organiser/Admin can adjust each half-kit offer’s price, starting at half the current group-buy kit price.
+
+**Why:** The user selected the adjustable-price option.
+
+**How to apply:** Use the group buy’s currency and show the offered price before claim confirmation.
