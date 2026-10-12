@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { parseVendorShippingAmount } from "@/lib/vendor-shipping-settings";
+import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { GroupBuyStockControls } from "@/components/GroupBuyStockControls";
+import { annotateCompleteGbOrderCounts, isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -165,6 +168,7 @@ interface OrgProduct {
   category: string | null;
   mgSize: string | null;
   stock: number | null;
+  sold?: number;
   active: boolean;
   vendor: string | null;
   halfKitEnabled: boolean;
@@ -175,6 +179,8 @@ interface OrgOrder {
   id: string;
   code: string;
   telegramUsername: string;
+  multipleGbOrderCount?: number;
+  additionOfOrderId?: string | null;
   status: string;
   paymentStatus: string;
   grandTotal: number;
@@ -5475,6 +5481,13 @@ const matchKey = (name: string, mgSize: string) =>
 
 export function ProductsTab({ gb }: { gb: OrganiserGB }) {
   const [products, setProducts] = useState<OrgProduct[]>([]);
+  const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set());
+  const [stockSaving, setStockSaving] = useState(false);
+  useEffect(() => {
+    const availableIds = new Set(products.map(product => product.id));
+    setSelectedStockIds(current => [...current].every(id => availableIds.has(id))
+      ? current : new Set([...current].filter(id => availableIds.has(id))));
+  }, [products]);
   const [loading, setLoading] = useState(true);
   const [allowedVendors, setAllowedVendors] = useState<string[] | null>(null);
   const [error, setError] = useState("");
@@ -5941,15 +5954,34 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
         </div>
       )}
 
+      <GroupBuyStockControls key={gb.id} groupId={gb.id} productIds={products.map(p => p.id)}
+        selectedIds={selectedStockIds} onSelectionChange={setSelectedStockIds}
+        onBusyChange={setStockSaving}
+        editing={showAdd || !!editTarget}
+        onUpdated={updates => {
+          const changed = new Map(updates.map(p => [p.id, p]));
+          setProducts(current => current.map(p => changed.has(p.id) ? { ...p, ...changed.get(p.id)! } : p));
+        }} />
       <div className="space-y-2">
         {products.map(p => (
           <div key={p.id} className="flex items-center gap-3 px-4 py-3 rounded-xl flex-wrap" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+            <input type="checkbox" disabled={stockSaving} aria-label={`Select ${p.name} for stock update`} checked={selectedStockIds.has(p.id)}
+              onChange={event => {
+                const checked = event.target.checked;
+                setSelectedStockIds(current => {
+                  const next = new Set(current);
+                  if (checked) next.add(p.id); else next.delete(p.id);
+                  return next;
+                });
+              }} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate" style={{ color: "var(--t-text)" }}>{p.name}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 {p.mgSize && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(16,185,129,0.08)", color: "#059669" }}>{p.mgSize}</span>}
                 {p.category && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>{p.category}</span>}
-                {p.stock != null && <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Stock: {p.stock}</span>}
+                <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>
+                  Available: {p.stock == null ? "Unlimited" : Math.max(0, p.stock - (p.sold ?? 0))} · {p.sold ?? 0} ordered
+                </span>
                 {p.maxPerCustomer != null && (
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "rgba(234,179,8,0.1)", color: "#CA8A04" }}>
                     Max {p.maxPerCustomer}/cust
@@ -6023,7 +6055,7 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
               ½ Kit
             </button>
             <div className="flex gap-1.5">
-              <button onClick={() => { setEditTarget(p); setShowAdd(false); }} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--t-surface2)" }}>
+              <button disabled={stockSaving} onClick={() => { setEditTarget(p); setShowAdd(false); }} className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-50" style={{ background: "var(--t-surface2)" }}>
                 <Pencil className="w-3.5 h-3.5" style={{ color: "var(--t-muted)" }} />
               </button>
               <button onClick={() => handleDelete(p.id)} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(220,38,38,0.07)" }}>
@@ -7508,6 +7540,9 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
 
 function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [orders, setOrders] = useState<OrgOrder[]>([]);
+  const [multipleOnly, setMultipleOnly] = useState(false);
+  const reviewOrders = useMemo(() => annotateCompleteGbOrderCounts(orders), [orders]);
+  const multiplePeople = new Set(reviewOrders.filter(isMultipleGbOrder).map(o => o.telegramUsername.trim().replace(/^@+/, "").toLowerCase())).size;
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState<Set<string>>(new Set());
   const [orderScreenshots, setOrderScreenshots] = useState<Record<string, string | null | "loading">>({});
@@ -7538,6 +7573,11 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [oosSelected, setOosSelected] = useState<Set<string>>(new Set());
   const [oosSubmitting, setOosSubmitting] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setMultipleOnly(false);
+    setSelectedOrderIds(new Set());
+    setPage(1);
+  }, [gb.id]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState("");
@@ -8148,12 +8188,12 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
     orders.map(o => o.shippingCountry ?? o.accountCountry).filter(Boolean).map(r => _canonicalCountry(r as string))
   )].sort();
 
-  const statusFiltered = filter === "all" ? orders
-    : filter === "paid" ? orders.filter(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed")
-    : filter === "unpaid" ? orders.filter(o => o.paymentStatus === "unpaid")
-    : filter === "pending_confirmation" ? orders.filter(o => o.paymentStatus === "pending_confirmation")
-    : filter === "cancelled_refunded" ? orders.filter(matchesCancelledOrRefunded)
-    : orders.filter(o => o.status.toLowerCase() === filter);
+  const statusFiltered = filter === "all" ? reviewOrders
+    : filter === "paid" ? reviewOrders.filter(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed")
+    : filter === "unpaid" ? reviewOrders.filter(o => o.paymentStatus === "unpaid")
+    : filter === "pending_confirmation" ? reviewOrders.filter(o => o.paymentStatus === "pending_confirmation")
+    : filter === "cancelled_refunded" ? reviewOrders.filter(matchesCancelledOrRefunded)
+    : reviewOrders.filter(o => o.status.toLowerCase() === filter);
 
   const baseFiltered = paymentMethodFilter === "all"
     ? statusFiltered
@@ -8197,13 +8237,14 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
-  const filteredOrders = q
+  const searchFilteredOrders = q
     ? sortedDateFiltered.filter(o =>
         o.code.toLowerCase().includes(q) ||
         o.telegramUsername.toLowerCase().includes(q) ||
         o.grandTotal.toFixed(2).includes(q)
       )
     : sortedDateFiltered;
+  const filteredOrders = searchFilteredOrders.filter(o => !multipleOnly || isMultipleGbOrder(o));
 
   // For the Intl Shipping panel: if the user has ticked any rows in the
   // current country filter, target only those; otherwise target all.
@@ -8479,6 +8520,13 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
       </div>
 
       {/* OOS Management Panel */}
+      <GbMultipleOrderNotice people={multiplePeople} checked={multipleOnly}
+        onChange={value => {
+          setMultipleOnly(value);
+          setPage(1);
+          setSelectedOrderIds(new Set());
+          setConfirmBulkDelete(false);
+        }} />
       {gb.organiserCanMarkOos !== false && (
       <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(220,38,38,0.3)" }}>
         <button
@@ -9227,7 +9275,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                   <div className="flex-1 h-px" style={{ background: "var(--t-border)" }} />
                 </div>
               )}
-            <div id={`organiser-order-${o.id}`} className="rounded-2xl overflow-hidden scroll-mt-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+            <div id={`organiser-order-${o.id}`} className={`rounded-2xl overflow-hidden scroll-mt-4${isMultipleGbOrder(o) ? " gb-multiple-order-row" : ""}`} style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", borderInlineStart: isMultipleGbOrder(o) ? "3px solid #E9A020" : undefined }}>
               {/* ── Header strip ── */}
               <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", background: selectedOrderIds.has(o.id) ? "rgba(27,58,122,0.10)" : "var(--t-surface2)" }}>
                 {/* Row 1: badges + tx */}
@@ -9246,6 +9294,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                     onClick={ev => ev.stopPropagation()}
                   />
                   <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.06)", color: "#94a3b8", border: "1px solid rgba(255,255,255,0.1)", padding: "2px 8px", borderRadius: 6 }}>#{o.code}</span>
+                  <GbMultipleOrderBadge order={o} />
                   <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(255,255,255,0.07)", color: "#94a3b8" }}>{o.status}</span>
                   {o.orderType === "test" && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "rgba(249,115,22,0.15)", color: "#F97316", border: "1px solid rgba(249,115,22,0.3)" }}>🧪 TEST</span>}
                   {o.paymentMethod && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, color: "#fff", background: pmColor(o.paymentMethod) }}>{pmLabel(o.paymentMethod)}</span>}
@@ -13987,7 +14036,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
       <div className="flex-1 overflow-y-auto px-4 py-5 pb-8">
         {activeTab === "overview" && <OverviewTab gbs={gbs} loading={loadingGbs} profile={profile} onSelect={handleSelectGb} onNew={handleNewGb} onRefresh={loadGbs} />}
         {activeTab === "edit" && <GBFormTab gb={creatingNew ? null : selectedGb} onSaved={handleGbSaved} onGbUpdated={handleGbUpdated} onBack={() => setActiveTab("overview")} onDelete={handleGbDeleted} onStatusChange={handleStatusChange} statusSaving={statusSaving} availableStatuses={availableStatuses} />}
-        {activeTab === "products" && selectedGb && <ProductsTab gb={selectedGb} />}
+        {activeTab === "products" && selectedGb && <ProductsTab key={selectedGb.id} gb={selectedGb} />}
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}

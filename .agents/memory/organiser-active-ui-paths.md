@@ -3,8 +3,8 @@ name: Verify the active organiser UI
 description: Avoid delivering organiser controls only in a legacy surface.
 ---
 
-Verify the organiser's actual routed settings screen before declaring a feature available; do not assume a newer dashboard inherits additions to an older editor.
+Verify the organiser's actual routed screen before declaring a feature available. The user uses the original organiser dashboard as well as the newer dashboard; an enhancement in only one does not satisfy general organiser requests.
 
-**Why:** Coupon controls were initially added to the legacy editor while the current dashboard had a separate settings implementation, so organisers could not find the promised controls.
+**Why:** Coupon controls were initially added to one settings implementation but not the other. Later, multiple-order highlighting was added only to the newer dashboard, while the user's screenshot showed the original dashboard and they could not see it.
 
-**How to apply:** Trace the active organiser route through its navigation to the rendered settings component. Check that the requested control is connected there as well as in any legacy or Admin surface being maintained.
+**How to apply:** Trace navigation to the actual rendered component. Cover both organiser dashboards for general organiser enhancements, along with Admin when requested, rather than telling users to change dashboards to find promised functionality.

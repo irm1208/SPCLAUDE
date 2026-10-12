@@ -236,6 +236,7 @@ export default function GbProductsTab({
     });
   }, [category, products, query, stock, vendor]);
   const selectedProductIsVisible = filteredProducts.some(product => product.id === selectedId);
+  const allSelected = products.length > 0 && products.every(product => selectedIds.has(product.id));
 
   function chooseProduct(productId: string) {
     if (productId === selectedId && !adding) return;
@@ -343,7 +344,7 @@ export default function GbProductsTab({
     setSaving(true);
     try {
       const result = await organiserApi.updateStock(groupId, {
-        productIds: selectedIds.size === products.length ? "all" : [...selectedIds],
+        productIds: [...selectedIds],
         mode: stockMode, quantity,
       });
       if (stockGroupRef.current !== groupId) return;
@@ -547,11 +548,13 @@ export default function GbProductsTab({
         <section className="products-split__catalogue" aria-label="Product catalogue">
           <header>
             <div><h3>Product catalogue</h3><p>{filteredProducts.length} matching products</p></div>
-            <label><input type="checkbox" disabled={saving || loading} checked={filteredProducts.length > 0 && filteredProducts.every(product => selectedIds.has(product.id))} ref={element => { if (element) element.indeterminate = filteredProducts.some(product => selectedIds.has(product.id)) && !filteredProducts.every(product => selectedIds.has(product.id)); }} onChange={event => {
+            <div className="products-split__selection-actions">
+            <label><input type="checkbox" disabled={saving || loading || !filteredProducts.length} checked={filteredProducts.length > 0 && filteredProducts.every(product => selectedIds.has(product.id))} ref={element => { if (element) element.indeterminate = filteredProducts.some(product => selectedIds.has(product.id)) && !filteredProducts.every(product => selectedIds.has(product.id)); }} onChange={event => {
               const checked = event.target.checked;
               setSelectedIds(current => { const next = new Set(current); filteredProducts.forEach(product => checked ? next.add(product.id) : next.delete(product.id)); return next; });
             }} /> Select visible ({filteredProducts.length})</label>
-            <button type="button" disabled={saving || loading || !products.length} onClick={() => setSelectedIds(new Set(products.map(product => product.id)))}>Select all ({products.length})</button>
+            <button type="button" disabled={saving || loading || !products.length} onClick={() => setSelectedIds(allSelected ? new Set() : new Set(products.map(product => product.id)))}>{allSelected ? "Deselect all" : "Select all"} ({products.length})</button>
+            </div>
           </header>
           <div className="products-split__list">
             {loading ? <div className="products-split__empty"><Loader2 className="animate-spin" aria-hidden="true" /><p>Loading products...</p></div> : null}
