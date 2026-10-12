@@ -69,6 +69,7 @@ import WholesaleTracking from "@/pages/WholesaleTracking";
 import WholesaleInviteLanding from "@/pages/WholesaleInviteLanding";
 import PublicTestingPools from "@/pages/PublicTestingPools";
 import SagePage from "@/pages/SagePage";
+import GroupBuyHalfKits from "@/pages/GroupBuyHalfKits";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -168,6 +169,7 @@ function Router() {
       <Route path="/testing-pools" component={PublicTestingPools} />
       <Route path="/community-testing" component={PublicTestingPools} />
       <Route path="/pool/:slug" component={TestingPool} />
+      <Route path="/group-buys/:id/half-kits" component={GroupBuyHalfKits} />
       <Route path="/sage" component={SagePage} />
       <Route path="/reshipper" component={ReshipperPage} />
       <Route path="/reshipper-apply" component={ReshipperApply} />

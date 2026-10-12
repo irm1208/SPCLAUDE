@@ -63,12 +63,15 @@ import peppysRouter from "./peppys";
 import emailTemplatesRouter from "./email-templates";
 import groupBuyBreakdownRouter from "./group-buy-breakdown";
 import groupBuyRefundsRouter from "./group-buy-refunds";
+import halfKitOffersRouter from "./half-kit-offers";
+import { halfKitProtection } from "../middleware/half-kit-protection";
 import wholesaleTrackingRouter from "./wholesale-tracking";
 import adminAuthRouter from "./admin-auth";
 import adminInvoicesRouter from "./admin-invoices";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
 const router: IRouter = Router();
+router.use(halfKitProtection);
 
 router.use(healthRouter);
 
@@ -176,6 +179,7 @@ router.use(peppysRouter);
 router.use(emailTemplatesRouter);
 router.use(groupBuyBreakdownRouter);
 router.use(groupBuyRefundsRouter);
+router.use(halfKitOffersRouter);
 router.use(wholesaleTrackingRouter);
 
 // ── GET /fx-rates — server-side proxy for frankfurter.app FX rates ──────────

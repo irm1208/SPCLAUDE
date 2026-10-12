@@ -44,3 +44,21 @@ Half-kit offers do not accept coupons. Members may use credits only when the gro
 **Why:** The user selected “No coupons; allow credits if the GB permits.”
 
 **How to apply:** Preserve existing order discounts and credits; do not redeem another coupon or extend an existing coupon discount to the offered half.
+
+Shipping finalisation must replace only the ordinary base shipping, preserving the half offer’s explicit extra charges and its quoted price.
+
+**Why:** Offers can be claimed before closing, when the organiser may still need to finalise shipping. Rebuilding the whole order at that point can apply coupons or fees to a half that was quoted without them.
+
+**How to apply:** Keep offer charges immutable and reconcile later base-shipping differences through the normal unpaid or additional-balance flow.
+
+Once a half is funded, later additions or shipping balances must not make that half appear unpaid again.
+
+**Why:** A new outstanding balance is not evidence that an earlier half-kit purchase was never paid.
+
+**How to apply:** Preserve settlement before clearing old balance-payment details or adding new debt.
+
+Legacy financial requests must stay serialised until their server-side handler ends, even when the browser disconnects.
+
+**Why:** A disconnected browser does not stop an asynchronous database write; releasing protection on socket close permits stale writes to overwrite a newly claimed half. Request-wide database locks also need separate connection capacity, or waiting handlers can exhaust the data pool.
+
+**How to apply:** Treat handler completion, not browser connection lifetime, as the end of the protected operation. Do not share request-lock connection capacity with the data queries those requests need.

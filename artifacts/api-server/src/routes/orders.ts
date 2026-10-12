@@ -2,6 +2,9 @@ import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedErr
 import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
 import { calculateCouponDiscount, CouponError, couponProblem, couponQuoteMatches } from "../lib/group-buy-coupon-policy";
 import { assertGroupStock } from "../lib/group-buy-stock";
+import { gbHalfKitClaimsTable } from "@workspace/db";
+import { cancelUnpaidHalfClaims } from "../lib/half-kit-offers";
+import { HalfKitError } from "../lib/half-kit-rules";
 import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/coupon-redemption";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
@@ -1037,6 +1040,9 @@ router.post("/orders", async (req, res): Promise<void> => {
         .where(eq(orderLineItemsTable.orderId, lockedParent.id));
 
       const mergedItems = [...existingItems];
+      const protectedHalfLines = new Set((await tx.select({ lineItemId: gbHalfKitClaimsTable.lineItemId })
+        .from(gbHalfKitClaimsTable).where(and(eq(gbHalfKitClaimsTable.orderId, lockedParent.id),
+          eq(gbHalfKitClaimsTable.state, "active")))).map(row => row.lineItemId));
       for (const item of clientLineItems as Array<{
         productId: string;
         productName: string;
@@ -1047,6 +1053,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         const unitPrice = parseFloat(String(item.unitPrice));
         const matchingItem = mergedItems.find(existing =>
           existing.productId === item.productId
+          && !protectedHalfLines.has(existing.id)
           && Math.abs(parseFloat(String(existing.unitPrice)) - unitPrice) < 0.001
         );
 
@@ -1128,6 +1135,12 @@ router.post("/orders", async (req, res): Promise<void> => {
         addedTestingContribution: normalizedContribution,
       });
 
+      if (lockedParent.paymentStatus === "confirmed" && Number(lockedParent.amountDue ?? 0) === 0) {
+        await tx.update(gbHalfKitClaimsTable).set({ paidAt: new Date() }).where(and(
+          eq(gbHalfKitClaimsTable.orderId, lockedParent.id), eq(gbHalfKitClaimsTable.state, "active"),
+          isNull(gbHalfKitClaimsTable.paidAt),
+        ));
+      }
       const [updatedParent] = await tx
         .update(ordersTable)
         .set({
@@ -1147,6 +1160,9 @@ router.post("/orders", async (req, res): Promise<void> => {
           balanceTxHash: null,
           balanceScreenshot: null,
           balanceConfirmedAt: null,
+          ...(lockedParent.balancePaymentStatus === "confirmed" && lockedParent.balanceTxHash ? {
+            paymentTxHashes: [...new Set([...(lockedParent.paymentTxHashes ?? []), lockedParent.balanceTxHash])],
+          } : {}),
         })
         .where(refundMutableOrderWhere(eq(ordersTable.id, lockedParent.id)))
         .returning();
@@ -2691,9 +2707,17 @@ router.delete("/orders/:orderId", async (req, res): Promise<void> => {
   // Capture line items snapshot before soft-deletion
   const deletedLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
 
-  await db.update(ordersTable)
-    .set({ deletedAt: new Date(), deletedBy: "customer" })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+  try {
+  await db.transaction(async tx => {
+    await cancelUnpaidHalfClaims(tx, orderId, order.telegramUsername);
+    await tx.update(ordersTable)
+      .set({ deletedAt: new Date(), deletedBy: "customer" })
+      .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
+  });
+  } catch (error) {
+    if (error instanceof HalfKitError) { res.status(error.status).json({ error: error.message }); return; }
+    throw error;
+  }
 
   writeLog("order", "warn", "order_deleted_by_customer",
     `Customer deleted order ${order.code} (${order.telegramUsername}, status: ${order.status})`,

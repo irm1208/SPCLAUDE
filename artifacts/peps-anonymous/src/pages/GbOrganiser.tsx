@@ -44,6 +44,7 @@ import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 import { getCreditAdjustedTotal } from "@/lib/credit-payment";
 import { hasAppliedCredit } from "@/lib/credit-payment";
 import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
+import { HalfKitManager } from "@/components/half-kits/HalfKitManager";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
 const _codeToName: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.code.toLowerCase(), c.name]));
@@ -11326,6 +11327,10 @@ export function SummaryTab({ gb }: { gb: OrganiserGB }) {
   return (
     <div className="space-y-4">
       <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Order Summary — {gb.name}</h2>
+      <details className="rounded-xl border" style={{ borderColor: "var(--t-border)" }} data-testid="details-fill-half-kits">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-bold" style={{ color: "var(--t-text)" }}>Fill half kits</summary>
+        <div className="p-2"><HalfKitManager scope="organiser" groupBuyId={gb.id} /></div>
+      </details>
       <div className="flex gap-2 items-center flex-wrap">
         <select
           className="h-9 rounded-lg border px-3 text-xs focus:outline-none"

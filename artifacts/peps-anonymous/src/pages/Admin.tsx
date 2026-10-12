@@ -74,6 +74,7 @@ import { getCreditAdjustedTotal, hasAppliedCredit } from "@/lib/credit-payment";
 import { getSelectedProducts, toggleProductSelection, toggleVisibleSelection } from "./admin-product-selection";
 import { BulkProductStockDialog, type StockProduct } from "@/components/admin/BulkProductStockDialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { HalfKitManager } from "@/components/half-kits/HalfKitManager";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -4869,6 +4870,8 @@ function GroupSummaryTab({ secret }: { secret: string }) {
         <Button variant="outline" size="icon" onClick={load}><RefreshCw className="w-4 h-4" /></Button>
         {rows.length > 0 && <Button variant="outline" onClick={handleDownload} className="gap-2"><Download className="w-4 h-4" />Download .txt</Button>}
       </div>
+
+      {gbFilter !== "all" && <HalfKitManager scope="admin" groupBuyId={gbFilter} />}
 
       {/* Tips breakdown — only shown when a specific GB is selected */}
       {gbFilter !== "all" && (tipsLoading || tipsData !== null) && (

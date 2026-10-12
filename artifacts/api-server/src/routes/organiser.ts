@@ -40,6 +40,7 @@ import {
   reconcileShippingAdjustment,
   ShippingAdjustmentError,
 } from "../lib/group-buy-shipping-adjustment";
+import { halfKitShippingSnapshots, preserveHalfKitShipping } from "../lib/half-kit-shipping";
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { getTrackingPackages } from "@workspace/shipping/tracking";
 import { formatTrackingNumbersForNotification } from "../lib/tracking-notification";
@@ -4141,16 +4142,24 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
     resolvedAdminFeeLabel: string | null;
   }> = [];
 
+  const halfSnapshots = await halfKitShippingSnapshots(targetOrders.map(order => order.id));
   try {
     for (const order of targetOrders) {
-      const vendorShipping = allocationMap.get(order.id) ?? 0;
+      let vendorShipping = allocationMap.get(order.id) ?? 0;
 
       const productSubtotal = parseFloat(String(order.productSubtotal));
       const deliveryPrice = parseFloat(String(order.deliveryPrice ?? "0"));
       const tip = parseFloat(String(order.tip ?? "0"));
       const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
-      const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
-      const newGrandTotal = parseFloat((productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
+      let { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
+      let newGrandTotal = parseFloat((productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
+      const halfTotals = preserveHalfKitShipping(order, halfSnapshots.get(order.id), { vendor: vendorShipping });
+      if (halfTotals) {
+        vendorShipping = halfTotals.vendorShipping;
+        newGrandTotal = halfTotals.grandTotal;
+        resolvedAdminFee = halfTotals.adminFee;
+        resolvedAdminFeeLabel = order.adminFeeLabel;
+      }
       const payment = reconcileShippingAdjustment({
         paymentStatus: order.paymentStatus,
         balancePaymentStatus: (order as any).balancePaymentStatus,
@@ -4672,6 +4681,26 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
     return;
   }
 
+  const halfIntlSnapshots = await halfKitShippingSnapshots(targetOrders.map(order => order.id));
+  // Validate protected orders before writing the batch, using the normal pending-payment safeguards.
+  const halfIntlPlans = new Map<string, { deliveryPrice: number; grandTotal: number; adminFee: number; amountDue: number; balancePaymentStatus: string | null; clearPrimaryPaymentLock: boolean }>();
+  try {
+    for (const order of targetOrders) {
+      const totals = preserveHalfKitShipping(order, halfIntlSnapshots.get(order.id), { delivery: ratePrice });
+      if (!totals) continue;
+      const payment = reconcileShippingAdjustment({
+        paymentStatus: order.paymentStatus, balancePaymentStatus: order.balancePaymentStatus,
+        currentGrandTotal: Number(order.grandTotal), currentVendorShipping: Number(order.vendorShipping),
+        currentAmountDue: Number(order.amountDue ?? 0), newGrandTotal: totals.grandTotal,
+        newVendorShipping: totals.vendorShipping,
+      });
+      halfIntlPlans.set(order.id, { ...totals, ...payment,
+        amountDue: isPaid ? Number(order.amountDue ?? 0) : payment.amountDue });
+    }
+  } catch (error) {
+    if (error instanceof ShippingAdjustmentError) { res.status(409).json({ error: error.message, code: error.code }); return; }
+    throw error;
+  }
   const updatedOrders = await withRefundMutationGuard(db, targetOrders.map(order => order.id), async tx => {
     const updated: { id: string; telegramUsername: string; newGrandTotal: number; newAmountDue: number }[] = [];
     for (const order of targetOrders) {
@@ -4679,17 +4708,28 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
       const vendorShipping = parseFloat(String(order.vendorShipping ?? "0"));
       const tip = parseFloat(String(order.tip ?? "0"));
       const testingContribution = parseFloat(String((order as any).testingContribution ?? "0"));
-      const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
-      const newGrandTotal = parseFloat((productSubtotal + ratePrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
+      let { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
+      let newGrandTotal = parseFloat((productSubtotal + ratePrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
       const prevAmountDue = parseFloat(String((order as any).amountDue ?? "0"));
-      const newAmountDue = isPaid ? prevAmountDue : parseFloat((prevAmountDue + ratePrice).toFixed(2));
+      let newAmountDue = isPaid ? prevAmountDue : parseFloat((prevAmountDue + ratePrice).toFixed(2));
+      const halfPlan = halfIntlPlans.get(order.id);
+      if (halfPlan) {
+        newGrandTotal = halfPlan.grandTotal;
+        newAmountDue = halfPlan.amountDue;
+        resolvedAdminFee = halfPlan.adminFee;
+        resolvedAdminFeeLabel = order.adminFeeLabel;
+      }
 
       await tx.update(ordersTable).set({
-        deliveryPrice: ratePrice.toFixed(2) as any,
+        deliveryPrice: (halfPlan?.deliveryPrice ?? ratePrice).toFixed(2) as any,
         grandTotal: newGrandTotal.toFixed(2) as any,
         amountDue: newAmountDue.toFixed(2) as any,
         adminFee: resolvedAdminFee.toFixed(2) as any,
         adminFeeLabel: resolvedAdminFeeLabel as any,
+        ...(halfPlan ? {
+          balancePaymentStatus: halfPlan.balancePaymentStatus,
+          ...(halfPlan.clearPrimaryPaymentLock ? { paymentUsdAmount: null } : {}),
+        } : {}),
       }).where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
       updated.push({ id: order.id, telegramUsername: order.telegramUsername, newGrandTotal, newAmountDue });
     }

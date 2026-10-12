@@ -57,3 +57,4 @@ export * from "./email_templates";
 export * from "./payment_audit";
 export * from "./admin_security";
 export * from "./order-invoices";
+export * from "./gb_half_kit_offers";

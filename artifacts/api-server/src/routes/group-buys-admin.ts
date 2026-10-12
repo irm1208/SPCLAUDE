@@ -39,6 +39,7 @@ import {
   reconcileShippingAdjustment,
   ShippingAdjustmentError,
 } from "../lib/group-buy-shipping-adjustment";
+import { halfKitShippingSnapshots, preserveHalfKitShipping } from "../lib/half-kit-shipping";
 import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 
 function shortId(len = 5): string {
@@ -1880,22 +1881,30 @@ router.post("/admin/group-buys/:id/apply-shipping", async (req, res): Promise<vo
     resolvedAdminFeeLabel: string | null;
   }> = [];
 
+  const halfSnapshots = await halfKitShippingSnapshots(targetOrders.map(order => order.id));
   try {
   for (const order of targetOrders) {
-    const vendorShipping = allocationMap.get(order.id) ?? 0;
+    let vendorShipping = allocationMap.get(order.id) ?? 0;
 
     const productSubtotal = parseFloat(String(order.productSubtotal));
     const deliveryPrice = parseFloat(String(order.deliveryPrice ?? "0"));
     const tip = parseFloat(String(order.tip ?? "0"));
     const testingContribution = parseFloat(String(order.testingContribution ?? "0"));
     const couponDiscount = parseFloat(String(order.couponDiscount ?? "0"));
-    const { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute(
+    let { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute(
       order.adminFee,
       order.adminFeeLabel,
       gb,
       productSubtotal,
     );
-    const newGrandTotal = parseFloat(Math.max(0, productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee - couponDiscount).toFixed(2));
+    let newGrandTotal = parseFloat(Math.max(0, productSubtotal + deliveryPrice + vendorShipping + tip + testingContribution + resolvedAdminFee - couponDiscount).toFixed(2));
+    const halfTotals = preserveHalfKitShipping(order, halfSnapshots.get(order.id), { vendor: vendorShipping });
+    if (halfTotals) {
+      vendorShipping = halfTotals.vendorShipping;
+      newGrandTotal = halfTotals.grandTotal;
+      resolvedAdminFee = halfTotals.adminFee;
+      resolvedAdminFeeLabel = order.adminFeeLabel;
+    }
 
     const payment = reconcileShippingAdjustment({
       paymentStatus: order.paymentStatus,

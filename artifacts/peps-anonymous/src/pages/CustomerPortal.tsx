@@ -8801,6 +8801,15 @@ export default function CustomerPortal() {
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   {!isOrderable && <WaitlistToggleButton gbId={gb.id} />}
+                  {gbOrders.length > 0 && (
+                    <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
+                      className="w-full h-9 rounded-full text-[12px] font-semibold flex items-center justify-center gap-1.5 hover:opacity-90"
+                      style={{ border: "1px solid rgba(233,160,32,0.55)", color: "#F5C25B" }}
+                      data-testid={`link-half-kits-${gb.id}`}>
+                      Fill remaining half kits
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </a>
+                  )}
                 </div>
               </motion.div>
             );

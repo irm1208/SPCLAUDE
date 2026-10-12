@@ -2315,6 +2315,11 @@ export default function AccountOrderDetail() {
                                 </span>
                               )}
                             </div>
+                            {order.groupBuyId && order.status !== "Cancelled" && (
+                              <a href={`/group-buys/${encodeURIComponent(order.groupBuyId)}/half-kits`} className="inline-flex items-center mt-3 rounded-full font-bold text-white underline-offset-2 hover:underline" style={{ fontSize: 11.5, padding: "4px 11px", background: "rgba(233,160,32,.28)", border: "1px solid rgba(233,160,32,.5)" }} data-testid="link-half-kits">
+                                Available half kits
+                              </a>
+                            )}
                           </div>
                         </div>
                         {order.status !== "Cancelled" && (
