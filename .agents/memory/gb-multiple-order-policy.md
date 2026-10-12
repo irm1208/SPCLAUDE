@@ -14,3 +14,9 @@ The user approved manual merging of orders from the same person in the same grou
 **Why:** The user explicitly chose the unpaid, unprocessed scope after payment-record risks were explained.
 
 **How to apply:** Apply this limit to both organiser dashboards and Admin. Paid orders require a separately approved reconciliation design.
+
+For manual merges, charge delivery and vendor shipping once rather than summing those fees from the selected orders.
+
+**Why:** The user chose one delivery fee and specifically instructed, “Merge the delivery fees especially the vendor shipping fees.”
+
+**How to apply:** Show the resulting shipping charges in the confirmation preview. Do not assume a historical quote covers a larger combined parcel.
