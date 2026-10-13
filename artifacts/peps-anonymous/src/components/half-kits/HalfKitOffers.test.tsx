@@ -25,6 +25,9 @@ describe("inline order-page half kits", () => {
     expect(html).toContain("Add to my order");
     expect(html).not.toContain('disabled=""');
     expect(html).not.toContain("Back to my group buys");
+    expect(html).toContain("linear-gradient(135deg, #1C2B3D, #1D3047)");
+    expect(html).toContain("background:#162231");
+    expect(html).toContain("text-[#E9A020]");
   });
   it("disappears when there are no offers, including after the last half is claimed", () => {
     expect(render({ group, offers: [], orders: [order], creditsBalance: 0 })).toBe("");
