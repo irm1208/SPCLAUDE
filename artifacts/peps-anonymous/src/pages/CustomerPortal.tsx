@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useHalfKitAvailability } from "@/hooks/use-half-kit-availability";
 import { PoolLeaderDashboard } from "@/components/PoolLeaderDashboard";
 import { AccountPoolContributions } from "@/components/AccountPoolContributions";
 import { WholesaleAccessSection } from "@/components/WholesaleAccessSection";
@@ -7231,6 +7232,7 @@ export default function CustomerPortal() {
     : _initSection && PORTAL_SECTIONS.includes(_initSection) ? _initSection
     : "home"
   );
+  const { data: halfKitAvailability, error: halfKitAvailabilityError, refetch: refetchHalfKitAvailability } = useHalfKitAvailability(isLoggedIn && section === "groups");
 
   useEffect(() => {
     const s = new URLSearchParams(search).get("s") as Section | null;
@@ -8579,7 +8581,7 @@ export default function CustomerPortal() {
                 <LayoutList className="w-4 h-4" style={{ color: gbView === "table" ? "var(--t-blue)" : T.subtle }} />
               </button>
             </div>
-            <button onClick={() => refetchGb()} disabled={gbLoading}
+            <button onClick={() => { refetchGb(); refetchHalfKitAvailability(); }} disabled={gbLoading}
               title="Refresh"
               className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ background: T.surface, border: `1px solid ${T.border}` }}>
@@ -8619,6 +8621,11 @@ export default function CustomerPortal() {
         )}
 
         <div className={gbView === "cards" ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3" : "flex flex-col gap-3"}>
+          {halfKitAvailabilityError && (
+            <p role="alert" className="text-sm mb-3" style={{ color: T.muted }} data-testid="error-half-kit-availability">
+              Half-kit availability couldn’t be loaded. Use Refresh to try again.
+            </p>
+          )}
           {gbLoading && (
             <div className="col-span-full flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T.muted }} /></div>
           )}
@@ -8801,6 +8808,7 @@ export default function CustomerPortal() {
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   {!isOrderable && <WaitlistToggleButton gbId={gb.id} />}
+                  {(halfKitAvailability?.counts[gb.id] ?? 0) > 0 && (
                   <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
                     className="w-full h-9 rounded-full text-[12px] font-semibold flex items-center justify-center gap-1.5 hover:opacity-90"
                     style={{ border: "1px solid rgba(233,160,32,0.55)", color: "#F5C25B" }}
@@ -8808,6 +8816,7 @@ export default function CustomerPortal() {
                     Fill remaining half kits
                     <ChevronRight className="w-3.5 h-3.5" />
                   </a>
+                  )}
                 </div>
               </motion.div>
             );
@@ -8886,12 +8895,14 @@ export default function CustomerPortal() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1.5">
+                              {(halfKitAvailability?.counts[gb.id] ?? 0) > 0 && (
                               <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
                                 data-testid={`link-half-kits-table-${gb.id}`}
                                 className="inline-flex min-h-9 items-center rounded-lg border px-3 text-[11.5px] font-bold whitespace-nowrap"
                                 style={{ color: T.text, borderColor: T.border }}>
                                 Available half kits
                               </a>
+                              )}
                               <button
                                 onClick={() => isOrderable ? setLocation(`/order?gbId=${gb.id}`) : setLocation("/account?s=orders")}
                                 className="h-8 px-3.5 rounded-lg text-[11.5px] font-bold text-white whitespace-nowrap"

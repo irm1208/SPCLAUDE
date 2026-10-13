@@ -6,6 +6,7 @@ import { listHalfKits, saveHalfKit, claimHalfKit, releaseHalfKit, type HalfKitAc
 import { HalfKitError } from "../lib/half-kit-rules";
 import { refundMutationConflictResponse } from "../lib/refund-mutation-guard";
 import { writeLog } from "../lib/audit-log";
+import { halfKitAvailability } from "../lib/half-kit-availability";
 
 const router = Router();
 const management = ["/organiser/group-buys/:id/half-kit-offers", "/admin/group-buys/:id/half-kit-offers"];
@@ -46,6 +47,9 @@ router.post(management.map(path => `${path}/claims/:claimId/release`), managemen
     }, req.ip).catch(error => console.error("[half-kits:audit]", error));
     res.json(result);
   } catch (error) { fail(res, error); }
+});
+router.get("/group-buys/half-kit-availability/counts", requireAccount, async (req, res) => {
+  try { res.json(await halfKitAvailability(actor(req).username)); } catch (error) { fail(res, error); }
 });
 router.get("/group-buys/:id/half-kit-offers", requireAccount, async (req, res) => {
   try { res.json(await listHalfKits(parameter(req, "id"), actor(req), false)); } catch (error) { fail(res, error); }

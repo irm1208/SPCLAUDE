@@ -16,6 +16,8 @@ export const offerCurrencyMismatch = (offer: HalfKitOffer | null, groupCurrency:
   !!offer?.currency && offer.currency !== groupCurrency;
 
 export const HALF_KIT_POLL_MS = 30_000;
+export interface HalfKitAvailability { counts: Record<string, number> }
+export const fetchHalfKitAvailability = () => request<HalfKitAvailability>("/api/group-buys/half-kit-availability/counts");
 
 export class HalfKitApiError extends Error {
   constructor(message: string, readonly status: number) { super(message); this.name = "HalfKitApiError"; }

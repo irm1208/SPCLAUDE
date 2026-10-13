@@ -15,6 +15,12 @@ Once a half is claimed, remove it from the available list and add it to the clai
 
 **How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice.
 
+Only advertise “Fill half kits” for a group buy with published halves still available. Remove the sign when all are taken, and show the offers directly on the order page.
+
+**Why:** The user requested availability-specific links rather than links on every group-buy card, and wants the actual halves visible on the order page.
+
+**How to apply:** Keep every member entry point tied to current published availability. Inline claiming still adds to an eligible existing order; it must not silently become part of a new draft.
+
 Both paid and unpaid orders can receive claimed halves. Paid orders keep their confirmed payment and receive an additional amount due for the half kit.
 
 **Why:** The user selected “Paid and unpaid orders” with this payment handling.

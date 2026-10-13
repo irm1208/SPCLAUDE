@@ -128,10 +128,10 @@ describe("entry points", () => {
   });
   it("links to member half-kit offers directly from the order form", () => {
     const form = readFileSync("src/pages/OrderForm.tsx", "utf8");
-    expect(form).toContain('data-testid="link-order-form-half-kits"');
-    expect(form).toContain('/group-buys/${encodeURIComponent(gbId)}/half-kits');
-    expect(form).toContain("Available half kits");
-    expect(form.indexOf('data-testid="link-order-form-half-kits"')).toBeLessThan(form.indexOf(">Your Products</p>"));
+    expect(form).toContain("<HalfKitOffers");
+    expect(form).toContain("gbId={gbId}");
+    expect(form).toContain("embedded");
+    expect(form.indexOf("<HalfKitOffers")).toBeLessThan(form.indexOf(">Your Products</p>"));
   });
   it("includes half-kit links in both member card and table views, even without an existing order", () => {
     const portal = readFileSync("src/pages/CustomerPortal.tsx", "utf8");
@@ -139,12 +139,16 @@ describe("entry points", () => {
     const cardLink = portal.slice(portal.indexOf('{/* Footer: CTA */}'), portal.indexOf('!gbLoading && gbView === "table"'));
     expect(cardLink).toContain('data-testid={`link-half-kits-${gb.id}`}');
     expect(cardLink).not.toContain("gbOrders.length > 0");
+    expect(cardLink).toContain("halfKitAvailability?.counts[gb.id]");
+    const tableLink = portal.slice(portal.indexOf('!gbLoading && gbView === "table"'), portal.indexOf("!gbLoading && archivedGbs.length"));
+    expect(tableLink).toContain("halfKitAvailability?.counts[gb.id]");
   });
   it("routes the member page and links managers from summaries", () => {
     expect(readFileSync("src/App.tsx", "utf8")).toContain('"/group-buys/:id/half-kits"');
     expect(readFileSync("src/pages/GbOrganiser.tsx", "utf8")).toContain("<HalfKitManager");
     expect(readFileSync("src/pages/Admin.tsx", "utf8")).toContain("<HalfKitManager");
     expect(readFileSync("src/pages/AccountOrderDetail.tsx", "utf8")).toContain("/half-kits");
+    expect(readFileSync("src/pages/AccountOrderDetail.tsx", "utf8")).toContain("halfKitAvailability?.counts[order.groupBuyId]");
     const portal = readFileSync("src/pages/CustomerPortal.tsx", "utf8");
     expect(portal).toContain("Fill remaining half kits");
     expect(portal).toContain("/group-buys/${encodeURIComponent(gb.id)}/half-kits");

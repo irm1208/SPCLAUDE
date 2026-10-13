@@ -3,11 +3,18 @@ import {
   claimHalfKit, computeClaimTotals, defaultHalfPrice, fetchManagement, fetchMemberOffers, HalfKitApiError, isPreviewConflict, isAuthRequired,
   publishSequentially, releaseClaim, saveOffer, validateOfferForm, eligibleOrders,
 } from "./half-kit-api";
+import { fetchHalfKitAvailability } from "./half-kit-api";
 
 afterEach(() => vi.unstubAllGlobals());
 const ok = (body: unknown) => vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
 
 describe("half-kit api", () => {
+  it("fetches group availability in a single authenticated request", async () => {
+    const f = ok({ counts: { g1: 2 } });
+    vi.stubGlobal("fetch", f);
+    expect(await fetchHalfKitAvailability()).toEqual({ counts: { g1: 2 } });
+    expect(f).toHaveBeenCalledWith("/api/group-buys/half-kit-availability/counts", expect.objectContaining({ credentials: "include" }));
+  });
   it("GETs management for organiser and admin scopes with credentials", async () => {
     const f = ok({ group: {}, candidates: [], claims: [] });
     vi.stubGlobal("fetch", f);

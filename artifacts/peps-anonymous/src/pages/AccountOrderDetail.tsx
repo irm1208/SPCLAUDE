@@ -17,6 +17,7 @@ import { useDraftStore } from "@/hooks/use-draft-store";
 import { SHIP_COUNTRIES } from "@/components/ShippingQuoteWidget";
 import { fmtC } from "@/lib/currency";
 import { useOrderParcels, useAccount, useAccountOrders, useLogout, type GbParcel } from "@/hooks/use-account";
+import { useHalfKitAvailability } from "@/hooks/use-half-kit-availability";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
@@ -2025,6 +2026,7 @@ export default function AccountOrderDetail() {
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const vendorShippingIsTbd = order?.vendorShippingIsTbd === true;
+  const { data: halfKitAvailability } = useHalfKitAvailability(isLoggedIn && !!order?.groupBuyId);
   const showVendorShipping = vendorShippingIsTbd || (order?.vendorShipping ?? 0) > 0;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2315,7 +2317,7 @@ export default function AccountOrderDetail() {
                                 </span>
                               )}
                             </div>
-                            {order.groupBuyId && order.status !== "Cancelled" && (
+                            {order.groupBuyId && order.status !== "Cancelled" && (halfKitAvailability?.counts[order.groupBuyId] ?? 0) > 0 && (
                               <a href={`/group-buys/${encodeURIComponent(order.groupBuyId)}/half-kits`} className="inline-flex items-center mt-3 rounded-full font-bold text-white underline-offset-2 hover:underline" style={{ fontSize: 11.5, padding: "4px 11px", background: "rgba(233,160,32,.28)", border: "1px solid rgba(233,160,32,.5)" }} data-testid="link-half-kits">
                                 Available half kits
                               </a>

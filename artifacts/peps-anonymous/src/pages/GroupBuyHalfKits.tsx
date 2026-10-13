@@ -54,10 +54,13 @@ function Row({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
 
 export default function GroupBuyHalfKits() {
   const [, params] = useRoute("/group-buys/:id/half-kits");
-  const gbId = params?.id ?? "";
+  return <HalfKitOffers gbId={params?.id ?? ""} />;
+}
+
+export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId: string; embedded?: boolean; enabled?: boolean }) {
   const qc = useQueryClient();
   const key = ["member-half-kits", gbId];
-  const q = useQuery({ queryKey: key, queryFn: () => fetchMemberOffers(gbId), enabled: !!gbId, refetchInterval: HALF_KIT_POLL_MS });
+  const q = useQuery({ queryKey: key, queryFn: () => fetchMemberOffers(gbId), enabled: !!gbId && enabled, staleTime: 0, refetchOnMount: "always", refetchInterval: HALF_KIT_POLL_MS });
   const [active, setActive] = useState<MemberOffer | null>(null);
   const [orderId, setOrderId] = useState("");
   const [useCredits, setUseCredits] = useState(false);
@@ -66,9 +69,17 @@ export default function GroupBuyHalfKits() {
   const [needsReconfirm, setNeedsReconfirm] = useState(false);
   const claim = useMutation({
     mutationFn: (expectedCredit: number) => claimHalfKit(gbId, active!.id, { orderId, version: active!.version, useCredits, requestId: requestIdRef.current!, expectedCredit }),
-    onSuccess: r => { setResult(r); setActive(null); requestIdRef.current = null; },
+    onSuccess: r => {
+      setResult(r); setActive(null); requestIdRef.current = null;
+      qc.invalidateQueries({ queryKey: ["account", "orders"] });
+      qc.invalidateQueries({ queryKey: ["account", "me"] });
+      qc.invalidateQueries({ queryKey: ["gb-capacity", gbId] });
+    },
     onError: e => { if (isPreviewConflict(e)) setNeedsReconfirm(true); },
-    onSettled: () => qc.invalidateQueries({ queryKey: key }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["account", "half-kit-availability"] });
+      return qc.invalidateQueries({ queryKey: key });
+    },
   });
   // After a 409 the refreshed preview may differ: sync the open offer to its latest server snapshot.
   useEffect(() => {
@@ -86,8 +97,18 @@ export default function GroupBuyHalfKits() {
   const previewCredit = active && q.data && order ? computeClaimTotals(active, q.data.creditsBalance, useCredits, q.data.group.allowCredits).credits : 0;
   const confirm = () => { setNeedsReconfirm(false); claim.reset(); claim.mutate(previewCredit); };
 
+  if (embedded && (!enabled || q.isLoading || (!q.isError && !q.data) || (q.data?.offers.length === 0 && !result && !active))) return null;
+
   return (
-    <div className="min-h-[100dvh] bg-[#F8FAFC]">
+    <div className={embedded ? "rounded-2xl border p-4 space-y-4" : "min-h-[100dvh] bg-[#F8FAFC]"}
+      style={embedded ? { background: "var(--t-surface)", borderColor: "var(--t-border)" } : undefined}
+      data-testid={embedded ? "section-order-half-kits" : "page-half-kits"}>
+      {embedded ? (
+        <div>
+          <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>{result && q.data?.offers.length === 0 ? "Half kit added" : "Available half kits"}</h2>
+          <p className="mt-1 text-xs" style={{ color: "var(--t-muted)" }}>Add a published half kit to an order you already placed in this group buy. These are separate from your new order below.</p>
+        </div>
+      ) : (
       <header className="text-white" style={{ background: "linear-gradient(135deg, #3B66C8 0%, #1B3A7A 100%)" }}>
         <div className="mx-auto max-w-3xl px-4 py-8">
           <Link href="/account?s=groups" className="inline-flex items-center gap-1 text-xs text-white/75 hover:text-white" data-testid="link-back"><ArrowLeft className="w-3.5 h-3.5" />Back to my group buys</Link>
@@ -96,7 +117,8 @@ export default function GroupBuyHalfKits() {
           <p className="mt-1 text-sm text-white/75">Add a remaining half kit to an order you already placed in this group buy.</p>
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-4 py-6 space-y-4">
+      )}
+      <div className={embedded ? "space-y-4" : "mx-auto max-w-3xl px-4 py-6 space-y-4"}>
         {result && (
           <div role="status" className="rounded-2xl border bg-white p-4 flex flex-col sm:flex-row sm:items-center gap-3" style={{ borderColor: "rgba(34,197,94,0.4)" }} data-testid="status-claim-success">
             <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
@@ -130,7 +152,7 @@ export default function GroupBuyHalfKits() {
             </ul>
           </>
         )}
-      </main>
+      </div>
 
       {active && q.data && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#0F1F38]/50 p-0 sm:p-4" onClick={close}>
