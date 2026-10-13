@@ -28,6 +28,9 @@ describe("inline order-page half kits", () => {
     expect(html).toContain("linear-gradient(135deg, #1C2B3D, #1D3047)");
     expect(html).toContain("background:#162231");
     expect(html).toContain("text-[#E9A020]");
+    expect(html).toContain('data-testid="list-half-kit-offers"');
+    expect(html).not.toContain("sm:grid-cols-2");
+    expect(html).not.toContain("bg-white");
   });
   it("disappears when there are no offers, including after the last half is claimed", () => {
     expect(render({ group, offers: [], orders: [order], creditsBalance: 0 })).toBe("");

@@ -10,7 +10,8 @@ import {
 export function HalfKitOfferCard({ offer, currency, onClaim, disabled, embedded = false }: { offer: MemberOffer; currency: string; onClaim: () => void; disabled: boolean; embedded?: boolean }) {
   const extra = offer.deliveryCharge + offer.vendorShippingCharge;
   return (
-    <li className="rounded-2xl border bg-white p-4 flex flex-col gap-3" style={{ borderColor: embedded ? "rgba(255,255,255,0.12)" : "#D0DAE4", ...(embedded && { background: "#162231" }) }} data-testid={`card-offer-${offer.id}`}>
+    <li className={`rounded-xl border p-4 flex flex-col gap-3 ${embedded ? "sm:flex-row sm:items-center" : "bg-white"}`} style={{ borderColor: embedded ? "rgba(255,255,255,0.12)" : "#D0DAE4", ...(embedded && { background: "#162231" }) }} data-testid={`card-offer-${offer.id}`}>
+      <div className="min-w-0 flex-1 space-y-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="font-bold text-[#0F1F38] break-words" style={embedded ? { color: "#FFFFFF" } : undefined}>{offer.productName}</p>
@@ -24,7 +25,8 @@ export function HalfKitOfferCard({ offer, currency, onClaim, disabled, embedded 
           {offer.vendorShippingCharge > 0 && <div className="flex justify-between"><dt>Vendor shipping</dt><dd className="tabular-nums">{formatMoney(currency, offer.vendorShippingCharge)}</dd></div>}
         </dl>
       )}
-      <button type="button" disabled={disabled} onClick={onClaim} className="mt-auto h-10 rounded-xl text-sm font-bold text-white disabled:opacity-50 bg-[#1B3A7A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D6BCC]" style={embedded ? { background: "#1B3A7A", border: "1px solid rgba(96,165,250,0.35)" } : undefined} data-testid={`button-claim-${offer.id}`}>
+      </div>
+      <button type="button" disabled={disabled} onClick={onClaim} className={`${embedded ? "sm:shrink-0 sm:w-40" : "mt-auto"} h-10 rounded-xl px-4 text-sm font-bold text-white disabled:opacity-50 bg-[#1B3A7A] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D6BCC]`} style={embedded ? { background: "#1B3A7A", border: "1px solid rgba(96,165,250,0.35)" } : undefined} data-testid={`button-claim-${offer.id}`}>
         Add to my order
       </button>
     </li>
@@ -146,7 +148,7 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
       )}
       <div className={embedded ? "space-y-4" : "mx-auto max-w-3xl px-4 py-6 space-y-4"}>
         {result && (
-          <div role="status" className="rounded-2xl border bg-white p-4 flex flex-col sm:flex-row sm:items-center gap-3" style={{ borderColor: "rgba(34,197,94,0.4)", ...(embedded && { background: "#162231" }) }} data-testid="status-claim-success">
+          <div role="status" className={`rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${embedded ? "" : "bg-white"}`} style={{ borderColor: "rgba(34,197,94,0.4)", ...(embedded && { background: "#162231" }) }} data-testid="status-claim-success">
             <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
             <p className="flex-1 text-sm text-[#374151]" style={embedded ? { color: "rgba(255,255,255,0.85)" } : undefined}>Half kit added to <span className="font-mono font-bold">{result.orderCode}</span>. Amount due: <b>{formatMoney(q.data?.group.currency ?? "", result.amountDue)}</b></p>
             <Link href={result.paymentPath} className="h-10 inline-flex items-center justify-center rounded-xl px-4 text-sm font-bold text-white bg-[#1B3A7A]" data-testid="link-payment">Go to payment</Link>
@@ -155,7 +157,7 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
         {q.isLoading ? (
           <ul className="grid gap-3 sm:grid-cols-2" aria-busy="true">{[0, 1].map(i => <li key={i} className="h-36 rounded-2xl bg-white border animate-pulse" style={{ borderColor: "#D0DAE4" }} />)}</ul>
         ) : q.isError || !q.data ? (
-          <div role="alert" className="rounded-2xl border bg-white p-5 text-sm flex flex-wrap items-center justify-between gap-3" style={{ borderColor: embedded ? "rgba(255,255,255,0.12)" : "#D0DAE4", ...(embedded && { background: "#162231", color: "#FFFFFF" }) }}>
+          <div role="alert" className={`rounded-2xl border p-5 text-sm flex flex-wrap items-center justify-between gap-3 ${embedded ? "" : "bg-white"}`} style={{ borderColor: embedded ? "rgba(255,255,255,0.12)" : "#D0DAE4", ...(embedded && { background: "#162231", color: "#FFFFFF" }) }}>
             <span className={embedded ? "text-red-300" : "text-red-600"}>{q.error instanceof Error ? q.error.message : "Could not load offers."}</span>
             <div className="flex shrink-0 gap-2">
               {isAuthRequired(q.error) && (
@@ -165,7 +167,7 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
             </div>
           </div>
         ) : q.data.offers.length === 0 ? (
-          <div className="rounded-2xl border border-dashed bg-white p-8 text-center" style={{ borderColor: embedded ? "rgba(255,255,255,0.12)" : "#D0DAE4", ...(embedded && { background: "#162231" }) }} data-testid="text-no-offers">
+          <div className={`rounded-2xl border border-dashed p-8 text-center ${embedded ? "" : "bg-white"}`} style={{ borderColor: embedded ? "rgba(255,255,255,0.12)" : "#D0DAE4", ...(embedded && { background: "#162231" }) }} data-testid="text-no-offers">
             <Package className="mx-auto w-6 h-6 text-[#8A9AAA]" />
             <p className="mt-2 font-semibold text-[#0F1F38]" style={embedded ? { color: "#FFFFFF" } : undefined}>No half kits available right now</p>
             <p className="text-sm text-[#6B7280]" style={embedded ? { color: "rgba(255,255,255,0.75)" } : undefined}>Your organiser publishes these when a product total is left at .5. This page refreshes automatically.</p>
@@ -173,7 +175,7 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
         ) : (
           <>
             {orders.length === 0 && <p role="note" className="rounded-xl border bg-amber-50 p-3 text-sm text-amber-900" style={{ borderColor: "rgba(233,160,32,0.4)", ...(embedded && { background: "rgba(233,160,32,0.08)", color: "#F6D391" }) }}>You need a submitted, not-yet-dispatched order in this group buy to claim a half kit.</p>}
-            <ul className="grid gap-3 sm:grid-cols-2">
+            <ul className={embedded ? "flex flex-col gap-2" : "grid gap-3 sm:grid-cols-2"} data-testid="list-half-kit-offers">
               {q.data.offers.map(o => <HalfKitOfferCard key={o.id} offer={o} currency={q.data!.group.currency} embedded={embedded} disabled={orders.length === 0} onClaim={() => open(o)} />)}
             </ul>
           </>

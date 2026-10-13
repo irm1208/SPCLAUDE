@@ -15,6 +15,12 @@ Once a half is claimed, remove it from the available list and add it to the clai
 
 **How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh.
 
+Show inline available halves as a clear list, with readable names and prices.
+
+**Why:** The user rejected the card grid because the items were barely visible and explicitly asked to “make it a list.”
+
+**How to apply:** Preserve the order-page styling while using full-width rows; avoid adding light-surface utility classes to dark rows, since global theme overrides can defeat inline backgrounds.
+
 Only advertise “Fill half kits” for a group buy with published halves still available. Remove the sign when all are taken, and show the offers directly on the order page.
 
 **Why:** The user requested availability-specific links rather than links on every group-buy card, and wants the actual halves visible on the order page.
