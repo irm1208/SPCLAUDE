@@ -1,5 +1,6 @@
 import { act } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { MemberOffersResponse } from "../../lib/half-kit-api";
 // @ts-expect-error Existing workspace browser-test dependency.
 import { JSDOM } from "../../../../../node_modules/.pnpm/jsdom@26.1.0_bufferutil@4.1.0_utf-8-validate@6.0.6/node_modules/jsdom/lib/api.js";
 
@@ -29,11 +30,16 @@ function AvailabilityLink() {
 }
 
 describe("inline half-kit claims", () => {
-  it("claims into an existing order and removes the last offer and availability link", async () => {
+  it.each([
+    { label: "removes the last half and availability link", failRefresh: false, hasOther: false },
+    { label: "removes the last half even when the refresh fails", failRefresh: true, hasOther: false },
+    { label: "removes only the claimed half and keeps other offers available", failRefresh: false, hasOther: true },
+  ])("$label", async ({ failRefresh, hasOther }) => {
     (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
     let available = true;
     const group = { id: "g1", name: "Autumn GB", currency: "GBP", allowCredits: false };
     const offer = { id: "h1", productId: "p1", productName: "Ara-290 16mg", price: 30, deliveryCharge: 0, vendorShippingCharge: 0, version: 1 };
+    const remainingOffers = hasOther ? [{ ...offer, id: "h2", productId: "p2", productName: "CJC-1295 10mg" }] : [];
     const existing = { id: "o1", code: "12345", paymentStatus: "confirmed", amountDue: 0 };
     const requests = vi.fn(async (url: string, init?: RequestInit) => {
       let body: unknown;
@@ -42,9 +48,11 @@ describe("inline half-kit claims", () => {
         available = false;
         body = { claimId: "c1", orderId: "o1", orderCode: "12345", amountDue: 30, paymentPath: "/account/orders/o1" };
       } else if (url.endsWith("/counts")) {
-        body = { counts: available ? { g1: 1 } : {} };
+        if (!available && failRefresh) throw new Error("Refresh temporarily unavailable");
+        body = { counts: available ? { g1: 1 + remainingOffers.length } : hasOther ? { g1: 1 } : {} };
       } else {
-        body = { group, offers: available ? [offer] : [], orders: [existing], creditsBalance: 0 };
+        if (!available && failRefresh) throw new Error("Refresh temporarily unavailable");
+        body = { group, offers: available ? [offer, ...remainingOffers] : remainingOffers, orders: [existing], creditsBalance: 0 };
       }
       return { ok: true, status: 200, json: async () => body };
     });
@@ -71,7 +79,13 @@ describe("inline half-kit claims", () => {
       await waitFor(() => expect(container.querySelector('[data-testid="button-confirm-claim"]')).not.toBeNull());
       await act(async () => (container.querySelector('[data-testid="button-confirm-claim"]') as HTMLButtonElement).click());
       await waitFor(() => {
-        expect(container.querySelector('[data-testid="available-link"]')).toBeNull();
+        expect(client.getQueryData<MemberOffersResponse>(["member-half-kits", "g1"])?.offers).toEqual(remainingOffers);
+        if (hasOther) {
+          expect(container.querySelector('[data-testid="available-link"]')).not.toBeNull();
+          expect(container.querySelector('[data-testid="button-claim-h2"]')).not.toBeNull();
+        } else {
+          expect(container.querySelector('[data-testid="available-link"]')).toBeNull();
+        }
         expect(container.querySelector('[data-testid="button-claim-h1"]')).toBeNull();
         expect(container.querySelector('[data-testid="status-claim-success"]')).not.toBeNull();
         expect(container.textContent).toContain("12345");

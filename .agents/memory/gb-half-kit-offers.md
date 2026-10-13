@@ -11,9 +11,9 @@ The organiser chooses which remaining half kits to offer and when to publish the
 
 Once a half is claimed, remove it from the available list and add it to the claimant’s existing order.
 
-**Why:** The user explicitly described this claiming flow.
+**Why:** The user explicitly described this claiming flow and reiterated that ordered halves must disappear from the available list.
 
-**How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice.
+**How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh.
 
 Only advertise “Fill half kits” for a group buy with published halves still available. Remove the sign when all are taken, and show the offers directly on the order page.
 

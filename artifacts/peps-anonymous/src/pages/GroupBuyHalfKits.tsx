@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Loader2, Package, RefreshCw } from "lucide-react";
 import {
   HALF_KIT_POLL_MS, claimHalfKit, computeClaimTotals, fetchMemberOffers, formatMoney, isAuthRequired, isPreviewConflict, newRequestId,
-  type ClaimResult, type HalfKitGroup, type MemberOffer, type MemberOrder,
+  type ClaimResult, type HalfKitGroup, type MemberOffer, type MemberOrder, type MemberOffersResponse, type HalfKitAvailability,
 } from "@/lib/half-kit-api";
 
 export function HalfKitOfferCard({ offer, currency, onClaim, disabled }: { offer: MemberOffer; currency: string; onClaim: () => void; disabled: boolean }) {
@@ -69,7 +69,28 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
   const [needsReconfirm, setNeedsReconfirm] = useState(false);
   const claim = useMutation({
     mutationFn: (expectedCredit: number) => claimHalfKit(gbId, active!.id, { orderId, version: active!.version, useCredits, requestId: requestIdRef.current!, expectedCredit }),
-    onSuccess: r => {
+    onSuccess: async r => {
+      const claimedOfferId = active!.id;
+      const availabilityKey = ["account", "half-kit-availability"];
+      // A confirmed claim must disappear even if the subsequent refresh fails.
+      // Cancel older reads before patching, so they cannot restore the taken half.
+      await Promise.all([
+        qc.cancelQueries({ queryKey: key }),
+        qc.cancelQueries({ queryKey: availabilityKey }),
+      ]);
+      let remaining: number | undefined;
+      qc.setQueryData<MemberOffersResponse>(key, cached => {
+        if (!cached) return cached;
+        const offers = cached.offers.filter(offer => offer.id !== claimedOfferId);
+        remaining = offers.length;
+        return { ...cached, offers };
+      });
+      if (remaining !== undefined) {
+        const remainingCount = remaining;
+        qc.setQueryData<HalfKitAvailability>(availabilityKey, cached => cached && ({
+          counts: { ...cached.counts, [gbId]: Math.min(cached.counts[gbId] ?? 0, remainingCount) },
+        }));
+      }
       setResult(r); setActive(null); requestIdRef.current = null;
       qc.invalidateQueries({ queryKey: ["account", "orders"] });
       qc.invalidateQueries({ queryKey: ["account", "me"] });
