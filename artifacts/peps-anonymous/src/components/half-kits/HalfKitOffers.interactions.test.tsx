@@ -30,6 +30,51 @@ function AvailabilityLink() {
 }
 
 describe("inline half-kit claims", () => {
+  it("keeps the timed unavailable message visible after the taken offer disappears", async () => {
+    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    let taken = false;
+    const data = {
+      group: { id: "g1", name: "Autumn GB", currency: "GBP", allowCredits: false },
+      offers: [{ id: "h1", productId: "p1", productName: "Ara-290 16mg", price: 30, deliveryCharge: 0, vendorShippingCharge: 0, version: 1 }],
+      orders: [{ id: "o1", code: "12345", paymentStatus: "confirmed", amountDue: 0 }],
+      creditsBalance: 0,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/claim")) {
+        taken = true;
+        return { ok: false, status: 409, json: async () => ({ error: "Sorry, this half kit was taken 2 seconds ago.", code: "HALF_KIT_TAKEN" }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ ...data, offers: taken ? [] : data.offers }) };
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } } });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const waitFor = async (check: () => void) => {
+      let error: unknown;
+      for (let i = 0; i < 100; i++) {
+        await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+        try { check(); return; } catch (e) { error = e; }
+      }
+      throw error;
+    };
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><HalfKitOffers gbId="g1" embedded /></QueryClientProvider>));
+      await waitFor(() => expect(container.querySelector('[data-testid="button-claim-h1"]')).not.toBeNull());
+      await act(async () => (container.querySelector('[data-testid="button-claim-h1"]') as HTMLButtonElement).click());
+      await waitFor(() => expect(container.querySelector('[data-testid="button-confirm-claim"]')).not.toBeNull());
+      await act(async () => (container.querySelector('[data-testid="button-confirm-claim"]') as HTMLButtonElement).click());
+      await waitFor(() => {
+        expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain("Sorry, this half kit was taken 2 seconds ago.");
+        expect(container.querySelector('[data-testid="button-confirm-claim"]')).toBeNull();
+        expect(container.querySelector('[data-testid="button-claim-h1"]')).toBeNull();
+        expect(container.querySelector('[data-testid="button-cancel-claim"]')?.textContent).toBe("Close");
+      });
+    } finally {
+      await act(async () => root.unmount());
+      client.clear(); container.remove(); vi.unstubAllGlobals();
+    }
+  });
   it.each([
     { label: "removes the last half and availability link", failRefresh: false, hasOther: false },
     { label: "removes the last half even when the refresh fails", failRefresh: true, hasOther: false },

@@ -23,7 +23,7 @@ function actor(req: Request, manage = false): HalfKitActor {
 function fail(res: Response, error: unknown) {
   const refund = refundMutationConflictResponse(error);
   if (refund) { res.status(refund.status).json(refund.body); return; }
-  if (error instanceof HalfKitError) { res.status(error.status).json({ error: error.message }); return; }
+  if (error instanceof HalfKitError) { res.status(error.status).json({ error: error.message, ...(error.code && { code: error.code }) }); return; }
   console.error("[half-kits]", error);
   res.status(500).json({ error: "Half-kit operation failed. No partial changes were saved. Please try again." });
 }

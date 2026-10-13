@@ -1,5 +1,13 @@
 export class HalfKitError extends Error {
-  constructor(message: string, public status = 409) { super(message); }
+  constructor(message: string, public status = 409, public code?: string) { super(message); }
+}
+export function halfKitTakenMessage(claimedAt: Date, now = Date.now()): string {
+  const elapsed = Math.max(0, now - claimedAt.getTime());
+  if (!Number.isFinite(elapsed)) return "Sorry, this half kit has already been taken.";
+  const seconds = Math.floor(elapsed / 1000);
+  return seconds === 0
+    ? "Sorry, this half kit was taken less than a second ago."
+    : `Sorry, this half kit was taken ${seconds} second${seconds === 1 ? "" : "s"} ago.`;
 }
 export const money = (value: unknown): number => {
   const number = Number(value ?? 0);

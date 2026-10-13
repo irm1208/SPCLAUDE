@@ -15,6 +15,12 @@ Once a half is claimed, remove it from the available list and add it to the clai
 
 **How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh.
 
+When someone loses a simultaneous claim, apologise and show how many seconds earlier the half kit was taken.
+
+**Why:** The user requested this wording rather than a generic unavailable message.
+
+**How to apply:** Use the actual claim time for the exact advertised offer version, never invent a delay or confuse price changes with a taken half. Keep the message visible after refreshing availability.
+
 Show inline available halves as a clear list, with readable names and prices.
 
 **Why:** The user rejected the card grid because the items were barely visible and explicitly asked to “make it a list.”

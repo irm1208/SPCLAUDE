@@ -7,7 +7,7 @@ import {
 import { assertGroupStock, lockGroupStock } from "./group-buy-stock";
 import { assertNoActiveRefund } from "./refund-mutation-guard";
 import { fetchFiatToUsd, isStablecoin } from "./crypto-pricing";
-import { claimAmounts, eligibleHalfKitOrder, halfKitClaimPaid, hasRemainingHalf, HalfKitError, money, offerMoney } from "./half-kit-rules";
+import { claimAmounts, eligibleHalfKitOrder, halfKitClaimPaid, hasRemainingHalf, HalfKitError, halfKitTakenMessage, money, offerMoney } from "./half-kit-rules";
 import { lockHalfKitMoney } from "./half-kit-lock";
 
 type Database = any; // accepts both the workspace DB and a transaction/savepoint in integration tests
@@ -256,6 +256,10 @@ export async function claimHalfKit(groupId: string, offerId: string, actor: Half
     const candidate = (await refreshCandidates(tx, groupId, group.currency)).find(row => row.offer?.id === offerId);
     const offer = candidate?.offer;
     if (!candidate?.remainingHalf || !offer?.published || offer.version !== input.version || offer.currency !== group.currency) {
+      // Match the exact advertised version, never a historical/released claim.
+      const [taken] = await tx.select({ createdAt: claims.createdAt }).from(claims)
+        .where(and(eq(claims.offerId, offerId), eq(claims.offerVersion, input.version), eq(claims.state, "active"))).limit(1);
+      if (taken) throw new HalfKitError(halfKitTakenMessage(taken.createdAt), 409, "HALF_KIT_TAKEN");
       throw new HalfKitError("This half kit was taken or its price changed. Refresh the available offers.");
     }
     if (input.useCredits && group.allowCredits !== true) throw new HalfKitError("Credits are disabled for this group buy.", 403);
@@ -279,6 +283,8 @@ export async function claimHalfKit(groupId: string, offerId: string, actor: Half
       productName: candidate.productName, username: account.telegramUsername, currency: group.currency,
       price: numeric(offer.price), deliveryCharge: numeric(offer.deliveryCharge), vendorShippingCharge: numeric(offer.vendorShippingCharge),
       creditsUsd: numeric(creditsUsd), creditsUsed: numeric(amounts.credit), cashDue: numeric(amounts.cash),
+      // PostgreSQL now() is transaction-start time, which may precede waiting for the claim lock.
+      createdAt: sql`clock_timestamp()`,
     }).returning();
     if (creditsUsd > 0) {
       await tx.update(accountsTable).set({ credits: numeric(number(account.credits) - creditsUsd) })

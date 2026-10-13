@@ -9,6 +9,17 @@ afterEach(() => vi.unstubAllGlobals());
 const ok = (body: unknown) => vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
 
 describe("half-kit api", () => {
+  it("preserves a taken-offer message without treating it as a changed-price preview", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 409, json: async () => ({
+        error: "Sorry, this half kit was taken 3 seconds ago.", code: "HALF_KIT_TAKEN",
+      }),
+    }));
+    const error = await claimHalfKit("g1", "h1", { orderId: "o1", version: 1, useCredits: false, requestId: "r1", expectedCredit: 0 }).catch(e => e);
+    expect(error.message).toBe("Sorry, this half kit was taken 3 seconds ago.");
+    expect(error.code).toBe("HALF_KIT_TAKEN");
+    expect(isPreviewConflict(error)).toBe(false);
+  });
   it("fetches group availability in a single authenticated request", async () => {
     const f = ok({ counts: { g1: 2 } });
     vi.stubGlobal("fetch", f);

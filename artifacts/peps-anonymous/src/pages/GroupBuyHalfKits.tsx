@@ -3,7 +3,7 @@ import { Link, useRoute } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Loader2, Package, RefreshCw } from "lucide-react";
 import {
-  HALF_KIT_POLL_MS, claimHalfKit, computeClaimTotals, fetchMemberOffers, formatMoney, isAuthRequired, isPreviewConflict, newRequestId,
+  HALF_KIT_POLL_MS, claimHalfKit, computeClaimTotals, fetchMemberOffers, formatMoney, isAuthRequired, isPreviewConflict, isHalfKitTaken, newRequestId,
   type ClaimResult, type HalfKitGroup, type MemberOffer, type MemberOrder, type MemberOffersResponse, type HalfKitAvailability,
 } from "@/lib/half-kit-api";
 
@@ -204,12 +204,12 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
               : <p className="text-sm text-[#6B7280]">Choose which order receives this half.</p>}
             {needsReconfirm ? (
               <p role="alert" className="text-sm text-amber-900 rounded-lg bg-amber-50 p-2" data-testid="status-reconfirm">The price, credits or availability changed. The summary above is refreshed; please check it and confirm again.</p>
-            ) : claim.isError && <p role="alert" className="text-sm text-red-600">{claim.error instanceof Error ? claim.error.message : "Claim failed"}. You can retry safely.</p>}
+            ) : claim.isError && <p role="alert" className="text-sm text-red-600">{claim.error instanceof Error ? claim.error.message : "Claim failed"}{isHalfKitTaken(claim.error) ? " Please choose another available half kit." : " You can retry safely."}</p>}
             <div className="flex gap-2 justify-end">
-              <button type="button" onClick={close} disabled={claim.isPending} className="h-10 rounded-xl border border-dashed px-4 text-sm text-[#8A9AAA]" style={{ borderColor: "#D0DAE4" }} data-testid="button-cancel-claim">Cancel</button>
-              <button type="button" disabled={!order || claim.isPending || (needsReconfirm && q.isFetching)} onClick={confirm} className="h-10 rounded-xl px-4 text-sm font-bold text-white bg-[#1B3A7A] disabled:opacity-50 inline-flex items-center gap-2" data-testid="button-confirm-claim">
+              <button type="button" onClick={close} disabled={claim.isPending} className="h-10 rounded-xl border border-dashed px-4 text-sm text-[#8A9AAA]" style={{ borderColor: "#D0DAE4" }} data-testid="button-cancel-claim">{isHalfKitTaken(claim.error) ? "Close" : "Cancel"}</button>
+              {!isHalfKitTaken(claim.error) && <button type="button" disabled={!order || claim.isPending || (needsReconfirm && q.isFetching)} onClick={confirm} className="h-10 rounded-xl px-4 text-sm font-bold text-white bg-[#1B3A7A] disabled:opacity-50 inline-flex items-center gap-2" data-testid="button-confirm-claim">
                 {claim.isPending && <Loader2 className="w-4 h-4 animate-spin" />}{needsReconfirm ? "Confirm updated amount" : claim.isError ? "Retry" : "Confirm"}
-              </button>
+              </button>}
             </div>
           </div>
         </div>

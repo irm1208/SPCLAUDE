@@ -113,6 +113,9 @@ try {
   check("concurrent claims have exactly one winner", () => {
     assert.equal(raced.filter(row => row.status === "fulfilled").length, 1);
     assert.equal(raced.filter(row => row.status === "rejected").length, 1);
+    const loser = (raced.find(row => row.status === "rejected") as PromiseRejectedResult).reason;
+    assert.equal(loser.code, "HALF_KIT_TAKEN");
+    assert.match(loser.message, /^Sorry, this half kit was taken (less than a second|\d+ seconds?) ago\.$/);
   });
   const winner = (raced.find(row => row.status === "fulfilled") as PromiseFulfilledResult<any>).value;
   await db.update(ordersTable).set({ paymentStatus: "confirmed", amountDue: "0", balancePaymentStatus: "confirmed",

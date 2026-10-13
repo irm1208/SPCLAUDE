@@ -20,9 +20,10 @@ export interface HalfKitAvailability { counts: Record<string, number> }
 export const fetchHalfKitAvailability = () => request<HalfKitAvailability>("/api/group-buys/half-kit-availability/counts");
 
 export class HalfKitApiError extends Error {
-  constructor(message: string, readonly status: number) { super(message); this.name = "HalfKitApiError"; }
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message); this.name = "HalfKitApiError"; }
 }
-export const isPreviewConflict = (e: unknown) => e instanceof HalfKitApiError && e.status === 409;
+export const isHalfKitTaken = (e: unknown) => e instanceof HalfKitApiError && e.code === "HALF_KIT_TAKEN";
+export const isPreviewConflict = (e: unknown) => e instanceof HalfKitApiError && e.status === 409 && !isHalfKitTaken(e);
 export const isAuthRequired = (e: unknown) => e instanceof HalfKitApiError && e.status === 401;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -36,7 +37,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const msg = body && typeof body === "object" && ("error" in body || "message" in body)
       ? String((body as { error?: string; message?: string }).error ?? (body as { message?: string }).message)
       : `Request failed (${res.status})`;
-    throw new HalfKitApiError(msg, res.status);
+    throw new HalfKitApiError(msg, res.status, typeof body?.code === "string" ? body.code : undefined);
   }
   return body as T;
 }

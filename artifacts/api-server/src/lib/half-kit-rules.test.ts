@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { hasRemainingHalf, claimAmounts, eligibleHalfKitOrder, halfKitClaimPaid } from "./half-kit-rules";
+import { hasRemainingHalf, claimAmounts, eligibleHalfKitOrder, halfKitClaimPaid, halfKitTakenMessage } from "./half-kit-rules";
 
 describe("half-kit rules", () => {
+  it("reports the real claim age, including sub-second and singular cases", () => {
+    const claimed = new Date("2026-10-14T00:00:00Z");
+    expect(halfKitTakenMessage(claimed, claimed.getTime() + 500)).toBe("Sorry, this half kit was taken less than a second ago.");
+    expect(halfKitTakenMessage(claimed, claimed.getTime() + 1500)).toBe("Sorry, this half kit was taken 1 second ago.");
+    expect(halfKitTakenMessage(claimed, claimed.getTime() + 5300)).toBe("Sorry, this half kit was taken 5 seconds ago.");
+    expect(halfKitTakenMessage(new Date("invalid"))).toBe("Sorry, this half kit has already been taken.");
+  });
   it.each([[3.5, true], [0.5, true], [3, false], [0, false], [3.25, false], [NaN, false], [-0.5, false]])(
     "only offers actual positive half remainder %s", (qty, expected) => expect(hasRemainingHalf(qty)).toBe(expected),
   );
