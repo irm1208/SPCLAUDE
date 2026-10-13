@@ -8801,15 +8801,13 @@ export default function CustomerPortal() {
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   {!isOrderable && <WaitlistToggleButton gbId={gb.id} />}
-                  {gbOrders.length > 0 && (
-                    <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
-                      className="w-full h-9 rounded-full text-[12px] font-semibold flex items-center justify-center gap-1.5 hover:opacity-90"
-                      style={{ border: "1px solid rgba(233,160,32,0.55)", color: "#F5C25B" }}
-                      data-testid={`link-half-kits-${gb.id}`}>
-                      Fill remaining half kits
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </a>
-                  )}
+                  <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
+                    className="w-full h-9 rounded-full text-[12px] font-semibold flex items-center justify-center gap-1.5 hover:opacity-90"
+                    style={{ border: "1px solid rgba(233,160,32,0.55)", color: "#F5C25B" }}
+                    data-testid={`link-half-kits-${gb.id}`}>
+                    Fill remaining half kits
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </a>
                 </div>
               </motion.div>
             );
@@ -8888,6 +8886,12 @@ export default function CustomerPortal() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1.5">
+                              <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
+                                data-testid={`link-half-kits-table-${gb.id}`}
+                                className="inline-flex min-h-9 items-center rounded-lg border px-3 text-[11.5px] font-bold whitespace-nowrap"
+                                style={{ color: T.text, borderColor: T.border }}>
+                                Available half kits
+                              </a>
                               <button
                                 onClick={() => isOrderable ? setLocation(`/order?gbId=${gb.id}`) : setLocation("/account?s=orders")}
                                 className="h-8 px-3.5 rounded-lg text-[11.5px] font-bold text-white whitespace-nowrap"

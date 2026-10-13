@@ -20,6 +20,32 @@ const data = {
 const noop = () => {};
 
 describe("half-kit manager view", () => {
+  it.each(["organiser", "admin"] as const)("shows only unfilled half kits for %s", scope => {
+    const mixed = {
+      ...data,
+      candidates: [
+        ...data.candidates,
+        { productId: "zero", productName: "Zero orders product", totalQuantity: 0, defaultPrice: 10, remainingHalf: false, offer: null },
+        { productId: "whole", productName: "Whole kits product", totalQuantity: 5, defaultPrice: 10, remainingHalf: false, offer: null },
+      ],
+    };
+    const html = renderToStaticMarkup(createElement(HalfKitManagerView, { scope, data: mixed, onSave: async () => {}, onRelease: async () => {}, onBulkPublish: async () => ({ succeeded: [], failed: [] }) }));
+    expect(html).toContain('data-testid="row-candidate-p1"');
+    expect(html).toContain('data-testid="row-candidate-p2"');
+    expect(html).not.toContain("Zero orders product");
+    expect(html).not.toContain("Whole kits product");
+    expect(html).not.toContain("no unfilled half");
+  });
+
+  it("shows the empty state when products exist but none have an unfilled half", () => {
+    const wholeOnly = { ...data, candidates: data.candidates.map(c => ({ ...c, remainingHalf: false, totalQuantity: 4 })) };
+    const html = renderToStaticMarkup(createElement(HalfKitManagerView, { scope: "organiser", data: wholeOnly, onSave: async () => {}, onRelease: async () => {}, onBulkPublish: async () => ({ succeeded: [], failed: [] }) }));
+    expect(html).toContain('data-testid="text-no-candidates"');
+    expect(html).not.toContain('data-testid="row-candidate-');
+    expect(html).not.toContain('data-testid="button-publish-selected"');
+    expect(html).toContain("GB-77");
+  });
+
   it("renders candidates with default half price and publish state", () => {
     const html = renderToStaticMarkup(createElement(HalfKitManagerView, { scope: "organiser", data, onSave: async () => {}, onRelease: async () => {}, onBulkPublish: async () => ({ succeeded: [], failed: [] }) }));
     expect(html).toContain("Reta 10mg");
@@ -90,6 +116,30 @@ describe("member page QA", () => {
 });
 
 describe("entry points", () => {
+  it("shares component-scoped kit-limit checks between the side panel and main review button", () => {
+    const form = readFileSync("src/pages/OrderForm.tsx", "utf8");
+    const pageReturn = form.indexOf("return (\n    <Chrome>");
+    expect(pageReturn).toBeGreaterThan(0);
+    for (const declaration of ["const gbFull =", "const totalNewKits =", "const kitLimitBlocked ="]) {
+      expect(form.indexOf(declaration)).toBeGreaterThan(0);
+      expect(form.indexOf(declaration)).toBeLessThan(pageReturn);
+    }
+    expect(form).toContain("reviewDisabled={isPreview || kitLimitBlocked}");
+  });
+  it("links to member half-kit offers directly from the order form", () => {
+    const form = readFileSync("src/pages/OrderForm.tsx", "utf8");
+    expect(form).toContain('data-testid="link-order-form-half-kits"');
+    expect(form).toContain('/group-buys/${encodeURIComponent(gbId)}/half-kits');
+    expect(form).toContain("Available half kits");
+    expect(form.indexOf('data-testid="link-order-form-half-kits"')).toBeLessThan(form.indexOf(">Your Products</p>"));
+  });
+  it("includes half-kit links in both member card and table views, even without an existing order", () => {
+    const portal = readFileSync("src/pages/CustomerPortal.tsx", "utf8");
+    expect(portal).toContain('data-testid={`link-half-kits-table-${gb.id}`}');
+    const cardLink = portal.slice(portal.indexOf('{/* Footer: CTA */}'), portal.indexOf('!gbLoading && gbView === "table"'));
+    expect(cardLink).toContain('data-testid={`link-half-kits-${gb.id}`}');
+    expect(cardLink).not.toContain("gbOrders.length > 0");
+  });
   it("routes the member page and links managers from summaries", () => {
     expect(readFileSync("src/App.tsx", "utf8")).toContain('"/group-buys/:id/half-kits"');
     expect(readFileSync("src/pages/GbOrganiser.tsx", "utf8")).toContain("<HalfKitManager");

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ShoppingCart, Minus, Plus, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { OrderPanelDelivery, type PanelDeliveryChoices } from "./OrderPanelDelivery";
+import { OrderPanelExtras, type PanelOrderExtras } from "./OrderPanelExtras";
 
 type OrderPanelProps = {
   items: {
@@ -25,9 +26,10 @@ type OrderPanelProps = {
   editingDisabled?: boolean;
   watermark?: ReactNode;
   delivery?: PanelDeliveryChoices;
+  extras?: PanelOrderExtras;
 };
 
-export function OrderPanelContents({ items, total, formatPrice, hidePrices, hideTotal, shippingPending, onQuantityChange, onRemove, editingDisabled, watermark, delivery }: OrderPanelProps) {
+export function OrderPanelContents({ items, total, formatPrice, hidePrices, hideTotal, shippingPending, onQuantityChange, onRemove, editingDisabled, watermark, delivery, extras }: OrderPanelProps) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {watermark}
@@ -99,6 +101,7 @@ export function OrderPanelContents({ items, total, formatPrice, hidePrices, hide
           </ul>
         )}
         {delivery && <OrderPanelDelivery {...delivery} disabled={editingDisabled} hidePrices={hidePrices} formatPrice={formatPrice} />}
+        {extras && <OrderPanelExtras {...extras} disabled={editingDisabled} formatPrice={formatPrice} />}
       </div>
       {!hidePrices && !hideTotal && (
         <div className="border-t pt-4" style={{ borderColor: "var(--t-border)" }}>
@@ -116,7 +119,7 @@ export function OrderPanelContents({ items, total, formatPrice, hidePrices, hide
   );
 }
 
-export function OrderSidePanel(props: OrderPanelProps) {
+export function OrderSidePanel(props: OrderPanelProps & { onReview: () => void; reviewDisabled?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -134,9 +137,13 @@ export function OrderSidePanel(props: OrderPanelProps) {
           <SheetDescription style={{ color: "var(--t-muted)" }}>Edit products and choose delivery here. Your order total updates automatically.</SheetDescription>
         </SheetHeader>
         <OrderPanelContents {...props} />
-        <button type="button" className="mt-4 w-full rounded-xl bg-[#1B3A7A] px-4 py-3 text-sm font-bold text-white"
-          onClick={() => setOpen(false)}>
-          Continue browsing
+        <button type="button" className="mt-4 w-full rounded-xl bg-[#1B3A7A] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={props.reviewDisabled}
+          onClick={() => {
+            setOpen(false);
+            props.onReview();
+          }}>
+          Review order
         </button>
       </SheetContent>
     </Sheet>

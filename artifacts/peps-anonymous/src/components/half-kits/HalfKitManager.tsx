@@ -131,13 +131,15 @@ export function HalfKitManagerView({ data, onSave, onRelease, onBulkPublish }: {
   onRelease: (claimId: string) => Promise<unknown>;
   onBulkPublish: (items: { productId: string; input: OfferInput }[]) => Promise<BulkResult>;
 }) {
-  const { group, candidates, claims } = data;
+  const { group, claims } = data;
+  const candidates = useMemo(() => data.candidates.filter(c => c.remainingHalf), [data.candidates]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulk, setBulk] = useState<BulkResult | null>(null);
   const names = useMemo(() => new Map(candidates.map(c => [c.productId, c.productName])), [candidates]);
+  const selectedCandidates = candidates.filter(c => selected.has(c.productId) && !offerCurrencyMismatch(c.offer, group.currency));
   const publishSelected = async () => {
-    const items = candidates.filter(c => selected.has(c.productId) && !offerCurrencyMismatch(c.offer, group.currency)).map(c => {
+    const items = selectedCandidates.map(c => {
       const d = draftFor(c, group.currency);
       return { productId: c.productId, input: { price: Number(d.price), deliveryCharge: Number(d.deliveryCharge), vendorShippingCharge: Number(d.vendorShippingCharge), published: true, version: c.offer?.version } };
     });
@@ -161,9 +163,9 @@ export function HalfKitManagerView({ data, onSave, onRelease, onBulkPublish }: {
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" disabled={selected.size === 0 || bulkBusy} onClick={publishSelected}
+            <button type="button" disabled={selectedCandidates.length === 0 || bulkBusy} onClick={publishSelected}
               className="h-9 rounded-xl px-3 text-xs font-bold text-white disabled:opacity-50" style={{ background: C.blue }} data-testid="button-publish-selected">
-              {bulkBusy ? "Publishing…" : `Publish selected (${selected.size})`}
+              {bulkBusy ? "Publishing…" : `Publish selected (${selectedCandidates.length})`}
             </button>
             <span className="text-[11px]" style={{ color: C.muted }}>Uses the saved/default price for each. Publishes one at a time.</span>
           </div>

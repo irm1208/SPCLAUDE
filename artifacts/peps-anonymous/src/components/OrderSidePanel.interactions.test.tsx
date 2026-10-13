@@ -20,6 +20,7 @@ const props = {
   hidePrices: false,
   hideTotal: false,
   shippingPending: false,
+  onReview: () => {},
 };
 
 before(async () => {
@@ -73,17 +74,32 @@ test("opens a right-side order panel and reflects live draft updates", async () 
   assert.equal(document.querySelector('[role="dialog"]'), null);
 });
 
-test("continue browsing closes the panel without leaving the current location", async () => {
-  await mount();
+test("review order invokes the review handler and closes the panel", async () => {
+  let reviews = 0;
+  await mount({ onReview: () => { reviews += 1; } });
   const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Open your order"]')!;
   await act(async () => fireEvent.click(trigger));
-  const edit = [...document.querySelectorAll("button")].find(button => button.textContent === "Continue browsing")!;
+  const edit = [...document.querySelectorAll("button")].find(button => button.textContent === "Review order")!;
+  assert.ok(edit, "panel must offer the review action");
   await act(async () => {
     fireEvent.click(edit);
     await new Promise(resolve => setTimeout(resolve, 20));
   });
   assert.equal(document.querySelector('[role="dialog"]'), null);
+  assert.equal(reviews, 1);
   assert.equal(document.querySelector("details")!.open, false);
+});
+
+test("review order stays disabled when the form cannot proceed", async () => {
+  let reviews = 0;
+  await mount({ onReview: () => { reviews += 1; }, reviewDisabled: true });
+  await act(async () => fireEvent.click(document.querySelector('button[aria-label="Open your order"]')!));
+  const review = [...document.querySelectorAll("button")].find(button => button.textContent === "Review order")!;
+  assert.ok(review, "panel must offer the review action");
+  assert.equal(review.disabled, true);
+  await act(async () => fireEvent.click(review));
+  assert.equal(reviews, 0);
+  assert.ok(document.querySelector('[role="dialog"]'));
 });
 
 test("edits and removes items directly in the open panel", async () => {
@@ -228,4 +244,63 @@ test("delivery selection updates the shared draft, total, and direct-shipping fl
   await act(async () => fireEvent.click(dialog.querySelector('input[value="royal"]')!));
   assert.equal(useDraftStore.getState().directShippingRequested, false);
   assert.match(dialog.textContent!, /\$107\.00/);
+});
+
+test("notes and tips stay in sync with the draft, update the total, and survive reopening", async () => {
+  useDraftStore.setState({ notes: "", tip: 0 });
+  function ExtrasPanel() {
+    const draft = useDraftStore();
+    return <Panel {...props}
+      total={107 + draft.tip}
+      extras={{
+        notes: draft.notes, onNotesChange: draft.setNotes,
+        tip: draft.tip, tipOptions: [0, 1, 2, 3, 5, 10, 15, 20], onTipChange: draft.setTip,
+      }}
+    />;
+  }
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => root!.render(<ExtrasPanel />));
+  const trigger = document.querySelector('button[aria-label="Open your order"]')!;
+  await act(async () => fireEvent.click(trigger));
+  let dialog = document.querySelector('[role="dialog"]')!;
+  const notes = dialog.querySelector<HTMLTextAreaElement>("textarea")!;
+  const tip = dialog.querySelector<HTMLSelectElement>("select")!;
+  assert.ok(notes, "notes must be editable in the panel");
+  assert.ok(tip, "tip must be selectable in the panel");
+  assert.equal(tip.options[0].text, "No tip");
+  assert.equal(tip.options[4].text, "$5.00");
+  await act(async () => fireEvent.change(notes, { target: { value: "Please pack securely." } }));
+  await act(async () => fireEvent.change(tip, { target: { value: "5" } }));
+  assert.equal(useDraftStore.getState().notes, "Please pack securely.");
+  assert.equal(useDraftStore.getState().tip, 5);
+  assert.match(dialog.textContent!, /\$112\.00/);
+  await act(async () => fireEvent.click([...dialog.querySelectorAll("button")].find(button => button.textContent === "Close")!));
+  await act(async () => fireEvent.click(trigger));
+  dialog = document.querySelector('[role="dialog"]')!;
+  assert.equal(dialog.querySelector("textarea")!.value, "Please pack securely.");
+  assert.equal(dialog.querySelector("select")!.value, "5");
+  await act(async () => useDraftStore.setState({ notes: "Edited on the main form.", tip: 10 }));
+  assert.equal(dialog.querySelector("textarea")!.value, "Edited on the main form.");
+  assert.equal(dialog.querySelector("select")!.value, "10");
+  assert.match(dialog.textContent!, /\$117\.00/);
+  await act(async () => fireEvent.change(dialog.querySelector("select")!, { target: { value: "0" } }));
+  assert.equal(useDraftStore.getState().tip, 0);
+  assert.match(dialog.textContent!, /\$107\.00/);
+});
+
+test("preview disables notes and tip editing", async () => {
+  await mount({
+    editingDisabled: true,
+    extras: {
+      notes: "Preview notes", onNotesChange: () => assert.fail("preview must not edit notes"),
+      tip: 0, tipOptions: [0, 5], onTipChange: () => assert.fail("preview must not edit tip"),
+    },
+  });
+  await act(async () => fireEvent.click(document.querySelector('button[aria-label="Open your order"]')!));
+  const dialog = document.querySelector('[role="dialog"]')!;
+  assert.ok(dialog.querySelector("textarea"), "notes must be present");
+  assert.equal(dialog.querySelector("textarea")!.disabled, true);
+  assert.equal(dialog.querySelector("select")!.disabled, true);
 });

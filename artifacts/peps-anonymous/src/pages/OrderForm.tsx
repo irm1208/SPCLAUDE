@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, ChevronDown, Package, MessageCircle, X, Heart, ArrowRight, Info, Loader2, TestTube, AlertTriangle, Globe, BarChart2, Search, Check, Truck, Home, ShoppingCart, Eye } from "lucide-react";
 import { findProtocol, type Protocol } from "@/data/protocols";
@@ -1150,6 +1150,9 @@ export default function OrderForm() {
   const useDashChrome = isLoggedIn || accountLoading;
   const Chrome = useDashChrome ? OrderFormShell : PageLayout;
   const contentWidth = gbId ? "max-w-3xl" : "max-w-2xl";
+  const gbFull = !!(gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal);
+  const totalNewKits = draft.lineItems.reduce((sum, item) => sum + item.quantity, 0);
+  const kitLimitBlocked = gbFull || (gbMaxKitsTotal != null && (gbKitsOrderedTotal + totalNewKits) > gbMaxKitsTotal) || (gbMaxKitsPerCustomer != null && (gbKitsOrderedByUser + totalNewKits) > gbMaxKitsPerCustomer);
 
   return (
     <Chrome>
@@ -1455,6 +1458,22 @@ export default function OrderForm() {
           </div>
         )}
 
+        {gbId && !isPreview && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
+            style={{ background: "var(--t-surface)", borderColor: "var(--t-blue-25)", color: "var(--t-text)" }}>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold">Fill a remaining half kit</p>
+              <p className="mt-1 text-xs" style={{ color: "var(--t-muted)" }}>View the organiser’s published offers and add a half kit to an existing order.</p>
+            </div>
+            <Link href={`/group-buys/${encodeURIComponent(gbId)}/half-kits`}
+              data-testid="link-order-form-half-kits"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold text-white"
+              style={{ background: "var(--t-blue-deep)" }}>
+              Available half kits <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
+        )}
+
         <section className="space-y-3">
           <div className="rounded-3xl p-5 relative overflow-clip" style={{ background: "#1C2B3D", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.06)" }}>
             <div className="absolute top-0 right-0 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: "rgba(59,130,246,0.08)", filter: "blur(70px)" }} />
@@ -1520,6 +1539,18 @@ export default function OrderForm() {
                       onQuantityChange={handlePanelQuantityChange}
                       onRemove={handlePanelRemove}
                       editingDisabled={isPreview}
+                      extras={{
+                        notes: draft.notes,
+                        onNotesChange: draft.setNotes,
+                        tip: draft.tip,
+                        tipOptions: TIP_OPTIONS,
+                        onTipChange: amount => {
+                          draft.setTip(amount);
+                          setShowTip(amount > 0);
+                        },
+                      }}
+                      onReview={handleReview}
+                      reviewDisabled={isPreview || kitLimitBlocked}
                       watermark={<PriceWatermark username={getAccountHandle(account)} />}
                       delivery={{
                         options: [
@@ -2377,9 +2408,6 @@ export default function OrderForm() {
 
         {/* ── Review Order button ────────────────────────────────────────────── */}
         {(() => {
-          const gbFull = !!(gbId && gbMaxKitsTotal != null && gbKitsOrderedTotal >= gbMaxKitsTotal);
-          const totalNewKits = draft.lineItems.reduce((sum, item) => sum + item.quantity, 0);
-          const kitLimitBlocked = gbFull || (gbMaxKitsTotal != null && (gbKitsOrderedTotal + totalNewKits) > gbMaxKitsTotal) || (gbMaxKitsPerCustomer != null && (gbKitsOrderedByUser + totalNewKits) > gbMaxKitsPerCustomer);
           return (
             <div className="pt-2 pb-4">
               <button
