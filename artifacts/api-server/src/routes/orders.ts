@@ -5,6 +5,8 @@ import { assertGroupStock } from "../lib/group-buy-stock";
 import { gbHalfKitClaimsTable } from "@workspace/db";
 import { cancelUnpaidHalfClaims } from "../lib/half-kit-offers";
 import { HalfKitError } from "../lib/half-kit-rules";
+import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
+import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/coupon-redemption";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
@@ -13,6 +15,7 @@ import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import {
   ordersTable,
+  wholesaleSharesTable,
   orderLineItemsTable,
   lookupAttemptsTable,
   deliveryMethodsTable,
@@ -32,7 +35,7 @@ import {
   EDITABLE_STATUSES,
   type OrderStatus,
 } from "@workspace/db";
-import { eq, and, or, ne, sql, desc, count, inArray, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, or, ne, sql, desc, count, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { writeLog } from "../lib/audit-log";
 import { createAlert } from "../lib/create-alert";
@@ -340,8 +343,14 @@ router.use((req, res, next): void => {
     req.method === "PUT"
     && legacyOrderMutation
     && Boolean(req.cookies?.account_session);
+  // These routes require a validated account session and ownership below.
+  // A cookie only permits reaching that validation; it is not authorization.
+  const signedInPaymentAction =
+    req.method === "POST"
+    && /^\/orders\/[^/]+\/(?:payment-screenshot|confirm-fiat)$/.test(req.path)
+    && Boolean(req.cookies?.account_session);
 
-  if (exactRoutes.has(key) || legacyOrderAction || (legacyOrderMutation && !signedInOrderUpdate)) {
+  if (exactRoutes.has(key) || (legacyOrderAction && !signedInPaymentAction) || (legacyOrderMutation && !signedInOrderUpdate)) {
     const forwardedFor = Array.isArray(req.headers["x-forwarded-for"])
       ? req.headers["x-forwarded-for"].join(",")
       : req.headers["x-forwarded-for"] ?? null;
@@ -2881,7 +2890,7 @@ router.put("/orders/my-profile", async (req, res): Promise<void> => {
 });
 
 // POST /api/orders/:id/payment-screenshot — upload proof of payment
-router.post("/orders/:id/payment-screenshot", async (req, res): Promise<void> => {
+router.post("/orders/:id/payment-screenshot", requireAccount, async (req, res): Promise<void> => {
   const id = String(req.params["id"]);
   const { screenshot } = req.body;
 
@@ -2915,10 +2924,25 @@ router.post("/orders/:id/payment-screenshot", async (req, res): Promise<void> =>
     return;
   }
 
-  await db
+  if (!safeEqual(normalizeTg(req.account!.telegramUsername).toLowerCase(), normalizeTg(order.telegramUsername).toLowerCase())) {
+    res.status(403).json({ error: "You can only upload payment proof for your own order" });
+    return;
+  }
+
+  const [saved] = await db
     .update(ordersTable)
     .set({ paymentScreenshot: s })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
+    .where(refundMutableOrderWhere(and(
+      eq(ordersTable.id, id),
+      eq(ordersTable.telegramUsername, order.telegramUsername),
+      isNull(ordersTable.deletedAt),
+      activeSharedOrderMembershipWhere(),
+    )))
+    .returning({ id: ordersTable.id });
+  if (!saved) {
+    res.status(409).json({ error: "This order is no longer available for payment proof. Please refresh." });
+    return;
+  }
 
   writeLog("change", "info", "payment_screenshot_uploaded",
     `Payment screenshot uploaded for order #${order.code}`,
@@ -2929,7 +2953,7 @@ router.post("/orders/:id/payment-screenshot", async (req, res): Promise<void> =>
 });
 
 // POST /api/orders/:id/confirm-fiat — buyer signals they have paid via Revolut/PayPal
-router.post("/orders/:id/confirm-fiat", async (req, res): Promise<void> => {
+router.post("/orders/:id/confirm-fiat", requireAccount, async (req, res): Promise<void> => {
   const id = String(req.params["id"]);
   const { method } = req.body;
 
@@ -2944,6 +2968,8 @@ router.post("/orders/:id/confirm-fiat", async (req, res): Promise<void> => {
       code: ordersTable.code,
       telegramUsername: ordersTable.telegramUsername,
       groupBuyId: ordersTable.groupBuyId,
+      orderType: ordersTable.orderType,
+      sharedOrderId: ordersTable.sharedOrderId,
       paymentStatus: ordersTable.paymentStatus,
       status: ordersTable.status,
     })
@@ -2955,57 +2981,74 @@ router.post("/orders/:id/confirm-fiat", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!order.groupBuyId) {
-    res.status(400).json({ error: "This order is not part of a group buy" });
+  if (!safeEqual(normalizeTg(req.account!.telegramUsername).toLowerCase(), normalizeTg(order.telegramUsername).toLowerCase())) {
+    res.status(403).json({ error: "You can only submit payment for your own order" });
     return;
   }
 
-  const [gb] = await db
-    .select({
-      organiserPayments: groupBuysTable.organiserPayments,
-      allowedCountries: groupBuysTable.allowedCountries,
-      excludedCountries: groupBuysTable.excludedCountries,
-    })
-    .from(groupBuysTable)
-    .where(eq(groupBuysTable.id, order.groupBuyId));
+  let op: Record<string, string> | null = null;
+  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+    const [share] = await db.select().from(wholesaleSharesTable).where(eq(wholesaleSharesTable.id, order.sharedOrderId));
+    if (!share || share.status === "cancelled") {
+      res.status(400).json({ error: "This shared order is no longer available for payment" });
+      return;
+    }
+    const methods = resolveSharedOrderPaymentMethods(share, { anonPayTicker: null, anonPayNetwork: null });
+    op = {
+      revolutHandle: methods.revolutHandle ?? "",
+      paypalHandle: methods.paypalHandle ?? "",
+    };
+  } else {
+    if (!order.groupBuyId) {
+      res.status(400).json({ error: "This order does not support organiser fiat payments" });
+      return;
+    }
 
-  if (!gb) {
-    res.status(404).json({ error: "Group buy not found" });
-    return;
-  }
+    const [gb] = await db
+      .select({
+        organiserPayments: groupBuysTable.organiserPayments,
+        allowedCountries: groupBuysTable.allowedCountries,
+        excludedCountries: groupBuysTable.excludedCountries,
+      })
+      .from(groupBuysTable)
+      .where(eq(groupBuysTable.id, order.groupBuyId));
 
-  // Country restriction check — same logic as crypto/AnonPay endpoints.
-  // Orders store "@username"; accounts table uses bare username without "@".
-  const allowed = (gb.allowedCountries ?? []) as string[];
-  const excluded = (gb.excludedCountries ?? []) as string[];
-  if (allowed.length > 0 || excluded.length > 0) {
-    const bareUsername = (order.telegramUsername ?? "").replace(/^@/, "");
-    const [acct] = await db
-      .select({ country: accountsTable.country })
-      .from(accountsTable)
-      .where(eq(accountsTable.telegramUsername, bareUsername));
-    const userCountry = normaliseCountry(acct?.country ?? null);
-    if (allowed.length > 0) {
-      if (!userCountry || !allowed.includes(userCountry)) {
+    if (!gb) {
+      res.status(404).json({ error: "Group buy not found" });
+      return;
+    }
+
+    // Country restriction check — same logic as crypto/AnonPay endpoints.
+    // Orders store "@username"; accounts table uses bare username without "@".
+    const allowed = (gb.allowedCountries ?? []) as string[];
+    const excluded = (gb.excludedCountries ?? []) as string[];
+    if (allowed.length > 0 || excluded.length > 0) {
+      const bareUsername = (order.telegramUsername ?? "").replace(/^@/, "");
+      const [acct] = await db
+        .select({ country: accountsTable.country })
+        .from(accountsTable)
+        .where(eq(accountsTable.telegramUsername, bareUsername));
+      const userCountry = normaliseCountry(acct?.country ?? null);
+      if (allowed.length > 0 && (!userCountry || !allowed.includes(userCountry))) {
         res.status(403).json({ error: `Payments for this group buy are only accepted from: ${allowed.join(", ")}` });
         return;
       }
+      if (excluded.length > 0 && userCountry && excluded.includes(userCountry)) {
+        res.status(403).json({ error: `Payments from your country (${userCountry}) are not accepted for this group buy.` });
+        return;
+      }
     }
-    if (excluded.length > 0 && userCountry && excluded.includes(userCountry)) {
-      res.status(403).json({ error: `Payments from your country (${userCountry}) are not accepted for this group buy.` });
-      return;
-    }
-  }
 
-  const op = gb.organiserPayments as Record<string, string> | null;
+    op = gb.organiserPayments as Record<string, string> | null;
+  }
   const hasRevolut = !!(op?.revolutHandle);
   const hasPaypal = !!(op?.paypalHandle);
   if (method === "revolut" && !hasRevolut) {
-    res.status(400).json({ error: "This group buy does not have a Revolut payment option" });
+    res.status(400).json({ error: "This order does not have a Revolut payment option" });
     return;
   }
   if (method === "paypal" && !hasPaypal) {
-    res.status(400).json({ error: "This group buy does not have a PayPal payment option" });
+    res.status(400).json({ error: "This order does not have a PayPal payment option" });
     return;
   }
 
@@ -3015,14 +3058,26 @@ router.post("/orders/:id/confirm-fiat", async (req, res): Promise<void> => {
     return;
   }
 
-  await db
+  const [submitted] = await db
     .update(ordersTable)
     .set({
       paymentStatus: "pending_confirmation",
       paymentTxHash: `fiat:${method}`,
       paymentRejectionReason: null,
     })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
+    .where(refundMutableOrderWhere(and(
+      eq(ordersTable.id, id),
+      eq(ordersTable.telegramUsername, order.telegramUsername),
+      order.paymentStatus === null ? isNull(ordersTable.paymentStatus) : eq(ordersTable.paymentStatus, order.paymentStatus),
+      isNull(ordersTable.deletedAt),
+      notInArray(ordersTable.status, ["Cancelled", "Refunded"]),
+      activeSharedOrderMembershipWhere(),
+    )))
+    .returning({ id: ordersTable.id });
+  if (!submitted) {
+    res.status(409).json({ error: "The order or payment status changed. Please refresh before submitting payment again." });
+    return;
+  }
 
   writeLog("change", "info", "fiat_payment_claimed", `Buyer claimed ${method} payment for order #${order.code}`, { orderId: id, method }).catch(() => {});
 
