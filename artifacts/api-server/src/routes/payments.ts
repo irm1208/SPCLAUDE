@@ -13,6 +13,8 @@ import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerCoin } from "../lib/crypto-pricing";
 import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
+import { resolveHalfKitPayments } from "../lib/half-kit-payment-destination";
+export { resolveHalfKitPayments } from "../lib/half-kit-payment-destination";
 import { shouldRefreshPrimaryPaymentLock } from "../lib/order-payment-lock-integrity";
 import { centsToUsdString, usdToCents } from "../lib/refund-money";
 import { requireAdmin, requireAdminStepUp } from "../middleware/require-admin";
@@ -326,11 +328,16 @@ export async function resolveLockedUsdPerCoin(
  * - Non-GB orders: always use the global site wallet (USDT ERC-20).
  */
 export async function resolveOrderCrypto(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null },
+  order: { id?: string; groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; reshipperUsername?: string | null; sharedOrderId?: string | null },
   database: any = db,
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   const defaultCurrency = "USDT";
   const defaultNetwork = "ERC-20";
+  const halfKit = await resolveHalfKitPayments(order, database);
+  if (halfKit) return {
+    walletAddress: halfKit.cryptoWalletAddress,
+    currency: halfKit.cryptoCurrency ?? defaultCurrency, network: halfKit.cryptoNetwork ?? defaultNetwork,
+  };
   const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled", database)) !== "false";
   // Shared wholesale is peer-to-peer. An omitted organiser wallet disables crypto;
   // it must never route the member to a wholesale/global admin wallet.
@@ -453,7 +460,7 @@ export async function getAdminCryptoOptions(
  * - Any other single-rail: the one resolved currency.
  */
 export async function getOrderCryptoOptions(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null }
+  order: { id?: string; groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; reshipperUsername?: string | null; sharedOrderId?: string | null }
 ): Promise<{ walletAddress: string | null; currency: string; network: string; options: Array<{ currency: string; network: string; walletAddress: string | null }> }> {
   const base = await resolveOrderCrypto(order);
 
@@ -487,6 +494,7 @@ export async function getOrderCryptoOptions(
       options: ERC20_STABLE_CURRENCIES.map(c => ({ currency: c, network: base.network, walletAddress: base.walletAddress })),
     };
   }
+  if (!base.walletAddress && await resolveHalfKitPayments(order)) return { ...base, options: [] };
   return { ...base, options: [{ currency: base.currency, network: base.network, walletAddress: base.walletAddress }] };
 }
 
@@ -497,7 +505,7 @@ export async function getOrderCryptoOptions(
  * the choice was validated against getOrderCryptoOptions at rate-lock time.
  */
 export async function resolveEffectiveOrderCrypto(
-  order: { groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; sharedOrderId?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null },
+  order: { id?: string; groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; reshipperUsername?: string | null; sharedOrderId?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null },
   database: any = db,
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   // Wholesale shared: match persisted currency+network against organiser's leadCryptoOptions
@@ -1008,7 +1016,7 @@ export async function verifyTransaction(
 // ─── PUBLIC: Get payments info ─────────────────────────────────
 router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void> => {
   const globalPaymentsEnabled = (await getConfig("paymentsEnabled")) === "true";
-  const walletAddress = await getConfig("walletAddress");
+  let walletAddress = await getConfig("walletAddress");
 
   // Global AnonPay settings
   const globalAnonPayEnabled = (await getConfig("anonPayEnabled")) === "true";
@@ -1037,11 +1045,12 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
   const orderId = req.query["orderId"] as string | undefined;
   if (orderId) {
     const [order] = await db
-      .select({ groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested, paymentCryptoCurrency: ordersTable.paymentCryptoCurrency, paymentCryptoNetwork: ordersTable.paymentCryptoNetwork, sharedOrderId: ordersTable.sharedOrderId })
+      .select({ id: ordersTable.id, groupBuyId: ordersTable.groupBuyId, code: ordersTable.code, shippingCountry: ordersTable.shippingCountry, reshipperUsername: ordersTable.reshipperUsername, orderType: ordersTable.orderType, directShippingRequested: ordersTable.directShippingRequested, paymentCryptoCurrency: ordersTable.paymentCryptoCurrency, paymentCryptoNetwork: ordersTable.paymentCryptoNetwork, sharedOrderId: ordersTable.sharedOrderId })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId));
 
     if (order) {
+      const halfKitMethods = await resolveHalfKitPayments(order);
       orderCode = order.code ?? null;
 
       // Crypto options the buyer may choose from (e.g. USDT/USDC on the ERC-20 rail).
@@ -1108,7 +1117,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
         cryptoCurrency = methods.cryptoCurrency;
         cryptoNetwork = methods.cryptoNetwork;
         collectedBy = methods.collectedBy;
-      } else if (order.groupBuyId && paymentRoutingEnabled) {
+      } else if (order.groupBuyId && (paymentRoutingEnabled || halfKitMethods)) {
         isGroupBuyOrder = true;
         const [gb] = await db
           .select({
@@ -1251,6 +1260,20 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
         cryptoCurrency = first.currency;
         cryptoNetwork  = first.network;
         if ((first as any).walletAddress) cryptoWalletAddress = (first as any).walletAddress;
+      }
+      if (halfKitMethods) {
+        // Never expose a global fallback, including to older payment clients.
+        walletAddress = null;
+        requiresExplicitPaymentMethods = true;
+        isGroupBuyOrder = true;
+        cryptoWalletAddress = halfKitMethods.cryptoWalletAddress;
+        cryptoCurrency = selMatch?.currency ?? halfKitMethods.cryptoCurrency;
+        cryptoNetwork = selMatch?.network ?? halfKitMethods.cryptoNetwork;
+        anonPayEnabled = halfKitMethods.anonPayEnabled;
+        anonPayWallet = halfKitMethods.anonPayWallet;
+        anonPayTicker = halfKitMethods.anonPayTicker;
+        anonPayNetwork = halfKitMethods.anonPayNetwork;
+        collectedBy = halfKitMethods.collectedBy;
       }
     }
   }
@@ -1804,7 +1827,13 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
   let anonPayNetwork = await getConfig("anonPayNetwork");
   let anonPayEnabled: boolean = globalAnonPayEnabled;
 
-  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+  const halfKitMethods = await resolveHalfKitPayments(order);
+  if (halfKitMethods) {
+    anonPayEnabled = halfKitMethods.anonPayEnabled;
+    anonPayWallet = halfKitMethods.anonPayWallet;
+    anonPayTicker = halfKitMethods.anonPayTicker;
+    anonPayNetwork = halfKitMethods.anonPayNetwork;
+  } else if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
     const [share] = await db
       .select({
         creatorUsername: wholesaleSharesTable.creatorUsername,

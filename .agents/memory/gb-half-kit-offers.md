@@ -11,15 +11,21 @@ The organiser chooses which remaining half kits to offer and when to publish the
 
 Once a half is claimed, remove it from the available list and add it to the claimant’s existing order.
 
+**Why:** The user explicitly described this claiming flow and reiterated that ordered halves must disappear from the available list.
+
+**How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh.
+
 The “Fill remaining half kits” action on member group-buy cards and lists should open that group buy’s order page, not the separate half-kit page.
 
 **Why:** The user wants members to reach the offers through the order page.
 
 **How to apply:** Keep the availability gate; the order page shows published halves separately from the new-order catalogue.
 
-**Why:** The user explicitly described this claiming flow and reiterated that ordered halves must disappear from the available list.
+Half-kit payments go to the GB organiser’s wallet or the applicable reshipper’s wallet, never the site’s main wallet.
 
-**How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh.
+**Why:** The user confirmed “go to the organiser wallet or reshipper wallet.”
+
+**How to apply:** Keep payment display, original-order and extra-balance verification, AnonPay initiation, and background checking consistent. Missing local destinations disable the method rather than falling back to Admin; orders without claimed halves keep their existing routing.
 
 When someone loses a simultaneous claim, apologise and show how many seconds earlier the half kit was taken.
 

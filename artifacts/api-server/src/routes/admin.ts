@@ -7525,6 +7525,7 @@ const PAYMENT_AUDIT_ORDER_COLUMNS = {
   orderType: ordersTable.orderType,
   shippingCountry: ordersTable.shippingCountry,
   sharedOrderId: ordersTable.sharedOrderId,
+  reshipperUsername: ordersTable.reshipperUsername,
   createdAt: ordersTable.createdAt,
 };
 
@@ -7552,7 +7553,9 @@ async function auditOrderReference(order: any, txHash: string, source?: AuditRef
       : "AnonPay reference — not directly blockchain-verifiable.";
   } else {
     const effective = await resolveEffectiveOrderCrypto({
+      id: order.id,
       groupBuyId: order.groupBuyId,
+      reshipperUsername: order.reshipperUsername,
       orderType: order.orderType,
       shippingCountry: order.shippingCountry,
       sharedOrderId: order.sharedOrderId,

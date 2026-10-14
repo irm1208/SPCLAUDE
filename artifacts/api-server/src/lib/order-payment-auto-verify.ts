@@ -31,6 +31,7 @@ import { logCustomerActivity } from "./activity-log";
 import { writeLog } from "./audit-log";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "./telegram";
 import { centsToUsdString, usdToCents } from "./refund-money";
+import { resolveHalfKitPayments } from "./half-kit-payment-destination";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const ANONPAY_PREFIX = "anonpay:";
@@ -48,13 +49,20 @@ async function getConfig(key: string): Promise<string | null> {
 
 /** Resolve the destination wallet address/currency/network for a given order. */
 async function resolveOrderCrypto(order: {
+  id?: string;
   groupBuyId: string | null;
   orderType?: string | null;
   shippingCountry?: string | null;
+  reshipperUsername?: string | null;
   sharedOrderId?: string | null;
 }): Promise<{ walletAddress: string | null; currency: string; network: string }> {
   const defaultCurrency = "USDT";
   const defaultNetwork = "ERC-20";
+  const halfKit = await resolveHalfKitPayments(order);
+  if (halfKit) return {
+    walletAddress: halfKit.cryptoWalletAddress,
+    currency: halfKit.cryptoCurrency ?? defaultCurrency, network: halfKit.cryptoNetwork ?? defaultNetwork,
+  };
 
   // Wholesale shared: use organiser's leadCryptoOptions, matching the persisted currency+network if set
   if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
@@ -159,6 +167,7 @@ type PendingOrder = {
   sharedOrderId: string | null;
   orderType: string | null;
   shippingCountry: string | null;
+  reshipperUsername: string | null;
   deliveryMethod: string;
   grandTotal: string;
   paymentUsdAmount: string | null;
@@ -420,6 +429,7 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
         sharedOrderId: ordersTable.sharedOrderId,
         orderType: ordersTable.orderType,
         shippingCountry: ordersTable.shippingCountry,
+        reshipperUsername: ordersTable.reshipperUsername,
         deliveryMethod: ordersTable.deliveryMethod,
         grandTotal: ordersTable.grandTotal,
         paymentUsdAmount: ordersTable.paymentUsdAmount,

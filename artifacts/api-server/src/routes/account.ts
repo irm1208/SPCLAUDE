@@ -26,7 +26,7 @@ import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
 import { createEmailChallengeInTransaction, needsVerification } from "../lib/account-verification";
 import { sendTemplatedEmail } from "../lib/email";
-import { resolveOrderCrypto, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
+import { resolveOrderCrypto, resolveHalfKitPayments, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
 import { getCustomerRefundView, getCustomerRefundViews } from "../lib/customer-refund-view";
 import { resolveOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
@@ -3093,7 +3093,13 @@ router.post("/account/orders/:id/balance-init-anonpay", requireAccount, async (r
   let anonPayWallet  = await getSiteConfig("anonPayWallet");
   let anonPayTicker  = await getSiteConfig("anonPayTicker");
   let anonPayNetwork = await getSiteConfig("anonPayNetwork");
-  if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
+  const halfKitMethods = await resolveHalfKitPayments(order);
+  if (halfKitMethods) {
+    anonPayEnabled = halfKitMethods.anonPayEnabled;
+    anonPayWallet = halfKitMethods.anonPayWallet;
+    anonPayTicker = halfKitMethods.anonPayTicker;
+    anonPayNetwork = halfKitMethods.anonPayNetwork;
+  } else if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
     const [share] = await db
       .select({
         creatorUsername: wholesaleSharesTable.creatorUsername,

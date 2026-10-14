@@ -1254,7 +1254,9 @@ function BalanceDueCard({
         const info = {
           revolutHandle: d.revolutHandle ?? null,
           paypalHandle: d.paypalHandle ?? null,
-          cryptoWalletAddress: d.cryptoWalletAddress ?? d.walletAddress ?? null,
+          cryptoWalletAddress: d.requiresExplicitPaymentMethods
+            ? d.cryptoWalletAddress ?? null
+            : d.cryptoWalletAddress ?? d.walletAddress ?? null,
           cryptoCurrency: d.cryptoCurrency ?? "USDT",
           cryptoNetwork: d.cryptoNetwork ?? "ERC-20",
           anonPayEnabled: !!d.anonPayEnabled && !!d.anonPayWallet,

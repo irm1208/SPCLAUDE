@@ -7,10 +7,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db, pool, accountsTable, accountGroupBuysTable, productsTable, groupBuysTable,
   groupBuyProductsTable, ordersTable, orderLineItemsTable, creditTransactionsTable,
-  gbHalfKitOffersTable as offers, gbHalfKitClaimsTable as claims } from "@workspace/db";
+  gbHalfKitOffersTable as offers, gbHalfKitClaimsTable as claims, gbReshippersTable } from "@workspace/db";
 import { listHalfKits, saveHalfKit, claimHalfKit, releaseHalfKit, cancelUnpaidHalfClaims } from "../src/lib/half-kit-offers";
 import { halfKitShippingSnapshots } from "../src/lib/half-kit-shipping";
 import { lockHalfKitMoney } from "../src/lib/half-kit-lock";
+import { resolveHalfKitPayments } from "../src/lib/half-kit-payment-destination";
 
 if (process.env.NODE_ENV === "production") throw new Error("Do not run fixtures in production.");
 const suffix = randomUUID().slice(0, 8), groupId = `half-kit-fixture-${suffix}`;
@@ -83,6 +84,40 @@ try {
     assert.equal(Number(paidOrder.creditsApplied), 10); assert.equal(Number(paidOrder.amountDue), 17);
     assert.equal(Number(account.credits), 0);
   });
+  const missingDestination = await resolveHalfKitPayments(paidOrder);
+  check("missing local half-kit wallets never use a global destination", () => {
+    assert.equal(missingDestination?.cryptoWalletAddress, null);
+    assert.equal(missingDestination?.anonPayEnabled, false);
+  });
+  const ordinaryRouting = await resolveHalfKitPayments({ id: otherId, groupBuyId: groupId });
+  check("an order without a claimed half keeps ordinary payment routing", () => assert.equal(ordinaryRouting, null));
+  const organiserWallet = `0x${"1".repeat(40)}`;
+  await db.update(groupBuysTable).set({
+    organiserPayments: { cryptoWalletAddress: organiserWallet, cryptoCurrency: "USDT", cryptoNetwork: "ERC-20",
+      anonPayEnabled: true, anonPayWallet: organiserWallet, anonPayTicker: "usdt", anonPayNetwork: "ERC20" },
+  }).where(eq(groupBuysTable.id, groupId));
+  const localDestination = await resolveHalfKitPayments(paidOrder);
+  check("the half-kit routing source uses only the group organiser wallets", () => {
+    assert.equal(localDestination?.cryptoWalletAddress, organiserWallet);
+    assert.equal(localDestination?.cryptoCurrency, "USDT");
+    assert.equal(localDestination?.anonPayWallet, organiserWallet);
+  });
+  const reshipperId = randomUUID(), reshipperWallet = `0x${"2".repeat(40)}`;
+  await db.insert(gbReshippersTable).values({
+    id: reshipperId, gbId: groupId, country: "United Kingdom", reshipperUsername: organiser,
+    enabledPaymentMethods: { cryptoEnabled: true, anonPayEnabled: true },
+    reshipperPaymentDetails: { cryptoWalletAddress: reshipperWallet, cryptoCurrency: "USDT", cryptoNetwork: "ERC-20",
+      anonPayWallet: reshipperWallet, anonPayTicker: "usdt", anonPayNetwork: "ERC20" },
+  });
+  const reshipperDestination = await resolveHalfKitPayments({ ...paidOrder, reshipperUsername: organiser, shippingCountry: "GB" });
+  check("the assigned reshipper's enabled wallets take priority", () => {
+    assert.equal(reshipperDestination?.cryptoWalletAddress, reshipperWallet);
+    assert.equal(reshipperDestination?.anonPayWallet, reshipperWallet);
+  });
+  await db.update(gbReshippersTable).set({ paymentTarget: "organiser" }).where(eq(gbReshippersTable.id, reshipperId));
+  const organiserTarget = await resolveHalfKitPayments({ ...paidOrder, reshipperUsername: organiser });
+  check("reshipper settings can direct collection to the organiser", () => assert.equal(organiserTarget?.cryptoWalletAddress, organiserWallet));
+  await db.delete(gbReshippersTable).where(eq(gbReshippersTable.id, reshipperId));
   await db.update(groupBuysTable).set({ allowCredits: false }).where(eq(groupBuysTable.id, groupId));
   const replay = await claimHalfKit(groupId, offer.id, member, input);
   check("retry is idempotent even after disabling credits", () => assert.equal(replay.claimId, result.claimId));
@@ -169,6 +204,7 @@ try {
   await db.transaction(async tx => {
     await tx.delete(claims).where(eq(claims.groupBuyId, groupId));
     await tx.delete(offers).where(eq(offers.groupBuyId, groupId));
+    await tx.delete(gbReshippersTable).where(eq(gbReshippersTable.gbId, groupId));
     await tx.delete(creditTransactionsTable).where(inArray(creditTransactionsTable.accountUsername, [user, other, organiser]));
     await tx.delete(accountGroupBuysTable).where(eq(accountGroupBuysTable.groupBuyId, groupId));
     await tx.delete(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, ids));
