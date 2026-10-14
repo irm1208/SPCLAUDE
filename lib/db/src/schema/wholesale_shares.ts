@@ -109,6 +109,9 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   organiserPaymentNetwork: text("organiser_payment_network"),
   organiserPaymentIdentity: text("organiser_payment_identity"),
   organiserPaymentConfirmedAt: timestamp("organiser_payment_confirmed_at", { withTimezone: true }),
+  // USD receipt snapshot, not a recomputation of member totals. Null for historical
+  // confirmations where the received amount was never recorded.
+  organiserPaymentReceivedUsd: numeric("organiser_payment_received_usd", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lockedAt: timestamp("locked_at", { withTimezone: true }),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),

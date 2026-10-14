@@ -418,6 +418,22 @@ describe("confirmWholesaleOrganiserPayment", () => {
     });
   });
 
+  it("snapshots received platform money and preserves it on repeated confirmation", async () => {
+    const result = await confirmWholesaleOrganiserPayment({ ...pendingInput, source: "admin", receivedAmountUsd: 102.45 });
+    expect(result.kind).toBe("confirmed");
+    expect(harness.state.share.organiserPaymentReceivedUsd).toBe("102.45");
+    await confirmWholesaleOrganiserPayment({ ...pendingInput, source: "admin", receivedAmountUsd: 999 });
+    expect(harness.state.share.organiserPaymentReceivedUsd).toBe("102.45");
+  });
+
+  it("rejects invalid received money without updating any payment", async () => {
+    for (const receivedAmountUsd of [-1, NaN, Infinity]) {
+      const result = await confirmWholesaleOrganiserPayment({ ...pendingInput, source: "admin", receivedAmountUsd });
+      expect(result).toMatchObject({ kind: "rejected", code: "invalid_amount" });
+    }
+    expect(harness.state.updates).toHaveLength(0);
+  });
+
   it("rejects an unknown share without changing persisted state", async () => {
     const result = await confirmWholesaleOrganiserPayment({
       ...pendingInput,

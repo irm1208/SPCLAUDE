@@ -97,12 +97,18 @@ export async function confirmWholesaleOrganiserPayment(input: {
     network: string;
   };
   expectedAmountDue?: number;
+  receivedAmountUsd?: number;
   requireNoCredits?: boolean;
 }): Promise<OrganiserPaymentConfirmationResult> {
   const shareId = typeof input?.shareId === "string" ? input.shareId.trim() : "";
   const source = input?.source;
   if (!shareId || (source !== "automatic" && source !== "admin" && source !== "backfill")) {
     return reject("invalid_input", "A share ID and valid confirmation source are required.");
+  }
+  if (input.receivedAmountUsd !== undefined && (
+    !Number.isFinite(input.receivedAmountUsd) || input.receivedAmountUsd <= 0 || input.receivedAmountUsd >= 10_000_000_000
+  )) {
+    return reject("invalid_amount", "The received USD amount must be a positive finite number.");
   }
 
   const requestedCurrentParentStatus = input.expectedCurrentParentStatus;
@@ -369,7 +375,10 @@ export async function confirmWholesaleOrganiserPayment(input: {
     if (share.organiserPaymentStatus === "pending") {
       const [updatedShare] = await tx
         .update(wholesaleSharesTable)
-        .set({ organiserPaymentStatus: "confirmed", organiserPaymentConfirmedAt: new Date() })
+        .set({
+          organiserPaymentStatus: "confirmed", organiserPaymentConfirmedAt: new Date(),
+          organiserPaymentReceivedUsd: input.receivedAmountUsd === undefined ? null : input.receivedAmountUsd.toFixed(2),
+        })
         .where(and(
           eq(wholesaleSharesTable.id, share.id),
           eq(wholesaleSharesTable.organiserPaymentStatus, "pending"),
@@ -405,6 +414,7 @@ export async function confirmWholesaleOrganiserPayment(input: {
         message: `Confirmed organiser order payment for shared wholesale order ${share.id}`,
         metadata: {
           source,
+          receivedAmountUsd: input.receivedAmountUsd ?? null,
           reason: "organiser_platform_payment_confirmed",
           shareId: share.id,
           organiserOrderId,

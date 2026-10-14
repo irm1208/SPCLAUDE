@@ -47,6 +47,7 @@ import {
   wholesaleOrganiserPaymentIdentityKey,
 } from "../lib/wholesale-organiser-payment-identity";
 import { calculateWholesaleOrganiserAmountDue } from "../lib/wholesale-organiser-payment-amount";
+import { buildAdminSharedOrderSummary } from "../lib/admin-shared-order-summary";
 import { calculateSharedOrderAdjustment } from "../lib/shared-order-admin-adjustments";
 import { buildOrganiserFeeOrderUpdate } from "../lib/shared-order-organiser-fees";
 import {
@@ -3215,6 +3216,12 @@ router.get("/admin/wholesale-shares", async (req, res): Promise<void> => {
     const paidCount = ms.filter(m => isOrderPaid(m.orderId ? orderById.get(m.orderId)?.paymentStatus : null)).length;
     const combinedKits = ms.reduce((acc, m) => acc + memberKits(m.items ?? []), 0);
     const combinedSubtotal = Number(ms.reduce((acc, m) => acc + memberSubtotal(m.items ?? []), 0).toFixed(2));
+    const memberOrders = ms.flatMap(m => {
+      const order = m.orderId ? orderById.get(m.orderId) : undefined;
+      return order && order.sharedOrderId === s.id ? [order] : [];
+    });
+    const organiserHasWallet = Array.isArray(s.leadCryptoOptions) && s.leadCryptoOptions.length > 0;
+    const summary = buildAdminSharedOrderSummary({ ...s, organiserHasWallet }, memberOrders);
     return {
       id: s.id,
       status: s.status,
@@ -3227,10 +3234,12 @@ router.get("/admin/wholesale-shares", async (req, res): Promise<void> => {
       allPaid: isLocked && ms.length > 0 && paidCount === ms.length,
       combinedKits,
       combinedSubtotal,
+      ...summary,
+      sharedOrderTotal: s.status === "open" ? combinedSubtotal : summary.sharedOrderTotal,
       totalVendorShipping: s.totalVendorShipping != null ? Number(s.totalVendorShipping) : null,
       totalKits: s.totalKits != null ? Number(s.totalKits) : null,
       organiserPaymentStatus: s.organiserPaymentStatus ?? "unpaid",
-      organiserHasWallet: Array.isArray(s.leadCryptoOptions) && s.leadCryptoOptions.length > 0,
+      organiserHasWallet,
       createdAt: (s.createdAt as Date).toISOString(),
       lockedAt: s.lockedAt ? (s.lockedAt as Date).toISOString() : null,
       submittedAt: s.submittedAt ? (s.submittedAt as Date).toISOString() : null,
@@ -3887,11 +3896,19 @@ router.post("/wholesale-shares/:id/organiser-payment", requireWholesale, async (
 // Admin confirms the organiser's platform payment.
 router.post("/admin/wholesale-shares/:id/confirm-organiser-payment", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  const receivedAmountUsd = req.body?.receivedAmountUsd;
+  if (receivedAmountUsd !== undefined && (
+    typeof receivedAmountUsd !== "number" || !Number.isFinite(receivedAmountUsd) || receivedAmountUsd <= 0
+  )) {
+    res.status(400).json({ error: "Enter a positive received payment amount in USD." });
+    return;
+  }
   const share = await loadShare(req.params.id);
   const result = await confirmWholesaleOrganiserPayment({
     shareId: req.params.id,
     source: "admin",
     expectedCurrentParentStatus: "pending",
+    receivedAmountUsd,
   });
 
   if (result.kind === "rejected") {

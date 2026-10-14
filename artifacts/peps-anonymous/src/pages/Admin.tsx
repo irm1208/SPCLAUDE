@@ -20467,6 +20467,7 @@ type AdminShareRow = {
   deliveryUsername: string | null; deliveryName: string | null; deliveryCountry: string | null;
   memberCount: number; paidCount: number; allPaid: boolean;
   combinedKits: number; combinedSubtotal: number;
+  sharedOrderTotal: number; platformPaymentReceived: number | null; orderStatusPills: string[];
   totalVendorShipping: number | null; totalKits: number | null;
   organiserPaymentStatus: "unpaid" | "pending" | "confirmed"; organiserHasWallet: boolean;
   createdAt: string; lockedAt: string | null; submittedAt: string | null; cancelledAt: string | null;
@@ -21424,13 +21425,21 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
   };
 
   const confirmOrgPayment = async (shareId: string) => {
-    if (!window.confirm("Confirm this organiser payment? This cannot be undone.")) return;
+    const entered = window.prompt("Enter the payment actually received by the platform in USD. Exclude member credits, tips and organiser fees. For non-USD crypto, enter its USD value at receipt.", detailById[shareId]?.organiserPayment?.amountDue?.toFixed(2) ?? "");
+    if (entered === null) return;
+    const receivedAmountUsd = Number(entered.trim());
+    if (!Number.isFinite(receivedAmountUsd) || receivedAmountUsd <= 0) {
+      alert("Enter a positive received payment amount in USD.");
+      return;
+    }
+    if (!window.confirm(`Confirm organiser payment received: ${money(receivedAmountUsd)}? This cannot be undone.`)) return;
     setConfirmingOrgPay(shareId);
     let mutationConfirmed = false;
     try {
       const r = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}/confirm-organiser-payment`), {
         method: "POST",
-        headers: { "x-admin-secret": secret },
+        headers: { "x-admin-secret": secret, "content-type": "application/json" },
+        body: JSON.stringify({ receivedAmountUsd }),
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); alert((d as any).error ?? "Failed to confirm payment"); return; }
       mutationConfirmed = true;
@@ -21833,7 +21842,12 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm" style={{ color: "var(--adm-text)" }}>#{row.id}</span>
-                        <ShareStatusBadge status={row.status} />
+                        {row.status !== "cancelled" && <ShareStatusBadge status={row.status} />}
+                        {row.orderStatusPills.map(status => {
+                          const color = status === "Cancelled" ? "#ef4444" : status === "Paid" ? "#22c55e" : status.includes("shipped") || status === "Shipped" ? "#3b82f6" : "#a855f7";
+                          return <span key={status} className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                            style={{ color, background: `color-mix(in srgb, ${color} 15%, transparent)` }}>{status}</span>;
+                        })}
                         {row.status !== "open" && (
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
                             style={row.allPaid
@@ -21842,16 +21856,26 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                             {row.paidCount}/{row.memberCount} paid
                           </span>
                         )}
-                        {(() => {
-                          const op = detailById[row.id]?.organiserPayment;
-                          if (!op || op.status === "unpaid") return null;
-                          if (op.status === "confirmed") return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>Org paid ✓</span>;
-                          return <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Org pay pending</span>;
-                        })()}
+                        {row.organiserHasWallet && row.organiserPaymentStatus === "pending" && (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>Platform payment pending</span>
+                        )}
                       </div>
                       <div className="text-xs mt-0.5 truncate" style={{ color: "var(--adm-muted)" }}>
                         Organiser @{row.creatorUsername} · {row.memberCount} member{row.memberCount === 1 ? "" : "s"} · {row.combinedKits} kit{row.combinedKits === 1 ? "" : "s"} · {money(row.combinedSubtotal)}
                         {row.deliveryCountry ? ` · → ${row.deliveryCountry}` : ""}
+                      </div>
+                      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs mt-2">
+                        <span style={{ color: "var(--adm-muted)" }}>
+                          {row.status === "open" ? "Product subtotal" : "Shared order total"}: <strong style={{ color: "var(--adm-text)" }}>{money(row.sharedOrderTotal)}</strong>
+                        </span>
+                        <span title={row.organiserHasWallet
+                          ? "Recorded organiser-to-platform receipt in USD. Member collections, credits, tips and organiser fees are not platform receipts."
+                          : "Total confirmed direct member payments to the platform, based on the confirmed order amounts in USD. Pending payments and credits are excluded."}
+                          style={{ color: "var(--adm-muted)" }}>
+                          Platform payment received: <strong style={{ color: row.platformPaymentReceived ? "#22c55e" : "var(--adm-text)" }}>
+                            {row.platformPaymentReceived === null ? "Not recorded" : money(row.platformPaymentReceived)}
+                          </strong>
+                        </span>
                       </div>
                     </div>
                   </button>

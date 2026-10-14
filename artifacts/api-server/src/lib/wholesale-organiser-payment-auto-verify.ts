@@ -165,6 +165,7 @@ async function checkShare(row: {
       network,
     },
     expectedAmountDue: amountDue,
+    receivedAmountUsd: verification.amountUsdt,
     requireNoCredits: true,
   });
   if (confirmation.kind === "confirmed") {

@@ -481,7 +481,8 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS wholesale_shares_status_idx ON wholesale_shares(status)`);
     await db.execute(sql`
       ALTER TABLE wholesale_shares
-      ADD COLUMN IF NOT EXISTS organiser_payment_identity text
+      ADD COLUMN IF NOT EXISTS organiser_payment_identity text,
+      ADD COLUMN IF NOT EXISTS organiser_payment_received_usd numeric(12,2)
     `);
     await db.execute(sql`
       DO $$ BEGIN

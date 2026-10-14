@@ -10,3 +10,9 @@ Before showing forwarding instructions, accepting a transaction, or confirming a
 **Why:** The user wants full blockchain payments automated, but partial and credit-adjusted payments require human review. Automatic confirmation must recheck current credits and amount under lock, and transaction identity must be normalized and unique to prevent replay. Synthesizing creator payment status from wallet setup also reports payment before approval. A missing shipping quote previously displayed a false $0 total, and a test-only payment or later status reversal could authorize or invalidate forwarding prematurely.
 
 **How to apply:** Submission stores the transaction as pending and starts immediate plus scheduled checks. Auto-confirm only after strict full-amount verification with zero credits and a locked amount/credit recheck. Keep all other cases pending for the Admin action; preserve ordinary member orders and keep repeats idempotent. Serialize member payment changes with the parent share and guard all test-payment writes against a concurrent full confirmation.
+
+The Admin Shared Orders “payment received” figure means money received by the platform, not member collections held by the organiser. Show it separately from the shared-order total. A forwarded receipt must reflect the recorded amount, not the current calculated payable; historical missing receipt amounts are unknown.
+
+**Why:** The user explicitly selected platform receipts because they differ from the total shared order.
+
+**How to apply:** Keep organiser collections and platform receipts distinct in summaries. Never substitute tips, organiser fees, member credits, pending transactions, or an unrecorded historical amount for a platform receipt.
