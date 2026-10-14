@@ -11,6 +11,12 @@ The organiser chooses which remaining half kits to offer and when to publish the
 
 Once a half is claimed, remove it from the available list and add it to the claimant’s existing order.
 
+The “Fill remaining half kits” action on member group-buy cards and lists should open that group buy’s order page, not the separate half-kit page.
+
+**Why:** The user wants members to reach the offers through the order page.
+
+**How to apply:** Keep the availability gate; the order page shows published halves separately from the new-order catalogue.
+
 **Why:** The user explicitly described this claiming flow and reiterated that ordered halves must disappear from the available list.
 
 **How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh.

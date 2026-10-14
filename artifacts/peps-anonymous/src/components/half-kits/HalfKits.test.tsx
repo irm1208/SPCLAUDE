@@ -151,6 +151,8 @@ describe("entry points", () => {
     expect(readFileSync("src/pages/AccountOrderDetail.tsx", "utf8")).toContain("halfKitAvailability?.counts[order.groupBuyId]");
     const portal = readFileSync("src/pages/CustomerPortal.tsx", "utf8");
     expect(portal).toContain("Fill remaining half kits");
-    expect(portal).toContain("/group-buys/${encodeURIComponent(gb.id)}/half-kits");
+    expect(portal.match(/href=\{`\/order\?gbId=\$\{encodeURIComponent\(gb\.id\)\}`\}/g)).toHaveLength(2);
+    expect(portal).not.toContain("/group-buys/${encodeURIComponent(gb.id)}/half-kits");
+    expect(readFileSync("src/pages/OrderForm.tsx", "utf8")).toContain("<HalfKitOffers key={gbId} gbId={gbId} embedded");
   });
 });

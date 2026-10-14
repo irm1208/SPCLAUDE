@@ -8809,7 +8809,7 @@ export default function CustomerPortal() {
                   </button>
                   {!isOrderable && <WaitlistToggleButton gbId={gb.id} />}
                   {(halfKitAvailability?.counts[gb.id] ?? 0) > 0 && (
-                  <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
+                  <a href={`/order?gbId=${encodeURIComponent(gb.id)}`}
                     className="w-full h-9 rounded-full text-[12px] font-semibold flex items-center justify-center gap-1.5 hover:opacity-90"
                     style={{ border: "1px solid rgba(233,160,32,0.55)", color: "#F5C25B" }}
                     data-testid={`link-half-kits-${gb.id}`}>
@@ -8896,7 +8896,7 @@ export default function CustomerPortal() {
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1.5">
                               {(halfKitAvailability?.counts[gb.id] ?? 0) > 0 && (
-                              <a href={`/group-buys/${encodeURIComponent(gb.id)}/half-kits`}
+                              <a href={`/order?gbId=${encodeURIComponent(gb.id)}`}
                                 data-testid={`link-half-kits-table-${gb.id}`}
                                 className="inline-flex min-h-9 items-center rounded-lg border px-3 text-[11.5px] font-bold whitespace-nowrap"
                                 style={{ color: T.text, borderColor: T.border }}>
