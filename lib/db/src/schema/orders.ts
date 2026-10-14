@@ -133,6 +133,7 @@ export const ordersTable = pgTable("orders", {
   // amountDue charge added after initial payment). balanceTxHash is the TX hash for crypto,
   // "anonpay:<id>" for AnonPay, or "fiat:revolut" / "fiat:paypal" for manual rails.
   balanceTxHash: text("balance_tx_hash"),
+  balanceCryptoQuote: jsonb("balance_crypto_quote"),
   balancePaymentStatus: text("balance_payment_status"),
   balanceConfirmedAt: timestamp("balance_confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

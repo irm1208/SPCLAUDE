@@ -4197,6 +4197,7 @@ router.post("/organiser/group-buys/:id/apply-shipping", requireOrganiser, async 
         vendorShipping: u.vendorShipping.toFixed(2),
         grandTotal: u.newGrandTotal.toFixed(2),
         amountDue: u.newAmountDue.toFixed(2) as any,
+        balanceCryptoQuote: null,
         balancePaymentStatus: u.balancePaymentStatus as any,
         ...(u.clearPrimaryPaymentLock ? { paymentUsdAmount: null } : {}),
         adminFee: u.resolvedAdminFee.toFixed(2) as any,
@@ -4724,6 +4725,7 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
         deliveryPrice: (halfPlan?.deliveryPrice ?? ratePrice).toFixed(2) as any,
         grandTotal: newGrandTotal.toFixed(2) as any,
         amountDue: newAmountDue.toFixed(2) as any,
+        balanceCryptoQuote: null,
         adminFee: resolvedAdminFee.toFixed(2) as any,
         adminFeeLabel: resolvedAdminFeeLabel as any,
         ...(halfPlan ? {

@@ -1420,6 +1420,11 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
     updates.paymentUsdAmount = null;
   }
 
+  // A new/replaced/waived balance is a new quote lifecycle, even if its amount
+  // is numerically identical to an earlier charge.
+  if (updates.amountDue !== undefined || updates.balancePaymentStatus !== undefined) {
+    updates.balanceCryptoQuote = null;
+  }
   const trackingCas = trackingWrite
     ? and(
         eq(ordersTable.id, req.params.id),
@@ -3272,7 +3277,7 @@ router.post("/admin/apply-shipping", async (req, res): Promise<void> => {
       .set({
         vendorShipping: u.vendorShipping.toFixed(2),
         grandTotal: u.newGrandTotal.toFixed(2),
-        ...(u.setAmountDue ? { amountDue: u.vendorShipping.toFixed(2) } : {}),
+        ...(u.setAmountDue ? { amountDue: u.vendorShipping.toFixed(2), balanceCryptoQuote: null } : {}),
       } as any)
       .where(refundMutableOrderWhere(eq(ordersTable.id, u.orderId)));
   }
@@ -3560,7 +3565,7 @@ router.post("/admin/orders/:id/balance-resolution", async (req, res): Promise<vo
     if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
     const adminWho = getAdminUsername(res) ?? "admin";
     if (action === "absorb") {
-      await db.update(ordersTable).set({ amountDue: "0.00", balancePaymentStatus: "waived" }).where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
+      await db.update(ordersTable).set({ amountDue: "0.00", balancePaymentStatus: "waived", balanceCryptoQuote: null }).where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
       await db.insert(routingHistoryTable).values({
         orderId: req.params.id,
         changedBy: adminWho,
@@ -3757,6 +3762,9 @@ router.post("/admin/orders/:id/financial-override", async (req, res): Promise<vo
 
     if (Object.keys(patch).length === 0) {
       res.status(400).json({ error: "No valid financial fields provided" }); return;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "amountDue")) {
+      patch.balanceCryptoQuote = null;
     }
 
     const adminWho = getAdminUsername(res) ?? "admin";

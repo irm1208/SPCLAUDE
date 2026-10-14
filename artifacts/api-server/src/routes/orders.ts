@@ -1156,6 +1156,7 @@ router.post("/orders", async (req, res): Promise<void> => {
           productSubtotal: totals.productSubtotal.toFixed(2),
           grandTotal: totals.grandTotal.toFixed(2),
           amountDue: totals.amountDue.toFixed(2),
+          balanceCryptoQuote: null,
           tip: totals.tip.toFixed(2),
           testingContribution: totals.testingContribution.toFixed(2),
           couponCode: lockedParent.couponCode ?? appliedCouponCode,

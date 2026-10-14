@@ -1944,6 +1944,7 @@ router.post("/admin/group-buys/:id/apply-shipping", async (req, res): Promise<vo
         vendorShipping: u.vendorShipping.toFixed(2),
         grandTotal: u.newGrandTotal.toFixed(2),
         amountDue: u.newAmountDue.toFixed(2),
+        balanceCryptoQuote: null,
         balancePaymentStatus: u.balancePaymentStatus,
         ...(u.clearPrimaryPaymentLock ? { paymentUsdAmount: null } : {}),
         adminFee: u.resolvedAdminFee.toFixed(2),
@@ -2005,7 +2006,7 @@ router.post("/admin/group-buys/:id/backfill-balance-due", async (req, res): Prom
   for (const o of orders) {
     await db
       .update(ordersTable)
-      .set({ amountDue: String(o.vendorShipping) } as any)
+      .set({ amountDue: String(o.vendorShipping), balanceCryptoQuote: null } as any)
       .where(refundMutableOrderWhere(eq(ordersTable.id, o.id)));
   }
 

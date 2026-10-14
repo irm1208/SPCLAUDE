@@ -309,6 +309,7 @@ export async function claimHalfKit(groupId: string, offerId: string, actor: Half
     };
     if (paid) Object.assign(update, {
       amountDue: numeric(number(order.amountDue) + amounts.cash),
+      balanceCryptoQuote: null,
       balancePaymentStatus: number(order.amountDue) + amounts.cash > 0 ? "unpaid" : order.balancePaymentStatus,
       ...(amounts.cash > 0 ? {
         balanceTxHash: null, balanceScreenshot: null, balanceConfirmedAt: null,
@@ -373,6 +374,7 @@ async function reverseHalfClaim(tx: Database, claim: any, order: any, account: a
       await tx.delete(orderLineItemsTable).where(eq(orderLineItemsTable.id, claim.lineItemId));
       await tx.update(ordersTable).set({
         ...Object.fromEntries(Object.entries(balances).map(([key, value]) => [key, numeric(Math.max(0, value))])),
+        balanceCryptoQuote: null,
         ...(order.paymentStatus !== "confirmed" ? { paymentUsdAmount: null } : {}),
         updatedAt: new Date(),
       }).where(eq(ordersTable.id, order.id));

@@ -729,6 +729,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_due numeric(10,2) NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS balance_screenshot text`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS balance_tx_hash text`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS balance_crypto_quote jsonb`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS balance_payment_status text`);
     // group_buys — vendor shipping kits count
     await db.execute(sql`ALTER TABLE group_buys ADD COLUMN IF NOT EXISTS vendor_shipping_kits integer`);

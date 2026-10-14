@@ -28,6 +28,7 @@ import { createEmailChallengeInTransaction, needsVerification } from "../lib/acc
 import { sendTemplatedEmail } from "../lib/email";
 import { resolveOrderCrypto, resolveHalfKitPayments, getOrderCryptoOptions, getAdminCryptoOptions, verifyTransaction, toUsdIfGbp, isValidTxHash, type OrganiserPayments } from "./payments";
 import { effectiveStableCurrency } from "../lib/payment-verify";
+import { balanceCryptoQuote, balanceCryptoPay } from "./balance-crypto";
 import { getCustomerRefundView, getCustomerRefundViews } from "../lib/customer-refund-view";
 import { resolveOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
 import { centsToUsdString, usdToCents } from "../lib/refund-money";
@@ -2962,109 +2963,9 @@ async function loadOwnedOrder(req: any, id: string) {
   return order ?? null;
 }
 
-// POST /api/account/orders/:id/balance-pay — submit a TX hash for an outstanding balance and auto-verify on-chain
-router.post("/account/orders/:id/balance-pay", requireAccount, async (req, res): Promise<void> => {
-  const id = String(req.params["id"]);
-  const { txHash, cryptoCurrency } = req.body;
-  const cleanHash = typeof txHash === "string" ? txHash.trim() : "";
-  if (!cleanHash) {
-    writeLog("payment", "warn", "balance_payment_rejected_invalid_hash", `Empty tx hash for balance payment on order ${id}`, { orderId: id, txHash: "", reason: "empty hash" }, req.ip).catch(() => {});
-    res.status(400).json({ error: "Transaction hash is required" }); return;
-  }
-  if (!isValidTxHash(cleanHash)) {
-    writeLog("payment", "warn", "balance_payment_rejected_invalid_hash", `Invalid tx hash format for balance payment on order ${id}`, { orderId: id, txHash: cleanHash, reason: "invalid hash format" }, req.ip).catch(() => {});
-    res.status(400).json({ error: "Invalid transaction hash format. Expected a 64-character hex string (0x-prefixed for Ethereum/BSC, or plain hex for Bitcoin)." });
-    return;
-  }
-
-  const order = await loadOwnedOrder(req, id);
-  if (!order) {
-    writeLog("payment", "warn", "balance_payment_rejected_not_found", `Order not found for balance payment: ${id}`, { orderId: id, txHash: cleanHash, reason: "order not found" }, req.ip).catch(() => {});
-    res.status(404).json({ error: "Order not found" }); return;
-  }
-
-  const amountDueRaw = parseFloat(String((order as any).amountDue ?? "0"));
-  if (amountDueRaw <= 0) {
-    writeLog("payment", "warn", "balance_payment_rejected_no_balance", `No outstanding balance on order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, amountDue: amountDueRaw, reason: "no outstanding balance" }, req.ip).catch(() => {});
-    res.status(400).json({ error: "No outstanding balance on this order" }); return;
-  }
-  if ((order as any).balancePaymentStatus === "confirmed") {
-    writeLog("payment", "warn", "balance_payment_rejected_already_confirmed", `Balance payment attempt on already-confirmed order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, reason: "already confirmed" }, req.ip).catch(() => {});
-    res.status(400).json({ error: "Balance payment already confirmed" }); return;
-  }
-
-  // Anti-replay: reject hashes already used (or being verified) on any order, on any of the three TX columns.
-  const reuse = await db
-    .select({ id: ordersTable.id })
-    .from(ordersTable)
-    .where(and(
-      sql`${ordersTable.id} <> ${id}`,
-      or(
-        eq(ordersTable.paymentTxHash, cleanHash),
-        eq(ordersTable.testPaymentTxHash, cleanHash),
-        eq((ordersTable as any).balanceTxHash, cleanHash),
-      ),
-    ));
-  if (reuse.length > 0) {
-    writeLog("payment", "warn", "balance_payment_rejected_replay", `Balance tx hash reuse attempt on order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, conflictOrderId: reuse[0]?.id, reason: "hash already used on another order" }, req.ip).catch(() => {});
-    res.status(400).json({ error: "This transaction hash has already been used on another order. Each on-chain payment can only be applied once." });
-    return;
-  }
-
-  const { walletAddress, currency: baseCurrency, network, options } = await getOrderCryptoOptions(order);
-  // Honour a customer-selected stablecoin (USDT/USDC) on the ERC-20 rail, validated
-  // against the order's allowed options. Falls back to the currency locked for the
-  // main payment, then the resolved base currency. Never trusts the client blindly.
-  const requestedCurrency = typeof cryptoCurrency === "string" ? cryptoCurrency.toUpperCase().trim() : "";
-  const currency = options.find(o => o.currency.toUpperCase() === requestedCurrency)?.currency
-    ?? effectiveStableCurrency(baseCurrency, network, walletAddress, (order as any).paymentCryptoCurrency ?? null);
-  if (!walletAddress) {
-    writeLog("payment", "warn", "balance_payment_rejected_wallet", `Wallet not configured for balance payment on order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, currency, network, reason: "wallet not configured" }, req.ip).catch(() => {});
-    res.status(400).json({ error: "Wallet address not configured" }); return;
-  }
-
-  const expectedAmount = parseFloat((await toUsdIfGbp(amountDueRaw, order.groupBuyId ?? null)).toFixed(2));
-  const result = await verifyTransaction(cleanHash, walletAddress, expectedAmount, currency, network, 0.15);
-
-  if (!result.verified) {
-    if (result.manual) {
-      await db.update(ordersTable)
-        .set({ balanceTxHash: cleanHash, balancePaymentStatus: "pending_confirmation" } as any)
-        .where(refundMutableOrderWhere(eq(ordersTable.id, id)));
-      writeLog("payment", "info", "balance_payment_manual", `Manual balance payment queued for order ${order.code} (${currency}/${network})`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, currency, network, expectedAmount, reason: result.reason }, req.ip).catch(() => {});
-    } else {
-      await db.update(ordersTable).set({ balanceTxHash: cleanHash } as any).where(refundMutableOrderWhere(eq(ordersTable.id, id)));
-      writeLog("payment", "warn", "balance_payment_failed", `Balance tx verification failed for order ${order.code}: ${result.reason}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, currency, network, expectedAmount, pending: result.pending ?? false, reason: result.reason }, req.ip).catch(() => {});
-    }
-    res.json({ verified: false, pending: result.pending ?? false, reason: result.reason });
-    return;
-  }
-
-  const confirmedRows = await db.update(ordersTable)
-    .set({ balanceTxHash: cleanHash, balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00" } as any)
-    .where(refundMutableOrderWhere(and(
-      eq(ordersTable.id, id),
-      eq(ordersTable.amountDue, amountDueRaw.toFixed(2)),
-      or(isNull(ordersTable.balancePaymentStatus), eq(ordersTable.balancePaymentStatus, "unpaid")),
-    )))
-    .returning({ id: ordersTable.id });
-  if (confirmedRows.length === 0) {
-    res.status(409).json({ error: "The outstanding balance changed while payment was being verified. Please refresh before trying again." });
-    return;
-  }
-
-  writeLog("payment", "info", "balance_payment_confirmed", `Balance payment confirmed for order ${order.code} — ${result.amountUsdt} ${currency}`, { orderId: order.id, code: order.code, username: order.telegramUsername, txHash: cleanHash, amountUsdt: result.amountUsdt, amountDue: amountDueRaw, currency, network, reason: "balance payment confirmed" }, req.ip).catch(() => {});
-  await logCustomerActivity({
-    telegramUsername: order.telegramUsername,
-    eventCategory: "payment",
-    eventType: "payment.balance_confirmed",
-    entityId: order.id,
-    actorType: "customer",
-    metadata: { code: order.code, txHash: cleanHash, amountUsdt: result.amountUsdt, amountDue: amountDueRaw, currency, network, paymentType: "crypto" },
-  }).catch(err => console.error("[balance-pay] activity log failed:", err));
-
-  res.json({ verified: true, balancePaymentStatus: "confirmed", amountUsdt: result.amountUsdt });
-});
+// Balance display and submission share a separate locked fiat/coin quote.
+router.get("/account/orders/:id/balance-crypto-quote", requireAccount, balanceCryptoQuote);
+router.post("/account/orders/:id/balance-pay", requireAccount, balanceCryptoPay);
 
 // POST /api/account/orders/:id/balance-init-anonpay — initiate AnonPay session for an outstanding balance
 router.post("/account/orders/:id/balance-init-anonpay", requireAccount, async (req, res): Promise<void> => {
@@ -3224,7 +3125,7 @@ router.get("/account/orders/:id/balance-anonpay-status", requireAccount, async (
         ? `anonpay:${paymentId}|${trocOutgoingHash}`
         : `anonpay:${paymentId}`;
       const confirmedRows = await db.update(ordersTable)
-        .set({ balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00", balanceTxHash: newBalanceTxHash } as any)
+        .set({ balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date(), amountDue: "0.00", balanceTxHash: newBalanceTxHash, balanceCryptoQuote: null } as any)
         .where(refundMutableOrderWhere(and(
           eq(ordersTable.id, id),
           eq(ordersTable.amountDue, String((order as any).amountDue)),

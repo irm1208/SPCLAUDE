@@ -459,6 +459,22 @@ export async function getAdminCryptoOptions(
  * - ERC-20 rail (GB/wholesale/unconfigured): USDT + USDC same wallet.
  * - Any other single-rail: the one resolved currency.
  */
+// The same ordered wholesale destinations must drive public payment details
+// and outstanding-balance quotes; USDC and Solana can have dedicated wallets.
+export async function getWholesaleCryptoOptions() {
+  const configs = [
+    ["wholesale_usdt_wallet", "USDT", "ERC-20"],
+    ["wholesale_usdc_erc20_wallet", "USDC", "ERC-20"],
+    ["wholesale_usdt_sol_wallet", "USDT", "Solana"],
+    ["wholesale_usdc_sol_wallet", "USDC", "Solana"],
+  ] as const;
+  const wallets = await Promise.all(configs.map(([key]) => getConfig(key)));
+  return configs.flatMap(([, currency, network], index) => {
+    const walletAddress = wallets[index];
+    return walletAddress ? [{ currency, network, walletAddress }] : [];
+  });
+}
+
 export async function getOrderCryptoOptions(
   order: { id?: string; groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; reshipperUsername?: string | null; sharedOrderId?: string | null }
 ): Promise<{ walletAddress: string | null; currency: string; network: string; options: Array<{ currency: string; network: string; walletAddress: string | null }> }> {
@@ -1060,22 +1076,13 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
 
       // Wholesale orders: prefer wholesale-specific payment settings
       if (order.orderType === "wholesale") {
-        const [wsUsdtWallet, wsUsdcErc20Wallet, wsUsdtSolWallet, wsUsdcSolWallet, wsAnonPayEnabled, wsAnonPayWallet, wsAnonPayTicker, wsAnonPayNetwork] = await Promise.all([
-          getConfig("wholesale_usdt_wallet"),
-          getConfig("wholesale_usdc_erc20_wallet"),
-          getConfig("wholesale_usdt_sol_wallet"),
-          getConfig("wholesale_usdc_sol_wallet"),
+        const [wsCryptoOpts, wsAnonPayEnabled, wsAnonPayWallet, wsAnonPayTicker, wsAnonPayNetwork] = await Promise.all([
+          getWholesaleCryptoOptions(),
           getConfig("wholesale_anon_pay_enabled"),
           getConfig("wholesale_anon_pay_wallet"),
           getConfig("wholesale_anon_pay_ticker"),
           getConfig("wholesale_anon_pay_network"),
         ]);
-        // Build ordered list of all configured wholesale crypto wallets
-        const wsCryptoOpts: { currency: string; network: string; walletAddress: string }[] = [];
-        if (wsUsdtWallet)      wsCryptoOpts.push({ currency: "USDT", network: "ERC-20",  walletAddress: wsUsdtWallet });
-        if (wsUsdcErc20Wallet) wsCryptoOpts.push({ currency: "USDC", network: "ERC-20",  walletAddress: wsUsdcErc20Wallet });
-        if (wsUsdtSolWallet)   wsCryptoOpts.push({ currency: "USDT", network: "Solana",  walletAddress: wsUsdtSolWallet });
-        if (wsUsdcSolWallet)   wsCryptoOpts.push({ currency: "USDC", network: "Solana",  walletAddress: wsUsdcSolWallet });
         const hasWsAnonPay = wsAnonPayEnabled === "true" && !!wsAnonPayWallet;
         if (wsCryptoOpts.length > 0 || hasWsAnonPay) {
           if (wsCryptoOpts.length > 0) {

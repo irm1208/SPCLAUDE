@@ -1243,7 +1243,33 @@ function BalanceDueCard({
   } | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PayMethod | null>(null);
   const [selectedCrypto, setSelectedCrypto] = useState<string>("");
+  const [selectedCryptoNetwork, setSelectedCryptoNetwork] = useState("");
+  const [balanceQuote, setBalanceQuote] = useState<{
+    cryptoAmount: number; currency: string; network: string; walletAddress: string; amountDue: string;
+  } | null>(null);
+  const [quoteError, setQuoteError] = useState("");
+  const [quoteRetry, setQuoteRetry] = useState(0);
+  const usableQuote = balanceQuote?.currency === selectedCrypto
+    && balanceQuote.network === selectedCryptoNetwork
+    && Number(balanceQuote.amountDue) === amountDue ? balanceQuote : null;
   const [copied, setCopied] = useState<string>("");
+
+  useEffect(() => {
+    if (!payInfo?.cryptoWalletAddress || !selectedCrypto || balanceConfirmed || balancePending) return;
+    const controller = new AbortController();
+    setBalanceQuote(null);
+    setQuoteError("");
+    fetch(`/api/account/orders/${encodeURIComponent(orderId)}/balance-crypto-quote?cryptoCurrency=${encodeURIComponent(selectedCrypto)}&cryptoNetwork=${encodeURIComponent(selectedCryptoNetwork)}`, {
+      credentials: "include", signal: controller.signal,
+    }).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Couldn't load the balance quote.");
+      if (!controller.signal.aborted) setBalanceQuote(data);
+    }).catch(error => {
+      if (!controller.signal.aborted) setQuoteError(error.message || "Couldn't load the balance quote.");
+    });
+    return () => controller.abort();
+  }, [orderId, amountDue, selectedCrypto, selectedCryptoNetwork, payInfo?.cryptoWalletAddress, balanceConfirmed, balancePending, quoteRetry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1267,6 +1293,7 @@ function BalanceDueCard({
         };
         setPayInfo(info);
         setSelectedCrypto((info.cryptoCurrency || "USDT").toUpperCase());
+        setSelectedCryptoNetwork(info.cryptoNetwork || "ERC-20");
         const first: PayMethod | null =
           info.cryptoWalletAddress ? "crypto" :
           info.revolutHandle ? "revolut" :
@@ -1332,7 +1359,7 @@ function BalanceDueCard({
   // ── Crypto TX hash submission ───────────────────────────────
   const submitTxHash = async () => {
     const cleaned = txHash.trim();
-    if (!cleaned) return;
+    if (!cleaned || !usableQuote) return;
     setVerifying(true);
     setVerifyMsg(null);
     try {
@@ -1340,11 +1367,15 @@ function BalanceDueCard({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selectedCrypto ? { txHash: cleaned, cryptoCurrency: selectedCrypto } : { txHash: cleaned }),
+        body: JSON.stringify({ txHash: cleaned, cryptoCurrency: selectedCrypto, cryptoNetwork: selectedCryptoNetwork }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
         setVerifyMsg({ kind: "err", text: (d as { error?: string }).error || "Submission failed." });
+        if (res.status === 409) {
+          setBalanceQuote(null);
+          setQuoteRetry(n => n + 1);
+        }
       } else if (d.verified) {
         setVerifyMsg({ kind: "ok", text: "Payment verified on-chain. Thank you!" });
         onBalanceStatusChange("confirmed", cleaned);
@@ -1568,7 +1599,7 @@ function BalanceDueCard({
                 {selectedMethod === "crypto" && payInfo.cryptoWalletAddress && (() => {
                   const activeCrypto = (selectedCrypto || payInfo.cryptoCurrency || "USDT").toUpperCase();
                   const activeNetwork =
-                    payInfo.availableCryptoOptions.find(o => o.currency.toUpperCase() === activeCrypto)?.network
+                    selectedCryptoNetwork
                     || payInfo.cryptoNetwork || "ERC-20";
                   return (
                   <>
@@ -1578,12 +1609,12 @@ function BalanceDueCard({
                         <div className="flex flex-wrap gap-1.5">
                           {payInfo.availableCryptoOptions.map(opt => {
                             const cur = opt.currency.toUpperCase();
-                            const active = activeCrypto === cur;
+                            const active = activeCrypto === cur && selectedCryptoNetwork === opt.network;
                             return (
                               <button
-                                key={cur}
+                                key={`${cur}:${opt.network}`}
                                 type="button"
-                                onClick={() => { setSelectedCrypto(cur); setVerifyMsg(null); }}
+                                onClick={() => { setSelectedCrypto(cur); setSelectedCryptoNetwork(opt.network); setVerifyMsg(null); }}
                                 className="text-xs font-bold px-2.5 py-1 rounded-lg transition-colors"
                                 style={{
                                   background: active ? balanceTheme.selected : balanceTheme.unselected,
@@ -1591,7 +1622,7 @@ function BalanceDueCard({
                                   border: `1px solid ${active ? balanceTheme.selectedBorder : balanceTheme.border}`,
                                 }}
                               >
-                                {cur}
+                                {cur} · {opt.network}
                               </button>
                             );
                           })}
@@ -1600,15 +1631,21 @@ function BalanceDueCard({
                     )}
                     <BalancePayDetail
                       rows={[
-                        { label: "Amount", value: `${fmtC(amountDue, currency)} (in ${activeCrypto})`, copyValue: String(amountDue) },
-                        { label: "Network", value: activeNetwork },
-                        { label: `${activeCrypto} wallet`, value: payInfo.cryptoWalletAddress, copyValue: payInfo.cryptoWalletAddress, mono: true },
+                        { label: "Amount", value: usableQuote ? `${usableQuote.cryptoAmount} ${usableQuote.currency}` : "Loading locked quote…", copyValue: usableQuote ? String(usableQuote.cryptoAmount) : undefined },
+                        { label: "Network", value: usableQuote?.network ?? activeNetwork },
+                        { label: `${activeCrypto} wallet`, value: usableQuote?.walletAddress ?? "Waiting for quote", copyValue: usableQuote?.walletAddress, mono: true },
                       ]}
                       note={`Only send ${activeCrypto} on the ${activeNetwork} network. Other chains = lost funds.`}
                       copied={copied}
                       onCopy={copy}
                       compactGrid
                     />
+                    {quoteError && (
+                      <div role="alert" className="text-xs mb-2" style={{ color: "var(--t-text)" }}>
+                        {quoteError}{" "}
+                        <button type="button" className="underline" onClick={() => setQuoteRetry(n => n + 1)}>Retry quote</button>
+                      </div>
+                    )}
                     {!balanceConfirmed && (
                     <div className="space-y-1.5">
                         <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--t-muted)" }}>Paste your transaction hash</p>
@@ -1623,7 +1660,7 @@ function BalanceDueCard({
                         <button
                           type="button"
                           onClick={submitTxHash}
-                          disabled={verifying || !txHash.trim()}
+                          disabled={verifying || !txHash.trim() || !usableQuote}
                           className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-60"
                           style={{ background: balanceTheme.cta, color: "#fff", boxShadow: "0 7px 18px rgba(27,58,122,0.20)" }}
                         >

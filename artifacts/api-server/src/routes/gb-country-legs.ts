@@ -605,7 +605,7 @@ router.post("/admin/group-buys/:gbId/bill-vendor-shipping-balance", async (req, 
 
     await db
       .update(ordersTable)
-      .set({ amountDue: newAmountDue.toFixed(2) as any })
+      .set({ amountDue: newAmountDue.toFixed(2) as any, balanceCryptoQuote: null })
       .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)));
 
     let notified = false;

@@ -341,6 +341,7 @@ async function reconcileShareOrganiserFees(
       organiserFee: update.organiserFee.toFixed(2),
       grandTotal: update.grandTotal.toFixed(2),
       amountDue: update.amountDue.toFixed(2),
+      balanceCryptoQuote: null,
     };
     if (update.resetPaymentLock) {
       orderUpdate.paymentUsdAmount = null;
@@ -2266,6 +2267,7 @@ router.post("/admin/wholesale-shares/:id/remove-members", async (req, res): Prom
         vendorShipping: update.vendorShipping.toFixed(2),
         grandTotal: update.grandTotal.toFixed(2),
         amountDue: update.amountDue.toFixed(2),
+        balanceCryptoQuote: null,
         ...(update.paymentProtected ? {} : { paymentUsdAmount: null }),
         ...(needsBalanceReset ? {
           balancePaymentStatus: "unpaid",
@@ -2530,6 +2532,7 @@ export async function attemptLockShare(
               organiserFee: organiserFee.toFixed(2),
               grandTotal: grandTotal.toFixed(2),
               amountDue: additionalBalance.toFixed(2),
+              balanceCryptoQuote: null,
               balancePaymentStatus: "unpaid",
             }).where(refundMutableOrderWhere(eq(ordersTable.id, existingOrder.id)));
           }
