@@ -9,6 +9,7 @@ import {
 import {
   deleteWholesaleUpdateImage, downloadWholesaleUpdateImage, storePageUpdateImage,
 } from "./wholesale-update-images";
+import { queueGroupBuyUpdateNotification } from "./group-buy-update-notifications";
 
 type DataAccess = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
 type Scope = "member" | "organiser" | "admin";
@@ -120,6 +121,7 @@ export async function setGroupBuyProgress(id: string, actor: UpdateActor, scope:
       published: true, imageKey: null, createdAt: now, updatedAt: now,
     };
     await tx.insert(siteConfigTable).values({ key: `${updatePrefix(id)}${event.id}`, value: JSON.stringify(event) });
+    await queueGroupBuyUpdateNotification(tx, group, event);
   });
   return groupBuyUpdates(id, actor, scope, database);
 }
@@ -141,7 +143,7 @@ export async function saveGroupBuyUpdate(
   let record: GroupUpdate;
   try {
     record = await database.transaction(async tx => {
-      await groupUpdatesAccess(tx, groupId, actor, true, true);
+      const group = await groupUpdatesAccess(tx, groupId, actor, true, true);
       const existing = updateId ? await findUpdate(tx, groupId, updateId) : null;
       oldImage = existing?.record.imageKey ?? null;
       const id = updateId ?? randomUUID();
@@ -155,6 +157,9 @@ export async function saveGroupBuyUpdate(
         await tx.update(siteConfigTable).set({ value: JSON.stringify(updated) }).where(eq(siteConfigTable.key, existing.row.key));
       } else {
         await tx.insert(siteConfigTable).values({ key: `${updatePrefix(groupId)}${id}`, value: JSON.stringify(updated) });
+      }
+      if (updated.published && !existing?.record.published) {
+        await queueGroupBuyUpdateNotification(tx, group, updated);
       }
       return updated;
     });
