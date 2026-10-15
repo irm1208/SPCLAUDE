@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/core";
 import { toast } from "sonner";
 import { currSym } from "@/lib/currency";
+import { fulfilmentCollisionDetection } from "@/lib/fulfilment-board-dnd";
 
 // ── API ───────────────────────────────────────────────────────────────────────
 function apiUrl(path: string) { return `/api${path}`; }
@@ -479,22 +480,22 @@ function CountryLegGroupCard({
 
 // ── Draggable Order Card ──────────────────────────────────────────────────────
 function DraggableOrderCard({
-  order, currency, activeReshippers, onQuickRoute, routing, isDragOverlay = false, groupReshipperUsername = null,
+  order, currency, activeReshippers, onQuickRoute, routing, groupReshipperUsername = null,
 }: {
   order: BoardOrder; currency: string;
   activeReshippers: { username: string; country: string; enabled: boolean }[];
   onQuickRoute: (orderId: string, routingType: string, reshipperUsername?: string | null) => Promise<void>;
-  routing: boolean; isDragOverlay?: boolean; groupReshipperUsername?: string | null;
+  routing: boolean; groupReshipperUsername?: string | null;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: order.id, data: { order },
+    disabled: routing || order.batchLocked,
   });
 
   return (
     <div
       ref={setNodeRef} {...listeners} {...attributes}
       style={{ opacity: isDragging ? 0.3 : 1, cursor: isDragging ? "grabbing" : "grab" }}
-      className={cn(isDragOverlay && "rotate-1 shadow-2xl")}
     >
       <OrderCard
         order={order} currency={currency} activeReshippers={activeReshippers}
@@ -665,7 +666,7 @@ function RoutingGroupCard({
     : cn("rounded-xl border overflow-hidden", accentCls, group.paymentBlocked && "border-red-300");
 
   return (
-    <div className={wrapperCls}>
+    <div ref={setNodeRef} className={wrapperCls}>
       {/* Header */}
       <div className={cn("flex items-center gap-2 px-3 py-2.5 border-b", headerAccent)}>
         {groupIcon}
@@ -780,7 +781,6 @@ function RoutingGroupCard({
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden">
             <div
-              ref={setNodeRef}
               className={cn(
                 "p-2 space-y-1.5 transition-colors",
                 boardView && "overflow-y-auto max-h-[560px]",
@@ -1301,11 +1301,14 @@ export function AdminGbFulfilment({
         await load();
         return;
       }
-      if (!res.ok) throw new Error(`Error ${res.status}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Routing failed (HTTP ${res.status})`);
+      }
       toast.success("Routing updated");
       await load();
-    } catch {
-      toast.error("Failed to update routing");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update routing");
     } finally {
       setPendingIds(s => { const n = new Set(s); n.delete(orderId); return n; });
     }
@@ -1647,7 +1650,7 @@ export function AdminGbFulfilment({
       )}
 
       {data && groupBy === "reshipper" && (
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} collisionDetection={fulfilmentCollisionDetection} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
           {/* Board view (desktop horizontal) or list view (mobile/list) */}
           {(!isMobile && view === "board") ? (
             <div className="overflow-x-auto pb-3">
@@ -1696,10 +1699,10 @@ export function AdminGbFulfilment({
           {/* Drag overlay */}
           <DragOverlay dropAnimation={null}>
             {activeOrder && (
-              <div className="rotate-1 shadow-2xl w-[260px]">
-                <DraggableOrderCard
+              <div className="rotate-1 shadow-2xl w-[260px] pointer-events-none">
+                <OrderCard
                   order={activeOrder} currency={currSymbol} activeReshippers={data.activeReshippers}
-                  onQuickRoute={handleQuickRoute} routing={false} isDragOverlay
+                  onQuickRoute={handleQuickRoute} routing={false} compact={false}
                 />
               </div>
             )}
