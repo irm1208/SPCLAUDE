@@ -65,9 +65,10 @@ export type RunMutation = <T>(fn: () => Promise<T>, apply: (old: GbUpdatesRespon
 
 function StageControl({ data, run, blocked, mutate, onConflict }: {
   data: GbUpdatesResponse; run: RunMutation; blocked: boolean;
-  mutate: (stage: GbStage, expected: string | null) => Promise<GbUpdatesResponse>; onConflict: () => void;
+  mutate: (stage: GbStage, expected: string | null, sendTelegramAlert: boolean) => Promise<GbUpdatesResponse>; onConflict: () => void;
 }) {
   const [pick, setPick] = useState<GbStage>(data.stage);
+  const [sendTelegramAlert, setSendTelegramAlert] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ err: boolean; text: string } | null>(null);
   const base = useRef(data.stage);
@@ -76,8 +77,9 @@ function StageControl({ data, run, blocked, mutate, onConflict }: {
   const save = async () => {
     setSaving(true); setMsg(null);
     try {
-      const r = await run(() => mutate(pick, data.stageUpdatedAt), (_old, res) => res);
-      setMsg({ err: false, text: `Stage set to ${GB_STAGE_LABEL[r.stage]}. A dated status note was published.` });
+      const r = await run(() => mutate(pick, data.stageUpdatedAt, sendTelegramAlert), (_old, res) => res);
+      setMsg({ err: false, text: `Stage set to ${GB_STAGE_LABEL[r.stage]}. ${sendTelegramAlert ? "Telegram alerts queued for members." : "Website updated only; no Telegram alert."}` });
+      setSendTelegramAlert(false);
     } catch (e) {
       if (isConflict(e)) { onConflict(); setMsg({ err: true, text: "Someone else changed the stage. Latest state loaded; review and try again." }); }
       else setMsg({ err: true, text: e instanceof Error ? e.message : "Could not save stage" });
@@ -99,6 +101,10 @@ function StageControl({ data, run, blocked, mutate, onConflict }: {
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save status
         </button>
       </div>
+      <label className="flex items-center gap-2 text-xs" style={{ color: V.text }}>
+        <input data-testid="checkbox-gb-stage-telegram-alert" type="checkbox" checked={sendTelegramAlert} disabled={saving || blocked} onChange={e => setSendTelegramAlert(e.target.checked)} />
+        Send Telegram alert to group-buy members
+      </label>
       <p className="text-[11px]" style={{ color: V.muted }}>Manual and group-wide. Does not change any payment, order or parcel status.</p>
       {msg && <p role={msg.err ? "alert" : "status"} data-testid="text-gb-stage-msg" className={`text-xs ${msg.err ? "text-red-600" : "text-green-700"}`}>{msg.text}</p>}
     </div>
@@ -112,6 +118,7 @@ function UpdateEditor({ scope, gbId, initial, headers, run, blocked, onSaved, on
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
   const [published, setPublished] = useState(initial?.published ?? false);
+  const [sendTelegramAlert, setSendTelegramAlert] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
@@ -137,7 +144,7 @@ function UpdateEditor({ scope, gbId, initial, headers, run, blocked, onSaved, on
     if (err) { setError(err); return; }
     setSaving(true); setError(null);
     try {
-      const fd = buildUpdateFormData({ title, note, published, image: file, removeImage });
+      const fd = buildUpdateFormData({ title, note, published, image: file, removeImage, sendTelegramAlert });
       await run(() => saveUpdate(scope, gbId, initial?.id ?? null, fd), upsertInto);
       onSaved();
     } catch (e) { setError(e instanceof Error ? e.message : "Save failed"); }
@@ -177,9 +184,16 @@ function UpdateEditor({ scope, gbId, initial, headers, run, blocked, onSaved, on
         <p className="text-[10px]" style={{ color: V.muted }}>PNG, JPEG, WebP or GIF, up to 5 MB.</p>
       </div>
       <label className="flex items-center gap-2 text-xs font-semibold" style={{ color: V.text }}>
-        <input data-testid="checkbox-gb-update-published" type="checkbox" checked={published} disabled={saving} onChange={e => setPublished(e.target.checked)} />
+        <input data-testid="checkbox-gb-update-published" type="checkbox" checked={published} disabled={saving} onChange={e => { setPublished(e.target.checked); if (!e.target.checked) setSendTelegramAlert(false); }} />
         Published (visible to members of this group buy)
       </label>
+      <label className="flex items-center gap-2 text-xs" style={{ color: V.text }}>
+        <input data-testid="checkbox-gb-update-telegram-alert" type="checkbox" checked={sendTelegramAlert} disabled={saving || blocked || !published || initial?.telegramAlertQueued === true} onChange={e => setSendTelegramAlert(e.target.checked)} />
+        Send Telegram alert to group-buy members
+      </label>
+      <p className="text-[11px]" style={{ color: V.muted }}>
+        {initial?.telegramAlertQueued ? "An alert was already queued for this update. Editing it will not send another." : "Optional. Members’ notification preferences still apply. Drafts never send alerts."}
+      </p>
       {error && <p role="alert" data-testid="text-gb-update-error" className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button type="button" data-testid="button-save-gb-update" onClick={save} disabled={saving || blocked} className="h-9 px-4 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-1.5 disabled:opacity-60" style={{ background: "#1B3A7A" }}>
@@ -244,6 +258,8 @@ function ManagerBody({ scope, groupBuyId, headers }: Props) {
   }, [qc, scope, groupBuyId]);
 
   const toggle = async (u: GbUpdate) => {
+    // Publishing opens the editor so the organiser/Admin can choose alerts.
+    if (!u.published) { setEditing(u.id); return; }
     setWorking(u.id); setRowError(null);
     try { await run(() => saveUpdate(scope, groupBuyId, u.id, buildUpdateFormData({ title: u.title ?? "", note: u.note, published: !u.published })), upsertInto); }
     catch (e) { setRowError({ id: u.id, msg: e instanceof Error ? e.message : "Update failed" }); }
@@ -272,7 +288,7 @@ function ManagerBody({ scope, groupBuyId, headers }: Props) {
       {d && (
         <>
           <StageControl data={d} run={run} blocked={pending}
-            mutate={(stage, expected) => saveStage(scope, groupBuyId, stage, expected)}
+            mutate={(stage, expected, alert) => saveStage(scope, groupBuyId, stage, expected, alert)}
             onConflict={() => { qc.invalidateQueries({ queryKey: key }); qc.invalidateQueries({ queryKey: gbuKeys.progressAll }); }} />
           <div className="border-t pt-3 space-y-2" style={{ borderColor: V.border }}>
             <div className="flex items-center justify-between gap-2">

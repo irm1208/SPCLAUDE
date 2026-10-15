@@ -14,6 +14,7 @@ export const GBU_POLL_MS = 60_000;
 export interface GbUpdate {
   id: string; groupBuyId: string; title: string | null; note: string; published: boolean;
   kind: "note" | "status"; stage?: GbStage; imageUrl: string | null; createdAt: string; updatedAt: string;
+  telegramAlertQueued?: boolean;
 }
 export interface GbUpdatesResponse { groupBuy: { id: string; name: string }; stage: GbStage; stageUpdatedAt: string | null; updates: GbUpdate[] }
 export interface GbProgressEntry { stage: GbStage; stageUpdatedAt: string | null }
@@ -47,6 +48,7 @@ export function parseUpdate(raw: unknown): GbUpdate | null {
     id: String(r.id), groupBuyId: String(r.groupBuyId ?? ""),
     title: typeof r.title === "string" && r.title.trim() ? r.title : null,
     note: r.note, published: r.published === true,
+    telegramAlertQueued: r.telegramAlertQueued === true,
     kind: r.kind === "status" ? "status" : "note",
     stage: isStage(r.stage) ? r.stage : undefined,
     imageUrl: typeof r.imageUrl === "string" && r.imageUrl ? r.imageUrl : null,
@@ -100,11 +102,12 @@ export function validateImage(f: { type: string; size: number }): string | null 
   if (f.size > GBU_IMAGE_MAX) return "Image must be 5 MB or smaller";
   return null;
 }
-export function buildUpdateFormData(d: { title: string; note: string; published: boolean; image?: Blob | null; removeImage?: boolean }) {
+export function buildUpdateFormData(d: { title: string; note: string; published: boolean; image?: Blob | null; removeImage?: boolean; sendTelegramAlert?: boolean }) {
   const fd = new FormData();
   fd.append("title", d.title.trim());
   fd.append("note", d.note);
   fd.append("published", d.published ? "true" : "false");
+  fd.append("sendTelegramAlert", d.published && d.sendTelegramAlert === true ? "true" : "false");
   if (d.removeImage && !d.image) fd.append("removeImage", "true");
   if (d.image) fd.append("image", d.image);
   return fd;
@@ -135,9 +138,9 @@ export async function fetchCustomerUpdates(gbId: string, signal?: AbortSignal) {
 }
 export const fetchManagedUpdates = async (scope: GbUpdatesScope, gbId: string, signal?: AbortSignal) =>
   parseUpdatesResponse(await req<unknown>(`${manageBase(scope, gbId)}/updates`, { signal }));
-export async function saveStage(scope: GbUpdatesScope, gbId: string, stage: GbStage, expectedUpdatedAt: string | null) {
+export async function saveStage(scope: GbUpdatesScope, gbId: string, stage: GbStage, expectedUpdatedAt: string | null, sendTelegramAlert = false) {
   const r = parseUpdatesResponse(await req<unknown>(`${manageBase(scope, gbId)}/progress`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage, expectedUpdatedAt }),
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage, expectedUpdatedAt, sendTelegramAlert }),
   }));
   return r;
 }

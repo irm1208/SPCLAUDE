@@ -11,6 +11,7 @@ export type GroupUpdate = {
   id: string; groupBuyId: string; title: string; note: string; published: boolean;
   kind: "note" | "status"; stage?: GroupProgressStage; imageKey: string | null;
   createdAt: string; updatedAt: string;
+  telegramAlertQueued?: boolean;
 };
 export type GroupProgress = { stage: GroupProgressStage; updatedAt: string };
 export const progressKey = (id: string) => `gb_progress:${id}`;
@@ -22,6 +23,12 @@ export class GroupUpdateError extends Error {
 export const isGroupProgressStage = (value: unknown): value is GroupProgressStage =>
   GROUP_PROGRESS_STAGES.some(s => s.id === value);
 
+function parseAlertChoice(value: unknown): boolean {
+  if (value === undefined || value === false || value === "false") return false;
+  if (value === true || value === "true") return true;
+  throw new GroupUpdateError("Send Telegram alert must be true or false.");
+}
+
 export function defaultGroupProgress(group: { status: string; closeDate: Date | string | null }): GroupProgressStage {
   return group.status === "closed" || group.status === "archived" ||
     (group.closeDate !== null && new Date(group.closeDate).getTime() <= Date.now()) ? "closed" : "open";
@@ -31,10 +38,10 @@ export function parseProgressInput(body: Record<string, unknown> = {}) {
   if (body.expectedUpdatedAt !== null && (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt)))) {
     throw new GroupUpdateError("Refresh the group-buy progress before saving.");
   }
-  return { stage: body.stage, expectedUpdatedAt: body.expectedUpdatedAt as string | null };
+  return { stage: body.stage, expectedUpdatedAt: body.expectedUpdatedAt as string | null, sendTelegramAlert: parseAlertChoice(body.sendTelegramAlert) };
 }
 export function parseGroupUpdate(body: Record<string, unknown> = {}) {
-  try { return parseWholesaleUpdateInput(body); }
+  try { return { ...parseWholesaleUpdateInput(body), sendTelegramAlert: parseAlertChoice(body.sendTelegramAlert) }; }
   catch (error) { throw new GroupUpdateError(error instanceof Error ? error.message : "Invalid update."); }
 }
 export function readProgress(value: string | null): GroupProgress {

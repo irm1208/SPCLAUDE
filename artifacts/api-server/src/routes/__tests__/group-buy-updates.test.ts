@@ -128,14 +128,15 @@ const member = { "x-test-member": "member" };
 const management = "/organiser/group-buys/GB1";
 const getBody = async <T,>(response: Response): Promise<T> => await response.json() as T;
 const request = (path: string, init?: RequestInit) => fetch(`${base}${path}`, init);
-async function stage(value: string, expectedUpdatedAt: string | null = null, headers = manager, groupId = "GB1") {
+async function stage(value: string, expectedUpdatedAt: string | null = null, headers = manager, groupId = "GB1", sendTelegramAlert = true) {
   return request(`/organiser/group-buys/${groupId}/progress`, {
-    method: "PUT", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ stage: value, expectedUpdatedAt }),
+    method: "PUT", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ stage: value, expectedUpdatedAt, sendTelegramAlert }),
   });
 }
-async function save(id?: string, published = true, image = false, root = management, headers: Record<string, string> = manager) {
+async function save(id?: string, published = true, image = false, root = management, headers: Record<string, string> = manager, sendTelegramAlert = true) {
   const body = new FormData();
   body.set("title", "Shipping news"); body.set("note", "Vendor sent the parcel.\nMore news soon."); body.set("published", String(published));
+  body.set("sendTelegramAlert", String(sendTelegramAlert));
   if (image) body.set("image", new Blob(["fake image"], { type: "image/png" }), "image.png");
   return request(`${root}/updates${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", headers, body });
 }
@@ -247,6 +248,55 @@ describe("group-buy progress and announcements API", () => {
 
 describe("private Telegram group-buy updates", () => {
   const jobs = () => data.tables.config.filter(row => String(row.key).startsWith("gb_update_delivery:"));
+  it("lets organisers and Admin publish on the website without sending alerts", async () => {
+    await save(undefined, true, false, management, manager, false);
+    await save(undefined, true, false, "/admin/group-buys/GB2", { "x-test-admin": "yes" }, false);
+    await stage("ordered", null, manager, "GB1", false);
+    const response = await request("/admin/group-buys/GB2/progress", {
+      method: "PUT", headers: { "x-test-admin": "yes", "content-type": "application/json" },
+      body: JSON.stringify({ stage: "ordered", expectedUpdatedAt: null, sendTelegramAlert: false }),
+    });
+    expect(response.status).toBe(200);
+    expect(jobs()).toHaveLength(0);
+    await drainGroupBuyUpdateNotifications();
+    expect(data.notify).not.toHaveBeenCalled();
+  });
+  it("defaults missing alert choices to off and rejects invalid choices", async () => {
+    const body = new FormData();
+    body.set("note", "Website only"); body.set("published", "true");
+    expect((await request(`${management}/updates`, { method: "POST", headers: manager, body })).status).toBe(201);
+    const opts = { method: "PUT", headers: { ...manager, "content-type": "application/json" } };
+    expect((await request(`${management}/progress`, {
+      ...opts, body: JSON.stringify({ stage: "ordered", expectedUpdatedAt: null }),
+    })).status).toBe(200);
+    expect(jobs()).toHaveLength(0);
+    body.set("sendTelegramAlert", "maybe");
+    expect((await request(`${management}/updates`, { method: "POST", headers: manager, body })).status).toBe(400);
+    expect((await request(`${management}/progress`, {
+      ...opts, body: JSON.stringify({ stage: "in_transit", expectedUpdatedAt: null, sendTelegramAlert: "maybe" }),
+    })).status).toBe(400);
+  });
+  it("allows a previously silent published post to be announced once, then remembers that choice", async () => {
+    const { update } = await getBody<{ update: Update }>(await save(undefined, true, false, management, manager, false));
+    expect(update.telegramAlertQueued).not.toBe(true);
+    const alerted = await getBody<{ update: Update }>(await save(update.id, true));
+    expect(alerted.update.telegramAlertQueued).toBe(true);
+    expect(jobs()).toHaveLength(1);
+    await drainGroupBuyUpdateNotifications();
+    await save(update.id, true);
+    await drainGroupBuyUpdateNotifications();
+    expect(data.notify).toHaveBeenCalledTimes(2);
+  });
+  it("accepts the alert flag together with all five image-removal form fields", async () => {
+    const { update } = await getBody<{ update: Update }>(await save(undefined, false, true));
+    const body = new FormData();
+    body.set("title", "Changed"); body.set("note", "No image now."); body.set("published", "true");
+    body.set("removeImage", "true"); body.set("sendTelegramAlert", "true");
+    const response = await request(`${management}/updates/${update.id}`, { method: "PUT", headers: manager, body });
+    expect(response.status).toBe(200);
+    expect((await getBody<{ update: Update }>(response)).update).toMatchObject({ imageUrl: null, telegramAlertQueued: true });
+    expect(jobs()).toHaveLength(1);
+  });
   it("queues only published notes and announces the first publication once, not every edit", async () => {
     const { update } = await getBody<{ update: Update }>(await save(undefined, false));
     expect(jobs()).toHaveLength(0);
@@ -337,6 +387,7 @@ describe("private Telegram group-buy updates", () => {
     const body = new FormData();
     body.set("title", "<b>Price & stock</b>");
     body.set("note", "<script>&".repeat(550)); body.set("published", "true");
+    body.set("sendTelegramAlert", "true");
     expect((await request(`${management}/updates`, { method: "POST", headers: manager, body })).status).toBe(201);
     await drainGroupBuyUpdateNotifications();
     const text = data.notify.mock.calls[0][2] as string;

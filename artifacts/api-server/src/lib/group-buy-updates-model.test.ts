@@ -14,7 +14,7 @@ describe("group-buy progress rules", () => {
     expect(defaultGroupProgress({ status: "active", closeDate: new Date("2020-01-01") })).toBe("closed");
   });
   it("requires a valid stage and a current version, including explicit null for the first change", () => {
-    expect(parseProgressInput({ stage: "ordered", expectedUpdatedAt: null })).toEqual({ stage: "ordered", expectedUpdatedAt: null });
+    expect(parseProgressInput({ stage: "ordered", expectedUpdatedAt: null })).toEqual({ stage: "ordered", expectedUpdatedAt: null, sendTelegramAlert: false });
     for (const input of [{ stage: "paid", expectedUpdatedAt: null }, { stage: "ordered" }, { stage: "ordered", expectedUpdatedAt: 12 }]) {
       expect(() => parseProgressInput(input)).toThrow();
     }

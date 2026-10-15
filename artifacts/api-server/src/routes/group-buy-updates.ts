@@ -26,7 +26,7 @@ async function managementAuth(req: Request, res: Response, next: NextFunction) {
   await requireOrganiser(req, res, next);
 }
 const upload = multer({
-  storage: multer.memoryStorage(), limits: { fileSize: WHOLESALE_IMAGE_LIMIT, files: 1, fields: 4, fieldSize: 25_000 },
+  storage: multer.memoryStorage(), limits: { fileSize: WHOLESALE_IMAGE_LIMIT, files: 1, fields: 5, fieldSize: 25_000 },
 }).single("image");
 const noCache = (_req: Request, res: Response, next: NextFunction) => { res.setHeader("Cache-Control", "private, no-store"); next(); };
 async function audit(req: Request, action: string, extra: Record<string, unknown> = {}) {

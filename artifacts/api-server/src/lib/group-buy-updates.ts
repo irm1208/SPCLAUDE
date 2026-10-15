@@ -119,9 +119,10 @@ export async function setGroupBuyProgress(id: string, actor: UpdateActor, scope:
       title: "Progress update",
       note: `Status updated to ${GROUP_PROGRESS_STAGES.find(stage => stage.id === input.stage)!.label}.`,
       published: true, imageKey: null, createdAt: now, updatedAt: now,
+      telegramAlertQueued: input.sendTelegramAlert,
     };
     await tx.insert(siteConfigTable).values({ key: `${updatePrefix(id)}${event.id}`, value: JSON.stringify(event) });
-    await queueGroupBuyUpdateNotification(tx, group, event);
+    if (input.sendTelegramAlert) await queueGroupBuyUpdateNotification(tx, group, event);
   });
   return groupBuyUpdates(id, actor, scope, database);
 }
@@ -153,12 +154,14 @@ export async function saveGroupBuyUpdate(
         id, groupBuyId: groupId, title: input.title, note: input.note, published: input.published,
         imageKey: uploadedKey ?? (input.removeImage ? null : oldImage), updatedAt: now,
       };
+      const shouldAlert = updated.published && input.sendTelegramAlert && !updated.telegramAlertQueued;
+      if (shouldAlert) updated.telegramAlertQueued = true;
       if (existing) {
         await tx.update(siteConfigTable).set({ value: JSON.stringify(updated) }).where(eq(siteConfigTable.key, existing.row.key));
       } else {
         await tx.insert(siteConfigTable).values({ key: `${updatePrefix(groupId)}${id}`, value: JSON.stringify(updated) });
       }
-      if (updated.published && !existing?.record.published) {
+      if (shouldAlert) {
         await queueGroupBuyUpdateNotification(tx, group, updated);
       }
       return updated;

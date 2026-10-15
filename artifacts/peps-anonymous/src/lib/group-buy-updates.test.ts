@@ -43,6 +43,7 @@ test("draft + image validation", () => {
 });
 test("form data contract", () => {
   const fd = buildUpdateFormData({ title: " T ", note: "n", published: false, removeImage: true });
+  assert.equal(fd.get("sendTelegramAlert"), "false");
   assert.equal(fd.get("title"), "T");
   assert.equal(fd.get("published"), "false");
   assert.equal(fd.get("removeImage"), "true");

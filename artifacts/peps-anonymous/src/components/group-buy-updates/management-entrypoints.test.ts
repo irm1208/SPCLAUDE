@@ -25,5 +25,5 @@ test("the shared selector clearly labels status and retains server-backed saving
   assert.match(source, />Group buy status</);
   assert.match(source, /Save status/);
   assert.match(source, /GB_STAGES.map/);
-  assert.match(source, /saveStage\(scope, groupBuyId, stage, expected\)/);
+  assert.match(source, /saveStage\(scope, groupBuyId, stage, expected, alert\)/);
 });
