@@ -294,11 +294,11 @@ export default function Review() {
       const oid = data.id ?? existingOrderId ?? "";
       if (draft.halfKitCheckout && draft.groupBuyId) {
         const groupId = draft.groupBuyId;
-        const offerId = draft.halfKitCheckout.offerId;
+        const offerIds = new Set([draft.halfKitCheckout.offerId, ...(draft.halfKitCheckout.additionalOffers ?? []).map(selection => selection.offerId)]);
         queryClient.setQueryData<MemberOffersResponse>(["member-half-kits", groupId], previous =>
-          previous ? { ...previous, offers: previous.offers.filter(offer => offer.id !== offerId) } : previous);
+          previous ? { ...previous, offers: previous.offers.filter(offer => !offerIds.has(offer.id)) } : previous);
         queryClient.setQueryData<{ counts: Record<string, number> }>(["account", "half-kit-availability"], previous =>
-          previous ? { ...previous, counts: { ...previous.counts, [groupId]: Math.max(0, (previous.counts[groupId] ?? 0) - 1) } } : previous);
+          previous ? { ...previous, counts: { ...previous.counts, [groupId]: Math.max(0, (previous.counts[groupId] ?? 0) - offerIds.size) } } : previous);
         queryClient.invalidateQueries({ queryKey: ["member-half-kits", groupId] });
         queryClient.invalidateQueries({ queryKey: ["account", "half-kit-availability"] });
         queryClient.invalidateQueries({ queryKey: ["account", "orders"] });

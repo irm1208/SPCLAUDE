@@ -4,7 +4,7 @@ import { calculateCouponDiscount, CouponError, couponProblem, couponQuoteMatches
 import { assertGroupStock } from "../lib/group-buy-stock";
 import { gbHalfKitClaimsTable } from "@workspace/db";
 import { cancelUnpaidHalfClaims, prepareNewOrderHalfKit, recordNewOrderHalfKit } from "../lib/half-kit-offers";
-import { parseHalfKitCheckout, assertHalfKitCheckoutItems } from "../lib/half-kit-new-order-rules";
+import { parseHalfKitCheckout, assertHalfKitCheckoutItems, halfKitSelections } from "../lib/half-kit-new-order-rules";
 import { HalfKitError } from "../lib/half-kit-rules";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
@@ -520,11 +520,18 @@ router.post("/orders", async (req, res): Promise<void> => {
         || replay.offerId !== halfKitCheckout.offerId || replay.state !== "active") {
         res.status(409).json({ error: "This purchase request was already used." }); return;
       }
+      const previousClaims = await db.select().from(gbHalfKitClaimsTable).where(eq(gbHalfKitClaimsTable.orderId, owned.id));
+      if (!halfKitSelections(halfKitCheckout).every(selection => previousClaims.some(claim =>
+        claim.requestId === selection.requestId && claim.offerId === selection.offerId && claim.state === "active"))) {
+        res.status(409).json({ error: "This purchase was already submitted with a different selection. Open My Orders." }); return;
+      }
       const lines = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, owned.id));
       res.status(201).json(formatOrderResponse(owned as unknown as Record<string, unknown>, lines as unknown as Record<string, unknown>[])); return;
     }
     try {
-      newHalfGroup = (await prepareNewOrderHalfKit(db, normalizedGroupBuyId, session, halfKitCheckout)).group;
+      for (const selection of halfKitSelections(halfKitCheckout)) {
+        newHalfGroup = (await prepareNewOrderHalfKit(db, normalizedGroupBuyId, session, selection)).group;
+      }
     } catch (error) {
       if (!(error instanceof HalfKitError)) throw error;
       res.status(error.status).json({ error: error.message, code: error.code }); return;
@@ -788,7 +795,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     for (const item of clientLineItems) {
       const canonical = canonicalById.get(item.productId)!;
       item.productName = canonical.productName;
-      item.unitPrice = halfKitCheckout ? halfKitCheckout.price * 2 : parseFloat(String(canonical.priceOverride ?? canonical.price));
+      item.unitPrice = halfKitCheckout ? halfKitSelections(halfKitCheckout).find(selection => selection.productId === item.productId)!.price * 2 : parseFloat(String(canonical.priceOverride ?? canonical.price));
     }
 
     // Enforce contribution rules: only allowed when GB has testing enabled, and must be exactly $15
@@ -1453,9 +1460,12 @@ router.post("/orders", async (req, res): Promise<void> => {
 
   const creation = await db.transaction(async tx => {
   if (halfKitCheckout) {
-    newHalfGroup = (await prepareNewOrderHalfKit(tx, normalizedGroupBuyId!, tg, halfKitCheckout, true)).group;
-    const [replay] = await tx.select().from(gbHalfKitClaimsTable).where(eq(gbHalfKitClaimsTable.requestId, halfKitCheckout.requestId));
-    if (replay) throw new HalfKitError("This purchase was already submitted. Refresh My Orders.");
+    const selections = halfKitSelections(halfKitCheckout).sort((a, b) => a.offerId.localeCompare(b.offerId));
+    for (const selection of selections) {
+      newHalfGroup = (await prepareNewOrderHalfKit(tx, normalizedGroupBuyId!, tg, selection, true, selections.length)).group;
+      const [replay] = await tx.select().from(gbHalfKitClaimsTable).where(eq(gbHalfKitClaimsTable.requestId, selection.requestId));
+      if (replay) throw new HalfKitError("This purchase was already submitted. Refresh My Orders.");
+    }
   }
   await assertGroupStock(tx, normalizedGroupBuyId, clientLineItems);
   const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
@@ -1541,7 +1551,12 @@ router.post("/orders", async (req, res): Promise<void> => {
         });
       }
     }
-    await recordNewOrderHalfKit(tx, halfKitCheckout, newHalfGroup, order, insertedLineItems[0], halfCredits);
+    let remainingCredits = halfCredits;
+    for (const selection of halfKitSelections(halfKitCheckout)) {
+      const line = insertedLineItems.find(item => item.productId === selection.productId)!;
+      await recordNewOrderHalfKit(tx, selection, newHalfGroup, order, line, remainingCredits);
+      remainingCredits = Math.max(0, Math.round((remainingCredits - selection.price) * 100) / 100);
+    }
   }
   // Record coupon redemption if one was applied
   if (couponClaim) await recordCouponRedemption(tx, couponClaim, orderId, tg, couponDiscount);

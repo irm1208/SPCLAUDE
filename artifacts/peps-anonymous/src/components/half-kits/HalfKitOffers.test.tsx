@@ -49,11 +49,12 @@ describe("inline order-page half kits", () => {
   it("shares the products container while retaining a distinct half-kit section", () => {
     const source = readFileSync("src/pages/OrderForm.tsx", "utf8");
     const container = source.indexOf('className="order-form-products rounded-3xl');
-    const offers = source.indexOf("<HalfKitOffers");
+    const offers = source.indexOf("<HalfKitOffers", container);
     const catalogue = source.indexOf('className="order-form-products-heading');
     expect(container).toBeGreaterThan(-1);
     expect(offers).toBeGreaterThan(container);
     expect(offers).toBeLessThan(catalogue);
+    expect(source).toContain('key={`more-halves-${gbId}`}');
   });
   it("disappears when there are no offers, including after the last half is claimed", () => {
     expect(render({ group, offers: [], orders: [order], creditsBalance: 0 })).toBe("");

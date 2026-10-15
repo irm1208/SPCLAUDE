@@ -12,7 +12,7 @@ export interface DraftLineItem {
 }
 
 interface DraftState {
-  halfKitCheckout: { offerId: string; productId: string; version: number; price: number; requestId: string } | null;
+  halfKitCheckout: { offerId: string; productId: string; version: number; price: number; requestId: string; additionalOffers?: { offerId: string; productId: string; version: number; price: number; requestId: string }[] } | null;
   // Order Identity
   orderId: string | null;
   code: string | null;

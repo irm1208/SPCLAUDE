@@ -35,7 +35,10 @@ describe("inline half-kit claims", () => {
     (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
     const data: MemberOffersResponse = {
       group: { id: "g1", name: "Autumn GB", currency: "USDT", allowCredits: true },
-      offers: [{ id: "h1", productId: "p1", productName: "Ara-290 16mg", price: 30, deliveryCharge: 4, vendorShippingCharge: 7, version: 2 }],
+      offers: [
+        { id: "h1", productId: "p1", productName: "Ara-290 16mg", price: 30, deliveryCharge: 4, vendorShippingCharge: 7, version: 2 },
+        { id: "h2", productId: "p2", productName: "CJC-1295 10mg", price: 40, deliveryCharge: 4, vendorShippingCharge: 7, version: 1 },
+      ],
       orders: [], creditsBalance: 20,
     };
     const originalFetch = globalThis.fetch;
@@ -68,6 +71,14 @@ describe("inline half-kit claims", () => {
       state.addLineItem();
       expect(useDraftStore.getState().lineItems).toHaveLength(1);
       expect(useDraftStore.getState().lineItems[0].quantity).toBe(0.5);
+      await act(async () => (container.querySelector('[data-testid="button-claim-h2"]') as HTMLButtonElement).click());
+      expect(useDraftStore.getState().lineItems).toMatchObject([
+        { productId: "p1", quantity: 0.5, lineTotal: 30 }, { productId: "p2", quantity: 0.5, lineTotal: 40 },
+      ]);
+      expect(useDraftStore.getState().halfKitCheckout?.additionalOffers).toMatchObject([{ offerId: "h2", price: 40 }]);
+      expect((container.querySelector('[data-testid="button-claim-h1"]') as HTMLButtonElement).disabled).toBe(true);
+      expect((container.querySelector('[data-testid="button-claim-h2"]') as HTMLButtonElement).disabled).toBe(true);
+      expect(useDraftStore.getState().deliveryPrice).toBe(0);
       state.clearDraft();
       expect(useDraftStore.getState().halfKitCheckout).toBeNull();
     } finally {

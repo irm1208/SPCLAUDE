@@ -19,6 +19,12 @@ Once a half is claimed, remove it from the available list. Add it to an eligible
 
 **Why:** The user explicitly described this claiming flow and reiterated that ordered halves must disappear from the available list.
 
+Members must be able to add multiple distinct available half kits to the same order, including when creating a new order.
+
+**Why:** The user explicitly requested “Allow them to add more than 1 half kit to the order”; a one-offer checkout restriction was not intended.
+
+**How to apply:** Keep normal shipping at the combined-order level. Preserve each offer's price and exclusive claim, and submit a new-order selection atomically rather than leaving a partially claimed basket.
+
 **How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh. New orders use normal GB delivery, vendor-shipping and fee rules rather than the offer’s supplementary existing-order shipping charges; the member approved this choice. Preserve the membership/entry-fee gate.
 
 The “Fill remaining half kits” action on member group-buy cards and lists should open that group buy’s order page, not the separate half-kit page.

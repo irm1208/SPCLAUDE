@@ -8,7 +8,7 @@ import {
   type ClaimResult, type HalfKitGroup, type MemberOffer, type MemberOrder, type MemberOffersResponse, type HalfKitAvailability,
 } from "@/lib/half-kit-api";
 
-export function HalfKitOfferCard({ offer, currency, onClaim, disabled, embedded = false }: { offer: MemberOffer; currency: string; onClaim: () => void; disabled: boolean; embedded?: boolean }) {
+export function HalfKitOfferCard({ offer, currency, onClaim, disabled, embedded = false, selected = false }: { offer: MemberOffer; currency: string; onClaim: () => void; disabled: boolean; embedded?: boolean; selected?: boolean }) {
   const extra = offer.deliveryCharge + offer.vendorShippingCharge;
   if (embedded) return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 px-3 py-3 border-b last:border-b-0"
@@ -21,7 +21,7 @@ export function HalfKitOfferCard({ offer, currency, onClaim, disabled, embedded 
         data-testid={`text-price-${offer.id}`}>{formatMoney(currency, offer.price)}</p>
       <button type="button" disabled={disabled} onClick={onClaim} aria-label={`Add ${offer.productName} half kit to my order`}
         className="min-h-11 min-w-11 rounded-lg px-3 text-xs font-bold text-white bg-[#1B3A7A] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]"
-        style={{ border: "1px solid rgba(96,165,250,0.35)" }} data-testid={`button-claim-${offer.id}`}>Add</button>
+        style={{ border: "1px solid rgba(96,165,250,0.35)" }} data-testid={`button-claim-${offer.id}`}>{selected ? "Added" : "Add"}</button>
       {extra > 0 && <p className="col-span-3 text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
         {offer.deliveryCharge > 0 && <>Extra delivery {formatMoney(currency, offer.deliveryCharge)}</>}
         {offer.deliveryCharge > 0 && offer.vendorShippingCharge > 0 && " · "}
@@ -80,6 +80,10 @@ export default function GroupBuyHalfKits() {
 }
 
 export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId: string; embedded?: boolean; enabled?: boolean }) {
+  const draftGroupId = useDraftStore(state => state.groupBuyId);
+  const selectedCheckout = useDraftStore(state => state.halfKitCheckout);
+  const selectedIds = new Set(draftGroupId === gbId && selectedCheckout
+    ? [selectedCheckout.offerId, ...(selectedCheckout.additionalOffers ?? []).map(selection => selection.offerId)] : []);
   const [, navigate] = useLocation();
   const qc = useQueryClient();
   const key = ["member-half-kits", gbId];
@@ -138,6 +142,21 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
   const open = (o: MemberOffer) => {
     if (orders.length === 0) {
       const previous = useDraftStore.getState();
+      if (previous.groupBuyId === gbId && previous.halfKitCheckout) {
+        const selections = [previous.halfKitCheckout, ...(previous.halfKitCheckout.additionalOffers ?? [])];
+        if (!selections.some(selection => selection.offerId === o.id)) {
+          const { additionalOffers: _, ...first } = previous.halfKitCheckout;
+          useDraftStore.setState({
+            halfKitCheckout: { ...first, additionalOffers: [
+              ...(previous.halfKitCheckout.additionalOffers ?? []),
+              { offerId: o.id, productId: o.productId, version: o.version, price: o.price, requestId: newRequestId() },
+            ] },
+            lineItems: [...previous.lineItems, { id: newRequestId(), productId: o.productId, productName: o.productName, quantity: 0.5, unitPrice: o.price * 2, lineTotal: o.price }],
+          });
+        }
+        navigate(`/order?gbId=${encodeURIComponent(gbId)}`);
+        return;
+      }
       if ((previous.orderId || previous.lineItems.some(item => item.productId)) &&
         !window.confirm("Start a separate half-kit order? This will replace the products in your current draft.")) return;
       // Normal checkout supplies delivery, vendor shipping, fees and payment. Do not reserve yet.
@@ -218,10 +237,10 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
           </div>
         ) : (
           <>
-            {orders.length === 0 && <p role="note" className="text-xs" style={{ color: embedded ? "rgba(255,255,255,0.75)" : "#6B7280" }}>No existing order needed. Select a half kit, then choose delivery and review your total. Normal group-buy delivery and vendor shipping apply.</p>}
+            {orders.length === 0 && <p role="note" className="text-xs" style={{ color: embedded ? "rgba(255,255,255,0.75)" : "#6B7280" }}>No existing order needed. Add one or more available half kits, then choose delivery and review your combined total. Normal group-buy delivery and vendor shipping apply once to the order.</p>}
             <ul className={embedded ? "max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-white/10" : "grid gap-3 sm:grid-cols-2"} data-testid="list-half-kit-offers"
               tabIndex={embedded ? 0 : undefined} aria-label="Available half kits">
-              {q.data.offers.map(o => <HalfKitOfferCard key={o.id} offer={orders.length ? o : { ...o, deliveryCharge: 0, vendorShippingCharge: 0 }} currency={q.data!.group.currency} embedded={embedded} disabled={false} onClaim={() => open(o)} />)}
+              {q.data.offers.map(o => <HalfKitOfferCard key={o.id} offer={orders.length ? o : { ...o, deliveryCharge: 0, vendorShippingCharge: 0 }} currency={q.data!.group.currency} embedded={embedded} selected={!orders.length && selectedIds.has(o.id)} disabled={!orders.length && selectedIds.has(o.id)} onClaim={() => open(o)} />)}
             </ul>
           </>
         )}

@@ -189,7 +189,7 @@ export async function saveHalfKit(groupId: string, productId: string, actor: Hal
   });
 }
 
-async function enforceHalfLimits(tx: Database, group: any, candidate: Candidate, username: string) {
+async function enforceHalfLimits(tx: Database, group: any, candidate: Candidate, username: string, selectedCount = 1) {
   const result = await tx.execute(sql`
     SELECT COALESCE(SUM(oli.quantity), 0) AS total,
       COALESCE(SUM(oli.quantity) FILTER (WHERE lower(regexp_replace(o.telegram_username, '^@', '')) = ${canonical(username)}), 0) AS own,
@@ -199,8 +199,8 @@ async function enforceHalfLimits(tx: Database, group: any, candidate: Candidate,
     WHERE o.group_buy_id = ${group.id} AND o.status NOT IN ('Draft', 'Cancelled') AND o.deleted_at IS NULL
   `);
   const row = result.rows[0];
-  for (const [cap, count] of [[group.maxKitsTotal, row.total], [group.maxKitsPerCustomer, row.own], [candidate.maxPerCustomer, row.product]]) {
-    if (cap != null && Number(count) + 0.5 > Number(cap)) throw new HalfKitError("This half kit would exceed the group buy's kit limit.");
+  for (const [cap, count, added] of [[group.maxKitsTotal, row.total, selectedCount * 0.5], [group.maxKitsPerCustomer, row.own, selectedCount * 0.5], [candidate.maxPerCustomer, row.product, 0.5]]) {
+    if (cap != null && Number(count) + Number(added) > Number(cap)) throw new HalfKitError("This half kit would exceed the group buy's kit limit.");
   }
 }
 function claimResult(claim: any, order: any) {
@@ -210,7 +210,7 @@ function claimResult(claim: any, order: any) {
   };
 }
 /** Uses the same claim mutex as existing-order claims. Call before inserting the new order. */
-export async function prepareNewOrderHalfKit(database: Database, groupId: string, username: string, checkout: HalfKitCheckout, lock = false) {
+export async function prepareNewOrderHalfKit(database: Database, groupId: string, username: string, checkout: HalfKitCheckout, lock = false, selectedCount = 1) {
   if (lock) {
     await lockHalfKitMoney(database, groupId);
     await lockGroupStock(database, groupId);
@@ -231,7 +231,7 @@ export async function prepareNewOrderHalfKit(database: Database, groupId: string
     if (taken) throw new HalfKitError(halfKitTakenMessage(taken.createdAt), 409, "HALF_KIT_TAKEN");
     throw new HalfKitError("This half kit is no longer available or its price changed. Select it again.");
   }
-  if (lock) await enforceHalfLimits(database, group, candidate, username);
+  if (lock) await enforceHalfLimits(database, group, candidate, username, selectedCount);
   return { group, candidate };
 }
 

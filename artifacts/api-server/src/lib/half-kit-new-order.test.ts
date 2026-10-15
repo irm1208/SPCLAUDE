@@ -12,7 +12,7 @@ function fixture(status = "closed") {
   let published = true, version = 1;
   let held = Promise.resolve();
   const inserted: any[] = [], orders: string[] = [];
-  async function transaction(username: string, checkout = intent) {
+  async function transaction(username: string, checkout = intent, selectedCount = 1) {
     let release: (() => void) | undefined;
     const tx: any = {
       async execute(sql: any) {
@@ -52,7 +52,7 @@ function fixture(status = "closed") {
       },
     };
     try {
-      const prepared = await prepareNewOrderHalfKit(tx, "g1", username, checkout, true);
+      const prepared = await prepareNewOrderHalfKit(tx, "g1", username, checkout, true, selectedCount);
       const order = { id: username, telegramUsername: username };
       await recordNewOrderHalfKit(tx, checkout, prepared.group, order, { id: `line-${username}`, productId: "p1", productName: "Ara-290 16mg" }, 0);
       orders.push(order.id);
@@ -82,6 +82,16 @@ describe("half-kit new-order transaction", () => {
     await expect(f.transaction("member", { ...intent, price: 29 })).rejects.toThrow("price changed");
     expect(f.orders).toHaveLength(0);
     expect(f.isPublished()).toBe(true);
+  });
+  it("checks the whole selected basket against group and customer limits", async () => {
+    for (const field of ["maxKitsTotal", "maxKitsPerCustomer"]) {
+      const f = fixture();
+      (f.group as any)[field] = 0.5;
+      await expect(f.transaction("member", intent, 2)).rejects.toThrow("kit limit");
+      expect(f.orders).toHaveLength(0);
+      expect(f.inserted).toHaveLength(0);
+      expect(f.isPublished()).toBe(true);
+    }
   });
   it("does not let a publication bypass archived or blocked group settings", async () => {
     const archived = fixture("archived");
