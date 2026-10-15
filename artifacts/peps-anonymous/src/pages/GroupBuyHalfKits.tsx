@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, Loader2, Package, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronDown, Loader2, Package, RefreshCw } from "lucide-react";
 import {
   HALF_KIT_POLL_MS, claimHalfKit, computeClaimTotals, fetchMemberOffers, formatMoney, isAuthRequired, isPreviewConflict, isHalfKitTaken, newRequestId,
   type ClaimResult, type HalfKitGroup, type MemberOffer, type MemberOrder, type MemberOffersResponse, type HalfKitAvailability,
@@ -9,6 +9,25 @@ import {
 
 export function HalfKitOfferCard({ offer, currency, onClaim, disabled, embedded = false }: { offer: MemberOffer; currency: string; onClaim: () => void; disabled: boolean; embedded?: boolean }) {
   const extra = offer.deliveryCharge + offer.vendorShippingCharge;
+  if (embedded) return (
+    <li className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 px-3 py-3 border-b last:border-b-0"
+      style={{ background: "#162231", borderColor: "rgba(255,255,255,0.08)" }} data-testid={`card-offer-${offer.id}`}>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold leading-snug break-words" style={{ color: "#FFFFFF" }}>{offer.productName}</p>
+        <p className="text-[10px] font-semibold" style={{ color: "#60A5FA" }}>0.5 kit</p>
+      </div>
+      <p className="text-xs sm:text-sm font-bold tabular-nums whitespace-nowrap" style={{ color: "#FFFFFF" }}
+        data-testid={`text-price-${offer.id}`}>{formatMoney(currency, offer.price)}</p>
+      <button type="button" disabled={disabled} onClick={onClaim} aria-label={`Add ${offer.productName} half kit to my order`}
+        className="min-h-11 min-w-11 rounded-lg px-3 text-xs font-bold text-white bg-[#1B3A7A] disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]"
+        style={{ border: "1px solid rgba(96,165,250,0.35)" }} data-testid={`button-claim-${offer.id}`}>Add</button>
+      {extra > 0 && <p className="col-span-3 text-[10px] leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>
+        {offer.deliveryCharge > 0 && <>Extra delivery {formatMoney(currency, offer.deliveryCharge)}</>}
+        {offer.deliveryCharge > 0 && offer.vendorShippingCharge > 0 && " · "}
+        {offer.vendorShippingCharge > 0 && <>Vendor shipping {formatMoney(currency, offer.vendorShippingCharge)}</>}
+      </p>}
+    </li>
+  );
   return (
     <li className={`rounded-xl border p-4 flex flex-col gap-3 ${embedded ? "sm:flex-row sm:items-center" : "bg-white"}`} style={{ borderColor: embedded ? "rgba(255,255,255,0.12)" : "#D0DAE4", ...(embedded && { background: "#162231" }) }} data-testid={`card-offer-${offer.id}`}>
       <div className="min-w-0 flex-1 space-y-2">
@@ -119,23 +138,28 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
   const order = orders.find(o => o.id === orderId);
   const previewCredit = active && q.data && order ? computeClaimTotals(active, q.data.creditsBalance, useCredits, q.data.group.allowCredits).credits : 0;
   const confirm = () => { setNeedsReconfirm(false); claim.reset(); claim.mutate(previewCredit); };
+  const OfferSection = embedded ? "details" : "div";
 
   if (embedded && (!enabled || q.isLoading || (!q.isError && !q.data) || (q.data?.offers.length === 0 && !result && !active))) return null;
 
   return (
-    <div className={embedded ? "order-form-half-kits mb-5 pb-5 space-y-4" : "min-h-[100dvh] bg-[#F8FAFC]"}
+    <div className={embedded ? "order-form-half-kits mb-4 pb-4" : "min-h-[100dvh] bg-[#F8FAFC]"}
       style={embedded ? { borderBottom: "1px solid rgba(255,255,255,0.14)" } : undefined}
       data-testid={embedded ? "section-order-half-kits" : "page-half-kits"}>
+      <OfferSection className={embedded ? "group" : undefined}>
       {embedded ? (
-        <div>
-          <div className="flex items-center gap-2.5">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2.5 rounded-lg [&::-webkit-details-marker]:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60A5FA]"
+          data-testid="toggle-half-kit-offers">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(59,130,246,0.15)" }}>
               <Package className="w-3.5 h-3.5 text-[#60A5FA]" aria-hidden="true" />
             </div>
-            <h2 className="text-xs font-bold uppercase tracking-wider text-[#E9A020]">{result && q.data?.offers.length === 0 ? "Half kit added" : "Available half kits"}</h2>
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-white/75">Add a published half kit to an order you already placed in this group buy. These are separate from your new order below.</p>
-        </div>
+            <span className="flex-1 text-xs font-bold text-[#E9A020]">{result && q.data?.offers.length === 0 ? "Half kit added" : "Available half kits"}
+              {q.data && q.data.offers.length > 0 && <span className="ml-2 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">{q.data.offers.length}</span>}
+            </span>
+            <span className="text-[11px] text-white/75 group-open:hidden">View</span>
+            <span className="hidden text-[11px] text-white/75 group-open:inline">Hide</span>
+            <ChevronDown className="h-4 w-4 text-white/75 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
       ) : (
       <header className="text-white" style={{ background: "linear-gradient(135deg, #3B66C8 0%, #1B3A7A 100%)" }}>
         <div className="mx-auto max-w-3xl px-4 py-8">
@@ -146,7 +170,8 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
         </div>
       </header>
       )}
-      <div className={embedded ? "space-y-4" : "mx-auto max-w-3xl px-4 py-6 space-y-4"}>
+      <div className={embedded ? "mt-2 space-y-2" : "mx-auto max-w-3xl px-4 py-6 space-y-4"}>
+        {embedded && <p className="text-[11px] leading-relaxed text-white/65">Adds to an existing order, separate from your new order below.</p>}
         {result && (
           <div role="status" className={`rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${embedded ? "" : "bg-white"}`} style={{ borderColor: "rgba(34,197,94,0.4)", ...(embedded && { background: "#162231" }) }} data-testid="status-claim-success">
             <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
@@ -175,12 +200,14 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
         ) : (
           <>
             {orders.length === 0 && <p role="note" className="rounded-xl border bg-amber-50 p-3 text-sm text-amber-900" style={{ borderColor: "rgba(233,160,32,0.4)", ...(embedded && { background: "rgba(233,160,32,0.08)", color: "#F6D391" }) }}>You need a submitted, not-yet-dispatched order in this group buy to claim a half kit.</p>}
-            <ul className={embedded ? "flex flex-col gap-2" : "grid gap-3 sm:grid-cols-2"} data-testid="list-half-kit-offers">
+            <ul className={embedded ? "max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-white/10" : "grid gap-3 sm:grid-cols-2"} data-testid="list-half-kit-offers"
+              tabIndex={embedded ? 0 : undefined} aria-label="Available half kits">
               {q.data.offers.map(o => <HalfKitOfferCard key={o.id} offer={o} currency={q.data!.group.currency} embedded={embedded} disabled={orders.length === 0} onClaim={() => open(o)} />)}
             </ul>
           </>
         )}
       </div>
+      </OfferSection>
 
       {active && q.data && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#0F1F38]/50 p-0 sm:p-4" onClick={close}>

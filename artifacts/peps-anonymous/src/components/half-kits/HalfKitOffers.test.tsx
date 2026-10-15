@@ -23,7 +23,7 @@ describe("inline order-page half kits", () => {
     expect(html).toContain("GBP 30.00");
     expect(html).toContain("Extra delivery");
     expect(html).toContain("Vendor shipping");
-    expect(html).toContain("Add to my order");
+    expect(html).toContain('aria-label="Add Ara-290 16mg half kit to my order"');
     expect(html).not.toContain('disabled=""');
     expect(html).not.toContain("Back to my group buys");
     expect(html).toContain("order-form-half-kits");
@@ -33,7 +33,17 @@ describe("inline order-page half kits", () => {
     expect(html).toContain("text-[#E9A020]");
     expect(html).toContain('data-testid="list-half-kit-offers"');
     expect(html).not.toContain("sm:grid-cols-2");
-    expect(html).not.toContain("bg-white");
+    expect(html).not.toMatch(/class="[^"]*(?:^|\s)bg-white(?:\s|")/);
+  });
+  it("starts collapsed and uses compact rows with a bounded scrolling list", () => {
+    const html = render({ group, offers: [offer], orders: [order], creditsBalance: 0 });
+    expect(html).toContain("<details");
+    expect(html).not.toMatch(/<details[^>]*\sopen(?:=|\s|>)/);
+    expect(html).toContain('data-testid="toggle-half-kit-offers"');
+    expect(html).toContain("View");
+    expect(html).toContain("max-h-64");
+    expect(html).toContain('aria-label="Add Ara-290 16mg half kit to my order"');
+    expect(html).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
   });
   it("shares the products container while retaining a distinct half-kit section", () => {
     const source = readFileSync("src/pages/OrderForm.tsx", "utf8");

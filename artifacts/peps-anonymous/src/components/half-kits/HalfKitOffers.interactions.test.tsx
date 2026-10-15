@@ -61,6 +61,13 @@ describe("inline half-kit claims", () => {
     try {
       await act(async () => root.render(<QueryClientProvider client={client}><HalfKitOffers gbId="g1" embedded /></QueryClientProvider>));
       await waitFor(() => expect(container.querySelector('[data-testid="button-claim-h1"]')).not.toBeNull());
+      const section = container.querySelector("details") as HTMLDetailsElement;
+      expect(section.open).toBe(false);
+      await act(async () => (container.querySelector('[data-testid="toggle-half-kit-offers"]') as HTMLElement).click());
+      expect(section.open).toBe(true);
+      await act(async () => (container.querySelector('[data-testid="toggle-half-kit-offers"]') as HTMLElement).click());
+      expect(section.open).toBe(false);
+      await act(async () => (container.querySelector('[data-testid="toggle-half-kit-offers"]') as HTMLElement).click());
       await act(async () => (container.querySelector('[data-testid="button-claim-h1"]') as HTMLButtonElement).click());
       await waitFor(() => expect(container.querySelector('[data-testid="button-confirm-claim"]')).not.toBeNull());
       await act(async () => (container.querySelector('[data-testid="button-confirm-claim"]') as HTMLButtonElement).click());

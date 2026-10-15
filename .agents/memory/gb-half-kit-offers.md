@@ -3,6 +3,12 @@ name: Group-buy excess half-kit offers
 description: User-defined availability and claiming rules for filling unused halves of whole kits.
 ---
 
+Keep inline half-kit offers compact and visually connected to the product picker, but separate from the new-order catalogue.
+
+**Why:** The user disliked tall half-kit cards because they took too much page space, and asked to keep halves separate but visually connected to products.
+
+**How to apply:** Prefer a collapsible, count-labelled section with compact product/price/Add rows rather than full-width card buttons. Keep claim confirmation, extra shipping, and existing-order eligibility clear.
+
 The organiser chooses which remaining half kits to offer and when to publish them. Offers may be available both before and after the group buy closes.
 
 **Why:** The user wants to fill excess halves when group-buy product quantities end in .5 and stated, “The group buy organiser decides when it should be put on.”
