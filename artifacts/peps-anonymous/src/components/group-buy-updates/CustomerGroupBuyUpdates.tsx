@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { useCustomerGroupBuyUpdates } from "@/hooks/use-group-buy-progress";
 import { GBU_ANCHOR, GB_STAGE_LABEL, formatUpdateDate } from "@/lib/group-buy-updates";
@@ -9,11 +9,13 @@ import { GroupBuyProgressTracker } from "./GroupBuyProgressTracker";
 export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabled: boolean }) {
   const q = useCustomerGroupBuyUpdates(enabled ? gbId : null);
   const scrolled = useRef(false);
+  const disclosure = useRef<HTMLDetailsElement>(null);
   const ready = !!q.data || q.isError;
   // Content loads async, so the browser's own hash jump may miss; scroll once when ready.
   useEffect(() => {
     if (!ready || scrolled.current || window.location.hash !== `#${GBU_ANCHOR}`) return;
     scrolled.current = true;
+    if (disclosure.current) disclosure.current.open = true;
     document.getElementById(GBU_ANCHOR)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [ready]);
   if (!enabled) return null;
@@ -29,13 +31,18 @@ export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabl
   }
   const d = q.data;
   return (
-    <section id={GBU_ANCHOR} data-testid="gb-customer-updates" aria-labelledby="gb-progress-heading" className="scroll-mt-24 rounded-2xl p-4 sm:p-5 space-y-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-      <div>
+    <details ref={disclosure} id={GBU_ANCHOR} data-testid="gb-customer-updates" aria-labelledby="gb-progress-heading" className="group scroll-mt-24 rounded-2xl px-4 sm:px-5 py-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+      <summary data-testid="toggle-gb-progress" className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg [&::-webkit-details-marker]:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2D6BCC]">
         <h2 id="gb-progress-heading" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#8A9AAA" }}>Group buy progress</h2>
-        <p className="text-[12px] mt-1" style={{ color: "var(--t-muted)" }}>
+        {d?.stage && <span className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>{GB_STAGE_LABEL[d.stage]}</span>}
+        <span className="ml-auto text-[11px] group-open:hidden" style={{ color: "var(--t-muted)" }}>View</span>
+        <span className="ml-auto hidden text-[11px] group-open:inline" style={{ color: "var(--t-muted)" }}>Hide</span>
+        <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" style={{ color: "var(--t-muted)" }} aria-hidden="true" />
+      </summary>
+      <div className="space-y-4 pt-2 pb-3">
+        <p className="text-[12px]" style={{ color: "var(--t-muted)" }}>
           Set by the organiser for the whole group. Your own payment and order status are shown separately.
         </p>
-      </div>
       <GroupBuyProgressTracker stage={d?.stage} stageUpdatedAt={d?.stageUpdatedAt} />
       {d && d.updates.length > 0 && (
         <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
@@ -56,7 +63,8 @@ export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabl
           ))}
         </div>
       )}
-    </section>
+      </div>
+    </details>
   );
 }
 

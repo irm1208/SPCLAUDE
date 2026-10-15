@@ -3,6 +3,12 @@ name: Group-buy progress and updates
 description: User-approved stages, audience, and separation from order/payment processing.
 ---
 
+The member-facing group-buy progress section should be minimized by default.
+
+**Why:** The user explicitly requested a minimized default after compacting the half-kit section.
+
+**How to apply:** Keep the current stage visible in the collapsed summary and allow expansion for the full tracker and updates. Direct progress/update links must still reveal their target.
+
 Organisers and Admin manually provide group-wide progress and dated updates with optional images. The approved stages are Open, Closed, Ordered from vendor, In transit, With reshipper, and Dispatched.
 
 **Why:** The user requested status announcements and a visual view of group-buy progress, and selected these six ordering/shipping stages.
