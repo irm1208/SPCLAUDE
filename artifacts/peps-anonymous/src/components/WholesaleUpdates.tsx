@@ -70,14 +70,14 @@ export function WholesaleUpdates() {
       </div>
       <div className="space-y-2 max-h-[420px] overflow-y-auto">
         {updates.map(u => (
-          <article key={u.id} data-testid={`card-wholesale-update-${u.id}`} className="rounded-xl p-4 space-y-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", borderLeft: "3px solid var(--t-blue)" }}>
+          <article key={u.id} data-testid={`card-wholesale-update-${u.id}`} className="rounded-xl p-4 space-y-2" style={{ background: "#1C2B3D", color: "#FFFFFF", border: "1px solid rgba(255,255,255,0.08)", borderLeft: "3px solid #2D6BCC" }}>
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              {u.title && <h3 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{u.title}</h3>}
-              <time dateTime={u.createdAt} className="text-[11px]" style={{ color: "var(--t-muted)" }}>{formatUpdateDate(u.createdAt)}</time>
+              {u.title && <h3 className="text-sm font-bold" style={{ color: "#FFFFFF" }}>{u.title}</h3>}
+              <time dateTime={u.createdAt} className="text-[11px]" style={{ color: "rgba(255,255,255,0.75)" }}>{formatUpdateDate(u.createdAt)}</time>
             </div>
-            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed" style={{ color: "var(--t-text)" }}>{u.note}</p>
+            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed" style={{ color: "#FFFFFF" }}>{u.note}</p>
             {u.imageUrl && (
-              <ImageLightbox src={u.imageUrl} alt={u.title || "Update image"} wrapperClassName="block rounded-lg overflow-hidden" wrapperStyle={{ background: "var(--t-surface2)" }} thumbnailClassName="w-full max-h-72 object-contain" />
+              <ImageLightbox src={u.imageUrl} alt={u.title || "Update image"} wrapperClassName="block rounded-lg overflow-hidden" wrapperStyle={{ background: "#162231" }} thumbnailClassName="w-full max-h-72 object-contain" />
             )}
           </article>
         ))}
