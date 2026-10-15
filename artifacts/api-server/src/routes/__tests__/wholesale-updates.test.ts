@@ -15,7 +15,7 @@ type Predicate = (row: Row) => boolean;
 vi.mock("drizzle-orm", () => ({
   eq: (column: keyof Row, value: unknown) => (row: Row) => row[column] === value,
   and: (...predicates: Predicate[]) => (row: Row) => predicates.every(p => p(row)),
-  like: (_column: string, prefix: string) => (row: Row) => row.key.startsWith(prefix.slice(0, -1)),
+  like: (_column: string, prefix: string) => (row: Row) => row.key.startsWith(prefix.slice(0, -1).replace(/\\(.)/g, "$1")),
 }));
 vi.mock("@workspace/db", () => ({
   siteConfigTable: { key: "key", value: "value" },
@@ -24,7 +24,10 @@ vi.mock("@workspace/db", () => ({
       const rows = [...harness.rows.values()].filter(predicate);
       return { limit: async (n: number) => rows.slice(0, n), then: (resolve: (rows: Row[]) => unknown) => Promise.resolve(rows).then(resolve) };
     } }) }),
-    insert: () => ({ values: async (row: Row) => { harness.rows.set(row.key, row); } }),
+    insert: () => ({ values: (row: Row) => {
+      const save = async () => { harness.rows.set(row.key, row); };
+      return { then: (resolve: () => unknown) => save().then(resolve), onConflictDoUpdate: save };
+    } }),
     update: () => ({ set: (changes: Partial<Row>) => ({ where: (predicate: Predicate) => ({
       returning: async () => {
         if (harness.conflict) return [];
@@ -51,7 +54,10 @@ vi.mock("../../middleware/require-admin", () => ({
 }));
 vi.mock("../../middleware/require-wholesale", () => ({
   requireWholesale: (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (req.headers["x-test-member"] === "yes") next();
+    if (req.headers["x-test-member"] === "yes") {
+      req.wholesale = { telegramUsername: String(req.headers["x-test-user"] || "member-one") };
+      next();
+    }
     else res.status(403).json({ error: "Wholesale access required" });
   },
 }));
@@ -93,6 +99,27 @@ afterAll(async () => { await new Promise<void>(resolve => server.close(() => res
 beforeEach(() => { harness.rows.clear(); harness.conflict = false; vi.clearAllMocks(); });
 
 describe("global wholesale updates API", () => {
+  it("persists read updates per member without hiding them for other members or Admin", async () => {
+    const update = await readUpdate(await save());
+    const markRead = () => fetch(`${base}/wholesale/updates/${update.id}/read`, {
+      method: "POST", headers: { ...member, "Content-Type": "application/json" },
+      body: JSON.stringify({ updatedAt: update.updatedAt }),
+    });
+    expect((await markRead()).status).toBe(200);
+    expect((await markRead()).status).toBe(200);
+    expect(await readUpdates(await fetch(`${base}/wholesale/updates`, { headers: member }))).toEqual([]);
+    expect(await readUpdates(await fetch(`${base}/wholesale/updates`, { headers: { ...member, "x-test-user": "other" } }))).toHaveLength(1);
+    expect(await readUpdates(await fetch(`${base}/admin/wholesale-updates`, { headers: admin }))).toHaveLength(1);
+  });
+  it("rejects unauthorised and stale read requests, and shows edited announcements again", async () => {
+    const update = await readUpdate(await save());
+    const url = `${base}/wholesale/updates/${update.id}/read`;
+    expect((await fetch(url, { method: "POST" })).status).toBe(403);
+    expect((await fetch(url, { method: "POST", headers: { ...member, "Content-Type": "application/json" }, body: JSON.stringify({ updatedAt: "old" }) })).status).toBe(409);
+    await fetch(url, { method: "POST", headers: { ...member, "Content-Type": "application/json" }, body: JSON.stringify({ updatedAt: update.updatedAt }) });
+    await save(update.id);
+    expect(await readUpdates(await fetch(`${base}/wholesale/updates`, { headers: member }))).toHaveLength(1);
+  });
   it("restricts posting to Admin and the customer feed to wholesale members", async () => {
     expect((await fetch(`${base}/admin/wholesale-updates`, { method: "POST" })).status).toBe(401);
     expect((await fetch(`${base}/wholesale/updates`)).status).toBe(403);

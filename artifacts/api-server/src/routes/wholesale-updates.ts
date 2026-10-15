@@ -15,6 +15,9 @@ import {
 } from "../lib/wholesale-update-images";
 
 const router = Router();
+const READ_PREFIX = "wholesale_update_read:";
+const readPrefix = (username: string) => `${READ_PREFIX}${encodeURIComponent(username)}:`;
+const readKey = (username: string, id: string) => `${readPrefix(username)}${encodeURIComponent(id)}`;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: WHOLESALE_IMAGE_LIMIT, files: 1, fields: 4, fieldSize: 25_000 },
@@ -45,9 +48,29 @@ async function cleanupImage(key: string | null) {
   catch (error) { console.error("[wholesale-updates] Unused image cleanup failed", error); }
 }
 
-router.get("/wholesale/updates", requireWholesale, async (_req, res) => {
+router.get("/wholesale/updates", requireWholesale, async (req, res) => {
   res.setHeader("Cache-Control", "private, no-store");
-  res.json({ updates: await listUpdates(false) });
+  const updates = await listUpdates(false);
+  // Use an exact prefix check, since usernames can contain SQL LIKE wildcards.
+  const prefix = readPrefix(req.wholesale!.telegramUsername);
+  const receipts = await db.select().from(siteConfigTable).where(like(siteConfigTable.key, `${prefix.replace(/[\\%_]/g, "\\$&")}%`));
+  const read = new Map(receipts.filter(row => row.key.startsWith(prefix)).map(row => [row.key, row.value]));
+  res.json({ updates: updates.filter(update => read.get(readKey(req.wholesale!.telegramUsername, update.id)) !== update.updatedAt) });
+});
+router.post("/wholesale/updates/:id/read", requireWholesale, async (req, res) => {
+  const found = await findUpdate(String(req.params.id));
+  if (!found?.record.published) {
+    res.status(404).json({ error: "Wholesale update not found." });
+    return;
+  }
+  if (req.body?.updatedAt !== found.record.updatedAt) {
+    res.status(409).json({ error: "This update has changed. Refresh and read the latest version." });
+    return;
+  }
+  const key = readKey(req.wholesale!.telegramUsername, found.record.id);
+  await db.insert(siteConfigTable).values({ key, value: found.record.updatedAt })
+    .onConflictDoUpdate({ target: siteConfigTable.key, set: { value: found.record.updatedAt } });
+  res.json({ ok: true });
 });
 router.get("/admin/wholesale-updates", async (_req, res) => {
   res.setHeader("Cache-Control", "private, no-store");
