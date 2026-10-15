@@ -442,7 +442,7 @@ function OrderFormShell({ children }: { children: React.ReactNode }) {
 
 export default function OrderForm() {
   const [, setLocation] = useLocation();
-  const [productView, setProductView] = useState<"picker" | "list">("list");
+  const [productView, setProductView] = useState<"picker" | "list">("picker");
   const search = useSearch();
   const searchParams = new URLSearchParams(search);
   const gbId = searchParams.get("gbId") ?? null;
