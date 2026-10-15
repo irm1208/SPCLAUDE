@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { HalfKitOffers } from "./GroupBuyHalfKits";
+import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, ChevronDown, Package, MessageCircle, X, Heart, ArrowRight, Info, Loader2, TestTube, AlertTriangle, Globe, BarChart2, Search, Check, Truck, Home, ShoppingCart, Eye } from "lucide-react";
 import { findProtocol, type Protocol } from "@/data/protocols";
@@ -1457,6 +1458,10 @@ export default function OrderForm() {
               </div>
             </div>
           </div>
+        )}
+
+        {gbId && !isPreview && isLoggedIn && (
+          <CustomerGroupBuyUpdates key={`gbu-${gbId}`} gbId={gbId} enabled={isLoggedIn} />
         )}
 
         {gbId && !isPreview && (

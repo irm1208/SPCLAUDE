@@ -1,4 +1,5 @@
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -30,6 +31,7 @@ import { AdminTicketsTab } from "@/components/AdminTicketsTab";
 import AdminAiChatbot from "@/components/AdminAiChatbot";
 import AdminBtChat from "@/components/AdminBtChat";
 import AdminSageSettings from "@/components/AdminSageSettings";
+import { AdminWholesaleUpdates } from "@/components/AdminWholesaleUpdates";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
@@ -75,6 +77,7 @@ import { getSelectedProducts, toggleProductSelection, toggleVisibleSelection } f
 import { BulkProductStockDialog, type StockProduct } from "@/components/admin/BulkProductStockDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { HalfKitManager } from "@/components/half-kits/HalfKitManager";
+import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyUpdatesManager";
 
 // ─── AdminOrderDispatchImages ─────────────────────────────────────────────────
 function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret: string }) {
@@ -4871,6 +4874,7 @@ function GroupSummaryTab({ secret }: { secret: string }) {
         {rows.length > 0 && <Button variant="outline" onClick={handleDownload} className="gap-2"><Download className="w-4 h-4" />Download .txt</Button>}
       </div>
 
+      {gbFilter !== "all" && <GroupBuyUpdatesManager key={gbFilter} scope="admin" groupBuyId={gbFilter} />}
       {gbFilter !== "all" && <HalfKitManager scope="admin" groupBuyId={gbFilter} />}
 
       {/* Tips breakdown — only shown when a specific GB is selected */}
@@ -21846,7 +21850,7 @@ function AdminWholesaleSharesTab({ secret }: { secret: string }) {
                         {row.orderStatusPills.map(status => {
                           const color = status === "Cancelled" ? "#ef4444" : status === "Paid" ? "#22c55e" : status.includes("shipped") || status === "Shipped" ? "#3b82f6" : "#a855f7";
                           return <span key={status} className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                            style={{ color, background: `color-mix(in srgb, ${color} 15%, transparent)` }}>{status}</span>;
+                            style={{ color, background: `color-mix(in srgb, ${color} 15%, transparent)` }}>{wholesaleStatusLabel(status, "wholesale_shared")}</span>;
                         })}
                         {row.status !== "open" && (
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
@@ -22534,6 +22538,8 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
           </div>
         </div>
       </div>
+
+      <AdminWholesaleUpdates secret={secret} />
 
       {/* Vendors */}
       <div>

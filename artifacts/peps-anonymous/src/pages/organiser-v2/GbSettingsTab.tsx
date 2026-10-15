@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { organiserApi, type ApiGroupBuy } from "./api/organiser-api";
 import { GroupBuyCoupons } from "@/components/GroupBuyCoupons";
+import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyUpdatesManager";
 import {
   AlertTriangle, Archive, CalendarDays, Check, CheckCircle2, CircleDot,
   ClipboardList, Copy, Eye, FileText, Image, Info, KeyRound, Loader2, Plus,
@@ -781,6 +782,10 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
           label="Save Member Cards"
         />
             </div>
+          ) : null}
+
+          {selectedGbId && activeSection !== "danger" ? (
+            <GroupBuyUpdatesManager key={selectedGbId} scope="organiser" groupBuyId={selectedGbId} />
           ) : null}
 
           {activeSection === "coupons" ? (

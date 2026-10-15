@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { useQueryClient } from "@tanstack/react-query";
+import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
 import { useHalfKitAvailability } from "@/hooks/use-half-kit-availability";
 import { PoolLeaderDashboard } from "@/components/PoolLeaderDashboard";
 import { AccountPoolContributions } from "@/components/AccountPoolContributions";
@@ -347,7 +349,7 @@ function OrderGridCard({
               <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full"
                 style={{ color: "#fff", background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: sMeta.color }} />
-                {sMeta.label}
+                {wholesaleStatusLabel(sMeta.label, order.orderType)}
               </span>
               {/* ⋯ kebab menu */}
               <div className="relative">
@@ -583,7 +585,7 @@ function OrderCard({ order, onManage, onReorder, groupBuyName, accent }: { order
             style={{ background: sm.bg, color: sm.color }}
           >
             <StatusIcon className="w-3 h-3" />
-            {sm.label}
+            {wholesaleStatusLabel(sm.label, order.orderType)}
           </span>
         </div>
 
@@ -8798,6 +8800,8 @@ export default function CustomerPortal() {
                   )}
                 </div>
 
+                <div className="relative px-5 pt-4"><GroupBuyStageBadge gbId={gb.id} lifecycle={gb.status} /></div>
+
                 {/* Footer: CTA */}
                 <div className="relative px-5 pt-5 pb-5 space-y-2.5">
                   <button
@@ -8870,6 +8874,7 @@ export default function CustomerPortal() {
                               <div className="min-w-0 max-w-[150px]">
                                 <p className="text-[13px] font-bold truncate" style={{ color: T.text }}>{gb.name}</p>
                                 {gb.manufacturer && <p className="text-[11px] truncate hidden sm:block" style={{ color: T.subtle }}>{gb.manufacturer}</p>}
+                                <div className="mt-1 max-w-[150px] rounded-md px-2 py-1" style={{ background: "#1C2B3D" }}><GroupBuyStageBadge gbId={gb.id} lifecycle={gb.status} dense /></div>
                                 {/* Mobile-only: status dot + closes info under the name */}
                                 <p className="text-[11px] truncate flex items-center gap-1.5 sm:hidden" style={{ color: T.subtle }}>
                                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />

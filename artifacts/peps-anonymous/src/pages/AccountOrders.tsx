@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -42,13 +43,13 @@ const PAYMENT_META: Record<string, { label: string; color: string }> = {
   failed:               { label: "Failed",   color: "#DC2626" },
 };
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, orderType }: { status: string; orderType?: string | null }) {
   const m = STATUS_META[status] ?? { label: status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
   const Icon = m.icon;
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
       style={{ color: m.color, background: m.bg }}>
-      <Icon className="w-3 h-3" />{m.label}
+      <Icon className="w-3 h-3" />{wholesaleStatusLabel(m.label, orderType)}
     </span>
   );
 }
@@ -77,7 +78,7 @@ function OrderCard({ order, onManage }: { order: AccountOrder; onManage: () => v
               <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
                 #{order.code}
               </span>
-              <StatusBadge status={order.status} />
+              <StatusBadge status={order.status} orderType={order.orderType} />
             </div>
             <p className="text-[11px] text-slate-400">{formatDate(order.createdAt)}</p>
           </div>

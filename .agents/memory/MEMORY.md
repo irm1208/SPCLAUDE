@@ -148,3 +148,6 @@
 - [Group-buy coupons](group-buy-coupons.md) — scoped product-only discounts, immutable identity, preserved redemption history, and transactional usage limits.
 - [Active organiser UI](organiser-active-ui-paths.md) — verify both dashboard routes; users should not need to switch dashboards to find promised organiser controls.
 - [Group-buy stock scope](group-buy-stock-policy.md) — organiser stock changes are group-only; bulk quantities mean available kits, preserving already ordered quantities.
+- [Wholesale page updates](wholesale-page-updates.md) — Admin-managed image-and-note announcements are global to the main wholesale order page, not shared-order-specific.
+- [Wholesale fulfilment wording](wholesale-fulfilment-wording.md) — the second wholesale/shared milestone is “Order received by Vendor”; unrelated order wording stays unchanged.
+- [GB progress updates](gb-progress-updates.md) — six manually managed group-wide stages and dated image/note updates; independent of member order/payment statuses.

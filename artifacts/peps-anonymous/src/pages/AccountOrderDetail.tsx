@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { submittedTimelineLabel, wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useRoute, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2331,8 +2332,8 @@ export default function AccountOrderDetail() {
                   {(() => {
                     const hst = STATUS_STYLE[order.status] ?? { label: order.status, color: "#fff", bg: "rgba(255,255,255,0.16)", pct: 0 };
                     const tlStages = [
-                      { label: "Ordered", Icon: FileText },
-                      { label: "Processing", Icon: PackageCheck },
+                      { label: submittedTimelineLabel(order.orderType), Icon: FileText },
+                      { label: wholesaleStatusLabel("Processing", order.orderType), Icon: PackageCheck },
                       { label: "Shipped", Icon: Truck },
                       { label: "Delivered", Icon: CheckCircle2 },
                     ];
@@ -2348,7 +2349,7 @@ export default function AccountOrderDetail() {
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
                               <span className="inline-flex items-center gap-1.5 rounded-full font-bold" style={{ fontSize: 11.5, padding: "4px 11px", background: "rgba(255,255,255,.16)", border: "1px solid rgba(255,255,255,.28)", color: "#fff" }}>
                                 <span className="rounded-full" style={{ width: 6, height: 6, background: hst.color === "#fff" ? "#fff" : hst.color }} />
-                                {hst.label}
+                                {wholesaleStatusLabel(hst.label, order.orderType)}
                               </span>
                               {isPaidOrder && (
                                 <span className="inline-flex items-center gap-1 rounded-full font-bold" style={{ fontSize: 11, padding: "4px 10px", background: "rgba(16,185,129,0.22)", border: "1px solid rgba(16,185,129,0.42)", color: "#d1fae5" }}>

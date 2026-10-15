@@ -45,6 +45,7 @@ import { getCreditAdjustedTotal } from "@/lib/credit-payment";
 import { hasAppliedCredit } from "@/lib/credit-payment";
 import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
 import { HalfKitManager } from "@/components/half-kits/HalfKitManager";
+import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyUpdatesManager";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
 const _codeToName: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.code.toLowerCase(), c.name]));
@@ -4454,6 +4455,13 @@ function GBFormTab({ gb, onSaved, onGbUpdated, onBack, onDelete, onStatusChange,
       </div>
 
       {error && <ErrorBanner msg={error} onClose={() => setError("")} />}
+
+      {!isNew && gb.id && detailsTab === "settings" && (
+        // Inside the GB edit <form>: block Enter in text inputs from submitting the GB settings form.
+        <div onKeyDown={e => { if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault(); }}>
+          <GroupBuyUpdatesManager key={gb.id} scope="organiser" groupBuyId={gb.id} />
+        </div>
+      )}
 
       {/* Sub-tab pill nav */}
       <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
@@ -11327,6 +11335,7 @@ export function SummaryTab({ gb }: { gb: OrganiserGB }) {
   return (
     <div className="space-y-4">
       <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Order Summary — {gb.name}</h2>
+      <GroupBuyUpdatesManager key={gb.id} scope="organiser" groupBuyId={gb.id} />
       <details className="rounded-xl border" style={{ borderColor: "var(--t-border)" }} data-testid="details-fill-half-kits">
         <summary className="cursor-pointer px-3 py-2 text-xs font-bold" style={{ color: "var(--t-text)" }}>Fill half kits</summary>
         <div className="p-2"><HalfKitManager scope="organiser" groupBuyId={gb.id} /></div>

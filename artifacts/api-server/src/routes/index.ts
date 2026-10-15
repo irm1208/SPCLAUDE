@@ -12,6 +12,8 @@ import healthRouter from "./health";
 import productsRouter from "./products";
 import deliveryMethodsRouter from "./delivery-methods";
 import configRouter from "./config";
+import wholesaleUpdatesRouter from "./wholesale-updates";
+import groupBuyUpdatesRouter from "./group-buy-updates";
 import ordersRouter from "./orders";
 import sheetsSyncRouter from "./sheets-sync";
 import adminRouter from "./admin";
@@ -111,6 +113,8 @@ router.use(adminInvoicesRouter);
 router.use(productsRouter);
 router.use(deliveryMethodsRouter);
 router.use(configRouter);
+router.use(wholesaleUpdatesRouter);
+router.use(groupBuyUpdatesRouter);
 
 // Feedback submission rate limiting
 router.use("/feedback", feedbackLimiter);

@@ -5,6 +5,7 @@ import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, C
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
+import { WholesaleUpdates } from "@/components/WholesaleUpdates";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount, getAccountHandle } from "@/hooks/use-account";
 import { PriceWatermark } from "@/components/PriceWatermark";
@@ -581,6 +582,8 @@ export default function WholesaleOrder() {
                 <p className="whitespace-pre-wrap leading-relaxed">{pageMessage}</p>
               </div>
             )}
+
+            <WholesaleUpdates />
 
             {/* Customer section */}
             <section className="space-y-2">

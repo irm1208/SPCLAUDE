@@ -1,3 +1,4 @@
+import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1128,6 +1129,8 @@ function GroupBuyCard({ gb, index, onCta, onInfo }: {
           <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      <div className="relative px-3.5 pb-2.5"><GroupBuyStageBadge gbId={gb.id} lifecycle={gb.status} /></div>
 
       {/* Footer bar */}
       <div
