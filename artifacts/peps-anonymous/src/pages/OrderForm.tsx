@@ -1471,14 +1471,13 @@ export default function OrderForm() {
           <CustomerGroupBuyUpdates key={`gbu-${gbId}`} gbId={gbId} enabled={isLoggedIn} />
         )}
 
-        {gbId && !isPreview && (
-          <HalfKitOffers key={gbId} gbId={gbId} embedded enabled={isLoggedIn} />
-        )}
-
         <section className="space-y-3">
           <div className="order-form-products rounded-3xl p-5 relative overflow-clip" style={{ background: "#1C2B3D" }}>
             <div className="absolute top-0 right-0 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: "rgba(59,130,246,0.08)", filter: "blur(70px)" }} />
             <div className="relative z-10">
+            {gbId && !isPreview && (
+              <HalfKitOffers key={gbId} gbId={gbId} embedded enabled={isLoggedIn} />
+            )}
             <div className="order-form-products-heading flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(59,130,246,0.15)" }}>

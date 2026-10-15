@@ -20,6 +20,7 @@ import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
 import { COUNTRIES } from "@/data/countries";
 import { filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
+import { ReshipperGroupBuyPicker } from "@/components/ReshipperGroupBuyPicker";
 
 // ─── Admin impersonation ──────────────────────────────────────────────────────
 // Module-level vars set once when the page initializes in admin preview mode
@@ -3913,29 +3914,61 @@ export default function ReshipperPage() {
   const [unclaimedOrders, setUnclaimedOrders] = useState<ROrder[]>([]);
   const [unclaimedLoading, setUnclaimedLoading] = useState(false);
   const [showJoinForm, setShowJoinForm] = useState(false);
+  const [hiddenGbIds, setHiddenGbIds] = useState<string[]>([]);
+  const [showHiddenGbs, setShowHiddenGbs] = useState(false);
+  const [savingVisibility, setSavingVisibility] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [meRes, aRes] = await Promise.all([
+      const [meRes, aRes, hiddenRes] = await Promise.all([
         reshipFetch("/api/reshipper/me", { credentials: "include" }),
         reshipFetch("/api/reshipper/assignments", { credentials: "include" }),
+        reshipFetch("/api/reshipper/hidden-group-buys", { credentials: "include" }),
       ]);
       if (!isAdminMode && (meRes.status === 401 || aRes.status === 401)) {
         setLocation("/login");
         return;
       }
       if (meRes.ok) setMe(await meRes.json());
+      if (!hiddenRes.ok) throw new Error("Could not load hidden group buys. Please refresh to retry.");
+      const { hiddenGroupBuyIds }: { hiddenGroupBuyIds: string[] } = await hiddenRes.json();
+      setHiddenGbIds(hiddenGroupBuyIds);
       if (aRes.ok) {
         const data: RAssignment[] = await aRes.json();
         setAssignments(data);
-        if (data.length > 0 && !selectedGbId) setSelectedGbId(data[0].gbId);
+        setSelectedGbId(previous => {
+          const available = data.filter(a => showHiddenGbs || !hiddenGroupBuyIds.includes(a.gbId));
+          return available.some(a => a.gbId === previous) ? previous : available[0]?.gbId ?? "";
+        });
       }
-    } catch { setError("Failed to load dashboard data"); }
+    } catch (error) { setError(error instanceof Error ? error.message : "Failed to load dashboard data"); }
     setLoading(false);
-  }, [setLocation, selectedGbId]);
+  }, [setLocation, showHiddenGbs]);
 
   useEffect(() => { load(); }, []);
+
+  async function setGroupBuyHidden(gbId: string, hidden: boolean) {
+    setSavingVisibility(true);
+    setError("");
+    try {
+      const response = await reshipFetch(`/api/reshipper/gb/${encodeURIComponent(gbId)}/visibility`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not save this choice.");
+      const next = hidden ? [...new Set([...hiddenGbIds, gbId])] : hiddenGbIds.filter(id => id !== gbId);
+      setHiddenGbIds(next);
+      if (hidden && !showHiddenGbs && selectedGbId === gbId) {
+        setSelectedGbId(assignments.find(a => !next.includes(a.gbId))?.gbId ?? "");
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not save this choice. Please retry.");
+    } finally { setSavingVisibility(false); }
+  }
 
   const loadOrders = useCallback(async (gbId: string) => {
     if (!gbId) return;
@@ -4110,6 +4143,10 @@ export default function ReshipperPage() {
     return (
       <Wrapper>
         <div className="max-w-md mx-auto px-4 py-10 space-y-4">
+          {error && <div role="alert" className="rounded-xl border border-red-200 p-3 text-sm text-red-700">
+            {error}
+            <button type="button" onClick={() => load()} className="block mt-2 underline">Retry loading dashboard</button>
+          </div>}
           <div className="text-center space-y-1 pb-2">
             <div className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3"
               style={{ background: "rgba(59,130,246,0.1)" }}>
@@ -4169,24 +4206,22 @@ export default function ReshipperPage() {
           </div>
         </div>
 
-        {/* ── GB picker (multiple assignments) ── */}
-        {assignments.length > 1 && (
-          <div className="flex gap-1.5 px-4 md:px-7 py-2 overflow-x-auto shrink-0" style={{ background: P.panel2, borderBottom: `1px solid ${P.border}` }}>
-            {assignments.map(a => (
-              <button key={a.gbId} onClick={() => {
-                if (a.gbId === selectedGbId) return;
+        {/* ── Personal GB visibility: saved server-side, never changes assignments ── */}
+        {assignments.length > 0 && (
+          <ReshipperGroupBuyPicker assignments={assignments} hiddenIds={hiddenGbIds}
+            selectedId={selectedGbId} showHidden={showHiddenGbs} saving={savingVisibility}
+            colors={P} accent={ACCENT} onSetHidden={setGroupBuyHidden}
+            onShowHidden={show => {
+              setShowHiddenGbs(show);
+              const available = assignments.filter(a => show || !hiddenGbIds.includes(a.gbId));
+              if (!available.some(a => a.gbId === selectedGbId)) setSelectedGbId(available[0]?.gbId ?? "");
+            }}
+            onSelect={id => {
+                if (id === selectedGbId) return;
                 ordersRequestRef.current += 1;
                 setOrders([]);
-                setSelectedGbId(a.gbId);
-              }}
-                className="flex items-center gap-1 px-3 h-7 rounded-full text-[11px] font-bold whitespace-nowrap shrink-0 transition-all"
-                style={selectedGbId === a.gbId
-                  ? { background: ACCENT, color: "#fff" }
-                  : { background: P.chip, color: P.muted, border: `1px solid ${P.border}` }}>
-                {a.gb?.name ?? a.gbId} · {a.country}
-              </button>
-            ))}
-          </div>
+                setSelectedGbId(id);
+            }} />
         )}
 
         {/* ── Tab bar ── */}
@@ -4283,8 +4318,8 @@ export default function ReshipperPage() {
               )}
             </>
           ) : (
-            <div className="flex justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} />
+            <div className="flex justify-center py-16 text-sm" style={{ color: P.muted }}>
+              Select a group buy above, or use “Show hidden” to restore one.
             </div>
           )}
         </div>

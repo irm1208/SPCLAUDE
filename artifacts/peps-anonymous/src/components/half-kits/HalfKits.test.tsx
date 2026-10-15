@@ -131,7 +131,7 @@ describe("entry points", () => {
     expect(form).toContain("<HalfKitOffers");
     expect(form).toContain("gbId={gbId}");
     expect(form).toContain("embedded");
-    expect(form.indexOf("<HalfKitOffers")).toBeLessThan(form.indexOf(">Your Products</p>"));
+    expect(form.indexOf("<HalfKitOffers")).toBeLessThan(form.indexOf(">Choose products</p>"));
   });
   it("includes half-kit links in both member card and table views, even without an existing order", () => {
     const portal = readFileSync("src/pages/CustomerPortal.tsx", "utf8");

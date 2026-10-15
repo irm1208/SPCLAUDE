@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HalfKitOffers } from "../../pages/GroupBuyHalfKits";
 import type { MemberOffersResponse } from "../../lib/half-kit-api";
+import { readFileSync } from "node:fs";
 
 const group = { id: "g1", name: "Autumn GB", currency: "GBP", allowCredits: true };
 const offer = { id: "h1", productId: "p1", productName: "Ara-290 16mg", price: 30, deliveryCharge: 1, vendorShippingCharge: 2, version: 1 };
@@ -25,12 +26,23 @@ describe("inline order-page half kits", () => {
     expect(html).toContain("Add to my order");
     expect(html).not.toContain('disabled=""');
     expect(html).not.toContain("Back to my group buys");
-    expect(html).toContain("linear-gradient(135deg, #1C2B3D, #1D3047)");
+    expect(html).toContain("order-form-half-kits");
+    expect(html).toContain("border-bottom:");
+    expect(html).not.toContain("box-shadow:");
     expect(html).toContain("background:#162231");
     expect(html).toContain("text-[#E9A020]");
     expect(html).toContain('data-testid="list-half-kit-offers"');
     expect(html).not.toContain("sm:grid-cols-2");
     expect(html).not.toContain("bg-white");
+  });
+  it("shares the products container while retaining a distinct half-kit section", () => {
+    const source = readFileSync("src/pages/OrderForm.tsx", "utf8");
+    const container = source.indexOf('className="order-form-products rounded-3xl');
+    const offers = source.indexOf("<HalfKitOffers");
+    const catalogue = source.indexOf('className="order-form-products-heading');
+    expect(container).toBeGreaterThan(-1);
+    expect(offers).toBeGreaterThan(container);
+    expect(offers).toBeLessThan(catalogue);
   });
   it("disappears when there are no offers, including after the last half is claimed", () => {
     expect(render({ group, offers: [], orders: [order], creditsBalance: 0 })).toBe("");

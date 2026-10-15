@@ -33,8 +33,10 @@ import { sendTelegramMessage, sendTelegramMessageFull, sendAdminFromTemplate, ge
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
+import reshipperVisibilityRouter from "./reshipper-visibility";
 
 const router: IRouter = Router();
+router.use(reshipperVisibilityRouter);
 
 function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   if (!raw) return fallback;

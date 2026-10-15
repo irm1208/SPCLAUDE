@@ -123,8 +123,8 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
   if (embedded && (!enabled || q.isLoading || (!q.isError && !q.data) || (q.data?.offers.length === 0 && !result && !active))) return null;
 
   return (
-    <div className={embedded ? "rounded-3xl border p-5 space-y-4" : "min-h-[100dvh] bg-[#F8FAFC]"}
-      style={embedded ? { background: "linear-gradient(135deg, #1C2B3D, #1D3047)", borderColor: "rgba(255,255,255,0.08)", boxShadow: "0 10px 20px -8px rgba(0,0,0,0.15)" } : undefined}
+    <div className={embedded ? "order-form-half-kits mb-5 pb-5 space-y-4" : "min-h-[100dvh] bg-[#F8FAFC]"}
+      style={embedded ? { borderBottom: "1px solid rgba(255,255,255,0.14)" } : undefined}
       data-testid={embedded ? "section-order-half-kits" : "page-half-kits"}>
       {embedded ? (
         <div>
