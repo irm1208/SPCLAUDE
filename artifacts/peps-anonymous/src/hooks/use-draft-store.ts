@@ -12,6 +12,7 @@ export interface DraftLineItem {
 }
 
 interface DraftState {
+  halfKitCheckout: { offerId: string; productId: string; version: number; price: number; requestId: string } | null;
   // Order Identity
   orderId: string | null;
   code: string | null;
@@ -115,6 +116,7 @@ export const useDraftStore = create<DraftState>()(
       orderId: null,
       code: null,
       groupBuyId: null,
+      halfKitCheckout: null,
       telegramUsername: '',
       deliveryMethodId: '',
       deliveryMethod: '',
@@ -153,6 +155,7 @@ export const useDraftStore = create<DraftState>()(
                   deliveryMethod: '',
                   deliveryPrice: 0,
                   orderId: null,
+                  halfKitCheckout: null,
                   code: null,
                   preferredReshipperUsername: null,
                   directShippingRequested: false,
@@ -161,7 +164,7 @@ export const useDraftStore = create<DraftState>()(
               : {}),
           };
         }
-        return { groupBuyId };
+        return { groupBuyId, halfKitCheckout: null };
       }),
 
       clearOrderId: () => set({ orderId: null, code: null }),
@@ -181,14 +184,14 @@ export const useDraftStore = create<DraftState>()(
       setShippingEmail: (shippingEmail) => set({ shippingEmail }),
       setShippingCountry: (shippingCountry) => set({ shippingCountry }),
 
-      addLineItem: () => set((state) => ({
+      addLineItem: () => set((state) => state.halfKitCheckout ? {} : ({
         lineItems: [
           ...state.lineItems,
           { id: generateId(), productId: '', productName: '', quantity: 1, unitPrice: 0, lineTotal: 0 }
         ]
       })),
 
-      updateLineItem: (id, updates) => set((state) => ({
+      updateLineItem: (id, updates) => set((state) => state.halfKitCheckout ? {} : ({
         lineItems: state.lineItems.map(item => {
           if (item.id !== id) return item;
           const updatedItem = { ...item, ...updates };
@@ -197,11 +200,12 @@ export const useDraftStore = create<DraftState>()(
         })
       })),
 
-      removeLineItem: (id) => set((state) => ({
+      removeLineItem: (id) => set((state) => state.halfKitCheckout ? {} : ({
         lineItems: state.lineItems.filter(item => item.id !== id)
       })),
 
       addProductLineItem: (productId, productName, unitPrice) => set((state) => {
+        if (state.halfKitCheckout) return {};
         const emptyItem = state.lineItems.find(item => !item.productId);
         if (emptyItem) {
           return {
@@ -223,6 +227,7 @@ export const useDraftStore = create<DraftState>()(
       loadExistingOrder: (order) => {
         const isDirectShipping = (order as any).directShippingRequested === true;
         return set({
+          halfKitCheckout: null,
           orderId: order.id,
           code: order.code,
           groupBuyId: (order as any).groupBuyId ?? null,
@@ -260,6 +265,7 @@ export const useDraftStore = create<DraftState>()(
       },
 
       startTopUpOrder: (order) => set({
+        halfKitCheckout: null,
         orderId: null,
         code: null,
         groupBuyId: (order as any).groupBuyId ?? null,
@@ -289,6 +295,7 @@ export const useDraftStore = create<DraftState>()(
       clearTopUp: () => set({ additionOfOrderId: null, deliveryMethodId: '', deliveryMethod: '', deliveryPrice: 0 }),
 
       clearDraft: () => set({
+        halfKitCheckout: null,
         orderId: null,
         code: null,
         groupBuyId: null,

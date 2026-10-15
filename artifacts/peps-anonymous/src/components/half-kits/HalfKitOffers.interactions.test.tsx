@@ -12,11 +12,12 @@ let useHalfKitAvailability: typeof import("../../hooks/use-half-kit-availability
 let dom: JSDOM;
 beforeAll(async () => {
   dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
-  for (const key of ["window", "document", "navigator", "location", "history", "HTMLElement", "HTMLInputElement", "Event", "Node", "MutationObserver"]) {
+  for (const key of ["window", "document", "navigator", "location", "history", "localStorage", "HTMLElement", "HTMLInputElement", "Event", "Node", "MutationObserver"]) {
     Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
   }
   Object.defineProperty(globalThis, "addEventListener", { configurable: true, value: dom.window.addEventListener.bind(dom.window) });
   Object.defineProperty(globalThis, "removeEventListener", { configurable: true, value: dom.window.removeEventListener.bind(dom.window) });
+  Object.defineProperty(globalThis, "dispatchEvent", { configurable: true, value: dom.window.dispatchEvent.bind(dom.window) });
   ({ createRoot } = await import("react-dom/client"));
   ({ QueryClient, QueryClientProvider } = await import("@tanstack/react-query"));
   ({ HalfKitOffers } = await import("../../pages/GroupBuyHalfKits"));
@@ -30,6 +31,51 @@ function AvailabilityLink() {
 }
 
 describe("inline half-kit claims", () => {
+  it("starts a normal new-order checkout without prematurely taking an orderless member's half kit", async () => {
+    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    const data: MemberOffersResponse = {
+      group: { id: "g1", name: "Autumn GB", currency: "USDT", allowCredits: true },
+      offers: [{ id: "h1", productId: "p1", productName: "Ara-290 16mg", price: 30, deliveryCharge: 4, vendorShippingCharge: 7, version: 2 }],
+      orders: [], creditsBalance: 20,
+    };
+    const originalFetch = globalThis.fetch;
+    const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, json: async () => data } as Response));
+    globalThis.fetch = fetcher;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } } });
+    client.setQueryData(["member-half-kits", "g1"], data);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const { useDraftStore } = await import("../../hooks/use-draft-store");
+    try {
+      useDraftStore.getState().setTelegramUsername("member");
+      await act(async () => root.render(<QueryClientProvider client={client}><HalfKitOffers gbId="g1" embedded /></QueryClientProvider>));
+      const button = container.querySelector('button[aria-label="Add Ara-290 16mg half kit to my order"]') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      await act(async () => button.click());
+      const state = useDraftStore.getState();
+      expect(state.groupBuyId).toBe("g1");
+      expect(state.telegramUsername).toBe("member");
+      expect(state.halfKitCheckout).toMatchObject({ offerId: "h1", productId: "p1", version: 2, price: 30 });
+      expect(state.lineItems).toMatchObject([{ productId: "p1", quantity: 0.5, unitPrice: 60, lineTotal: 30 }]);
+      expect(state.deliveryPrice).toBe(0);
+      expect(state.vendorShipping).toBe(0); // checkout resolves NORMAL shipping, not offer supplements 4 + 7
+      expect(window.location.pathname + window.location.search).toBe("/order?gbId=g1");
+      expect(fetcher.mock.calls.every(args => !String(args[0]).includes("/claim"))).toBe(true);
+      // Controls in the existing cart drawer cannot accidentally turn this into a full-kit order.
+      state.updateLineItem(state.lineItems[0].id, { quantity: 2 });
+      state.removeLineItem(state.lineItems[0].id);
+      state.addLineItem();
+      expect(useDraftStore.getState().lineItems).toHaveLength(1);
+      expect(useDraftStore.getState().lineItems[0].quantity).toBe(0.5);
+      state.clearDraft();
+      expect(useDraftStore.getState().halfKitCheckout).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove(); client.clear(); globalThis.fetch = originalFetch;
+      window.history.replaceState(null, "", "/");
+    }
+  });
   it("keeps the timed unavailable message visible after the taken offer disappears", async () => {
     (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
     let taken = false;

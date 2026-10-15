@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
+import { useDraftStore } from "@/hooks/use-draft-store";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, ChevronDown, Loader2, Package, RefreshCw } from "lucide-react";
 import {
@@ -79,6 +80,7 @@ export default function GroupBuyHalfKits() {
 }
 
 export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId: string; embedded?: boolean; enabled?: boolean }) {
+  const [, navigate] = useLocation();
   const qc = useQueryClient();
   const key = ["member-half-kits", gbId];
   const q = useQuery({ queryKey: key, queryFn: () => fetchMemberOffers(gbId), enabled: !!gbId && enabled, staleTime: 0, refetchOnMount: "always", refetchInterval: HALF_KIT_POLL_MS });
@@ -133,7 +135,24 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
   const orders = q.data?.orders ?? [];
   useEffect(() => { if (orders.length === 1) setOrderId(orders[0].id); }, [orders.length, orders[0]?.id]);
 
-  const open = (o: MemberOffer) => { setActive(o); setResult(null); claim.reset(); requestIdRef.current = newRequestId(); setNeedsReconfirm(false); };
+  const open = (o: MemberOffer) => {
+    if (orders.length === 0) {
+      const previous = useDraftStore.getState();
+      if ((previous.orderId || previous.lineItems.some(item => item.productId)) &&
+        !window.confirm("Start a separate half-kit order? This will replace the products in your current draft.")) return;
+      // Normal checkout supplies delivery, vendor shipping, fees and payment. Do not reserve yet.
+      useDraftStore.getState().clearDraft();
+      useDraftStore.getState().setGroupBuyId(gbId);
+      useDraftStore.setState({
+        telegramUsername: previous.telegramUsername,
+        halfKitCheckout: { offerId: o.id, productId: o.productId, version: o.version, price: o.price, requestId: newRequestId() },
+        lineItems: [{ id: newRequestId(), productId: o.productId, productName: o.productName, quantity: 0.5, unitPrice: o.price * 2, lineTotal: o.price }],
+      });
+      navigate(`/order?gbId=${encodeURIComponent(gbId)}`);
+      return;
+    }
+    setActive(o); setResult(null); claim.reset(); requestIdRef.current = newRequestId(); setNeedsReconfirm(false);
+  };
   const close = () => { if (claim.isPending) return; setActive(null); requestIdRef.current = null; setNeedsReconfirm(false); claim.reset(); };
   const order = orders.find(o => o.id === orderId);
   const previewCredit = active && q.data && order ? computeClaimTotals(active, q.data.creditsBalance, useCredits, q.data.group.allowCredits).credits : 0;
@@ -166,12 +185,12 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
           <Link href="/account?s=groups" className="inline-flex items-center gap-1 text-xs text-white/75 hover:text-white" data-testid="link-back"><ArrowLeft className="w-3.5 h-3.5" />Back to my group buys</Link>
           <p className="mt-4 text-[10px] font-bold uppercase tracking-widest text-[#E9A020]">Available half kits</p>
           <h1 className="text-2xl font-bold text-white">{q.data?.group.name ?? "Group buy"}</h1>
-          <p className="mt-1 text-sm text-white/75">Add a remaining half kit to an order you already placed in this group buy.</p>
+          <p className="mt-1 text-sm text-white/75">Add a remaining half kit to an existing order, or create a new order with normal group-buy shipping.</p>
         </div>
       </header>
       )}
       <div className={embedded ? "mt-2 space-y-2" : "mx-auto max-w-3xl px-4 py-6 space-y-4"}>
-        {embedded && <p className="text-[11px] leading-relaxed text-white/65">Adds to an existing order, separate from your new order below.</p>}
+        {embedded && <p className="text-[11px] leading-relaxed text-white/65">Add to your existing order, or check out with a new order if you don’t have one.</p>}
         {result && (
           <div role="status" className={`rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${embedded ? "" : "bg-white"}`} style={{ borderColor: "rgba(34,197,94,0.4)", ...(embedded && { background: "#162231" }) }} data-testid="status-claim-success">
             <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
@@ -199,10 +218,10 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
           </div>
         ) : (
           <>
-            {orders.length === 0 && <p role="note" className="rounded-xl border bg-amber-50 p-3 text-sm text-amber-900" style={{ borderColor: "rgba(233,160,32,0.4)", ...(embedded && { background: "rgba(233,160,32,0.08)", color: "#F6D391" }) }}>You need a submitted, not-yet-dispatched order in this group buy to claim a half kit.</p>}
+            {orders.length === 0 && <p role="note" className="text-xs" style={{ color: embedded ? "rgba(255,255,255,0.75)" : "#6B7280" }}>No existing order needed. Select a half kit, then choose delivery and review your total. Normal group-buy delivery and vendor shipping apply.</p>}
             <ul className={embedded ? "max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-white/10" : "grid gap-3 sm:grid-cols-2"} data-testid="list-half-kit-offers"
               tabIndex={embedded ? 0 : undefined} aria-label="Available half kits">
-              {q.data.offers.map(o => <HalfKitOfferCard key={o.id} offer={o} currency={q.data!.group.currency} embedded={embedded} disabled={orders.length === 0} onClaim={() => open(o)} />)}
+              {q.data.offers.map(o => <HalfKitOfferCard key={o.id} offer={orders.length ? o : { ...o, deliveryCharge: 0, vendorShippingCharge: 0 }} currency={q.data!.group.currency} embedded={embedded} disabled={false} onClaim={() => open(o)} />)}
             </ul>
           </>
         )}

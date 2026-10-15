@@ -19,6 +19,8 @@ import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
 import { safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
 import { resolveOrderSubmitDestination } from "./order-submit-destination";
+import { useQueryClient } from "@tanstack/react-query";
+import type { MemberOffersResponse } from "@/lib/half-kit-api";
 
 function ReviewShell({ children }: { children: ReactNode }) {
   const [, navigate] = useLocation();
@@ -60,6 +62,7 @@ export default function Review() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const draft = useDraftStore();
+  const queryClient = useQueryClient();
   const [error, setError] = useState("");
   const [retried, setRetried] = useState(false);
   const [globalVendorShippingWarning, setGlobalVendorShippingWarning] = useState<boolean | null>(null);
@@ -235,6 +238,7 @@ export default function Review() {
 
   const doSubmit = () => {
     const payload = {
+      halfKitCheckout: draft.halfKitCheckout ?? undefined,
       telegramUsername: draft.telegramUsername,
       deliveryMethodId: draft.deliveryMethodId,
       deliveryMethod: draft.deliveryMethod,
@@ -288,6 +292,18 @@ export default function Review() {
       lineItems?: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
     }) => {
       const oid = data.id ?? existingOrderId ?? "";
+      if (draft.halfKitCheckout && draft.groupBuyId) {
+        const groupId = draft.groupBuyId;
+        const offerId = draft.halfKitCheckout.offerId;
+        queryClient.setQueryData<MemberOffersResponse>(["member-half-kits", groupId], previous =>
+          previous ? { ...previous, offers: previous.offers.filter(offer => offer.id !== offerId) } : previous);
+        queryClient.setQueryData<{ counts: Record<string, number> }>(["account", "half-kit-availability"], previous =>
+          previous ? { ...previous, counts: { ...previous.counts, [groupId]: Math.max(0, (previous.counts[groupId] ?? 0) - 1) } } : previous);
+        queryClient.invalidateQueries({ queryKey: ["member-half-kits", groupId] });
+        queryClient.invalidateQueries({ queryKey: ["account", "half-kit-availability"] });
+        queryClient.invalidateQueries({ queryKey: ["account", "orders"] });
+        queryClient.invalidateQueries({ queryKey: ["account", "me"] });
+      }
       if (data.creditPolicyBlocked) {
         toast({
           title: "Store credits unavailable",
@@ -609,7 +625,7 @@ export default function Review() {
             </div>
 
             {/* Coupon code input */}
-            <div className="mt-4 pt-3 border-t border-gray-100">
+            {!draft.halfKitCheckout && <div className="mt-4 pt-3 border-t border-gray-100">
               {!couponCode ? (
                 <div className="flex gap-2 items-center">
                   <input
@@ -638,7 +654,7 @@ export default function Review() {
               {couponMsg && (
                 <p className={`mt-1 text-xs ${couponMsg.includes("✓") ? "text-green-600" : "text-red-500"}`}>{couponMsg}</p>
               )}
-            </div>
+            </div>}
           </section>)}
 
           {vendorShippingIsTbd && (

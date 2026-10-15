@@ -1472,7 +1472,21 @@ export default function OrderForm() {
         )}
 
         <section className="space-y-3">
-          <div className="order-form-products rounded-3xl p-5 relative overflow-clip" style={{ background: "#1C2B3D" }}>
+          {!isPreview && draft.halfKitCheckout && (
+            <div className="rounded-2xl p-5 space-y-3" style={{ background: "#1C2B3D", color: "#FFFFFF" }} data-testid="card-half-kit-checkout">
+              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#E9A020" }}>Your half-kit order</p>
+              <div className="flex justify-between gap-3">
+                <div className="min-w-0"><h2 className="font-bold break-words">{draft.lineItems[0]?.productName}</h2><p className="text-xs text-white/65">0.5 kit · quantity fixed</p></div>
+                <p className="font-bold tabular-nums whitespace-nowrap">{effectiveCurrency} {draft.halfKitCheckout.price.toFixed(2)}</p>
+              </div>
+              <p className="text-xs text-white/75">Choose delivery below, then review and pay. This half kit is only secured when you submit your order.</p>
+              <button type="button" data-testid="button-cancel-half-kit-checkout" className="text-xs underline text-white/75" onClick={() => {
+                draft.clearDraft();
+                draft.setGroupBuyId(gbId);
+              }}>Cancel half-kit checkout</button>
+            </div>
+          )}
+          <div hidden={!isPreview && !!draft.halfKitCheckout} className="order-form-products rounded-3xl p-5 relative overflow-clip" style={{ background: "#1C2B3D" }}>
             <div className="absolute top-0 right-0 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: "rgba(59,130,246,0.08)", filter: "blur(70px)" }} />
             <div className="relative z-10">
             {gbId && !isPreview && (

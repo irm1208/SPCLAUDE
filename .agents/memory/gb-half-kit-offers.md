@@ -15,11 +15,11 @@ The organiser chooses which remaining half kits to offer and when to publish the
 
 **How to apply:** Provide organiser/Admin control over which halves are offered; do not automatically publish every fractional quantity or tie availability solely to the group-buy open/closed state.
 
-Once a half is claimed, remove it from the available list and add it to the claimant’s existing order.
+Once a half is claimed, remove it from the available list. Add it to an eligible existing order, or allow a member without one to create a new order.
 
 **Why:** The user explicitly described this claiming flow and reiterated that ordered halves must disappear from the available list.
 
-**How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh.
+**How to apply:** Keep offers group-specific and prevent the same offered half from being claimed twice. Remove a half as soon as its claim succeeds, without depending on a subsequent list refresh. New orders use normal GB delivery, vendor-shipping and fee rules rather than the offer’s supplementary existing-order shipping charges; the member approved this choice. Preserve the membership/entry-fee gate.
 
 The “Fill remaining half kits” action on member group-buy cards and lists should open that group buy’s order page, not the separate half-kit page.
 
@@ -49,7 +49,7 @@ Only advertise “Fill half kits” for a group buy with published halves still 
 
 **Why:** The user requested availability-specific links rather than links on every group-buy card, and wants the actual halves visible on the order page.
 
-**How to apply:** Keep every member entry point tied to current published availability. Inline claiming still adds to an eligible existing order; it must not silently become part of a new draft.
+**How to apply:** Keep every member entry point tied to current published availability. With an eligible order, claim into that order. Otherwise explicitly start a separate half-kit checkout using normal GB shipping; do not reserve the half until submission or silently mix it into another draft.
 
 Both paid and unpaid orders can receive claimed halves. Paid orders keep their confirmed payment and receive an additional amount due for the half kit.
 

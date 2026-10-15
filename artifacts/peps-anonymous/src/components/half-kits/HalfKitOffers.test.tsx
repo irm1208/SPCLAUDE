@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HalfKitOffers } from "../../pages/GroupBuyHalfKits";
 import type { MemberOffersResponse } from "../../lib/half-kit-api";
 import { readFileSync } from "node:fs";
+import { Router } from "wouter";
 
 const group = { id: "g1", name: "Autumn GB", currency: "GBP", allowCredits: true };
 const offer = { id: "h1", productId: "p1", productName: "Ara-290 16mg", price: 30, deliveryCharge: 1, vendorShippingCharge: 2, version: 1 };
@@ -12,7 +13,7 @@ function render(data: MemberOffersResponse, enabled = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   client.setQueryData(["member-half-kits", "g1"], data);
   return renderToStaticMarkup(
-    <QueryClientProvider client={client}><HalfKitOffers gbId="g1" embedded enabled={enabled} /></QueryClientProvider>,
+    <Router ssrPath="/"><QueryClientProvider client={client}><HalfKitOffers gbId="g1" embedded enabled={enabled} /></QueryClientProvider></Router>,
   );
 }
 describe("inline order-page half kits", () => {
@@ -57,11 +58,11 @@ describe("inline order-page half kits", () => {
   it("disappears when there are no offers, including after the last half is claimed", () => {
     expect(render({ group, offers: [], orders: [order], creditsBalance: 0 })).toBe("");
   });
-  it("requires an existing eligible order without hiding available products", () => {
+  it("offers a new checkout when there is no eligible existing order", () => {
     const html = render({ group, offers: [offer], orders: [], creditsBalance: 0 });
     expect(html).toContain("Ara-290 16mg");
-    expect(html).toContain("not-yet-dispatched order");
-    expect(html).toContain('disabled=""');
+    expect(html).toContain("No existing order needed");
+    expect(html).not.toContain('disabled=""');
   });
   it("does not show cached offers when inline access is disabled", () => {
     expect(render({ group, offers: [offer], orders: [order], creditsBalance: 0 }, false)).toBe("");

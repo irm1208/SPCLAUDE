@@ -9,6 +9,7 @@ import { assertNoActiveRefund } from "./refund-mutation-guard";
 import { fetchFiatToUsd, isStablecoin } from "./crypto-pricing";
 import { claimAmounts, eligibleHalfKitOrder, halfKitClaimPaid, hasRemainingHalf, HalfKitError, halfKitTakenMessage, money, offerMoney } from "./half-kit-rules";
 import { lockHalfKitMoney } from "./half-kit-lock";
+import type { HalfKitCheckout } from "./half-kit-new-order-rules";
 
 type Database = any; // accepts both the workspace DB and a transaction/savepoint in integration tests
 export type HalfKitActor = { username: string; admin?: boolean; adminGbId?: string };
@@ -208,6 +209,54 @@ function claimResult(claim: any, order: any) {
     amountDue: number(order.amountDue), paymentPath: `/account/orders/${encodeURIComponent(order.id)}`,
   };
 }
+/** Uses the same claim mutex as existing-order claims. Call before inserting the new order. */
+export async function prepareNewOrderHalfKit(database: Database, groupId: string, username: string, checkout: HalfKitCheckout, lock = false) {
+  if (lock) {
+    await lockHalfKitMoney(database, groupId);
+    await lockGroupStock(database, groupId);
+  }
+  const group = await halfKitGroup(database, groupId, { username }, false, lock);
+  if (!["active", "closed"].includes(group.status)) throw new HalfKitError("This group buy no longer accepts half-kit claims.");
+  let blocked: unknown;
+  try { blocked = JSON.parse(group.blockedAccounts ?? "[]"); } catch { throw new HalfKitError("Invalid group-buy access settings.", 503); }
+  if (Array.isArray(blocked) && blocked.some(value => typeof value === "string" && same(value, username))) {
+    throw new HalfKitError("You are not allowed to add products to this group buy.", 403);
+  }
+  const candidate = (await halfKitCandidates(database, groupId)).find(row => row.offer?.id === checkout.offerId);
+  if (!candidate?.remainingHalf || !candidate.offer?.published || candidate.offer.version !== checkout.version
+    || candidate.offer.currency !== group.currency || candidate.productId !== checkout.productId
+    || number(candidate.offer.price) !== checkout.price) {
+    const [taken] = await database.select({ createdAt: claims.createdAt }).from(claims)
+      .where(and(eq(claims.offerId, checkout.offerId), eq(claims.offerVersion, checkout.version), eq(claims.state, "active"))).limit(1);
+    if (taken) throw new HalfKitError(halfKitTakenMessage(taken.createdAt), 409, "HALF_KIT_TAKEN");
+    throw new HalfKitError("This half kit is no longer available or its price changed. Select it again.");
+  }
+  if (lock) await enforceHalfLimits(database, group, candidate, username);
+  return { group, candidate };
+}
+
+/** Record the claim in the order-creation transaction, so failure rolls back both. */
+export async function recordNewOrderHalfKit(
+  tx: Database, checkout: HalfKitCheckout, group: any, order: any, line: any, creditsUsd: number,
+) {
+  const [taken] = await tx.update(offers).set({ published: false, version: checkout.version + 1, updatedAt: new Date() })
+    .where(and(eq(offers.id, checkout.offerId), eq(offers.version, checkout.version), eq(offers.published, true))).returning();
+  if (!taken) throw new HalfKitError("Someone else claimed this half kit. Refresh the list.");
+  // Credits are deducted by the normal new-order checkout, in this same transaction.
+  // Attribute only the half's portion to the claim; delivery/admin fees keep their own portion.
+  const attributedCredits = Math.min(creditsUsd, checkout.price);
+  await tx.insert(claims).values({
+    id: randomUUID(), offerId: checkout.offerId, groupBuyId: group.id, orderId: order.id, lineItemId: line.id,
+    requestId: checkout.requestId, offerVersion: checkout.version, productId: line.productId,
+    productName: line.productName, username: order.telegramUsername, currency: group.currency,
+    price: numeric(checkout.price), deliveryCharge: "0.00", vendorShippingCharge: "0.00",
+    creditsUsd: numeric(attributedCredits), creditsUsed: numeric(attributedCredits),
+    cashDue: numeric(checkout.price - attributedCredits),
+    ...(attributedCredits >= checkout.price ? { paidAt: new Date() } : {}),
+    createdAt: sql`clock_timestamp()`,
+  });
+}
+
 export async function claimHalfKit(groupId: string, offerId: string, actor: HalfKitActor, input: any, database: Database = db) {
   if (!input || typeof input !== "object") throw new HalfKitError("Invalid claim.", 400);
   if (typeof input.orderId !== "string" || !Number.isInteger(input.version) || typeof input.useCredits !== "boolean"
@@ -347,6 +396,30 @@ export async function releaseHalfKit(groupId: string, claimId: string, actor: Ha
     }
     if (claim.currency !== group.currency) throw new HalfKitError("The group currency changed. Resolve it before releasing this claim.");
     await reverseHalfClaim(tx, claim, order, account, actor.username);
+    // Releasing the only item of a new unpaid half-kit order must not leave a
+    // delivery/admin-fee-only order behind. Existing orders with other items are unchanged.
+    if (order.paymentStatus === "unpaid" && order.status !== "Cancelled" && !order.deletedAt) {
+      const remaining = await tx.select({ id: orderLineItemsTable.id }).from(orderLineItemsTable)
+        .where(eq(orderLineItemsTable.orderId, order.id)).limit(1);
+      if (!remaining.length) {
+        const [fresh] = await tx.select().from(ordersTable).where(eq(ordersTable.id, order.id));
+        const creditRemainder = number(fresh.creditsApplied);
+        if (creditRemainder > 0) {
+          const owner = await ownedAccount(tx, order.telegramUsername, true);
+          await tx.update(accountsTable).set({ credits: numeric(number(owner.credits) + creditRemainder) })
+            .where(eq(accountsTable.telegramUsername, owner.telegramUsername));
+          await tx.insert(creditTransactionsTable).values({
+            accountUsername: owner.telegramUsername, amount: numeric(creditRemainder),
+            reason: "Empty half-kit order released", orderId: order.id, operationKey: `half-kit-empty-order:${claim.id}`,
+          });
+        }
+        await tx.update(ordersTable).set({
+          status: "Cancelled", deliveryPrice: "0.00", vendorShipping: "0.00", vendorShippingIsTbd: false,
+          productSubtotal: "0.00", grandTotal: "0.00", tip: "0.00", testingContribution: "0.00",
+          adminFee: "0.00", kitFees: "0.00", creditsApplied: "0.00", amountDue: "0.00", paymentUsdAmount: null,
+        }).where(eq(ordersTable.id, order.id));
+      }
+    }
     const candidate = (await halfKitCandidates(tx, groupId)).find(row => row.productId === claim.productId);
     if (candidate?.remainingHalf && candidate.offer && !candidate.offer.published && ["active", "closed"].includes(group.status)) {
       await tx.update(offers).set({ published: true, version: candidate.offer.version + 1, updatedAt: new Date() })

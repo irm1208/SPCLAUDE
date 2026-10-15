@@ -3,7 +3,8 @@ import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
 import { calculateCouponDiscount, CouponError, couponProblem, couponQuoteMatches } from "../lib/group-buy-coupon-policy";
 import { assertGroupStock } from "../lib/group-buy-stock";
 import { gbHalfKitClaimsTable } from "@workspace/db";
-import { cancelUnpaidHalfClaims } from "../lib/half-kit-offers";
+import { cancelUnpaidHalfClaims, prepareNewOrderHalfKit, recordNewOrderHalfKit } from "../lib/half-kit-offers";
+import { parseHalfKitCheckout, assertHalfKitCheckoutItems } from "../lib/half-kit-new-order-rules";
 import { HalfKitError } from "../lib/half-kit-rules";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
@@ -445,6 +446,14 @@ router.post("/orders/claim-pin", async (req, res): Promise<void> => {
 
 // ── POST /api/orders — create a new order ────────────────────
 router.post("/orders", async (req, res): Promise<void> => {
+  let halfKitCheckout: ReturnType<typeof parseHalfKitCheckout> = null;
+  try {
+    halfKitCheckout = parseHalfKitCheckout(req.body?.halfKitCheckout);
+    if (halfKitCheckout) assertHalfKitCheckoutItems(halfKitCheckout, req.body.lineItems, req.body);
+  } catch (error) {
+    res.status(error instanceof HalfKitError ? error.status : 400).json({ error: (error as Error).message });
+    return;
+  }
   const {
     telegramUsername,
     deliveryMethodId,
@@ -498,6 +507,29 @@ router.post("/orders", async (req, res): Promise<void> => {
   let normalizedGroupBuyId = clientGroupBuyId && typeof clientGroupBuyId === "string"
     ? clientGroupBuyId.trim().slice(0, 64)
     : null;
+  let newHalfGroup: any = null;
+  if (halfKitCheckout) {
+    const session = getAccountFromCookie(req);
+    if (!session || normalizeTg(session) !== tg || !normalizedGroupBuyId) {
+      res.status(403).json({ error: "Sign in to your own account to order a half kit." }); return;
+    }
+    const [replay] = await db.select().from(gbHalfKitClaimsTable).where(eq(gbHalfKitClaimsTable.requestId, halfKitCheckout.requestId));
+    if (replay) {
+      const [owned] = await db.select().from(ordersTable).where(eq(ordersTable.id, replay.orderId));
+      if (!owned || normalizeTg(owned.telegramUsername) !== tg || owned.groupBuyId !== normalizedGroupBuyId
+        || replay.offerId !== halfKitCheckout.offerId || replay.state !== "active") {
+        res.status(409).json({ error: "This purchase request was already used." }); return;
+      }
+      const lines = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, owned.id));
+      res.status(201).json(formatOrderResponse(owned as unknown as Record<string, unknown>, lines as unknown as Record<string, unknown>[])); return;
+    }
+    try {
+      newHalfGroup = (await prepareNewOrderHalfKit(db, normalizedGroupBuyId, session, halfKitCheckout)).group;
+    } catch (error) {
+      if (!(error instanceof HalfKitError)) throw error;
+      res.status(error.status).json({ error: error.message, code: error.code }); return;
+    }
+  }
 
   // ── Addition (top-up) order validation ────────────────────────────────────
   // A non-null additionOfOrderId marks this as a free-shipping "addition" of a
@@ -595,6 +627,9 @@ router.post("/orders", async (req, res): Promise<void> => {
   let vendorShipping = Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
   if (additionParent) {
     vendorShipping = 0; // additions ride along free — no vendor shipping
+  } else if (halfKitCheckout) {
+    vendorShipping = newHalfGroup.vendorShippingEnabled && newHalfGroup.vendorShippingAmount != null
+      ? Math.max(0, Number(newHalfGroup.vendorShippingAmount)) : 0;
   } else if (isWholesaleOrder) {
     // Never trust the client's wholesale shipping — recompute it server-side.
     vendorShipping = await resolveWholesaleShipping(clientVendorShipping, clientShippingCountry, clientLineItems);
@@ -713,7 +748,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, normalizedGroupBuyId));
 
-    if (!gb || (gb.status !== "active" && !gb.allowExtraOrders && !membership.allowExtraOrder)) {
+    if (!gb || (gb.status !== "active" && !gb.allowExtraOrders && !membership.allowExtraOrder && !halfKitCheckout)) {
       res.status(403).json({ error: "This group buy is not currently accepting orders" });
       return;
     }
@@ -753,7 +788,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     for (const item of clientLineItems) {
       const canonical = canonicalById.get(item.productId)!;
       item.productName = canonical.productName;
-      item.unitPrice = parseFloat(String(canonical.priceOverride ?? canonical.price));
+      item.unitPrice = halfKitCheckout ? halfKitCheckout.price * 2 : parseFloat(String(canonical.priceOverride ?? canonical.price));
     }
 
     // Enforce contribution rules: only allowed when GB has testing enabled, and must be exactly $15
@@ -1417,6 +1452,11 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const creation = await db.transaction(async tx => {
+  if (halfKitCheckout) {
+    newHalfGroup = (await prepareNewOrderHalfKit(tx, normalizedGroupBuyId!, tg, halfKitCheckout, true)).group;
+    const [replay] = await tx.select().from(gbHalfKitClaimsTable).where(eq(gbHalfKitClaimsTable.requestId, halfKitCheckout.requestId));
+    if (replay) throw new HalfKitError("This purchase was already submitted. Refresh My Orders.");
+  }
   await assertGroupStock(tx, normalizedGroupBuyId, clientLineItems);
   const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
   const [order] = await tx
@@ -1477,24 +1517,50 @@ router.post("/orders", async (req, res): Promise<void> => {
     .values(lineItemsToInsert)
     .returning();
 
+  let halfCredits = 0;
+  if (halfKitCheckout) {
+    // The new order, credit spend and one-time offer allocation commit together.
+    if (typeof clientCreditsApplied === "number" && clientCreditsApplied > 0) {
+      const session = getAccountFromCookie(req)!;
+      const [account] = await tx.select().from(accountsTable)
+        .where(eq(accountsTable.telegramUsername, session.toLowerCase())).for("update");
+      if (!account) throw new HalfKitError("Account not found.", 403);
+      if (newHalfGroup.allowCredits !== true) throw new HalfKitError("Credits are disabled for this group buy.", 403);
+      const available = usdToCents(String(account.credits ?? 0));
+      const requested = usdToCents(String(clientCreditsApplied));
+      const total = usdToCents(grandTotal.toFixed(2));
+      const used = [available, requested, total].reduce((a, b) => a < b ? a : b);
+      if (used > 0n) {
+        halfCredits = Number(centsToUsdString(used));
+        await tx.update(accountsTable).set({ credits: centsToUsdString(available - used) as unknown as number })
+          .where(eq(accountsTable.telegramUsername, account.telegramUsername));
+        await tx.update(ordersTable).set({ creditsApplied: halfCredits }).where(eq(ordersTable.id, orderId));
+        await tx.insert(creditTransactionsTable).values({
+          accountUsername: account.telegramUsername, amount: -halfCredits, orderId,
+          reason: `Credits applied to half-kit order #${code}`, operationKey: `half-kit-new-order:${halfKitCheckout.requestId}`,
+        });
+      }
+    }
+    await recordNewOrderHalfKit(tx, halfKitCheckout, newHalfGroup, order, insertedLineItems[0], halfCredits);
+  }
   // Record coupon redemption if one was applied
   if (couponClaim) await recordCouponRedemption(tx, couponClaim, orderId, tg, couponDiscount);
-  return { order, insertedLineItems, lineItemsToInsert };
+  return { order, insertedLineItems, lineItemsToInsert, halfCredits };
   }).catch(error => {
-    if (error instanceof CouponError) return { error: error.message } as const;
+    if (error instanceof CouponError || error instanceof HalfKitError) return { error: error.message, status: error instanceof HalfKitError ? error.status : 400, code: error instanceof HalfKitError ? error.code : undefined } as const;
     throw error;
   });
-  if ("error" in creation) { res.status(400).json({ error: creation.error }); return; }
+  if ("error" in creation) { res.status(creation.status ?? 400).json({ error: creation.error, code: creation.code }); return; }
   const { order, insertedLineItems, lineItemsToInsert } = creation;
 
   // ── Apply store credits atomically during order creation ──────────────
   // If the client sent a creditsApplied amount and the request carries a valid
   // account session, re-verify the balance server-side and stamp it on the order.
-  let appliedCredits = 0;
-  let appliedCreditsUsd = "0.00";
+  let appliedCredits = creation.halfCredits;
+  let appliedCreditsUsd = appliedCredits.toFixed(2);
   let creditPolicyBlocked = false;
   const sessionUsernameForCredits = getAccountFromCookie(req);
-  if (sessionUsernameForCredits && clientCreditsApplied && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0) {
+  if (!halfKitCheckout && sessionUsernameForCredits && clientCreditsApplied && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0) {
     const requestedCreditsCents = usdToCents(String(clientCreditsApplied));
     await db.transaction(async tx => {
       // Lock account before order to match every other credit-spend path.
