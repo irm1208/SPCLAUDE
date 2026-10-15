@@ -31,6 +31,7 @@ import { GbProductBrowse } from "./GbProductBrowse";
 import { canIncreaseBrowseQuantity, type BrowseProduct } from "./gb-product-browse";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
+import "./order-form.css";
 
 const TIP_OPTIONS = [0, 1, 2, 3, 5, 10, 15, 20];
 
@@ -153,7 +154,7 @@ type PopularityEntry = { productName: string; score: number };
 
 const DOT_COLOR  = { available: "#10B981", limited: "#F59E0B", low: "#F97316", full: "#EF4444" } as const;
 const DOT_LABEL  = { available: "In Stock", limited: "Med", low: "Low", full: "OOS" } as const;
-const MEDALS     = ["🥇", "🥈", "🥉"] as const;
+const MEDALS     = ["1", "2", "3"] as const;
 
 function SearchableProductSelect({
   products, value, onChange, disabledIds, disabled, formatPrice, catOrder, capacity, popularity, hidePrices,
@@ -274,10 +275,10 @@ function SearchableProductSelect({
         onMouseEnter={e => { if (!isDisabled) (e.currentTarget as HTMLElement).style.background = isSelected ? "rgba(91,141,239,0.18)" : "rgba(255,255,255,0.05)"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isSelected ? "rgba(91,141,239,0.12)" : "transparent"; }}
       >
-        {/* Left slot: medal emoji for top 3, stock dot otherwise */}
+        {/* Left slot: popularity rank for top 3, stock dot otherwise */}
         {showLeftSlot && (
           medal
-            ? <span style={{ flexShrink: 0, fontSize: 13, lineHeight: 1, userSelect: "none", opacity: isDisabled ? 0.35 : 1 }}>{medal}</span>
+            ? <span aria-label={`Popular #${medal}`} style={{ flexShrink: 0, width: 18, height: 18, borderRadius: 9, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, lineHeight: 1, userSelect: "none", background: "rgba(233,160,32,0.18)", color: "#E9A020", opacity: isDisabled ? 0.35 : 1 }}>{medal}</span>
             : <span style={{ flexShrink: 0, width: 7, height: 7, borderRadius: "50%", background: dotColor ?? "rgba(255,255,255,0.12)", opacity: isDisabled ? 0.35 : 1 }} />
         )}
 
@@ -1158,7 +1159,7 @@ export default function OrderForm() {
 
   return (
     <Chrome>
-    <div className="flex-1 flex flex-col" style={{ background: "var(--t-bg)", fontFamily: "'Inter', sans-serif" }}>
+    <div className="order-form-page flex-1 flex flex-col" style={{ background: "var(--t-bg)", fontFamily: "'Inter', sans-serif" }}>
       <div className={`px-4 pt-4 ${contentWidth} mx-auto w-full`}>
         <SiteAnnouncements />
       </div>
@@ -1287,7 +1288,13 @@ export default function OrderForm() {
           </motion.div>
         )}
       </AnimatePresence>
-      <main className={`flex-1 px-4 py-5 pb-24 ${contentWidth} mx-auto w-full space-y-4`}>
+      <main className={`order-form-main flex-1 px-4 py-5 pb-24 ${contentWidth} mx-auto w-full space-y-4`}>
+        {!gbId && (
+          <header className="order-form-intro">
+            <h1>Build your order</h1>
+            <p>Choose your products and delivery, then review your total.</p>
+          </header>
+        )}
 
         {/* GB title + progress steps — only shown for group buy orders */}
         {gbId && pageTitle && (
@@ -1434,7 +1441,7 @@ export default function OrderForm() {
             })()}
 
             {/* 2-step progress indicator */}
-            <div className="flex items-center gap-2 px-1">
+            <div className="order-form-steps flex items-center gap-2 px-1">
               {/* Step 1 — active */}
               <div className="flex items-center gap-2.5 px-4 py-2 rounded-full shadow-sm" style={{ background: "var(--t-blue-deep)" }}>
                 <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
@@ -1469,15 +1476,15 @@ export default function OrderForm() {
         )}
 
         <section className="space-y-3">
-          <div className="rounded-3xl p-5 relative overflow-clip" style={{ background: "#1C2B3D", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.15), 0 10px 10px -5px rgba(0,0,0,0.06)" }}>
+          <div className="order-form-products rounded-3xl p-5 relative overflow-clip" style={{ background: "#1C2B3D" }}>
             <div className="absolute top-0 right-0 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: "rgba(59,130,246,0.08)", filter: "blur(70px)" }} />
             <div className="relative z-10">
-            <div className="flex items-center justify-between mb-3">
+            <div className="order-form-products-heading flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(59,130,246,0.15)" }}>
                   <Package className="w-3.5 h-3.5" style={{ color: "#60A5FA" }} />
                 </div>
-                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#E9A020" }}>Your Products</p>
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#E9A020" }}>Choose products</p>
               </div>
               {gbId && stockViewEnabled && gbCapacity.length > 0 && (
                 <button
@@ -1587,6 +1594,7 @@ export default function OrderForm() {
                 {draft.lineItems.filter(item => !gbId || productView === "picker" || item.productId).map((item) => (
                   <motion.div
                     key={item.id}
+                    className="order-form-product-row"
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
@@ -1942,7 +1950,7 @@ export default function OrderForm() {
           </section>
         )}
 
-        <section className="space-y-3">
+        <section className="order-form-delivery space-y-3">
           <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Delivery</p>
 
           {draft.additionOfOrderId !== null ? (
@@ -2258,7 +2266,7 @@ export default function OrderForm() {
         </section>
 
         {(draft.directShippingRequested || !gbId) && (
-          <section className="space-y-2">
+          <section className="order-form-shipping space-y-2">
             <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping Details</p>
             <div className="rounded-xl p-4 bg-white border border-gray-100 shadow-sm space-y-3">
               <div>
@@ -2318,7 +2326,7 @@ export default function OrderForm() {
           </section>
         )}
 
-        <section className="space-y-2">
+        <section className="order-form-notes space-y-2">
           <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Additional Notes</p>
           <div className="rounded-xl p-4 bg-white border border-gray-100 shadow-sm">
             <textarea
@@ -2330,7 +2338,7 @@ export default function OrderForm() {
           </div>
         </section>
 
-        <section className="space-y-2">
+        <section className="order-form-tip space-y-2">
           <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Tip</p>
           <button
             type="button"
@@ -2343,10 +2351,10 @@ export default function OrderForm() {
               color: showTip ? "var(--t-blue)" : "#8A9AAA",
             }}
           >
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-left">
               <Heart className="w-3 h-3" style={{ color: showTip ? "var(--t-blue)" : "#8A9AAA" }} />
               <span>{showTip ? "Tip added" : "Add a tip?"}</span>
-              {!showTip && <span className="text-xs font-normal opacity-70">I've added it only because you wanted it</span>}
+              {!showTip && <span className="text-xs font-normal opacity-70">Optional</span>}
             </div>
             <div className="flex items-center gap-1.5">
               {showTip && draft.tip > 0 && (
@@ -2365,7 +2373,7 @@ export default function OrderForm() {
                 transition={{ duration: 0.2 }}
               >
                 <div className="rounded-xl mt-1.5 p-3 overflow-hidden bg-slate-50 border border-slate-200">
-                  <p className="text-xs text-slate-500 mb-2 italic">I've added it only because you wanted it</p>
+                  <p className="text-xs text-slate-500 mb-2">Choose an optional tip amount.</p>
                   <div className="relative">
                     <select
                       className="w-full appearance-none h-10 rounded-lg px-4 pr-10 text-sm bg-white border border-slate-200 text-slate-800 focus:outline-none focus:border-blue-200"
@@ -2403,7 +2411,7 @@ export default function OrderForm() {
         {/* ── Review Order button ────────────────────────────────────────────── */}
         {(() => {
           return (
-            <div className="pt-2 pb-4">
+            <div className="order-form-review pt-2 pb-4">
               <button
                 onClick={handleReview}
                 disabled={isPreview || kitLimitBlocked}

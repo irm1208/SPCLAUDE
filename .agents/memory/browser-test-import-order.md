@@ -1,6 +1,6 @@
 ---
 name: Browser test import order
-description: Browser-only libraries can silently disable portal effects if imported before the DOM exists.
+description: Node JSX runtime and browser-global import ordering can cause test-only failures.
 ---
 
 In the node/tsx test harness, initialize the jsdom browser globals before importing browser-only routing and portal libraries.
@@ -14,3 +14,9 @@ Vitest’s built-in jsdom environment resolves its dependency from the root runn
 **Why:** A browser test failed to start although the workspace had a usable jsdom dependency for its existing manual test harness.
 
 **How to apply:** Reuse the manual DOM setup when the root runner cannot resolve jsdom. Supply location/history and global event listeners before importing Wouter, not just window/document.
+
+Treat `React is not defined` in node/tsx JSX tests as a possible harness mismatch before changing production components.
+
+**Why:** The test runner can emit classic JSX for the project's preserve setting while Vite uses the automatic runtime; a functioning browser UI can therefore fail only in tests.
+
+**How to apply:** Supply the React namespace in the test process, following the existing JSX tests. Do not rewrite production imports, change Vite configuration, or install dependencies merely to fix that test-only mismatch.

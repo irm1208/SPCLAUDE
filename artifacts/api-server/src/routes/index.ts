@@ -73,7 +73,6 @@ import adminInvoicesRouter from "./admin-invoices";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
 const router: IRouter = Router();
-router.use(halfKitProtection);
 
 router.use(healthRouter);
 
@@ -105,6 +104,10 @@ router.use("/admin/security/recovery-codes", adminTwoFactorLimiter);
 // boundary; every other /admin route gets its mode from the database.
 router.use(adminAuthRouter);
 router.use("/admin", adminAuthorizationMiddleware);
+// The half-kit guard calls requireAdmin for protected order mutations.
+// Validate session/CSRF first; otherwise session-only admins are rejected as
+// if they had not logged in, before routing and other writes can reach handlers.
+router.use(halfKitProtection);
 router.use(adminInvoicesRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them

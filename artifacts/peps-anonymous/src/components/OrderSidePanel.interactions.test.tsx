@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { act } from "react";
+import React, { act } from "react";
 import { after, afterEach, before, test } from "node:test";
 import type { Root } from "react-dom/client";
 // @ts-expect-error Existing workspace browser-test dependency.
 import { JSDOM } from "../../../../node_modules/.pnpm/jsdom@26.1.0_bufferutil@4.1.0_utf-8-validate@6.0.6/node_modules/jsdom/lib/api.js";
 // @ts-expect-error Existing workspace browser-test dependency.
 import { fireEvent } from "../../../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/index.js";
+
+// Match the automatic JSX runtime used by Vite when running through node/tsx.
+Object.assign(globalThis, { React });
 
 let createRoot: typeof import("react-dom/client").createRoot;
 let Panel: typeof import("./OrderSidePanel").OrderSidePanel;

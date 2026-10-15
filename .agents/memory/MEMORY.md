@@ -1,4 +1,5 @@
 - [GB multiple-order review](gb-multiple-order-policy.md) — recurring repeated orders disrupt organiser counts; flag for review in organiser/Admin, without automatic reconciliation.
+- [Admin / half-kit guard order](admin-half-kit-guard-order.md) — validate session and CSRF before half-kit protection; reversed order causes 401 on writes while previews work.
 - [GB excess half-kit offers](gb-half-kit-offers.md) — organiser controls publication before/after closing; claimed halves leave the list and join the member’s existing order.
 - [Vite 504 dep optimisation on .replit.dev](vite-504-dep-optimization.md) — clearing .vite cache causes 504s via edge proxy; fix is optimizeDeps.entries listing all pages.
 - [Multi-chain crypto payment rails](multi-chain-crypto-rails.md) — chain choice stored as paymentCryptoNetwork; CHAIN_WALLET_CONFIGS drives all resolution; getAdminCryptoOptions() exported for auto-verifier; pickedOption={currency,network} replaces pickedCurrency in PaymentPanel.

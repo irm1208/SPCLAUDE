@@ -1,0 +1,116 @@
+/* Scoped to the order builder: no changes to dashboard chrome or other pages. */
+.order-form-page .order-form-main {
+  --order-form-radius: 18px;
+  padding-top: 24px;
+}
+
+.order-form-main > * + * { margin-top: 24px; }
+
+.order-form-intro h1 {
+  color: var(--t-text);
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -.035em;
+  line-height: 1.25;
+}
+.order-form-intro p {
+  color: var(--t-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 6px;
+}
+
+.order-form-page .order-form-products {
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 22px;
+  box-shadow: 0 8px 24px -12px rgba(15,31,56,.35);
+  padding: 24px;
+}
+.order-form-products-heading {
+  gap: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+}
+.order-form-product-row + .order-form-product-row {
+  padding-top: 18px;
+}
+.order-form-products button:focus-visible,
+.order-form-products input:focus-visible,
+.order-form-products select:focus-visible {
+  outline: 2px solid #7CA9F0;
+  outline-offset: 3px;
+}
+
+.order-form-delivery > p:first-child,
+.order-form-shipping > p:first-child,
+.order-form-notes > p:first-child,
+.order-form-tip > p:first-child {
+  color: var(--t-text) !important;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: -.01em;
+  margin-bottom: 12px;
+}
+
+.order-form-notes > div,
+.order-form-shipping > div {
+  background: var(--t-surface);
+  border: 1px solid var(--t-border);
+  border-radius: var(--order-form-radius);
+  box-shadow: none;
+  padding: 16px;
+}
+.order-form-notes textarea {
+  background: var(--t-surface2);
+  border-color: var(--t-border);
+  border-radius: 10px;
+  color: var(--t-text);
+  line-height: 1.6;
+  min-height: 90px;
+}
+.order-form-notes textarea:focus-visible {
+  outline: 2px solid var(--t-blue);
+  outline-offset: 2px;
+}
+.order-form-shipping input,
+.order-form-shipping textarea,
+.order-form-shipping select,
+.order-form-tip select {
+  color: var(--t-text);
+  background: var(--t-surface2);
+  border-color: var(--t-border);
+}
+.order-form-shipping :is(input, textarea, select):focus-visible {
+  outline: 2px solid var(--t-blue);
+  outline-offset: 2px;
+}
+.order-form-steps > div:last-child > span:last-child {
+  color: var(--t-muted) !important;
+}
+.order-form-tip > button {
+  min-height: 48px;
+  gap: 14px;
+}
+.order-form-main > section[aria-label="Order total"] {
+  border-radius: var(--order-form-radius);
+  padding: 20px;
+  background: color-mix(in srgb, var(--t-blue) 3%, var(--t-surface)) !important;
+}
+.order-form-review > button {
+  min-height: 50px;
+  box-shadow: 0 5px 14px -7px rgba(27,58,122,.4);
+}
+
+@media (max-width: 480px) {
+  .order-form-page .order-form-main { padding-top: 16px; }
+  .order-form-main > * + * { margin-top: 20px; }
+  .order-form-page .order-form-products { padding: 16px; border-radius: 18px; }
+  .order-form-products-heading { padding-bottom: 12px; margin-bottom: 14px; }
+  .order-form-intro h1 { font-size: 22px; }
+  .order-form-steps > div:first-child,
+  .order-form-steps > div:last-child { padding: 8px 10px; gap: 6px; }
+  .order-form-steps > div > span:last-child { font-size: 11px; letter-spacing: 0; }
+  .order-form-main > section[aria-label="Order total"] { padding: 16px; }
+}
