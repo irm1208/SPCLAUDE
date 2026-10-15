@@ -89,14 +89,14 @@ function StageControl({ data, run, blocked, mutate, onConflict }: {
       <GroupBuyProgressTracker stage={data.stage} stageUpdatedAt={data.stageUpdatedAt} />
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex-1 min-w-[180px]">
-          <span className="block text-[11px] font-semibold mb-1" style={{ color: V.muted }}>Set group stage</span>
+          <span className="block text-[11px] font-semibold mb-1" style={{ color: V.muted }}>Group buy status</span>
           <select data-testid="select-gb-stage" value={pick} disabled={saving || blocked} onChange={e => setPick(e.target.value as GbStage)} className={inputCls} style={inputStyle}>
             {GB_STAGES.map((s, i) => <option key={s} value={s}>{i + 1}. {GB_STAGE_LABEL[s]}</option>)}
           </select>
         </label>
         <button type="button" data-testid="button-save-gb-stage" onClick={save} disabled={saving || blocked || pick === data.stage}
           className="h-10 px-4 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: "#1B3A7A" }}>
-          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save stage
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save status
         </button>
       </div>
       <p className="text-[11px]" style={{ color: V.muted }}>Manual and group-wide. Does not change any payment, order or parcel status.</p>

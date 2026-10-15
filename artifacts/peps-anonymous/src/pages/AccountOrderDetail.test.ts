@@ -4,6 +4,12 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./AccountOrderDetail.tsx", import.meta.url), "utf8");
 
+test("member order details include their own group's published progress and updates", () => {
+  assert.match(source, /import \{ CustomerGroupBuyUpdates \} from "@\/components\/group-buy-updates\/CustomerGroupBuyUpdates"/);
+  assert.match(source, /order\.groupBuyId && !isAdminPreview && \(\s*<CustomerGroupBuyUpdates\s+key=\{order\.groupBuyId\}\s+gbId=\{order\.groupBuyId\}\s+enabled=\{isLoggedIn\}/);
+  assert.equal((source.match(/<CustomerGroupBuyUpdates\b/g) ?? []).length, 1);
+});
+
 test("member order detail exposes invoice editing for paid orders", () => {
   assert.match(source, /InvoiceEditor/);
   assert.match(source, /invoiceEditing/);

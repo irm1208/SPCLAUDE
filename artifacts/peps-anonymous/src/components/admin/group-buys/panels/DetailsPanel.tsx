@@ -20,6 +20,7 @@ import { CARRIERS_17TRACK } from "@/lib/carriers";
 import { resolveCountry, apiUrl, INFO_CARD_TYPE_OPTIONS, InfoCardsEditor, ShippingOptionsEditor, CRYPTO_CURRENCIES, TROCADOR_COINS, CRYPTO_NETWORKS, DEFAULT_CRYPTO_NETWORKS, GbPaymentGatewayInlineContent, EU_COUNTRIES, POPULAR_COUNTRIES, GBP_TO_USD, GB_STATUS_STYLES, CopyIdBadge, StatusBadge } from "../shared/core";
 import { GBForm } from "../GbForm";
 import { GroupBuyCoupons } from "@/components/GroupBuyCoupons";
+import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyUpdatesManager";
 import { Switch, SettingsSection, SettingsRow } from "../shared/settings-ui";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
 import type { AdminReshipperAssignment } from "./ReshippersPanel";
@@ -602,10 +603,11 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
     { value: "closed", label: "Closed", active: "bg-red-600 text-white border-red-600", inactive: "bg-background text-slate-500 border-border hover:bg-red-50" },
   ];
 
-  const [detailsSubTab, setDetailsSubTab] = useState<"general" | "payments" | "ordering" | "shipping" | "access" | "coupons">("general");
+  const [detailsSubTab, setDetailsSubTab] = useState<"general" | "progress" | "payments" | "ordering" | "shipping" | "access" | "coupons">("general");
 
   const DETAILS_SUB_TABS = [
     { id: "general" as const, label: "General", icon: Settings },
+    { id: "progress" as const, label: "Status & updates", icon: BarChart3 },
     { id: "payments" as const, label: "Payments", icon: CreditCard },
     { id: "ordering" as const, label: "Ordering", icon: ShoppingCart },
     { id: "shipping" as const, label: "Shipping", icon: Truck },
@@ -646,6 +648,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
       </select>
 
       <div className="flex-1 min-w-0 max-w-3xl space-y-10">
+        {detailsSubTab === "progress" && <GroupBuyUpdatesManager key={gb.id} scope="admin" groupBuyId={gb.id} />}
         {detailsSubTab === "coupons" && <GroupBuyCoupons key={gb.id} endpoint={apiUrl(`/admin/group-buys/${gb.id}/coupons`)} currency={gb.currency} />}
 
       {/* ── GENERAL ── */}

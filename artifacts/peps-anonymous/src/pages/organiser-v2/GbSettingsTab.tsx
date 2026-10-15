@@ -33,7 +33,7 @@ interface GbSettingsState {
   infoCards: InfoCard[];
 }
 
-type SettingsSectionId = "identity" | "lifecycle" | "access" | "coupons" | "image" | "cards" | "danger";
+type SettingsSectionId = "identity" | "lifecycle" | "progress" | "access" | "coupons" | "image" | "cards" | "danger";
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -57,6 +57,13 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Lifecycle status",
     description: "Draft, active, closed or archived",
     icon: ClipboardList,
+  },
+  {
+    id: "progress",
+    label: "Status & updates",
+    title: "Group buy status & updates",
+    description: "Choose the progress shown to members and publish dated updates",
+    icon: CircleDot,
   },
   {
     id: "access",
@@ -784,7 +791,7 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
             </div>
           ) : null}
 
-          {selectedGbId && activeSection !== "danger" ? (
+          {selectedGbId && activeSection === "progress" ? (
             <GroupBuyUpdatesManager key={selectedGbId} scope="organiser" groupBuyId={selectedGbId} />
           ) : null}
 

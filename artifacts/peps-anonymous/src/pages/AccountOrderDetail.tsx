@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { submittedTimelineLabel, wholesaleStatusLabel } from "@/lib/wholesale-status-label";
+import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useRoute, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2415,6 +2416,13 @@ export default function AccountOrderDetail() {
                       paymentsEnabled={order.groupBuyId ? (order.groupBuyPaymentsEnabled !== false || (order.directShippingRequested === true && order.groupBuyDirectShippingPaymentsEnabled === true)) : undefined}
                       onStatusChange={(s, tx) => setOrder((prev) => prev ? { ...prev, paymentStatus: s, ...(tx ? { paymentTxHash: tx } : {}) } : prev)}
                       disabled={refundActive}
+                    />
+                  )}
+                  {order.groupBuyId && !isAdminPreview && (
+                    <CustomerGroupBuyUpdates
+                      key={order.groupBuyId}
+                      gbId={order.groupBuyId}
+                      enabled={isLoggedIn}
                     />
                   )}
                   {order.id && (
