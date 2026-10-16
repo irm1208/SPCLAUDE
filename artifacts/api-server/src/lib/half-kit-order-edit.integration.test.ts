@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 
 describe.skipIf(process.env.HALF_KIT_EDIT_DB_TESTS !== "1")("claim-preserving order edits in PostgreSQL", () => {
@@ -94,6 +94,51 @@ describe.skipIf(process.env.HALF_KIT_EDIT_DB_TESTS !== "1")("claim-preserving or
       });
       const [claim] = await tx.select().from(store.gbHalfKitClaimsTable).where(eq(store.gbHalfKitClaimsTable.id, f.claimId));
       expect(claim.paidAt).toBeInstanceOf(Date);
+    });
+  });
+  it("saves the real organiser PATCH form through its actual route handler without replacing the claimed line", async () => {
+    const { default: router } = await import("../routes/organiser");
+    const route = router.stack.find((layer: any) =>
+      layer.route?.path === "/organiser/group-buys/:gbId/orders/:orderId" && layer.route.methods.patch)?.route;
+    if (!route?.stack.length) throw new Error("Organiser edit route is missing");
+    const handler = route.stack.at(-1)!.handle;
+    await fixture(async (tx, store, f) => {
+      await tx.update(store.groupBuysTable).set({
+        organiserId: "synthetic-half-edit", organiserOrderEditEnabled: true,
+        organiserCanEditQuantities: true, organiserCanEditNotes: true,
+      }).where(eq(store.groupBuysTable.id, f.id));
+      // Keep the real handler's database work inside the rollback-only fixture.
+      const selects = vi.spyOn(store.db, "select").mockImplementation((...args: any[]) => tx.select(...args));
+      const transactions = vi.spyOn(store.db, "transaction").mockImplementation((run: any) => run(tx));
+      try {
+        const json = vi.fn();
+        const res: any = { json, status: vi.fn().mockReturnThis() };
+        const request: any = {
+          organiser: { telegramUsername: "synthetic-half-edit", organiserStatus: "approved" },
+          params: { gbId: f.id, orderId: f.orderId },
+          body: {
+            status: "Submitted", paymentStatus: "unpaid", adminNotes: "Four extra vials",
+            trackingNumbers: [], paymentTxHashes: [],
+            lineItems: [{ id: f.lineId, quantity: 0.5 }, { productId: f.vialId, quantity: 4 }],
+          },
+        };
+        await handler(request, res, (error: unknown) => { if (error) throw error; });
+        expect(res.status).not.toHaveBeenCalled();
+        expect(json).toHaveBeenCalledWith(expect.objectContaining({
+          ok: true, order: expect.objectContaining({
+            grandTotal: 82, productSubtotal: 58, adminNotes: "Four extra vials",
+            lineItems: expect.arrayContaining([
+              expect.objectContaining({ id: f.lineId, quantity: 0.5, lineTotal: 30 }),
+              expect.objectContaining({ quantity: 4, lineTotal: 28 }),
+            ]),
+          }),
+        }));
+        const [claim] = await tx.select().from(store.gbHalfKitClaimsTable).where(eq(store.gbHalfKitClaimsTable.id, f.claimId));
+        expect(claim.lineItemId).toBe(f.lineId);
+      } finally {
+        selects.mockRestore();
+        transactions.mockRestore();
+      }
     });
   });
 });

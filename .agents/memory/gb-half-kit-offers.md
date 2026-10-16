@@ -109,4 +109,4 @@ Customers should not need to release reserved halves merely to add unrelated nor
 
 **Why:** A customer trying to add four vials was blocked by the whole-order half-kit safeguard. The safeguard must protect the reservation without preventing ordinary additions.
 
-**How to apply:** Keep claimed halves and quoted supplementary charges unchanged, preserve applied credits/discounts, and charge only the additions. Paid orders retain confirmed payment and use the additional-balance flow. Removing or resizing a reserved half remains a separate organiser-controlled operation.
+**How to apply:** Keep claimed halves and quoted supplementary charges unchanged, preserve applied credits/discounts, and charge only the additions. Apply the same preservation to member and organiser addition paths; a member-path fix alone does not cover organiser-assisted edits. Paid orders retain confirmed payment and use the additional-balance flow. Removing or resizing a reserved half remains a separate organiser-controlled operation.

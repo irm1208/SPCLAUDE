@@ -43,6 +43,13 @@ export function halfKitLegacyMutation(method: string, path: string, body: Record
     const financial = financialFields.some(key => Object.prototype.hasOwnProperty.call(body, key))
       || (body.paymentStatus !== undefined && body.paymentStatus !== "confirmed");
     const refund = suffix?.includes("refund") ?? false;
+    // The authorised organiser handler preserves active claims for item-only
+    // additions. Other monetary fields must still be rejected here.
+    if (role === "organiser" && match[2] && !suffix && method === "PATCH"
+      && Array.isArray(body.lineItems) && body.lineItems.length > 0
+      && !financialFields.some(key => key !== "lineItems" && Object.prototype.hasOwnProperty.call(body, key))) {
+      return { kind: "order", orderId: match[3], groupId: match[2], role, block: false };
+    }
     if (suffix && !destructive.includes(suffix) && suffix !== "restore" && !refund
       && !/payment|balance|tracking|test/.test(suffix)) return null;
     return { kind: "order", orderId: match[3], ...(match[2] ? { groupId: match[2] } : {}), role,

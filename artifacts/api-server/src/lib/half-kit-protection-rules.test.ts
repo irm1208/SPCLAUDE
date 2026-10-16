@@ -26,6 +26,15 @@ describe("half-kit legacy mutation protection", () => {
     expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1", { vendorShipping: 0 }))
       .toEqual({ kind: "order", orderId: "o1", groupId: "g1", role: "organiser", block: true });
   });
+  it("delegates organiser item edits to the claim-preserving handler but still blocks other money edits", () => {
+    expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1", {
+      lineItems: [{ id: "half", quantity: 0.5 }, { productId: "vial", quantity: 4 }],
+      status: "Submitted", paymentStatus: "unpaid", trackingNumbers: [], paymentTxHashes: [],
+    })?.block).toBe(false);
+    expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1", {
+      lineItems: [], vendorShipping: 0,
+    })?.block).toBe(true);
+  });
   it("protects bulk OOS/stock refunds and shipping allocation", () => {
     expect(halfKitLegacyMutation("POST", "/admin/orders/mark-oos", {})?.block).toBe(true);
     expect(halfKitLegacyMutation("POST", "/organiser/group-buys/g1/orders/apply-intl-shipping", {})?.groupId).toBe("g1");

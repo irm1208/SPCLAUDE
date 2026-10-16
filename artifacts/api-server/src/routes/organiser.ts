@@ -1,4 +1,7 @@
 import { getGbOrderCounts, gbOrderPersonKey } from "../lib/gb-multiple-orders";
+import { editOrderWithHalfKits } from "../lib/half-kit-order-edit";
+import { organiserHalfKitEditInput } from "../lib/half-kit-organiser-edit";
+import { gbHalfKitClaimsTable } from "@workspace/db";
 import { assertNoActiveRefund, assertNoActiveRefunds, RefundMutationBlockedError, refundMutableOrderWhere, withRefundMutationGuard } from "../lib/refund-mutation-guard";
 import { Router, type IRouter, type Request } from "express";
 import { validAllowCreditsSetting } from "../lib/group-buy-credit-policy";
@@ -2868,7 +2871,34 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
   }
 
   let updatedLineItems: { id: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos: boolean }[] = [];
+  // Keep stock-lock ordering identical to the member edit path. The outer
+  // middleware already holds the group-wide money lock while this runs.
+  const [activeHalfClaim] = hasQuantityMutation
+    ? await db.select({ id: gbHalfKitClaimsTable.id }).from(gbHalfKitClaimsTable).where(and(
+      eq(gbHalfKitClaimsTable.orderId, orderId), eq(gbHalfKitClaimsTable.state, "active"),
+    )).limit(1) : [];
   const updated = await db.transaction(async tx => {
+    if (activeHalfClaim) {
+      const [currentOrder] = await tx.select().from(ordersTable).where(and(
+        eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt),
+      ));
+      if (!currentOrder) throw new Error("Order not found");
+      const currentLines = await tx.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
+      const input = organiserHalfKitEditInput(currentOrder, currentLines, req.body);
+      const result = await editOrderWithHalfKits(tx, orderId, gbId, input);
+      // No legacy full repricing or payment/status overwrites on this branch.
+      const [saved] = await tx.update(ordersTable).set({
+        ...(gb.organiserCanEditNotes && adminNotes !== undefined
+          ? { adminNotes: adminNotes ? String(adminNotes).trim() : null } : {}),
+        updatedAt: new Date(),
+      }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId))).returning();
+      if (!saved) throw new RefundMutationBlockedError(orderId);
+      updatedLineItems = result.insertedLineItems.map(li => ({
+        id: li.id, productName: li.productName, quantity: Number(li.quantity),
+        unitPrice: Number(li.unitPrice), lineTotal: Number(li.lineTotal), isOos: li.isOos,
+      }));
+      return saved;
+    }
     // Lock and check the authorized order before any line-item or parent
     // write. This is deliberately one transaction so a raced refund rolls
     // back every item change and the final order update.
