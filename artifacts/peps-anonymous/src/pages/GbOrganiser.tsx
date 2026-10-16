@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { parseVendorShippingAmount } from "@/lib/vendor-shipping-settings";
+import { compareOrderAmounts } from "@/lib/order-amount-sort";
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
 import { GroupBuyStockControls } from "@/components/GroupBuyStockControls";
 import { annotateCompleteGbOrderCounts, isMultipleGbOrder } from "@/lib/gb-multiple-orders";
@@ -7573,7 +7574,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const [dateTo, setDateTo] = useState("");
   const [payDateFrom, setPayDateFrom] = useState("");
   const [payDateTo, setPayDateTo] = useState("");
-  const [sortBy, setSortBy] = useState<"order_desc" | "order_asc" | "pay_desc" | "pay_asc">("order_desc");
+  const [sortBy, setSortBy] = useState<"order_desc" | "order_asc" | "pay_desc" | "pay_asc" | "amount_asc" | "amount_desc">("order_desc");
   const [page, setPage] = useState(1);
   const [showOosPanel, setShowOosPanel] = useState(false);
   const [msgTexts, setMsgTexts] = useState<Record<string, string>>({});
@@ -8232,6 +8233,9 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   });
 
   const sortedDateFiltered = [...dateFiltered].sort((a, b) => {
+    if (sortBy === "amount_asc" || sortBy === "amount_desc") {
+      return compareOrderAmounts(a.grandTotal, b.grandTotal, sortBy === "amount_asc" ? "asc" : "desc");
+    }
     if (sortBy === "order_asc") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     if (sortBy === "pay_desc") {
       const at = a.paymentConfirmedAt ? new Date(a.paymentConfirmedAt).getTime() : 0;
@@ -8265,7 +8269,8 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   const safePage = Math.min(page, totalPages);
   const pagedOrders = filteredOrders.slice((safePage - 1) * ORDERS_PER_PAGE, safePage * ORDERS_PER_PAGE);
 
-  const showCountryHeaders = countryFilter === "all" && uniqueCountries.length > 1;
+  const showCountryHeaders = countryFilter === "all" && uniqueCountries.length > 1
+    && sortBy !== "amount_asc" && sortBy !== "amount_desc";
   const displayOrders = showCountryHeaders
     ? [...filteredOrders].sort((a, b) => {
         const ca = _canonicalCountry(a.shippingCountry ?? a.accountCountry ?? "");
@@ -8788,6 +8793,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
         {/* Sort */}
         <select
           value={sortBy}
+          aria-label="Sort orders"
           onChange={e => { setSortBy(e.target.value as any); setPage(1); }}
           className="h-9 px-2.5 rounded-xl text-xs focus:outline-none"
           style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)", color: "var(--t-text)" }}
@@ -8796,6 +8802,8 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
           <option value="order_asc">Oldest order</option>
           <option value="pay_desc">Most recent paid</option>
           <option value="pay_asc">First paid</option>
+          <option value="amount_asc">Amount: smallest first</option>
+          <option value="amount_desc">Amount: largest first</option>
         </select>
       </div>
 

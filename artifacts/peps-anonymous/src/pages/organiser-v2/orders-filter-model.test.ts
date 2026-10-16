@@ -62,6 +62,12 @@ const orders: OrganiserOrder[] = [
   },
 ];
 
+test("amount sorting works in both directions without changing the original orders", () => {
+  assert.deepEqual(filterOrders(orders, { ...baseFilters, sortOrder: "amount-asc" }, "").map(order => order.id), ["ORD-003", "ORD-002", "ORD-001"]);
+  assert.deepEqual(filterOrders(orders, { ...baseFilters, sortOrder: "amount-desc" }, "").map(order => order.id), ["ORD-001", "ORD-002", "ORD-003"]);
+  assert.equal(orders[0].id, "ORD-001");
+});
+
 test("active filter count uses categories rather than selected values", () => {
   assert.equal(countActiveOrderFilterCategories({
     ...baseFilters,

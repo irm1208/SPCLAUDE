@@ -709,6 +709,8 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             >
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
+              <option value="amount-asc">Amount: smallest first</option>
+              <option value="amount-desc">Amount: largest first</option>
             </select>
             <ChevronDown aria-hidden="true" />
           </label>
@@ -888,6 +890,8 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                   >
                     <option value="newest">Newest first</option>
                     <option value="oldest">Oldest first</option>
+                    <option value="amount-asc">Amount: smallest first</option>
+                    <option value="amount-desc">Amount: largest first</option>
                   </select>
                   <ChevronDown aria-hidden="true" />
                 </label>

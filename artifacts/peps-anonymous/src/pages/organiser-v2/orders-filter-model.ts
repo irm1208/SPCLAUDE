@@ -1,6 +1,7 @@
 import type { OrganiserOrder } from "./domain/order";
+import { compareOrderAmounts } from "../../lib/order-amount-sort.ts";
 
-export type OrderSortOrder = "newest" | "oldest";
+export type OrderSortOrder = "newest" | "oldest" | "amount-asc" | "amount-desc";
 export type OrderStatusFilter =
   | "all"
   | "paid"
@@ -179,6 +180,9 @@ export function filterOrders(
         && matchesPaymentDate;
     })
     .sort((left, right) => {
+      if (filters.sortOrder === "amount-asc" || filters.sortOrder === "amount-desc") {
+        return compareOrderAmounts(left.total, right.total, filters.sortOrder === "amount-asc" ? "asc" : "desc");
+      }
       const delta = new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
       return filters.sortOrder === "newest" ? delta : -delta;
     });
