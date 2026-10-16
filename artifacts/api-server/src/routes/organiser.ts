@@ -2885,7 +2885,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       if (!currentOrder) throw new Error("Order not found");
       const currentLines = await tx.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
       const input = organiserHalfKitEditInput(currentOrder, currentLines, req.body);
-      const result = await editOrderWithHalfKits(tx, orderId, gbId, input);
+      const result = await editOrderWithHalfKits(tx, orderId, gbId, input, { allowUnpaidOrdinaryReductions: true });
       // No legacy full repricing or payment/status overwrites on this branch.
       const [saved] = await tx.update(ordersTable).set({
         ...(gb.organiserCanEditNotes && adminNotes !== undefined

@@ -96,6 +96,25 @@ describe.skipIf(process.env.HALF_KIT_EDIT_DB_TESTS !== "1")("claim-preserving or
       expect(claim.paidAt).toBeInstanceOf(Date);
     });
   });
+  it("reverses only ordinary product costs and their percentage fee, retaining half-kit charges", async () => {
+    await fixture(async (tx, store, f) => {
+      await tx.update(store.ordersTable).set({ creditsApplied: 0 }).where(eq(store.ordersTable.id, f.orderId));
+      await tx.update(store.groupBuysTable).set({
+        adminFeeEnabled: true, adminFeeType: "percent", adminFeeAmount: "10",
+      }).where(eq(store.groupBuysTable.id, f.id));
+      await f.editOrderWithHalfKits(tx, f.orderId, f.id, f.input);
+      const result = await f.editOrderWithHalfKits(tx, f.orderId, f.id, {
+        ...f.input, lineItems: f.input.lineItems.map((line: any) =>
+          line.productId === f.vialId ? { ...line, quantity: 0 } : line),
+      }, { allowUnpaidOrdinaryReductions: true });
+      expect(result.updatedOrder).toMatchObject({
+        productSubtotal: "30.00", grandTotal: "54.00", adminFee: "10.00",
+        deliveryPrice: "5.00", vendorShipping: "9.00", paymentUsdAmount: null,
+      });
+      expect(result.insertedLineItems).toHaveLength(1);
+      expect(result.insertedLineItems[0].id).toBe(f.lineId);
+    });
+  });
   it("saves the real organiser PATCH form through its actual route handler without replacing the claimed line", async () => {
     const { default: router } = await import("../routes/organiser");
     const route = router.stack.find((layer: any) =>
@@ -135,6 +154,22 @@ describe.skipIf(process.env.HALF_KIT_EDIT_DB_TESTS !== "1")("claim-preserving or
         }));
         const [claim] = await tx.select().from(store.gbHalfKitClaimsTable).where(eq(store.gbHalfKitClaimsTable.id, f.claimId));
         expect(claim.lineItemId).toBe(f.lineId);
+        // The organiser's remove control sends an existing line with quantity 0.
+        // Exercise the same actual route, not just a standalone planner.
+        await tx.update(store.ordersTable).set({ creditsApplied: 0 }).where(eq(store.ordersTable.id, f.orderId));
+        const vial = json.mock.calls[0][0].order.lineItems.find((li: any) => li.id !== f.lineId);
+        request.body.lineItems = [{ id: f.lineId, quantity: 0.5 }, { id: vial.id, quantity: 0 }];
+        json.mockClear();
+        await handler(request, res, (error: unknown) => { if (error) throw error; });
+        expect(json).toHaveBeenCalledWith(expect.objectContaining({
+          ok: true, order: expect.objectContaining({
+            grandTotal: 54, productSubtotal: 30,
+            lineItems: [expect.objectContaining({ id: f.lineId, quantity: 0.5, lineTotal: 30 })],
+          }),
+        }));
+        const remaining = await tx.select().from(store.orderLineItemsTable).where(eq(store.orderLineItemsTable.orderId, f.orderId));
+        expect(remaining).toHaveLength(1);
+        expect(remaining[0].id).toBe(f.lineId);
       } finally {
         selects.mockRestore();
         transactions.mockRestore();

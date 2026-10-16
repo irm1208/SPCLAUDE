@@ -7,10 +7,12 @@ type Line = {
 };
 type Product = { productId: string; productName: string; price: unknown; priceOverride: unknown };
 const fixed = (value: unknown) => money(value).toFixed(2);
+export type HalfKitEditOptions = { allowUnpaidOrdinaryReductions?: boolean };
 
-/** Additive customer edits only. Existing line IDs and all half-kit snapshots survive. */
+/** Existing retained line IDs and all half-kit snapshots survive every edit. */
 export function planHalfKitOrderEdit(
   order: any, existing: Line[], protectedLineIds: string[], input: any, catalogue: Product[],
+  options: HalfKitEditOptions = {},
 ) {
   if (!eligibleHalfKitOrder(order)) {
     throw new HalfKitError("This order cannot be edited while a payment is being checked or after dispatch.");
@@ -29,7 +31,9 @@ export function planHalfKitOrderEdit(
   const quantities = new Map<string, number>();
   for (const item of input.lineItems) {
     const quantity = Number(item.quantity);
-    if (!item.productId || !Number.isFinite(quantity) || quantity < 0.5 || quantity > 1000 || quantity * 2 % 1 !== 0
+    const existingRemoval = quantity === 0 && options.allowUnpaidOrdinaryReductions
+      && existing.some(line => line.productId === item.productId);
+    if (!item.productId || !Number.isFinite(quantity) || (!existingRemoval && quantity < 0.5) || quantity > 1000 || quantity * 2 % 1 !== 0
       || quantities.has(item.productId)) throw new HalfKitError("Invalid or duplicate product quantity.", 400);
     quantities.set(item.productId, quantity);
   }
@@ -42,20 +46,27 @@ export function planHalfKitOrderEdit(
   if (new Set(existing.map(line => line.productId)).size !== existing.length) {
     throw new HalfKitError("This order has separate reserved lines for the same product. Please ask the organiser to review it.");
   }
-  let addedSubtotal = 0;
-  const lines: Line[] = existing.map(line => {
+  let subtotalDelta = 0;
+  const lines: Line[] = existing.flatMap(line => {
     const quantity = quantities.get(line.productId);
-    if (quantity === undefined || quantity < Number(line.quantity)) {
+    if (protectedIds.has(line.id) && quantity !== Number(line.quantity)) {
+      throw new HalfKitError("Reserved half-kit quantities cannot be changed here. Ask the organiser to release an unpaid claim separately.");
+    }
+    if (quantity === undefined || (quantity < Number(line.quantity) && !options.allowUnpaidOrdinaryReductions)) {
       throw new HalfKitError("Keep all existing items and reserved half kits. This edit can only add products or quantities.");
     }
-    if (protectedIds.has(line.id) && quantity !== Number(line.quantity)) {
-      throw new HalfKitError("Reserved half-kit quantities cannot be changed here. Add another available half kit separately.");
+    if (quantity < Number(line.quantity)
+      && (order.paymentStatus !== "unpaid" || money(order.creditsApplied) > 0 || money(order.couponDiscount) > 0)) {
+      throw new HalfKitError("Removing or reducing items on a paid, credited or discounted order needs a separate refund or credit review.");
     }
-    const extra = money((quantity - Number(line.quantity)) * Number(line.unitPrice));
-    addedSubtotal = money(addedSubtotal + extra);
-    return extra === 0 && quantity === Number(line.quantity) ? { ...line } : {
+    // A full removal reverses the saved line total, not a newly quoted price.
+    const extra = quantity === 0 ? -money(line.lineTotal)
+      : money((quantity - Number(line.quantity)) * Number(line.unitPrice));
+    subtotalDelta = money(subtotalDelta + extra);
+    if (quantity === 0) return [];
+    return [extra === 0 && quantity === Number(line.quantity) ? { ...line } : {
       ...line, quantity: quantity.toFixed(2), lineTotal: fixed(money(line.lineTotal) + extra),
-    };
+    }];
   });
   const byProduct = new Map(catalogue.map(product => [product.productId, product]));
   for (const [productId, quantity] of quantities) {
@@ -65,19 +76,22 @@ export function planHalfKitOrderEdit(
     const unitPrice = money(product.priceOverride ?? product.price);
     if (unitPrice < 0) throw new HalfKitError("Invalid product price.", 400);
     const lineTotal = money(quantity * unitPrice);
-    addedSubtotal = money(addedSubtotal + lineTotal);
+    subtotalDelta = money(subtotalDelta + lineTotal);
     lines.push({ id: randomUUID(), productId, productName: product.productName,
       quantity: quantity.toFixed(2), unitPrice: fixed(unitPrice), lineTotal: fixed(lineTotal) });
   }
   // Preserve historical discounts, applied credits and all supplementary offer
   // charges. Only the server-priced additions change the stored gross total.
   const orderPatch: Record<string, any> = {
-    productSubtotal: fixed(money(order.productSubtotal) + addedSubtotal),
-    grandTotal: fixed(money(order.grandTotal) + addedSubtotal),
+    productSubtotal: fixed(money(order.productSubtotal) + subtotalDelta),
+    grandTotal: fixed(money(order.grandTotal) + subtotalDelta),
   };
-  if (addedSubtotal > 0 && order.paymentStatus === "confirmed") {
+  if (money(orderPatch.productSubtotal) < 0 || money(orderPatch.grandTotal) < 0) {
+    throw new HalfKitError("The saved totals need organiser review before removing this item.");
+  }
+  if (subtotalDelta > 0 && order.paymentStatus === "confirmed") {
     Object.assign(orderPatch, {
-      amountDue: fixed(money(order.amountDue) + addedSubtotal),
+      amountDue: fixed(money(order.amountDue) + subtotalDelta),
       balancePaymentStatus: "unpaid", balanceCryptoQuote: null,
       balanceTxHash: null, balanceScreenshot: null, balanceConfirmedAt: null,
       ...(order.balancePaymentStatus === "confirmed" && order.balanceTxHash
@@ -85,6 +99,6 @@ export function planHalfKitOrderEdit(
           paymentTxHashes: [...new Set([...(order.paymentTxHashes ?? []), order.balanceTxHash])],
         } : {}),
     });
-  } else if (addedSubtotal > 0 && order.paymentStatus !== "confirmed") orderPatch.paymentUsdAmount = null;
-  return { lines, orderPatch, addedSubtotal };
+  } else if (subtotalDelta !== 0 && order.paymentStatus !== "confirmed") orderPatch.paymentUsdAmount = null;
+  return { lines, orderPatch, subtotalDelta, addedSubtotal: Math.max(0, subtotalDelta) };
 }

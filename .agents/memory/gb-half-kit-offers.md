@@ -105,8 +105,8 @@ Legacy financial requests must stay serialised until their server-side handler e
 
 **How to apply:** Treat handler completion, not browser connection lifetime, as the end of the protected operation. Do not share request-lock connection capacity with the data queries those requests need.
 
-Customers should not need to release reserved halves merely to add unrelated normal products to an otherwise editable order.
+Customers should not need to release reserved halves merely to add unrelated normal products to an otherwise editable order. Organisers must also be able to remove ordinary items from unpaid orders without releasing unrelated reserved halves.
 
-**Why:** A customer trying to add four vials was blocked by the whole-order half-kit safeguard. The safeguard must protect the reservation without preventing ordinary additions.
+**Why:** A customer trying to add four vials and an organiser trying to remove an ordinary SS-31 product were blocked by safeguards intended for a different reserved half. Protect the reservation, not every ordinary line.
 
-**How to apply:** Keep claimed halves and quoted supplementary charges unchanged, preserve applied credits/discounts, and charge only the additions. Apply the same preservation to member and organiser addition paths; a member-path fix alone does not cover organiser-assisted edits. Paid orders retain confirmed payment and use the additional-balance flow. Removing or resizing a reserved half remains a separate organiser-controlled operation.
+**How to apply:** Keep claimed halves and quoted supplementary charges unchanged. Apply the same preservation to member and organiser addition paths; a member-path fix alone does not cover organiser-assisted edits. Paid orders retain confirmed payment and use the additional-balance flow. Organiser ordinary-item reductions are allowed only for unpaid orders without applied credits or coupon discounts; other reductions need refund/credit review. Preserve saved shipping, reverse saved ordinary-line costs, and adjust applicable percentage fees only for the ordinary change. Removing or resizing a reserved half remains a separate organiser-controlled operation.
