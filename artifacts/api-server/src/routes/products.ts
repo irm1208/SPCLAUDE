@@ -4,6 +4,7 @@ import { ordersTable, productsTable, qiyunleMappingsTable } from "@workspace/db"
 import { eq, asc, isNull, and, gt, inArray, ne, or, sql } from "drizzle-orm";
 import { requireWholesale } from "../middleware/require-wholesale";
 import { requireAdmin } from "../middleware/require-admin";
+import { normalizeWholesalePriceNote } from "../lib/wholesale-price-note";
 import {
   hasWholesaleBatchAccess,
   selectPreferredBatchCodes,
@@ -113,6 +114,7 @@ export async function wholesaleProductsHandler(req: Request, res: Response): Pro
       vendor: p.vendor ?? null,
       mgSize: p.mgSize ?? null,
       wholesaleEnabled: p.wholesaleEnabled,
+      wholesalePriceNote: p.wholesalePriceNote ?? null,
       isNew: p.isNew,
       stock: p.stock ?? null,
       lowStockThreshold: p.lowStockThreshold ?? null,
@@ -138,6 +140,7 @@ router.get("/admin/wholesale-products", async (req, res): Promise<void> => {
       sortOrder: productsTable.sortOrder,
       price: productsTable.price,
       wholesalePrice: productsTable.wholesalePrice,
+      wholesalePriceNote: productsTable.wholesalePriceNote,
     })
     .from(productsTable)
     .where(and(eq(productsTable.active, true), isNull(productsTable.sourceGroupBuyId)))
@@ -170,9 +173,17 @@ router.patch("/admin/wholesale-products/bulk", async (req, res): Promise<void> =
 router.patch("/admin/wholesale-products/:id", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const { id } = req.params;
-  const body = req.body as { wholesaleEnabled?: boolean; wholesalePrice?: number | null; isNew?: boolean; sortOrder?: number };
+  const body = req.body as { wholesaleEnabled?: boolean; wholesalePrice?: number | null; wholesalePriceNote?: unknown; isNew?: boolean; sortOrder?: number };
 
   const updates: Partial<typeof productsTable.$inferInsert> = {};
+  if ("wholesalePriceNote" in body) {
+    try {
+      updates.wholesalePriceNote = normalizeWholesalePriceNote(body.wholesalePriceNote);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+      return;
+    }
+  }
   if (typeof body.wholesaleEnabled === "boolean") updates.wholesaleEnabled = body.wholesaleEnabled;
   if ("wholesalePrice" in body) {
     updates.wholesalePrice = body.wholesalePrice != null ? String(body.wholesalePrice) : null;
@@ -191,6 +202,7 @@ router.patch("/admin/wholesale-products/:id", async (req, res): Promise<void> =>
       id: productsTable.id,
       wholesaleEnabled: productsTable.wholesaleEnabled,
       wholesalePrice: productsTable.wholesalePrice,
+      wholesalePriceNote: productsTable.wholesalePriceNote,
       isNew: productsTable.isNew,
       sortOrder: productsTable.sortOrder,
     });

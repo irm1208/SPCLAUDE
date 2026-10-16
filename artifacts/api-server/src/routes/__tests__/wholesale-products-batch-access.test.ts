@@ -12,6 +12,8 @@ const mockState = vi.hoisted(() => {
     products: [] as unknown[],
     mappingSelects: 0,
     authenticated: true,
+    adminAuthenticated: true,
+    updates: [] as Record<string, unknown>[],
     telegramUsername: "@RepeatBuyer",
     predicates: {} as Record<string, { sql: string; params: unknown[] }>,
     compilePredicate: null as null | ((predicate: SQL) => { sql: string; params: unknown[] }),
@@ -50,7 +52,23 @@ const mockState = vi.hoisted(() => {
     return builder;
   };
 
-  return { state, db: { select: () => makeSelect() } };
+  return { state, db: {
+    select: () => makeSelect(),
+    update: () => ({
+      set(values: Record<string, unknown>) {
+        return {
+          where() {
+            return {
+              returning: async () => {
+                state.updates.push(values);
+                return state.products.map(p => ({ ...(p as object), ...values }));
+              },
+            };
+          },
+        };
+      },
+    }),
+  } };
 });
 
 const dialect = new PgDialect();
@@ -71,6 +89,13 @@ vi.mock("../../middleware/require-wholesale", () => ({
     next();
   },
 }));
+vi.mock("../../middleware/require-admin", () => ({
+  requireAdmin(_req: express.Request, res: express.Response) {
+    if (mockState.state.adminAuthenticated) return true;
+    res.status(401).json({ error: "Admin authentication required" });
+    return false;
+  },
+}));
 
 import productsRouter, { wholesaleProductsHandler } from "../products";
 
@@ -88,10 +113,12 @@ const product = {
   isNew: false,
   stock: 10,
   lowStockThreshold: 2,
+  wholesalePriceNote: "Includes protective packaging.",
 };
 
 async function withServer<T>(fn: (base: string) => Promise<T>): Promise<T> {
   const app = express();
+  app.use(express.json());
   app.use(productsRouter);
   const server: Server = await new Promise((resolve) => {
     const listening = app.listen(0, () => resolve(listening));
@@ -110,8 +137,43 @@ afterEach(() => {
   mockState.state.products = [];
   mockState.state.mappingSelects = 0;
   mockState.state.authenticated = true;
+  mockState.state.adminAuthenticated = true;
+  mockState.state.updates = [];
   mockState.state.telegramUsername = "@RepeatBuyer";
   mockState.state.predicates = {};
+});
+
+describe("admin wholesale price notes", () => {
+  const save = (note: unknown) => withServer(base => fetch(`${base}/admin/wholesale-products/p1`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ wholesalePriceNote: note }),
+  }));
+  it("saves and clears notes without changing product prices", async () => {
+    mockState.state.products = [product];
+    const saved = await save("  Additional packaging costs.  ");
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ wholesalePriceNote: "Additional packaging costs.", wholesalePrice: 20 });
+    const cleared = await save("");
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({ wholesalePriceNote: null });
+    expect(mockState.state.updates).toEqual([
+      { wholesalePriceNote: "Additional packaging costs." },
+      { wholesalePriceNote: null },
+    ]);
+  });
+  it("rejects invalid input before writing", async () => {
+    for (const note of [42, {}, "a".repeat(1001)]) expect((await save(note)).status).toBe(400);
+    expect(mockState.state.updates).toEqual([]);
+  });
+  it("requires admin authentication", async () => {
+    mockState.state.adminAuthenticated = false;
+    expect((await save("Note")).status).toBe(401);
+    expect(mockState.state.updates).toEqual([]);
+  });
+  it("returns not found instead of claiming a missing product was saved", async () => {
+    expect((await save("Note")).status).toBe(404);
+  });
 });
 
 describe("GET /wholesale/products batch access", () => {
@@ -139,6 +201,7 @@ describe("GET /wholesale/products batch access", () => {
       vendor: null,
       mgSize: null,
       wholesaleEnabled: true,
+      wholesalePriceNote: "Includes protective packaging.",
       isNew: false,
       stock: 10,
       lowStockThreshold: 2,
@@ -231,6 +294,13 @@ describe("GET /wholesale/products batch access", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual([]);
     expect(mockState.state.mappingSelects).toBe(0);
+  });
+
+  it("exposes product price explanations to authenticated wholesale and shared-order catalogues", async () => {
+    mockState.state.products = [product];
+    const response = await withServer((base) => fetch(`${base}/wholesale/products`));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject([{ wholesalePriceNote: "Includes protective packaging." }]);
   });
 
   it("rejects unauthenticated requests before the handler", async () => {

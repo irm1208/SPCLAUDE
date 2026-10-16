@@ -16288,6 +16288,7 @@ interface WholesaleProductRow {
   sortOrder: number | null;
   price: number;
   wholesalePrice: number | null;
+  wholesalePriceNote?: string | null;
 }
 
 function WholesaleProductsSection({ secret }: { secret: string }) {
@@ -16299,6 +16300,8 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
   const [savingPrice, setSavingPrice] = useState<string | null>(null);
+  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
+  const [savingNote, setSavingNote] = useState<string | null>(null);
   const dragId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -16364,6 +16367,25 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
       flash(true, "Price saved");
     } catch { flash(false, "Failed to save price"); }
     setSavingPrice(null);
+  };
+
+  const saveNote = async (id: string) => {
+    setSavingNote(id);
+    try {
+      const res = await fetch(apiUrl(`/admin/wholesale-products/${id}`), {
+        method: "PATCH", headers, credentials: "omit",
+        body: JSON.stringify({ wholesalePriceNote: noteEdits[id] }),
+      });
+      const updated = await res.json();
+      if (!res.ok) throw new Error(updated.error || "Failed to save price note");
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, wholesalePriceNote: updated.wholesalePriceNote } : p));
+      setNoteEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
+      flash(true, updated.wholesalePriceNote ? "Price note saved" : "Price note removed");
+    } catch (error) {
+      flash(false, error instanceof Error ? error.message : "Failed to save price note");
+    } finally {
+      setSavingNote(null);
+    }
   };
 
   const toggleNew = async (id: string, isNew: boolean) => {
@@ -16593,6 +16615,33 @@ function WholesaleProductsSection({ secret }: { secret: string }) {
                       ✕
                     </button>
                   )}
+                </div>
+                <div className="pl-5 space-y-1" onMouseDown={e => e.stopPropagation()}>
+                  <label htmlFor={`wholesale-price-note-${p.id}`} className="block text-[11px] font-semibold text-slate-500">
+                    Price note — visible on wholesale &amp; shared orders
+                  </label>
+                  <div className="flex items-start gap-2">
+                    <textarea
+                      id={`wholesale-price-note-${p.id}`}
+                      value={noteEdits[p.id] ?? p.wholesalePriceNote ?? ""}
+                      onChange={e => setNoteEdits(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      maxLength={1000}
+                      rows={2}
+                      disabled={savingNote === p.id}
+                      placeholder="Optional explanation, e.g. includes extra packaging. Clear and save to remove."
+                      className="flex-1 min-w-0 rounded border border-slate-200 bg-white p-2 text-xs text-slate-700 resize-y focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    {p.id in noteEdits && (
+                      <button
+                        type="button"
+                        disabled={savingNote !== null}
+                        onClick={() => void saveNote(p.id)}
+                        className="rounded-lg bg-[#1B3A7A] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        {savingNote === p.id ? "Saving…" : "Save note"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
+import { WholesalePriceNote } from "@/components/WholesalePriceNote";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
@@ -59,6 +60,7 @@ interface ProductLite {
   id: string;
   name: string;
   price: number;
+  wholesalePriceNote?: string | null;
   category?: string | null;
   active?: boolean;
   stock?: number | null;
@@ -1299,6 +1301,7 @@ export default function WholesaleShared() {
               <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderColor: "var(--t-border)", opacity: isOos ? 0.6 : 1 }}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>{p.name}</p>
+                  <WholesalePriceNote note={p.wholesalePriceNote} />
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs" style={{ color: "var(--t-muted)" }}>{money(p.price)}</span>
                     {stockLevel !== "none" && (

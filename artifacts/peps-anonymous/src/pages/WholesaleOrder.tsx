@@ -6,6 +6,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { WholesaleUpdates } from "@/components/WholesaleUpdates";
+import { WholesalePriceNote } from "@/components/WholesalePriceNote";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount, getAccountHandle } from "@/hooks/use-account";
 import { PriceWatermark } from "@/components/PriceWatermark";
@@ -35,6 +36,7 @@ interface ProductWithMeta {
   id: string;
   name: string;
   price: number;
+  wholesalePriceNote?: string | null;
   batchCode?: string;
   category?: string | null;
   mgSize?: string | null;
@@ -1049,6 +1051,7 @@ export default function WholesaleOrder() {
                         <div key={product.id} className="flex items-center justify-between gap-2 px-3 sm:px-4 py-3" style={{ borderColor: "var(--t-border)" }}>
                           <div className="min-w-0">
                             <p className="text-sm font-semibold break-words" style={{ color: "var(--t-text)" }}>{product.name}</p>
+                            <WholesalePriceNote note={product.wholesalePriceNote} />
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                               <span className="text-xs" style={{ color: "var(--t-muted)" }}>${product.price.toFixed(2)} each</span>
                               {stockLevel !== "none" && (
@@ -1187,6 +1190,7 @@ export default function WholesaleOrder() {
                                     </span>
                                   )}
                                 </div>
+                                <WholesalePriceNote note={product.wholesalePriceNote} />
                                 {product.batchCode && (
                                   <p className="text-[11px] font-medium" style={{ color: "var(--t-muted)" }}>
                                     Batch: <span className="font-mono font-semibold" style={{ color: "var(--t-text)" }}>
