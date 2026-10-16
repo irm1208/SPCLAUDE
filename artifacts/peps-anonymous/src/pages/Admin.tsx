@@ -7353,8 +7353,8 @@ interface Fs3Totals {
 }
 interface Fs3GroupBuy { id: string; name: string; vendorShippingAmount: number | null; vendorShippingKits: number | null; vendorShippingMaxKitsPerPackage: number | null; }
 interface Fs3GbMember { telegramUsername: string; email: string | null; accountStatus: string | null; hasPassword: boolean; hasTelegram: boolean; joinedAt: string | null; tags: string[]; countryLegId: string | null; }
-interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; sharedOrderId?: string | null; }
-interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; organiserPaymentStatus?: "unpaid" | "pending" | "confirmed"; }
+interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; creditsApplied?: number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; sharedOrderId?: string | null; }
+interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; platformPaymentReceived?: number | null; organiserPaymentStatus?: "unpaid" | "pending" | "confirmed"; }
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
 interface PnlOrder {
@@ -7743,13 +7743,21 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const confirmSharedOrganiserPayment = async (shareId: string) => {
     const meta = shareMeta.get(shareId);
     if (meta?.organiserPaymentStatus !== "pending") return;
-    if (!window.confirm(`Confirm the organiser's platform payment for shared order #${shareId}? This cannot be undone.`)) return;
+    const entered = window.prompt("Enter the payment actually received by the platform in USD. Exclude member credits, tips and organiser fees. For non-USD crypto, enter its USD value at receipt.");
+    if (entered === null) return;
+    const receivedAmountUsd = Number(entered.trim());
+    if (!Number.isFinite(receivedAmountUsd) || receivedAmountUsd <= 0) {
+      alert("Enter a positive received payment amount in USD.");
+      return;
+    }
+    if (!window.confirm(`Confirm the organiser's platform payment of $${receivedAmountUsd.toFixed(2)} for shared order #${shareId}? This cannot be undone.`)) return;
 
     setConfirmingSharePayment(shareId);
     try {
       const response = await fetch(apiUrl(`/admin/wholesale-shares/${shareId}/confirm-organiser-payment`), {
         method: "POST",
-        headers: { "x-admin-secret": secret },
+        headers: { "x-admin-secret": secret, "content-type": "application/json" },
+        body: JSON.stringify({ receivedAmountUsd }),
         credentials: "omit",
       });
       const result = await response.json().catch(() => ({})) as { error?: string; organiserPaymentStatus?: Fs3ShareMeta["organiserPaymentStatus"] };
@@ -7764,10 +7772,19 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           next.set(shareId, {
             ...current,
             organiserPaymentStatus: result.organiserPaymentStatus ?? "confirmed",
+            // An idempotent confirmation may already have a different recorded receipt.
+            // Do not substitute the entered amount for the server-owned receipt.
+            platformPaymentReceived: null,
           });
         }
         return next;
       });
+      // Refresh the server-owned receipts (including idempotent confirmation results).
+      const refreshed = await fetch(apiUrl("/admin/wholesale-shares?status=all"), { headers: { "x-admin-secret": secret }, credentials: "omit" }).catch(() => null);
+      if (refreshed?.ok) {
+        const data = await refreshed.json().catch(() => null);
+        if (Array.isArray(data?.shares)) setShareMeta(new Map(data.shares.map((share: Fs3ShareMeta) => [share.id, share])));
+      }
     } catch (error) {
       alert(`Could not confirm organiser payment: ${error instanceof Error ? error.message : "network error"}`);
     } finally {
@@ -8561,7 +8578,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     const isShipped = o.status === "Shipped" || o.status === "Completed" || !!(o.trackingNumber) || !!(o.trackingNumbers && o.trackingNumbers.length > 0);
     const kits = (o.lineItems ?? []).reduce((s, li) => s + li.quantity, 0);
     return (
-      <label key={o.id} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 cursor-pointer transition-colors border ${selectedOrderIds.has(o.id) ? "bg-primary/8 border-primary/20" : isShipped ? "bg-green-50 border-green-200 hover:bg-green-100" : "bg-slate-50 border-transparent hover:bg-slate-100"}`}>
+      <label key={o.id} className={`flex flex-wrap items-center gap-2.5 rounded-lg px-3 py-2 cursor-pointer transition-colors border ${selectedOrderIds.has(o.id) ? "bg-primary/8 border-primary/20" : isShipped ? "bg-green-50 border-green-200 hover:bg-green-100" : "bg-slate-50 border-transparent hover:bg-slate-100"}`}>
         <input
           type="checkbox"
           checked={selectedOrderIds.has(o.id)}
@@ -8591,7 +8608,15 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
             {o.paymentStatus === "confirmed" ? "Paid" : o.paymentStatus === "test_confirmed" ? "Test paid" : o.paymentStatus === "pending_confirmation" ? "Pending" : "Unpaid"}
           </span>
         )}
-        {o.grandTotal != null && <span className="text-xs font-mono font-semibold shrink-0">${parseFloat(String(o.grandTotal)).toFixed(2)}</span>}
+        <CreditPaymentPill creditsApplied={o.creditsApplied} grandTotal={Number(o.grandTotal ?? 0)} currency="USD" />
+        {o.grandTotal != null && (
+          <span className="flex flex-col items-end text-xs font-mono font-semibold shrink-0">
+            <span><span className="text-[10px] font-sans font-normal text-muted-foreground">Order total </span>${Number(o.grandTotal).toFixed(2)}</span>
+            {hasAppliedCredit(o.creditsApplied) && (
+              <span><span className="text-[10px] font-sans font-normal text-muted-foreground">After credits </span>${getCreditAdjustedTotal(o.grandTotal, o.creditsApplied).toFixed(2)}</span>
+            )}
+          </span>
+        )}
         <button
           title="Download order as .txt"
           onClick={e => { e.preventDefault(); e.stopPropagation(); downloadDirectOrderTxt(o); }}
@@ -9176,7 +9201,11 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                       {combinedKits > 0 && <span className="text-[10px] text-slate-400 shrink-0">{combinedKits} kit{combinedKits !== 1 ? "s" : ""}</span>}
                       {dest && <span className="text-[10px] font-medium text-slate-500 shrink-0">→ {dest}</span>}
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${allPaid ? "bg-green-100 text-green-700" : paidCount > 0 ? "bg-amber-100 text-amber-700" : "bg-red-50 text-red-500"}`}>{paidCount}/{g.orders.length} paid</span>
-                      <span className="text-xs font-mono font-semibold shrink-0">${combinedTotal.toFixed(2)}</span>
+                      <span className="text-xs font-mono font-semibold shrink-0">
+                        {filterRouting === "shared" ? (
+                          <><span className="text-[10px] font-sans font-normal text-muted-foreground">Platform received </span>{meta?.platformPaymentReceived == null ? "Not recorded" : `$${meta.platformPaymentReceived.toFixed(2)}`}</>
+                        ) : `$${combinedTotal.toFixed(2)}`}
+                      </span>
                       <span className="text-[10px] font-mono text-muted-foreground shrink-0">#{g.shareId}</span>
                       {filterRouting === "shared" && meta?.organiserPaymentStatus === "pending" && (
                         <button

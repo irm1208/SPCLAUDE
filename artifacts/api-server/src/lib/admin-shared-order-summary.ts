@@ -6,6 +6,7 @@ type SummaryShare = {
 };
 type SummaryOrder = {
   status: string; deletedAt?: unknown; grandTotal: string | number;
+  creditsApplied?: string | number | null;
   paymentStatus?: string; paymentTestAmount?: string | number | null;
   amountDue?: string | number | null; balancePaymentStatus?: string | null;
 };
@@ -36,7 +37,7 @@ export function buildAdminSharedOrderSummary(share: SummaryShare, orders: Summar
     sharedOrderTotal: Number((share.status === "cancelled" ? recorded : active).reduce((sum, order) => sum + Number(order.grandTotal) + Number(order.amountDue ?? 0), 0).toFixed(2)),
     platformPaymentReceived: directPayments
       ? Number(recorded.reduce((sum, order) => sum
-        + (order.paymentStatus === "confirmed" ? Number(order.grandTotal) : order.paymentStatus === "test_confirmed" ? Number(order.paymentTestAmount ?? 0) : 0)
+        + (order.paymentStatus === "confirmed" ? Math.max(0, Number(order.grandTotal) - Math.max(0, Number(order.creditsApplied ?? 0))) : order.paymentStatus === "test_confirmed" ? Number(order.paymentTestAmount ?? 0) : 0)
         + (order.balancePaymentStatus === "confirmed" ? Number(order.amountDue ?? 0) : 0), 0).toFixed(2))
       : share.organiserPaymentStatus !== "confirmed"
       ? 0

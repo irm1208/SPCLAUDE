@@ -5,6 +5,17 @@ const share = { status: "submitted", organiserPaymentStatus: "confirmed", organi
 const order = { status: "Processed", deletedAt: null, grandTotal: "130.00" };
 
 describe("admin shared-order summaries", () => {
+  it("excludes applied credits from confirmed direct platform receipts without changing order value", () => {
+    expect(buildAdminSharedOrderSummary({ ...share, organiserHasWallet: false }, [
+      { ...order, paymentStatus: "confirmed", creditsApplied: 30 },
+      { ...order, paymentStatus: "confirmed", creditsApplied: 130 },
+    ])).toMatchObject({ platformPaymentReceived: 100, sharedOrderTotal: 260 });
+  });
+  it("does not deduct credits again from actual test payments or recorded organiser receipts", () => {
+    const credited = { ...order, paymentStatus: "test_confirmed", paymentTestAmount: 1.5, creditsApplied: 30 };
+    expect(buildAdminSharedOrderSummary({ ...share, organiserHasWallet: false }, [credited]).platformPaymentReceived).toBe(1.5);
+    expect(buildAdminSharedOrderSummary(share, [credited]).platformPaymentReceived).toBe(102);
+  });
   it("keeps the received platform amount separate from member order totals", () => {
     expect(buildAdminSharedOrderSummary(share, [order])).toMatchObject({
       sharedOrderTotal: 130, platformPaymentReceived: 102,
