@@ -6,6 +6,7 @@ import { gbHalfKitClaimsTable } from "@workspace/db";
 import { cancelUnpaidHalfClaims, prepareNewOrderHalfKit, recordNewOrderHalfKit } from "../lib/half-kit-offers";
 import { parseHalfKitCheckout, assertHalfKitCheckoutItems, halfKitSelections } from "../lib/half-kit-new-order-rules";
 import { HalfKitError } from "../lib/half-kit-rules";
+import { editOrderWithHalfKits } from "../lib/half-kit-order-edit";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/coupon-redemption";
@@ -2407,7 +2408,13 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   // Capture old line items for audit log before deleting them
   const oldLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
 
+  const activeHalfClaims = await db.select({ id: gbHalfKitClaimsTable.id }).from(gbHalfKitClaimsTable)
+    .where(and(eq(gbHalfKitClaimsTable.orderId, rawId), eq(gbHalfKitClaimsTable.state, "active"))).limit(1);
   const { updatedOrder, insertedLineItems, lineItemsToInsert } = await db.transaction(async tx => {
+  if (activeHalfClaims.length) {
+    if (!order.groupBuyId) throw new HalfKitError("This reserved half-kit order needs organiser review.");
+    return editOrderWithHalfKits(tx, rawId, order.groupBuyId, req.body);
+  }
   await assertGroupStock(tx, order.groupBuyId, clientLineItems, rawId);
   const [lockedOrder] = await tx.select({ id: ordersTable.id }).from(ordersTable)
     .where(eq(ordersTable.id, rawId)).for("update");
@@ -2488,9 +2495,9 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
         lineItems: oldLineItems.map(li => ({ productName: li.productName, quantity: li.quantity, unitPrice: li.unitPrice })),
       },
       after: {
-        deliveryMethod: deliveryMethodRecord.name,
-        grandTotal: grandTotal.toFixed(2),
-        notes: notes ?? null,
+        deliveryMethod: updatedOrder.deliveryMethod,
+        grandTotal: updatedOrder.grandTotal,
+        notes: updatedOrder.notes,
         lineItems: lineItemsToInsert.map(li => ({ productName: li.productName, quantity: li.quantity, unitPrice: li.unitPrice })),
       },
     },
@@ -2505,8 +2512,8 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     actorType: "customer",
     metadata: {
       code: order.code,
-      grandTotal: grandTotal.toFixed(2),
-      deliveryMethod: deliveryMethodRecord.name,
+      grandTotal: updatedOrder.grandTotal,
+      deliveryMethod: updatedOrder.deliveryMethod,
       lineItems: lineItemsToInsert.map(li => ({
         productName: li.productName,
         quantity: li.quantity,
@@ -2517,7 +2524,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   }).catch(err => console.error("[orders] order.updated log failed:", err));
 
   createAlert("order", "medium", "Order Edited",
-    `Order #${order.code} was edited by @${order.telegramUsername.replace(/^@/, "")} — new total: $${grandTotal.toFixed(2)}`,
+    `Order #${order.code} was edited by @${order.telegramUsername.replace(/^@/, "")} — new total: $${updatedOrder.grandTotal}`,
     { linkUrl: `#orders:${rawId}`, relatedEntityId: rawId },
   ).catch(() => {});
 
@@ -2534,13 +2541,13 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   const editAdminItemLines = lineItemsToInsert.map(li =>
     `• ${escapeHtml(li.productName)} ×${parseFloat(li.quantity)} @ ${editSym}${parseFloat(li.unitPrice).toFixed(2)} = ${editSym}${parseFloat(li.lineTotal).toFixed(2)}`
   ).join("\n");
-  const editAdminTipLine = tip > 0 ? `\nTip: ${editSym}${tip.toFixed(2)}` : "";
+  const editAdminTipLine = Number(updatedOrder.tip) > 0 ? `\nTip: ${editSym}${Number(updatedOrder.tip).toFixed(2)}` : "";
   notifyUserFromTemplate(order.telegramUsername, "status", "customer_order_edited",
     {
       code: order.code,
       username: escapeHtml(order.telegramUsername.replace(/^@/, "")),
-      order_total: editSym + grandTotal.toFixed(2),
-      delivery: escapeHtml(deliveryMethodRecord.name),
+      order_total: editSym + updatedOrder.grandTotal,
+      delivery: escapeHtml(updatedOrder.deliveryMethod),
     },
   ).catch(() => {});
   sendAdminFromTemplate("admin_order_edited",
@@ -2548,10 +2555,10 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
       code: order.code,
       username: escapeHtml(order.telegramUsername.replace(/^@/, "")),
       items: editAdminItemLines,
-      delivery: escapeHtml(deliveryMethodRecord.name),
-      delivery_fee: editSym + deliveryPrice.toFixed(2),
+      delivery: escapeHtml(updatedOrder.deliveryMethod),
+      delivery_fee: editSym + updatedOrder.deliveryPrice,
       tip: editAdminTipLine,
-      order_total: editSym + grandTotal.toFixed(2),
+      order_total: editSym + updatedOrder.grandTotal,
     },
   ).catch(() => {});
 

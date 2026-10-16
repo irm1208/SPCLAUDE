@@ -17,7 +17,9 @@ export function halfKitLegacyMutation(method: string, path: string, body: Record
     return { kind: "order", orderId: body.orderId, role, block: true };
   }
   let match = path.match(/^\/orders\/([^/]+)$/i);
-  if (match && ["PUT", "DELETE"].includes(method)) return { kind: "order", orderId: match[1], role, block: method === "PUT" };
+  // PUT delegates to a claim-preserving additive edit in the authenticated handler.
+  // Keep the mutex: it serializes edits against claims, release and payment checks.
+  if (match && ["PUT", "DELETE"].includes(method)) return { kind: "order", orderId: match[1], role, block: false };
   if (method === "POST" && lower === "/orders" && typeof body.additionOfOrderId === "string") {
     return { kind: "order", orderId: body.additionOfOrderId, role, block: false };
   }

@@ -104,3 +104,9 @@ Legacy financial requests must stay serialised until their server-side handler e
 **Why:** A disconnected browser does not stop an asynchronous database write; releasing protection on socket close permits stale writes to overwrite a newly claimed half. Request-wide database locks also need separate connection capacity, or waiting handlers can exhaust the data pool.
 
 **How to apply:** Treat handler completion, not browser connection lifetime, as the end of the protected operation. Do not share request-lock connection capacity with the data queries those requests need.
+
+Customers should not need to release reserved halves merely to add unrelated normal products to an otherwise editable order.
+
+**Why:** A customer trying to add four vials was blocked by the whole-order half-kit safeguard. The safeguard must protect the reservation without preventing ordinary additions.
+
+**How to apply:** Keep claimed halves and quoted supplementary charges unchanged, preserve applied credits/discounts, and charge only the additions. Paid orders retain confirmed payment and use the additional-balance flow. Removing or resizing a reserved half remains a separate organiser-controlled operation.

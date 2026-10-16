@@ -6,8 +6,8 @@ describe("half-kit legacy mutation protection", () => {
     expect(halfKitLegacyMutation("PATCH", "/ADMIN/ORDERS/%41bc", { clearBalance: true })?.block).toBe(true);
     expect(halfKitLegacyMutation("POST", "/ORGANISER/GROUP-BUYS/G1/apply-shipping")?.block).toBe(false);
   });
-  it("protects ordinary customer product/price rewrites", () => {
-    expect(halfKitLegacyMutation("PUT", "/orders/o1", {})).toEqual({ kind: "order", orderId: "o1", role: "member", block: true });
+  it("serializes customer edits so the endpoint can preserve claimed lines while adding products", () => {
+    expect(halfKitLegacyMutation("PUT", "/orders/o1", {})).toEqual({ kind: "order", orderId: "o1", role: "member", block: false });
   });
   it("protects admin product changes without blocking payment confirmation", () => {
     expect(halfKitLegacyMutation("PATCH", "/admin/orders/o1", { lineItems: [] })?.block).toBe(true);
