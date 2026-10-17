@@ -11,6 +11,7 @@ import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerCoin } from "../lib/crypto-pricing";
+import { hasOnwardPaymentTransaction, reserveProductPaymentTransaction } from "../lib/gb-onward-payments";
 import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 import { resolveHalfKitPayments } from "../lib/half-kit-payment-destination";
@@ -1483,7 +1484,7 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
         sql`(${ordersTable.id} IS NOT NULL AND balance_tx_hash = ${cleanHash})`,
       ),
     ));
-  if (txReuse.length > 0) {
+  if (txReuse.length > 0 || await hasOnwardPaymentTransaction(cleanHash)) {
     writeLog("payment", "warn", "payment_test_rejected_replay", `Test tx hash reuse attempt on order ${req.params.id}`, { orderId: req.params.id, txHash: cleanHash, conflictOrderId: txReuse[0]?.id, reason: "hash already used on another order" }, req.ip).catch(() => {});
     res.status(400).json({ error: "This transaction hash has already been used on another order. Each on-chain payment can only be applied once." });
     return;
@@ -1526,6 +1527,10 @@ router.post("/orders/:id/submit-test", async (req, res): Promise<void> => {
     return;
   }
 
+  if (!await reserveProductPaymentTransaction(cleanHash, order.id)) {
+    res.status(409).json({ error: "This transaction is already reserved by another payment. Each transfer can only pay one charge." });
+    return;
+  }
   const [updated] = await db
     .update(ordersTable)
     .set({ testPaymentTxHash: cleanHash, paymentStatus: "test_confirmed" })
@@ -1611,7 +1616,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
         sql`(${ordersTable.id} IS NOT NULL AND balance_tx_hash = ${cleanHash})`,
       ),
     ));
-  if (txReuse.length > 0) {
+  if (txReuse.length > 0 || await hasOnwardPaymentTransaction(cleanHash)) {
     writeLog("payment", "warn", "payment_rejected_replay", `Full tx hash reuse attempt on order ${req.params.id}`, { orderId: req.params.id, txHash: cleanHash, conflictOrderId: txReuse[0]?.id, reason: "hash already used on another order" }, req.ip).catch(() => {});
     res.status(400).json({ error: "This transaction hash has already been used on another order. Each on-chain payment can only be applied once." });
     return;
@@ -1708,6 +1713,10 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
   }
   const expectedAmount = roundCrypto(netUsd / usdPerCoin, currency);
 
+  if (!await reserveProductPaymentTransaction(cleanHash, order.id)) {
+    res.status(409).json({ error: "This transaction is already reserved by another payment. Each transfer can only pay one charge." });
+    return;
+  }
   const result = await verifyTransaction(cleanHash, walletAddress, expectedAmount, currency, network);
 
   if (!result.verified) {

@@ -1,3 +1,4 @@
+import { OnwardPaymentManager, OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { useLocation } from "wouter";
@@ -1348,7 +1349,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                         {/* RAIL: order identity + facet nav */}
                         <div className="shrink-0 md:w-[248px] lg:w-[288px] border-b md:border-b-0 md:border-r flex flex-col"
                           style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
-                          <div className="px-3 pt-3"><OnwardDeliveryReadonly source={{ kind: "reshipper", gbId, orderId: order.id, fetcher: reshipFetch }} /></div>
+                          <div className="px-3 pt-3"><OnwardDeliveryReadonly source={{ kind: "reshipper", gbId, orderId: order.id, fetcher: reshipFetch }} /><div className="mt-2"><OnwardPaymentReadonly source={{ kind: "reshipper", gbId, orderId: order.id, fetcher: reshipFetch }} /></div></div>
                           <div className="px-4 pt-3.5 pb-3 border-b" style={{ borderColor: "var(--t-border)" }}>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono text-xs font-bold" style={{ color: "var(--t-muted)" }}>{order.code}</span>
@@ -1913,6 +1914,7 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
 
   return (
     <div className="space-y-5 max-w-2xl">
+      <OnwardPaymentManager gbId={gbId} fetcher={reshipFetch} />
       <section className="rounded-2xl p-4 space-y-1" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: "var(--t-subtle)" }}>Settings</p>
         {allowPayments && <Toggle value={form.paymentsEnabled} onChange={v => setForm(f => ({ ...f, paymentsEnabled: v }))} label="Accept Payments" />}

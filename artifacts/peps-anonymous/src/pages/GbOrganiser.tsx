@@ -1,3 +1,4 @@
+import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { OnwardDeliveryMatrixPanel, OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { parseVendorShippingAmount } from "@/lib/vendor-shipping-settings";
@@ -9603,6 +9604,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                     <div className="px-4 py-3 space-y-3" style={{ background: "var(--t-surface2)" }}>
                       <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Edit Order #{o.code}</p>
                       <OnwardDeliveryReadonly source={{ kind: "manager", scope: "organiser", gbId: gb.id, orderId: o.id }} />
+                      <OnwardPaymentReadonly source={{ kind: "organiser", gbId: gb.id, orderId: o.id }} />
                       {o.testPaymentTxHash && (
                         <div className="rounded-xl px-3 py-2" style={{ background: "rgba(100,116,139,0.07)", border: "1px solid rgba(100,116,139,0.18)" }}>
                           <p className="text-[9px] font-bold uppercase tracking-widest mb-0.5" style={{ color: "#64748B" }}>

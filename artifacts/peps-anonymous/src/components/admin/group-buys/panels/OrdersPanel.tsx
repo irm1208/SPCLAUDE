@@ -1,3 +1,4 @@
+import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1213,6 +1214,7 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                 {isExpanded && (
                   <div className="border-t border-border px-3 py-3 space-y-3 bg-muted/20">
                     <OnwardDeliveryReadonly source={{ kind: "manager", scope: "admin", gbId: gb.id, orderId: o.id, headers: { "x-admin-secret": secret } }} />
+                    <OnwardPaymentReadonly source={{ kind: "admin", gbId: gb.id, orderId: o.id, headers: { "x-admin-secret": secret } }} />
                     <div className="space-y-1">
                       {o.lineItems.map(li => (
                         <div key={li.id} className="flex items-center justify-between text-xs">

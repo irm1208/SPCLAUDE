@@ -13,6 +13,7 @@ import { startWholesaleShareAutoLock } from "./lib/wholesale-share-auto-lock";
 import { startPoolPaymentAutoVerify } from "./lib/pool-payment-auto-verify";
 import { startGbEntryFeeAutoVerify } from "./lib/gb-entry-fee-auto-verify";
 import { startOrderPaymentAutoVerify } from "./lib/order-payment-auto-verify";
+import { startOnwardPaymentAutoVerify } from "./lib/gb-onward-payments";
 import { startWholesaleAccessAutoVerify } from "./lib/wholesale-access-auto-verify";
 import { startWholesaleOrganiserPaymentAutoVerify } from "./lib/wholesale-organiser-payment-auto-verify";
 import { startQiyunleSync } from "./lib/qiyunle-sync";
@@ -1228,6 +1229,7 @@ function startBackgroundServices(): void {
   startPoolPaymentAutoVerify();
   startGbEntryFeeAutoVerify();
   startOrderPaymentAutoVerify();
+  startOnwardPaymentAutoVerify();
   startWholesaleAccessAutoVerify();
   startWholesaleOrganiserPaymentAutoVerify();
   startQiyunleSync();

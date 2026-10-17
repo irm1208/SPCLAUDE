@@ -71,7 +71,7 @@ export function roundCrypto(amount: number, currency: string | null | undefined)
  * unknown fiat) if the FX API can't be reached — fiat rates move slowly so a
  * slightly stale rate is acceptable.
  */
-export async function fetchFiatToUsd(fromCurrency: string | null | undefined): Promise<number> {
+export async function fetchFiatToUsd(fromCurrency: string | null | undefined, options?: { strict?: boolean }): Promise<number> {
   const cur = (fromCurrency ?? "USD").toUpperCase().trim();
   if (cur === "USD" || !cur) return 1;
   try {
@@ -86,6 +86,7 @@ export async function fetchFiatToUsd(fromCurrency: string | null | undefined): P
   } catch {
     /* fall through to fallback */
   }
+  if (options?.strict) throw new Error("Live fiat exchange rate unavailable");
   return FIAT_USD_FALLBACK[cur] ?? 1;
 }
 

@@ -1,3 +1,4 @@
+import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
 import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { useState } from "react";
 import { ChevronRight, Copy, Edit2 } from "lucide-react";
@@ -168,6 +169,7 @@ export default function CompactOrderList({
             {isExpanded ? (
               <div className="orders-compact-detail">
                 {gbId ? <OnwardDeliveryReadonly source={{ kind: "manager", scope: "organiser", gbId, orderId: order.id }} /> : null}
+                {gbId ? <OnwardPaymentReadonly source={{ kind: "organiser", gbId, orderId: order.id }} /> : null}
                 {/* Status + method strip */}
                 <div className="orders-compact-detail-top">
                   <AtlasStatusBadge tone={statusTone(order.status)}>

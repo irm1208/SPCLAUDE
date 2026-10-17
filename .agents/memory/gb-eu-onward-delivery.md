@@ -32,3 +32,9 @@ The reshipper provides their crypto address for onward-delivery charges. Manual 
 **Why:** The user wants reshippers to collect the actual onward-delivery charge after product ordering has closed, and explicitly requested both confirmation modes.
 
 **How to apply:** Estimates alone never create an amount owed. Track an explicitly requested onward charge separately. Automatic acceptance must mean verified blockchain receipt, not accepting a submitted transaction ID without verification.
+
+Use a separate onward-delivery wallet setting for each reshipper within the group buy, never the product-payment wallet or a global wallet fallback.
+
+**Why:** The user explicitly chose a separate onward-delivery wallet setting.
+
+**How to apply:** Capture the receiving wallet, final amount, currency conversion and confirmation mode when issuing a request. Later settings changes apply to new requests, not existing debts. Closing a group buy or completing fulfilment must not erase an already-issued delivery debt or alter the original product payment.
