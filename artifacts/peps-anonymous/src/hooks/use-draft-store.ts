@@ -66,6 +66,11 @@ interface DraftState {
   // Direct shipping preference (customer requests delivery straight to home address)
   directShippingRequested: boolean;
 
+  // Optional EU onward-delivery preference (reshipper -> member). Never part of any total.
+  onwardDeliveryMethod: 'pickup' | 'home' | null;
+  // Country used only to preview onward estimates (not sent in payload).
+  onwardDeliveryCountry: string | null;
+
   // Reshipper code (entered by customer to be routed to a specific reshipper)
   reshipperCode: string | null;
 
@@ -85,6 +90,8 @@ interface DraftState {
   setPreferredReshipperUsername: (username: string | null) => void;
   setDirectShippingRequested: (value: boolean) => void;
   setReshipperCode: (code: string | null) => void;
+  setOnwardDeliveryMethod: (m: 'pickup' | 'home' | null) => void;
+  setOnwardDeliveryCountry: (c: string | null) => void;
   setShippingName: (name: string) => void;
   setShippingAddress: (address: string) => void;
   setShippingPhone: (phone: string) => void;
@@ -136,6 +143,8 @@ export const useDraftStore = create<DraftState>()(
       preferredReshipperUsername: null,
       directShippingRequested: false,
       reshipperCode: null,
+      onwardDeliveryMethod: null,
+      onwardDeliveryCountry: null,
       adminFee: 0,
       adminFeeLabel: null,
 
@@ -178,6 +187,8 @@ export const useDraftStore = create<DraftState>()(
       setPreferredReshipperUsername: (preferredReshipperUsername) => set({ preferredReshipperUsername }),
       setDirectShippingRequested: (directShippingRequested) => set({ directShippingRequested }),
       setReshipperCode: (reshipperCode) => set({ reshipperCode }),
+      setOnwardDeliveryMethod: (onwardDeliveryMethod) => set({ onwardDeliveryMethod }),
+      setOnwardDeliveryCountry: (onwardDeliveryCountry) => set({ onwardDeliveryCountry }),
       setShippingName: (shippingName) => set({ shippingName }),
       setShippingAddress: (shippingAddress) => set({ shippingAddress }),
       setShippingPhone: (shippingPhone) => set({ shippingPhone }),
@@ -245,6 +256,7 @@ export const useDraftStore = create<DraftState>()(
           // isTopUp is derived from additionOfOrderId !== null — not stored separately.
           additionOfOrderId: (order as any).additionOfOrderId ?? null,
           directShippingRequested: isDirectShipping,
+          onwardDeliveryMethod: ((order as any).onwardDeliveryMethod === 'pickup' || (order as any).onwardDeliveryMethod === 'home') ? (order as any).onwardDeliveryMethod : null,
           shippingName: (order as any).shippingName ?? '',
           shippingPhone: (order as any).shippingPhone ?? '',
           shippingEmail: (order as any).shippingEmail ?? '',
@@ -280,6 +292,7 @@ export const useDraftStore = create<DraftState>()(
         // shipping. Carry the parent's shipping fields so the review screen shows where it ships.
         // isTopUp is derived from additionOfOrderId !== null — setting this is enough.
         additionOfOrderId: order.id,
+        onwardDeliveryMethod: null,
         directShippingRequested: (order as any).directShippingRequested === true,
         shippingName: (order as any).shippingName ?? '',
         shippingPhone: (order as any).shippingPhone ?? '',
@@ -317,6 +330,8 @@ export const useDraftStore = create<DraftState>()(
         preferredReshipperUsername: null,
         directShippingRequested: false,
         reshipperCode: null,
+        onwardDeliveryMethod: null,
+        onwardDeliveryCountry: null,
         adminFee: 0,
         adminFeeLabel: null,
         lineItems: []

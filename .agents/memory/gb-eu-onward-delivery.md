@@ -13,6 +13,14 @@ Show an estimate only; members pay the reshipper later. Do not include this esti
 
 Each reshipper has a separate matrix within the group buy, rather than one matrix shared by all reshippers.
 
+Above 25 kits, show "Quote required". Blank rates mean unavailable, not free delivery. Admin and organiser manage the matrices; members choose an optional pickup/home preference.
+
 **Why:** The user explicitly distinguished this shipping leg from vendor shipping and wants these options available per group buy.
 
-**How to apply:** Keep onward estimates separately labelled and stored from vendor-shipping charges and exclude them from the checkout amount payable. Match rates to the particular reshipper, group buy, destination country, delivery method, and quantity band. Treatment of quantities above 25 remains a proposed quote-required rule until design approval.
+**How to apply:** Keep onward estimates separately labelled and stored from vendor-shipping charges and exclude them from the checkout amount payable. Match rates to the particular reshipper, group buy, destination country, delivery method, and quantity band. Re-resolve against current assignment/quantity/country rather than treating an old estimate as a payable charge. Destination country can differ from the routing country leg; never substitute the hub country for the member's known address country.
+
+Use the existing database-backed configuration store for these optional settings and preferences, not new payment fields.
+
+**Why:** This follows the existing group-update/preference convention without adding a production schema migration or letting an informational estimate become a financial obligation.
+
+**How to apply:** Key matrix identity by stable reshipper assignment rather than mutable username, and preferences by order identity. Removing and re-adding a reshipper should require consciously enabling rates again.

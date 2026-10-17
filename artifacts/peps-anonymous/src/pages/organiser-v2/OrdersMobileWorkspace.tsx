@@ -6,6 +6,7 @@ import type { OrganiserOrder } from "./domain/order";
 import { selectMobileOrderView, type MobileOrderView, type MobileOrdersModel } from "./orders-mobile-model";
 
 export interface OrdersMobileWorkspaceProps {
+  gbId?: string;
   model: MobileOrdersModel;
   orders: readonly OrganiserOrder[];
   view: MobileOrderView;
@@ -31,6 +32,7 @@ export default function OrdersMobileWorkspace(props: OrdersMobileWorkspaceProps)
     {view === "all" ? <div className="orders-mobile-search"><label><Search aria-hidden="true" /><input type="search" value={searchQuery} onChange={event => onSearchChange(event.target.value)} placeholder="Search orders" /></label><button ref={filterButtonRef} type="button" onClick={onOpenFilters}><SlidersHorizontal aria-hidden="true" /> Filters {activeFilterCount || ""}</button></div> : null}
     <CompactOrderList
       orders={visible}
+      gbId={props.gbId}
       empty={<div className="orders-mobile-empty" role="status"><strong>No orders in this view</strong><button type="button" onClick={() => onViewChange("all")}>View all orders</button></div>}
     />
   </div>;

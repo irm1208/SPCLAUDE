@@ -14,6 +14,7 @@ import deliveryMethodsRouter from "./delivery-methods";
 import configRouter from "./config";
 import wholesaleUpdatesRouter from "./wholesale-updates";
 import groupBuyUpdatesRouter from "./group-buy-updates";
+import gbOnwardDeliveryRouter from "./gb-onward-delivery";
 import ordersRouter from "./orders";
 import sheetsSyncRouter from "./sheets-sync";
 import adminRouter from "./admin";
@@ -118,6 +119,7 @@ router.use(deliveryMethodsRouter);
 router.use(configRouter);
 router.use(wholesaleUpdatesRouter);
 router.use(groupBuyUpdatesRouter);
+router.use(gbOnwardDeliveryRouter);
 
 // Feedback submission rate limiting
 router.use("/feedback", feedbackLimiter);

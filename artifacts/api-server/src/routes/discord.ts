@@ -242,8 +242,8 @@ router.get("/account/discord/oauth-callback", async (req: Request, res: Response
       .where(eq(accountsTable.discordId, discordUser.id));
 
     if (byDiscord) {
-      if (byDiscord.accountStatus === "suspended") {
-        res.redirect(`/login?discord_error=${encodeURIComponent("This account has been suspended")}`);
+      if (byDiscord.accountStatus !== "active") {
+        res.redirect(`/login?discord_error=${encodeURIComponent(byDiscord.accountStatus === "suspended" ? "This account has been suspended" : "This account is not active")}`);
         return;
       }
       // Refresh tokens

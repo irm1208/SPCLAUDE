@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { OnwardDeliveryOrderCard } from "@/components/onward-delivery/OnwardDelivery";
 import { submittedTimelineLabel, wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
 import { useThemeStore } from "@/hooks/use-theme";
@@ -2982,6 +2983,10 @@ export default function AccountOrderDetail() {
                         </div>
                       )}
                     </Card>
+                  )}
+
+                  {order.groupBuyId && order.orderType !== "wholesale" && (
+                    <OnwardDeliveryOrderCard orderId={order.id} editable={!["Cancelled", "Shipped", "Dispatched", "Delivered", "Completed"].includes(order.status)} />
                   )}
 
                   {/* Shipping details — wholesale orders only */}

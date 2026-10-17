@@ -1,3 +1,5 @@
+import { getOnwardOrderPreference, saveOnwardOrderPreference } from "../lib/gb-onward-delivery";
+import { OnwardDeliveryError, validOnwardMethod } from "../lib/gb-onward-delivery-rules";
 import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
 import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
 import { calculateCouponDiscount, CouponError, couponProblem, couponQuoteMatches } from "../lib/group-buy-coupon-policy";
@@ -13,7 +15,6 @@ import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/c
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { createHash, timingSafeEqual } from "crypto";
-import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import {
   ordersTable,
@@ -43,7 +44,7 @@ import { writeLog } from "../lib/audit-log";
 import { createAlert } from "../lib/create-alert";
 import { resolveNewOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
-import { getJwtSecret, requireAccount } from "../middleware/account-auth";
+import { requireAccount } from "../middleware/account-auth";
 import { logCustomerActivity } from "../lib/activity-log";
 import { getActiveWholesaleVendor } from "./config";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
@@ -155,14 +156,7 @@ const MAX_SHIPPING_EMAIL_LENGTH = 200;
 // ─────────────────────────────────────────────────────────────
 
 function getAccountFromCookie(req: import("express").Request): string | null {
-  const token = req.cookies?.account_session as string | undefined;
-  if (!token) return null;
-  try {
-    const payload = jwt.verify(token, getJwtSecret()) as { telegramUsername: string };
-    return payload.telegramUsername ?? null;
-  } catch {
-    return null;
-  }
+  return req.account?.telegramUsername ?? null;
 }
 
 const router: IRouter = Router();
@@ -267,6 +261,7 @@ function formatOrderResponse(order: Record<string, unknown>, lineItems: Record<s
     inpostQrCode: (order.inpostQrCode as string | null) ?? null,
     royalMailQrCode: (order.royalMailQrCode as string | null) ?? null,
     groupBuyId: (order.groupBuyId as string | null) ?? null,
+    onwardDeliveryMethod: order.onwardDeliveryMethod ?? null,
     additionOfOrderId: (order.additionOfOrderId as string | null) ?? null,
     countryLegId: (order.countryLegId as string | null) ?? null,
     reshipperUsername: (order.reshipperUsername as string | null) ?? null,
@@ -446,7 +441,18 @@ router.post("/orders/claim-pin", async (req, res): Promise<void> => {
 });
 
 // ── POST /api/orders — create a new order ────────────────────
-router.post("/orders", async (req, res): Promise<void> => {
+router.post("/orders", async (req, res, next): Promise<void> => {
+  // Preserve the existing guest flow, but never downgrade a blocked/invalid
+  // signed-in session to a guest or trust a JWT without current account checks.
+  if (req.cookies?.account_session) {
+    await requireAccount(req, res, next);
+    return;
+  }
+  next();
+}, async (req, res): Promise<void> => {
+  if (!validOnwardMethod(req.body?.onwardDeliveryMethod)) {
+    res.status(400).json({ error: "Choose pickup point or home delivery." }); return;
+  }
   let halfKitCheckout: ReturnType<typeof parseHalfKitCheckout> = null;
   try {
     halfKitCheckout = parseHalfKitCheckout(req.body?.halfKitCheckout);
@@ -499,6 +505,19 @@ router.post("/orders", async (req, res): Promise<void> => {
   const tgError = validateTg(tg);
   if (tgError) { res.status(400).json({ error: tgError }); return; }
 
+  // Guest/PIN submissions must not bypass an account suspension by omitting
+  // the session cookie. Accounts are authoritative; customer-only records
+  // retain the same protection for historical guest identities.
+  const [orderingAccount] = await db.select({ accountStatus: accountsTable.accountStatus })
+    .from(accountsTable).where(sql`lower(ltrim(${accountsTable.telegramUsername}, '@')) = ${tg.replace(/^@/, "").toLowerCase()}`).limit(1);
+  const [legacyCustomer] = orderingAccount ? [] : await db.select({ accountStatus: customersTable.accountStatus })
+    .from(customersTable).where(sql`lower(ltrim(${customersTable.telegramUsername}, '@')) = ${tg.replace(/^@/, "").toLowerCase()}`).limit(1);
+  const orderingStatus = orderingAccount?.accountStatus ?? legacyCustomer?.accountStatus;
+  if ((orderingAccount && orderingStatus !== "active") || orderingStatus === "suspended" || orderingStatus === "banned") {
+    res.status(403).json({ error: "Account is not active" });
+    return;
+  }
+
   if (notes !== undefined && notes !== null && String(notes).length > MAX_NOTES_LENGTH) {
     res.status(400).json({ error: `Notes must be under ${MAX_NOTES_LENGTH} characters` });
     return;
@@ -527,7 +546,7 @@ router.post("/orders", async (req, res): Promise<void> => {
         res.status(409).json({ error: "This purchase was already submitted with a different selection. Open My Orders." }); return;
       }
       const lines = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, owned.id));
-      res.status(201).json(formatOrderResponse(owned as unknown as Record<string, unknown>, lines as unknown as Record<string, unknown>[])); return;
+      res.status(201).json(formatOrderResponse({ ...owned, onwardDeliveryMethod: owned.groupBuyId ? await getOnwardOrderPreference(owned.id) : null }, lines as unknown as Record<string, unknown>[])); return;
     }
     try {
       for (const selection of halfKitSelections(halfKitCheckout)) {
@@ -1240,7 +1259,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
 
     const formatted = formatOrderResponse(
-      mergeOutcome.updatedParent as unknown as Record<string, unknown>,
+      { ...mergeOutcome.updatedParent, onwardDeliveryMethod: mergeOutcome.updatedParent.groupBuyId ? await getOnwardOrderPreference(mergeOutcome.updatedParent.id) : null },
       mergeOutcome.mergedItems as unknown as Record<string, unknown>[],
     );
     const response = {
@@ -1561,9 +1580,10 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
   // Record coupon redemption if one was applied
   if (couponClaim) await recordCouponRedemption(tx, couponClaim, orderId, tg, couponDiscount);
+  if (normalizedGroupBuyId) await saveOnwardOrderPreference(tx, orderId, req.body.onwardDeliveryMethod);
   return { order, insertedLineItems, lineItemsToInsert, halfCredits };
   }).catch(error => {
-    if (error instanceof CouponError || error instanceof HalfKitError) return { error: error.message, status: error instanceof HalfKitError ? error.status : 400, code: error instanceof HalfKitError ? error.code : undefined } as const;
+    if (error instanceof CouponError || error instanceof HalfKitError || error instanceof OnwardDeliveryError) return { error: error.message, status: error instanceof HalfKitError || error instanceof OnwardDeliveryError ? error.status : 400, code: error instanceof HalfKitError ? error.code : undefined } as const;
     throw error;
   });
   if ("error" in creation) { res.status(creation.status ?? 400).json({ error: creation.error, code: creation.code }); return; }
@@ -1629,7 +1649,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const formatted = formatOrderResponse(
-    { ...(order as unknown as Record<string, unknown>), creditsApplied: appliedCredits },
+    { ...(order as unknown as Record<string, unknown>), creditsApplied: appliedCredits, onwardDeliveryMethod: order.groupBuyId ? await getOnwardOrderPreference(order.id) : null },
     insertedLineItems as unknown as Record<string, unknown>[],
   );
   if (creditPolicyBlocked) (formatted as Record<string, unknown>).creditPolicyBlocked = true;
@@ -1948,7 +1968,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
   const groupBuyDeleteLocked = await isCustomerActionLockedByGb(order.groupBuyId, "delete");
 
   res.json({
-    ...formatOrderResponse(order as unknown as Record<string, unknown>, lineItems as unknown as Record<string, unknown>[], gbPaymentsEnabled),
+    ...formatOrderResponse({ ...order, onwardDeliveryMethod: order.groupBuyId ? await getOnwardOrderPreference(order.id) : null }, lineItems as unknown as Record<string, unknown>[], gbPaymentsEnabled),
     qrCodes,
     groupBuyQrUploadInpostEnabled: gbQrUploadInpostEnabled,
     groupBuyQrUploadRoyalMailEnabled: gbQrUploadRoyalMailEnabled,
@@ -2085,6 +2105,9 @@ router.post("/orders/:orderId/qr-upload", qrUploadMiddleware, async (req, res): 
 
 // ── PUT /api/orders/:orderId — update an existing order ──────
 router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> => {
+  if (!validOnwardMethod(req.body?.onwardDeliveryMethod)) {
+    res.status(400).json({ error: "Choose pickup point or home delivery." }); return;
+  }
   const rawId = Array.isArray(req.params.orderId) ? req.params.orderId[0] : req.params.orderId;
 
   const {
@@ -2413,7 +2436,9 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   const { updatedOrder, insertedLineItems, lineItemsToInsert } = await db.transaction(async tx => {
   if (activeHalfClaims.length) {
     if (!order.groupBuyId) throw new HalfKitError("This reserved half-kit order needs organiser review.");
-    return editOrderWithHalfKits(tx, rawId, order.groupBuyId, req.body);
+    const result = await editOrderWithHalfKits(tx, rawId, order.groupBuyId, req.body);
+    await saveOnwardOrderPreference(tx, rawId, req.body.onwardDeliveryMethod);
+    return result;
   }
   await assertGroupStock(tx, order.groupBuyId, clientLineItems, rawId);
   const [lockedOrder] = await tx.select({ id: ordersTable.id }).from(ordersTable)
@@ -2476,10 +2501,11 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     .insert(orderLineItemsTable)
     .values(lineItemsToInsert)
     .returning();
+  if (order.groupBuyId) await saveOnwardOrderPreference(tx, rawId, req.body.onwardDeliveryMethod);
   return { updatedOrder, insertedLineItems, lineItemsToInsert };
   });
 
-  const formatted = formatOrderResponse(updatedOrder as unknown as Record<string, unknown>, insertedLineItems as unknown as Record<string, unknown>[]);
+  const formatted = formatOrderResponse({ ...updatedOrder, onwardDeliveryMethod: updatedOrder.groupBuyId ? await getOnwardOrderPreference(rawId) : null }, insertedLineItems as unknown as Record<string, unknown>[]);
   pushToGoogleSheets(formatted).catch(() => {});
 
   writeLog("order", "info", "order_updated_by_customer",

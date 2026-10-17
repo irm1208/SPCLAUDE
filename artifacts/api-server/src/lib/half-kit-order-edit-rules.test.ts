@@ -82,8 +82,11 @@ describe("ordinary additions to orders containing claimed halves", () => {
     const source = readFileSync(new URL("../routes/orders.ts", import.meta.url), "utf8");
     const edit = source.slice(source.indexOf('router.put("/orders/:orderId", requireAccount'), source.indexOf("// ── POST /api/orders/:orderId/shipping-address"));
     expect(edit).toContain('eq(gbHalfKitClaimsTable.state, "active")');
-    expect(edit.indexOf("return editOrderWithHalfKits(")).toBeGreaterThan(-1);
-    expect(edit.indexOf("return editOrderWithHalfKits(")).toBeLessThan(edit.indexOf("await tx.delete(orderLineItemsTable)"));
+    const preservingCall = edit.indexOf("await editOrderWithHalfKits(");
+    const legacyDelete = edit.indexOf("await tx.delete(orderLineItemsTable)");
+    expect(preservingCall).toBeGreaterThan(-1);
+    expect(preservingCall).toBeLessThan(legacyDelete);
+    expect(edit.slice(preservingCall, legacyDelete)).toContain("return result;");
     expect(edit).toContain("order_total: editSym + updatedOrder.grandTotal");
   });
 });

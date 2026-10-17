@@ -27,9 +27,11 @@ type OrderPanelProps = {
   watermark?: ReactNode;
   delivery?: PanelDeliveryChoices;
   extras?: PanelOrderExtras;
+  /** Optional extra content (e.g. onward delivery estimate) rendered below extras. */
+  slot?: ReactNode;
 };
 
-export function OrderPanelContents({ items, total, formatPrice, hidePrices, hideTotal, shippingPending, onQuantityChange, onRemove, editingDisabled, watermark, delivery, extras }: OrderPanelProps) {
+export function OrderPanelContents({ items, total, formatPrice, hidePrices, hideTotal, shippingPending, onQuantityChange, onRemove, editingDisabled, watermark, delivery, extras, slot }: OrderPanelProps) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {watermark}
@@ -102,6 +104,7 @@ export function OrderPanelContents({ items, total, formatPrice, hidePrices, hide
         )}
         {delivery && <OrderPanelDelivery {...delivery} disabled={editingDisabled} hidePrices={hidePrices} formatPrice={formatPrice} />}
         {extras && <OrderPanelExtras {...extras} disabled={editingDisabled} formatPrice={formatPrice} />}
+        {slot}
       </div>
       {!hidePrices && !hideTotal && (
         <div className="border-t pt-4" style={{ borderColor: "var(--t-border)" }}>

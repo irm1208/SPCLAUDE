@@ -587,6 +587,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
       <GbMultipleOrderNotice people={multiplePeople} checked={multipleOnly} onChange={value => { setMultipleOnly(value); if (value) setMobileView("all"); setSelectedOrders([]); }} />
       <div className="orders-mobile-view">
         <OrdersMobileWorkspace
+          gbId={selectedGbId}
           model={mobileModel}
           orders={mobileView === "all" ? filteredOrders : orders.filter(order => !multipleOnly || isMultipleGbOrder(order))}
           view={mobileView}
@@ -922,6 +923,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
         </div>
         <CompactOrderList
           orders={filteredOrders}
+          gbId={selectedGbId}
           selected={selectedOrders}
           onSelectionChange={setSelectedOrders}
           onEditOrder={openEditModal}

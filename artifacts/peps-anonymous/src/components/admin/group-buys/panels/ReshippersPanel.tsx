@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { OnwardDeliveryMatrixPanel } from "@/components/onward-delivery/OnwardDelivery";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePickerField } from "@/components/DatePickerField";
 import {
@@ -268,6 +269,7 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
         ))
       )}
 
+      {assignments.length > 0 && <OnwardDeliveryMatrixPanel scope="admin" gbId={gbId} headers={{ "x-admin-secret": secret }} />}
       {addOpen ? (
         <form onSubmit={handleAdd} className="rounded-xl border border-dashed border-border p-3 space-y-3 bg-muted/20">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Assign Reshipper</p>

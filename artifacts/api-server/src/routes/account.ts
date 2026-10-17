@@ -1,3 +1,4 @@
+import { getOnwardOrderPreference } from "../lib/gb-onward-delivery";
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import {
   assertNoActiveRefund,
@@ -1558,6 +1559,14 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
     return;
   }
 
+  // The order-code fallback must enforce the same suspension policy as
+  // password login; possession of a historical order does not override it.
+  if (account.accountStatus !== "active") {
+    res.clearCookie("account_session", getAccountCookieOptions());
+    res.status(403).json({ error: "Account is not active" });
+    return;
+  }
+
   const needsPassword = !account.passwordHash;
   await issueAccountCookieForAccount(res, tg, { remembered: req.body?.rememberMe === true });
 
@@ -2111,6 +2120,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     shippingCountry: order.shippingCountry ?? null,
     shippingPhone: (order as any).shippingPhone ?? null,
     shippingEmail: (order as any).shippingEmail ?? null,
+    onwardDeliveryMethod: order.groupBuyId ? await getOnwardOrderPreference(order.id) : null,
     orderType: order.orderType ?? null,
     pin: order.pin ?? "0000",
     inpostQrCode: order.inpostQrCode ?? null,
@@ -2442,6 +2452,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     groupBuyId: order.groupBuyId ?? null,
     ...refundView,
     currency: groupBuyCurrency,
+    onwardDeliveryMethod: order.groupBuyId ? await getOnwardOrderPreference(order.id) : null,
     groupBuyPaymentsEnabled,
     groupBuyCryptoRefundsEnabled,
     groupBuyDirectShippingPaymentsEnabled,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1347,6 +1348,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                         {/* RAIL: order identity + facet nav */}
                         <div className="shrink-0 md:w-[248px] lg:w-[288px] border-b md:border-b-0 md:border-r flex flex-col"
                           style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                          <div className="px-3 pt-3"><OnwardDeliveryReadonly source={{ kind: "reshipper", gbId, orderId: order.id, fetcher: reshipFetch }} /></div>
                           <div className="px-4 pt-3.5 pb-3 border-b" style={{ borderColor: "var(--t-border)" }}>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono text-xs font-bold" style={{ color: "var(--t-muted)" }}>{order.code}</span>

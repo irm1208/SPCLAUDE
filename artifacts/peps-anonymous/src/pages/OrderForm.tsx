@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
+import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
+import { countKits } from "@/lib/onward-delivery";
 import { HalfKitOffers } from "./GroupBuyHalfKits";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
 import { motion, AnimatePresence } from "framer-motion";
@@ -621,6 +623,15 @@ export default function OrderForm() {
   const gbAllowReshipperCode = myGb?.allowReshipperCode ?? false;
   const { data: countryLegs = [] } = useCountryLegs(gbHasCountryLegs ? gbId : null);
   const myCountryLeg = myCountryLegId ? countryLegs.find(l => l.id === myCountryLegId) ?? null : null;
+  // Leg country is only a routing fallback; destination prefers shipping country then account country.
+  const legCountryCode = myCountryLeg?.countryCode ?? null;
+  const onwardDestination = draft.shippingCountry || account?.country || legCountryCode || null;
+  const setOnwardCountryRef = useRef(draft.setOnwardDeliveryCountry);
+  setOnwardCountryRef.current = draft.setOnwardDeliveryCountry;
+  useEffect(() => {
+    if (isPreview) return; // preview must never mutate the persisted draft
+    setOnwardCountryRef.current(legCountryCode);
+  }, [legCountryCode, isPreview]);
   // All reshippers serving this leg (supports multiple per country)
   const legReshippers = myCountryLeg?.reshippers ?? (myCountryLeg?.reshipper ? [myCountryLeg.reshipper] : []);
   const hasMultipleReshippers = legReshippers.length > 1;
@@ -1568,6 +1579,11 @@ export default function OrderForm() {
                       onQuantityChange={handlePanelQuantityChange}
                       onRemove={handlePanelRemove}
                       editingDisabled={isPreview}
+                      slot={gbId && !isWholesale && !isTopUp && !draft.directShippingRequested ? (
+                        <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
+                          kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
+                          value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} />
+                      ) : undefined}
                       extras={{
                         notes: draft.notes,
                         onNotesChange: draft.setNotes,
@@ -2290,6 +2306,11 @@ export default function OrderForm() {
                 <p className="text-xs mt-1.5" style={{ color: reshipperCodeState === "valid" ? "#16a34a" : "#ef4444" }}>{reshipperCodeMsg}</p>
               )}
             </div>
+          )}
+          {gbId && !isWholesale && !isTopUp && !draft.directShippingRequested && (
+            <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
+              kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
+              value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} />
           )}
         </section>
 

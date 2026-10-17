@@ -54,15 +54,11 @@ export async function revokeToken(jti: string, expiresAt: Date): Promise<void> {
 }
 
 async function isTokenRevoked(jti: string): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ jti: revokedTokensTable.jti })
-      .from(revokedTokensTable)
-      .where(eq(revokedTokensTable.jti, jti));
-    return !!row;
-  } catch {
-    return false;
-  }
+  const [row] = await db
+    .select({ jti: revokedTokensTable.jti })
+    .from(revokedTokensTable)
+    .where(eq(revokedTokensTable.jti, jti));
+  return !!row;
 }
 
 // Periodically prune expired revocation entries (runs every 6 hours)
@@ -126,9 +122,27 @@ export async function requireAccountIdentity(req: Request, res: Response, next: 
     return;
   }
 
-  // Reject if this specific token has been revoked (e.g. explicit logout)
-  if (await isTokenRevoked(payload.jti)) {
-    res.status(401).json({ error: "Session has been revoked — please log in again" });
+  // A valid JWT is only an identity, not proof the account is still active.
+  // Read current status on every request: suspension must stop old sessions too.
+  try {
+    if (await isTokenRevoked(payload.jti)) {
+      res.status(401).json({ error: "Session has been revoked — please log in again" });
+      return;
+    }
+    const [account] = await db.select({ accountStatus: accountsTable.accountStatus })
+      .from(accountsTable).where(eq(accountsTable.telegramUsername, payload.telegramUsername)).limit(1);
+    if (!account || account.accountStatus !== "active") {
+      delete req.account;
+      res.clearCookie("account_session", getAccountCookieOptions());
+      res.status(account ? 403 : 401).json({
+        error: account ? "Account is not active" : "Account no longer exists — please log in again",
+      });
+      return;
+    }
+  } catch {
+    // Do not accept a session when its status/revocation cannot be checked.
+    // Also do not clear it on a transient database outage.
+    res.status(503).json({ error: "Unable to verify account access. Please try again." });
     return;
   }
 
@@ -237,13 +251,14 @@ export async function issueAccountCookieForAccount(
   const [account] = await db
     .select({
       telegramUsername: accountsTable.telegramUsername,
+      accountStatus: accountsTable.accountStatus,
       verificationRequiredAt: accountsTable.verificationRequiredAt,
       verifiedAt: accountsTable.verifiedAt,
     })
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, telegramUsername))
     .limit(1);
-  if (!account) return false;
+  if (!account || account.accountStatus !== "active") return false;
   issueAccountCookie(res, account.telegramUsername, {
     verificationRequired: account.verificationRequiredAt !== null && account.verifiedAt === null,
     remembered: options.remembered === true,

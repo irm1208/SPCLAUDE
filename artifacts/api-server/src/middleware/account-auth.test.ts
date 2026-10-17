@@ -1,13 +1,30 @@
 import jwt from "jsonwebtoken";
 import { readFileSync } from "node:fs";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const revocationState = vi.hoisted(() => ({ jti: null as string | null }));
+const accountState = vi.hoisted(() => ({ status: "active" as string | null, missing: false, fail: false }));
 
-vi.mock("@workspace/db", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@workspace/db")>();
+vi.mock("@workspace/db", async () => {
+  const actual = await import("@workspace/db/schema");
   const db = {
-    select: () => ({ from: () => ({ where: async () => revocationState.jti ? [{ jti: revocationState.jti }] : [] }) }),
+    select: () => ({
+      from: (table: unknown) => {
+        const rows = () => {
+          if (table === actual.accountsTable) {
+            if (accountState.fail) throw new Error("database unavailable");
+            return accountState.missing ? [] : [{ telegramUsername: "member", accountStatus: accountState.status, verificationRequiredAt: null, verifiedAt: null }];
+          }
+          return revocationState.jti ? [{ jti: revocationState.jti }] : [];
+        };
+        const query = {
+          where: () => query,
+          limit: async () => rows(),
+          then: (resolve: (value: unknown[]) => unknown) => Promise.resolve().then(rows).then(resolve),
+        };
+        return query;
+      },
+    }),
     insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
     delete: () => ({ where: async () => undefined }),
   };
@@ -28,6 +45,44 @@ function response() {
 }
 
 describe("account session authorization", () => {
+  beforeEach(() => { accountState.status = "active"; accountState.missing = false; accountState.fail = false; revocationState.jti = null; });
+
+  it.each(["suspended", "banned", "disabled", null])("rejects an existing session immediately when the account becomes %s", async status => {
+    const issued = response();
+    issueAccountCookie(issued as never, "member", { verificationRequired: false });
+    const req = { cookies: { account_session: issued.cookie.mock.calls[0][1] }, ip: "127.0.0.1" };
+    await requireAccount(req as never, response() as never, vi.fn());
+    accountState.status = status;
+    const res = response(); const next = vi.fn();
+    await requireAccount(req as never, res as never, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.clearCookie).toHaveBeenCalledWith("account_session", getAccountCookieOptions());
+  });
+
+  it("rejects deleted accounts and fails closed on unavailable status checks", async () => {
+    const issued = response();
+    issueAccountCookie(issued as never, "member", { verificationRequired: false });
+    const req = { cookies: { account_session: issued.cookie.mock.calls[0][1] }, ip: "127.0.0.1" };
+    accountState.missing = true;
+    const missing = response(); const next = vi.fn();
+    await requireAccountIdentity(req as never, missing as never, next);
+    expect(missing.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+    accountState.fail = true;
+    const failure = response();
+    await requireAccountIdentity(req as never, failure as never, next);
+    expect(failure.status).toHaveBeenCalledWith(503);
+    expect(failure.clearCookie).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(["suspended", "banned"])("never issues a fresh cookie for a %s account", async status => {
+    accountState.status = status;
+    const res = response();
+    expect(await accountAuth.issueAccountCookieForAccount(res as never, "member")).toBe(false);
+    expect(res.cookie).not.toHaveBeenCalled();
+  });
   it("issues cross-site-compatible cookies in the Replit preview", () => {
     const previousReplId = process.env.REPL_ID;
     process.env.REPL_ID = "test-repl";

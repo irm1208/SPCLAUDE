@@ -9,6 +9,7 @@ import bcrypt from "bcryptjs";
 
 const state = vi.hoisted(() => ({
   account: null as any,
+  order: null as any,
   revoked: false,
   confirmation: { ok: false, reason: "invalid" } as any,
 }));
@@ -40,7 +41,7 @@ vi.mock("@workspace/db", async () => {
             ...state.account,
             hasPassword: state.account.passwordHash != null,
             discordLinked: state.account.discordId != null,
-          }] : []) : table === "revoked_tokens" && state.revoked ? [{ jti: "revoked" }] : [];
+          }] : []) : table === "orders" && state.order ? [state.order] : table === "revoked_tokens" && state.revoked ? [{ jti: "revoked" }] : [];
           return Promise.resolve(rows).then(resolve);
         },
       };
@@ -73,6 +74,11 @@ vi.mock("../lib/account-verification", async (importOriginal) => ({
 }));
 
 import router from "./index";
+// Half-kit locking has separate integration coverage and a dedicated PG pool;
+// this harness exercises the account boundary without creating real pools.
+vi.mock("../middleware/half-kit-protection", () => ({
+  halfKitProtection: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
 import { getJwtSecret } from "../middleware/account-auth";
 
 async function request(
@@ -102,7 +108,7 @@ async function request(
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-    return { status: response.status, body: await response.json(), setCookie: response.headers.get("set-cookie") };
+    return { status: response.status, body: await response.json() as Record<string, unknown>, setCookie: response.headers.get("set-cookie") };
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
@@ -120,6 +126,58 @@ describe("verification authentication boundary", () => {
       accountStatus: "active", passwordHash: null, discordId: null,
     };
     state.revoked = false;
+    state.order = null;
+  });
+
+  it.each(["suspended", "banned"])("blocks %s accounts from order-code login, old sessions and order submission", async status => {
+    const existingToken = token(false);
+    state.account.verificationRequiredAt = null;
+    state.account.accountStatus = status;
+    state.order = { id: "existing-order", telegramUsername: "new-user", code: "12345" };
+    const login = await request("/account/smart-login", "", {
+      method: "POST", body: { telegramUsername: "new-user", credential: "12345" },
+    });
+    expect(login.status).toBe(403);
+    expect(login.setCookie ?? "").not.toMatch(/account_session=[^;]/);
+    state.account.passwordHash = await bcrypt.hash("SafePassword9!", 4);
+    for (const [path, body] of [
+      ["/account/login", { telegramUsername: "new-user", password: "SafePassword9!" }],
+      ["/account/smart-login", { telegramUsername: "new-user", credential: "SafePassword9!" }],
+      ["/account/order-login", { telegramUsername: "new-user", orderCode: "12345" }],
+    ] as const) {
+      const rejected = await request(path, "", { method: "POST", body });
+      expect(rejected.status).toBe(403);
+      expect(rejected.setCookie ?? "").not.toMatch(/account_session=[^;]/);
+    }
+    expect((await request("/account/me", existingToken)).status).toBe(403);
+    expect((await request("/account/session/refresh", existingToken, { method: "POST" })).status).toBe(403);
+    expect((await request("/wholesale-shares", existingToken)).status).toBe(403);
+    for (const cookie of [existingToken, ""]) {
+      const order = await request("/orders", cookie, {
+        method: "POST", body: { telegramUsername: "new-user", deliveryMethodId: "delivery", lineItems: [{ productId: "item", quantity: 1 }] },
+      });
+      expect(order.status).toBe(403);
+    }
+  });
+
+  it("does not downgrade invalid, revoked or verification-restricted order sessions to guest access", async () => {
+    const body = { telegramUsername: "new-user", deliveryMethodId: "delivery", lineItems: [{ productId: "item", quantity: 1 }] };
+    expect((await request("/orders", "invalid", { method: "POST", body })).status).toBe(401);
+    state.revoked = true;
+    expect((await request("/orders", token(false), { method: "POST", body })).status).toBe(401);
+    state.revoked = false;
+    expect((await request("/orders", token(true), { method: "POST", body })).status).toBe(403);
+  });
+
+  it("keeps active sessions and legitimate guest orders on the normal validation path", async () => {
+    state.account.verificationRequiredAt = null;
+    for (const cookie of [token(false), ""]) {
+      const result = await request("/orders", cookie, {
+        method: "POST", body: { telegramUsername: "new-user", deliveryMethodId: "missing-delivery", lineItems: [{ productId: "item", quantity: 1 }] },
+      });
+      expect(result.status).toBe(400);
+      expect(result.body.error).toBe("Invalid delivery method");
+    }
   });
 
   it("allows a restricted signed session only on verification and Telegram setup/status routes", async () => {

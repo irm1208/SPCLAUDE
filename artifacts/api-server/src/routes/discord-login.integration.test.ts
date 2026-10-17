@@ -296,6 +296,11 @@ describe("mounted Discord login", () => {
     expect(state.createdAccounts).toHaveLength(0);
     expect(state.cookies).toBe(0);
   });
+  it("never signs in a banned linked Discord account", async () => {
+    state.linkedAccount = { telegramUsername: "blocked_member", hasPassword: true, accountStatus: "banned", discordId: "discord-unlinked" };
+    expect((await discordCallback()).location).toContain("/login?discord_error=");
+    expect(state.cookies).toBe(0);
+  });
 
   it("keeps Discord login working after the site username has been renamed", async () => {
     state.linkedAccount = {

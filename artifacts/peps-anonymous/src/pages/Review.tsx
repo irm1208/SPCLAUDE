@@ -11,6 +11,8 @@ import { useDraftStore } from "@/hooks/use-draft-store";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateOrder, useUpdateOrder } from "@workspace/api-client-react";
 import { useMyGroupBuys, useAccount, useAccountOrders, useCountryLegs, useLogout } from "@/hooks/use-account";
+import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
+import { countKits } from "@/lib/onward-delivery";
 import { RulesetModal } from "@/components/RulesetModal";
 import { useState, useEffect, type ReactNode } from "react";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
@@ -263,6 +265,8 @@ export default function Review() {
       directShippingRequested: draft.directShippingRequested || undefined,
       directShippingCost: draft.directShippingRequested && draft.deliveryPrice > 0 ? draft.deliveryPrice : undefined,
       reshipperCode: draft.reshipperCode || undefined,
+      // Optional onward estimate preference — never part of grandTotal or any money field.
+      onwardDeliveryMethod: !isWholesale && draft.groupBuyId ? draft.onwardDeliveryMethod : undefined,
       // Wholesale orders can never be additions — guard against a stale draft field
       // left over from a previous GB top-up flow in the same browser session.
       additionOfOrderId: isWholesale ? undefined : (draft.additionOfOrderId ?? undefined),
@@ -494,6 +498,11 @@ export default function Review() {
                 </div>
               )}
             </div>
+            {draft.groupBuyId && !isWholesale && !isTopUp && !draft.directShippingRequested && (
+              <OnwardDeliveryPicker gbId={draft.groupBuyId} country={draft.shippingCountry || account?.country || draft.onwardDeliveryCountry || null}
+                kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
+                value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} />
+            )}
           </section>
 
           <section>

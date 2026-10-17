@@ -1,3 +1,4 @@
+import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { useState } from "react";
 import { ChevronRight, Copy, Edit2 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -60,6 +61,8 @@ interface Props {
   /** Auto-expand a specific order on first render (deep-link support) */
   initialExpandedId?: string;
   empty?: ReactNode;
+  /** Group buy id — enables read-only onward delivery estimate in expanded rows */
+  gbId?: string;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -74,6 +77,7 @@ export default function CompactOrderList({
   onViewProofImage,
   initialExpandedId,
   empty,
+  gbId,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId ?? null);
 
@@ -163,6 +167,7 @@ export default function CompactOrderList({
             {/* Inline accordion — full order details */}
             {isExpanded ? (
               <div className="orders-compact-detail">
+                {gbId ? <OnwardDeliveryReadonly source={{ kind: "manager", scope: "organiser", gbId, orderId: order.id }} /> : null}
                 {/* Status + method strip */}
                 <div className="orders-compact-detail-top">
                   <AtlasStatusBadge tone={statusTone(order.status)}>

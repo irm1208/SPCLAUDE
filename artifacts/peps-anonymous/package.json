@@ -17,6 +17,7 @@
     "test:peps-native-theme": "node --experimental-strip-types src/pages/organiser-v2/peps-native-theme.test.ts",
     "test:domain": "node --experimental-strip-types --test src/pages/organiser-v2/domain/*.test.ts src/pages/organiser-v2/storage.test.ts",
     "test:approved-workspace": "node --experimental-strip-types --test src/pages/organiser-v2/topbar-context.test.ts src/pages/organiser-v2/topbar-redesign-contract.test.ts src/pages/organiser-v2/approved-workspace.test.ts src/pages/organiser-v2/approved-selectors.test.ts src/pages/organiser-v2/typography-mobile-contract.test.ts src/pages/organiser-v2/organiser-mobile-contract.test.ts src/pages/organiser-v2/approved-responsive.test.ts",
+    "test:onward-delivery": "tsx --test src/lib/onward-delivery.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
