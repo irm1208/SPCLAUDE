@@ -22,6 +22,12 @@ type Envelope = {request: Charge | null; history: Charge[]; canManage: boolean; 
 ```
 
 ## Reshipper
+- Matrix editing: `GET /reshipper/gb/:gbId/onward-delivery` returns only the caller's active assignment and the standard country/template data. `PUT /reshipper/gb/:gbId/onward-delivery/:username` accepts the existing matrix schema, requires the caller's own active assignment and saves to the same matrix used by organiser/Admin estimates. Neither changes issued payment requests.
+
+## Organiser management
+Under `/organiser/group-buys/:gbId/reshippers/:username`, the organiser can GET `/onward-payments`, POST `/orders/:orderId/onward-payments`, and POST `/orders/:orderId/onward-payments/:requestId/confirm|reject|cancel`. Group ownership and the selected active assignment are authorized on the server; mutation authority is checked again in the transaction. These reuse the reshipper request workflows, wallet snapshots, replay guards and state transitions, while recording the actual organiser in audit entries. Wallet settings are read-only here and remain reshipper-managed. Matrix editing continues through the existing organiser matrix endpoints.
+
+## Reshipper payment endpoints
 - `GET /reshipper/gb/:gbId/onward-payments`: `{settings: WalletSettings, rails: Rail[], orders: [{id, code, username, country, kits, orderStatus, canRequest, requestBlockedReason?: string|null, estimate: OnwardEstimate, request: Charge|null}]}`. Existing estimate type is in frontend lib/onward-delivery.ts. Assigned EU orders included; closed GB and settlement after onward dispatch/delivery are allowed. Cancelled/refunded or direct-shipping orders cannot receive new requests.
 - `PUT /reshipper/gb/:gbId/onward-payments/settings`: body `WalletSettings`; returns `{settings}`. Separate onward wallet; never product payment details.
 - `POST /reshipper/gb/:gbId/orders/:orderId/onward-payments`: `{idempotencyKey: crypto.randomUUID(), amount: number, currency: "USD"|"EUR"|"GBP", method: "pickup"|"home", note?: string}` → `Envelope`. Final amount is entered/confirmed by reshipper, optionally prefilled from estimate. It does not auto-charge from an estimate.

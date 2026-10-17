@@ -137,12 +137,14 @@ const jsonInit = (method: string, body: unknown, init?: RequestInit): RequestIni
   body: JSON.stringify(body),
 });
 
-export type ManagerScope = "admin" | "organiser";
+export type ManagerScope = "admin" | "organiser" | "reshipper";
+const managerBase = (scope: ManagerScope, gbId: string) => scope === "reshipper"
+  ? `/api/reshipper/gb/${encodeURIComponent(gbId)}` : `/api/${scope}/group-buys/${encodeURIComponent(gbId)}`;
 export const onwardApi = {
   getConfig: (f: Fetcher, scope: ManagerScope, gbId: string, init?: RequestInit) =>
-    f(`/api/${scope}/group-buys/${encodeURIComponent(gbId)}/onward-delivery`, init).then(r => json<OnwardConfig>(r)),
+    f(`${managerBase(scope, gbId)}/onward-delivery`, init).then(r => json<OnwardConfig>(r)),
   saveMatrix: (f: Fetcher, scope: ManagerScope, gbId: string, username: string, m: OnwardMatrix, init?: RequestInit) =>
-    f(`/api/${scope}/group-buys/${encodeURIComponent(gbId)}/onward-delivery/${encodeURIComponent(username)}`, jsonInit("PUT", m, init))
+    f(`${managerBase(scope, gbId)}/onward-delivery/${encodeURIComponent(username)}`, jsonInit("PUT", m, init))
       .then(r => json<{ matrix: OnwardMatrix }>(r)),
   estimate: (f: Fetcher, gbId: string, body: { country: string; kits: number; reshipperCode?: string; directShippingRequested?: boolean; orderId?: string }) =>
     f(`/api/group-buys/${encodeURIComponent(gbId)}/onward-delivery/estimate`, jsonInit("POST", body)).then(r => json<unknown>(r)).then(parseEstimate),
@@ -151,7 +153,7 @@ export const onwardApi = {
   setOrder: (f: Fetcher, orderId: string, method: OnwardMethod | null) =>
     f(`/api/orders/${encodeURIComponent(orderId)}/onward-delivery`, jsonInit("PUT", { method })).then(r => json<unknown>(r)).then(parseEstimate),
   getManagerOrder: (f: Fetcher, scope: ManagerScope, gbId: string, orderId: string, init?: RequestInit) =>
-    f(`/api/${scope}/group-buys/${encodeURIComponent(gbId)}/orders/${encodeURIComponent(orderId)}/onward-delivery`, init).then(r => json<unknown>(r)).then(parseEstimate),
+    f(`${managerBase(scope, gbId)}/orders/${encodeURIComponent(orderId)}/onward-delivery`, init).then(r => json<unknown>(r)).then(parseEstimate),
   getReshipperOrder: (f: Fetcher, gbId: string, orderId: string) =>
     f(`/api/reshipper/gb/${encodeURIComponent(gbId)}/orders/${encodeURIComponent(orderId)}/onward-delivery`).then(r => json<unknown>(r)).then(parseEstimate),
 };

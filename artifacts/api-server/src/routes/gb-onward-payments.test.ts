@@ -3,11 +3,12 @@ import express from "express";
 import type { Server } from "node:http";
 import { OnwardDeliveryError } from "../lib/gb-onward-delivery-rules";
 const mocks = vi.hoisted(() => ({
-  list: vi.fn(), settings: vi.fn(), create: vi.fn(), read: vi.fn(), submit: vi.fn(), manage: vi.fn(), verify: vi.fn(),
+  list: vi.fn(), settings: vi.fn(), create: vi.fn(), read: vi.fn(), submit: vi.fn(), manage: vi.fn(), verify: vi.fn(), delegate: vi.fn(),
 }));
 vi.mock("../lib/gb-onward-payments", () => ({
   listOnwardPayments: mocks.list, saveOnwardPaymentSettings: mocks.settings, createOnwardPayment: mocks.create,
   readOnwardPayment: mocks.read, submitOnwardPayment: mocks.submit, manageOnwardPayment: mocks.manage, verifyOnwardPayment: mocks.verify,
+  organiserOnwardActor: mocks.delegate,
 }));
 vi.mock("../middleware/account-auth", () => ({
   requireAccount: (req: any, res: any, next: any) => {
@@ -46,6 +47,24 @@ describe("onward-payment HTTP authorization and delegation", () => {
   });
   const call = (path: string, method = "GET", headers = {}, body?: unknown) => fetch(`${base}${path}`, {
     method, headers: { "Content-Type": "application/json", ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  it("lets an organiser manage requests only through a server-authorized reshipper context", async () => {
+    const context = { username: "resh", onwardManager: { username: "lead", adminGbId: "G" } };
+    mocks.delegate.mockResolvedValue(context);
+    const root = "/organiser/group-buys/G/reshippers/resh";
+    expect((await call(`${root}/onward-payments`)).status).toBe(401);
+    expect((await call(`${root}/onward-payments`, "GET", { "x-organiser": "lead" })).status).toBe(200);
+    expect(mocks.delegate).toHaveBeenCalledWith("G", "resh", expect.objectContaining({ username: "lead" }));
+    expect(mocks.list).toHaveBeenCalledWith("G", context);
+    expect((await call(`${root}/orders/O/onward-payments`, "POST", { "x-organiser": "lead" }, { amount: 19 })).status).toBe(200);
+    expect(mocks.create).toHaveBeenCalledWith("G", "O", context, { amount: 19 });
+    for (const action of ["confirm", "reject", "cancel"]) {
+      expect((await call(`${root}/orders/O/onward-payments/R/${action}`, "POST", { "x-organiser": "lead" }, { reason: "Explain" })).status).toBe(200);
+      expect(mocks.manage).toHaveBeenLastCalledWith("G", "O", "R", context, action, "Explain");
+    }
+    expect((await call(`${root}/onward-payments/settings`, "PUT", { "x-organiser": "lead" }, {})).status).toBe(404);
+    mocks.delegate.mockRejectedValue(new OnwardDeliveryError("Not your group buy", 403));
+    expect((await call(`${root}/onward-payments`, "GET", { "x-organiser": "outsider" })).status).toBe(403);
   });
   it("requires a reshipper role for settings, requests and confirmations", async () => {
     for (const [path, method] of [

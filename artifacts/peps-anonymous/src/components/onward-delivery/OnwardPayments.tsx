@@ -257,11 +257,11 @@ export function OnwardPaymentReadonly({ source }: { source: ReadonlySource }) {
 
 // ─── Reshipper manager (Shipping tab) ───────────────────────────────────────
 
-export function OnwardPaymentManager({ gbId, fetcher }: { gbId: string; fetcher: Fetcher }) {
-  return <ManagerBody key={gbId} gbId={gbId} fetcher={fetcher} />;
+export function OnwardPaymentManager({ gbId, fetcher, walletReadOnly = false }: { gbId: string; fetcher: Fetcher; walletReadOnly?: boolean }) {
+  return <ManagerBody key={gbId} gbId={gbId} fetcher={fetcher} walletReadOnly={walletReadOnly} />;
 }
 
-function ManagerBody({ gbId, fetcher }: { gbId: string; fetcher: Fetcher }) {
+function ManagerBody({ gbId, fetcher, walletReadOnly }: { gbId: string; fetcher: Fetcher; walletReadOnly: boolean }) {
   const [data, setData] = useState<ReshipperOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -291,13 +291,20 @@ function ManagerBody({ gbId, fetcher }: { gbId: string; fetcher: Fetcher }) {
           <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
-      <p className="text-[11px] -mt-2" style={{ color: "var(--t-subtle)" }}>Charge members for delivery from you to them, paid in crypto to your onward wallet. Separate from product payments and never added to order totals.</p>
+      <p className="text-[11px] -mt-2" style={{ color: "var(--t-subtle)" }}>{walletReadOnly ? "Manage charges on behalf of the selected reshipper, paid to their separate onward wallet." : "Charge members for delivery from you to them, paid in crypto to your onward wallet."} Separate from product payments and never added to order totals.</p>
       {error && <ErrorLine text={error} onRetry={() => void load()} />}
       {loading && !data && <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-10 rounded-lg animate-pulse" style={{ background: "var(--t-surface2)" }} />)}</div>}
       {data && (
         <>
-          <WalletSettingsForm gbId={gbId} fetcher={fetcher} saved={data.settings} rails={data.rails}
-            onSaved={s => setData(d => d ? { ...d, settings: s } : d)} />
+          {walletReadOnly ? (
+            <div className="rounded-xl border p-3 text-xs space-y-1" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }} data-testid="organiser-onward-wallet">
+              <p className="font-semibold">Reshipper’s onward wallet · {data.settings.enabled ? data.settings.confirmationMode : "Not enabled"}</p>
+              {data.settings.enabled ? <p className="break-all">{data.settings.walletAddress} · {data.settings.currency} / {data.settings.network}</p>
+                : <p>Ask the reshipper to enable their onward wallet in their Shipping tab before issuing requests.</p>}
+              <p>Wallet changes stay with the reshipper. Existing requests retain their original wallet and amount.</p>
+            </div>
+          ) : <WalletSettingsForm gbId={gbId} fetcher={fetcher} saved={data.settings} rails={data.rails}
+            onSaved={s => setData(d => d ? { ...d, settings: s } : d)} />}
           <div className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>EU orders ({data.orders.length})</p>
             {data.orders.length === 0 && <p className="text-xs py-3 text-center rounded-lg" style={{ color: "var(--t-muted)", background: "var(--t-surface2)" }}>No active EU orders assigned to you in this group buy.</p>}

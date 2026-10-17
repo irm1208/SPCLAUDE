@@ -1,6 +1,6 @@
 import { OnwardPaymentManager, OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
+import { OnwardDeliveryMatrixPanel, OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1914,6 +1914,7 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
 
   return (
     <div className="space-y-5 max-w-2xl">
+      <OnwardDeliveryMatrixPanel scope="reshipper" gbId={gbId} fetcher={reshipFetch} />
       <OnwardPaymentManager gbId={gbId} fetcher={reshipFetch} />
       <section className="rounded-2xl p-4 space-y-1" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: "var(--t-subtle)" }}>Settings</p>

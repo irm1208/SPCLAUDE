@@ -41,9 +41,11 @@ async function matrixFor(database: DataAccess, gbId: string, username: string) {
   const saved = await config(database, matrixKey(gbId, assignment.id));
   return saved ? parseOnwardMatrix(JSON.parse(saved)) : null;
 }
-export async function onwardSettings(gbId: string, actor: UpdateActor) {
-  await groupUpdatesAccess(db, gbId, actor, true);
-  const assignments = await db.select().from(gbReshippersTable).where(eq(gbReshippersTable.gbId, gbId));
+export async function onwardSettings(gbId: string, actor: UpdateActor, reshipperOnly = false) {
+  if (!reshipperOnly) await groupUpdatesAccess(db, gbId, actor, true);
+  const allAssignments = await db.select().from(gbReshippersTable).where(eq(gbReshippersTable.gbId, gbId));
+  const assignments = reshipperOnly ? allAssignments.filter(row => row.enabled && same(row.reshipperUsername, actor.username)) : allAssignments;
+  if (reshipperOnly && !assignments.length) throw new OnwardDeliveryError("You are not an active reshipper for this group buy.", 403);
   const names = [...new Set(assignments.map(row => row.reshipperUsername))];
   return {
     reshippers: await Promise.all(names.map(async username => ({
@@ -52,13 +54,15 @@ export async function onwardSettings(gbId: string, actor: UpdateActor) {
     }))),
   };
 }
-export async function saveOnwardMatrix(gbId: string, username: string, actor: UpdateActor, body: unknown) {
+export async function saveOnwardMatrix(gbId: string, username: string, actor: UpdateActor, body: unknown, reshipperOnly = false) {
   const matrix = parseOnwardMatrix(body);
   return db.transaction(async tx => {
-    await groupUpdatesAccess(tx, gbId, actor, true, true);
-    const assignments = await tx.select().from(gbReshippersTable).where(eq(gbReshippersTable.gbId, gbId));
+    if (reshipperOnly && !same(username, actor.username)) throw new OnwardDeliveryError("You can only edit your own onward-delivery matrix.", 403);
+    if (!reshipperOnly) await groupUpdatesAccess(tx, gbId, actor, true, true);
+    const assignments = await tx.select().from(gbReshippersTable).where(eq(gbReshippersTable.gbId, gbId)).for("update");
     const assignment = assignments.find(row => same(row.reshipperUsername, username));
     if (!assignment) throw new OnwardDeliveryError("This reshipper is not assigned to this group buy.", 404);
+    if (reshipperOnly && !assignment.enabled) throw new OnwardDeliveryError("This reshipper assignment is disabled.", 403);
     await putConfig(tx, matrixKey(gbId, assignment.id), JSON.stringify(matrix));
     return { matrix };
   });

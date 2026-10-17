@@ -3,6 +3,7 @@ import { and, eq, like, sql } from "drizzle-orm";
 import { db, gbReshippersTable, ordersTable, orderLineItemsTable, siteConfigTable, wholesaleSharesTable } from "@workspace/db";
 import { onwardOrderAccess, onwardOrderEstimate, type OnwardOrderScope } from "./gb-onward-delivery";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
+import { groupUpdatesAccess } from "./group-buy-updates";
 import { OnwardDeliveryError } from "./gb-onward-delivery-rules";
 import { fetchFiatToUsd, fetchUsdPerCoin, roundCrypto } from "./crypto-pricing";
 import { verifyTransaction } from "./payment-verify";
@@ -14,6 +15,12 @@ import {
 } from "./gb-onward-payment-rules";
 
 type DataAccess = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
+type PaymentActor = UpdateActor & { onwardManager?: UpdateActor };
+export async function organiserOnwardActor(gbId: string, username: string, manager: UpdateActor): Promise<PaymentActor> {
+  await groupUpdatesAccess(db, gbId, manager, true);
+  const assigned = await assignment(db, gbId, username);
+  return { username: assigned.reshipperUsername, onwardManager: manager };
+}
 const ledgerKey = (id: string) => `gb_onward_charge:${id}`;
 const settingsKey = (id: string) => `gb_onward_payment_settings:${id}`;
 const claimKey = (hash: string, network: string) => `gb_onward_tx:${onwardTxIdentity(hash, network)}`;
@@ -116,7 +123,7 @@ async function notify(username: string, text: string) {
     await notifyUser(username, "payment", text);
   } catch (error) { console.error("[onward-payment:notify]", error instanceof Error ? error.message : "Notification failed"); }
 }
-export async function createOnwardPayment(gbId: string, orderId: string, actor: UpdateActor, body: Record<string, unknown>) {
+export async function createOnwardPayment(gbId: string, orderId: string, actor: PaymentActor, body: Record<string, unknown>) {
   const amount = onwardPaymentAmount(body.amount);
   const currency = String(body.currency ?? "").toUpperCase();
   if (!["USD", "EUR", "GBP"].includes(currency)) throw new OnwardDeliveryError("Choose USD, EUR or GBP for the delivery charge.");
@@ -141,6 +148,7 @@ export async function createOnwardPayment(gbId: string, orderId: string, actor: 
   const cryptoAmount = roundCrypto(amount * fiatToUsdRate / usdPerCoin, settings.currency);
   if (!(cryptoAmount > 0)) throw new OnwardDeliveryError("This delivery amount is too small for the selected cryptocurrency.");
   const result = await db.transaction(async tx => {
+    if (actor.onwardManager) await groupUpdatesAccess(tx, gbId, actor.onwardManager, true);
     const order = await onwardOrderAccess(tx, orderId, actor, "reshipper", gbId, true);
     const lockedAssignment = await assignment(tx, gbId, actor.username, true);
     if (assigned.id !== lockedAssignment.id || !canCreate(order)) throw new OnwardDeliveryError("The assignment or order changed. Refresh before requesting payment.", 409);
@@ -175,7 +183,7 @@ export async function createOnwardPayment(gbId: string, orderId: string, actor: 
     return { data: await envelope(tx, order, "reshipper"), created: true, request: ledger.request! };
   });
   if (result.created) {
-    await audit("requested", orderId, result.request!, actor.username);
+    await audit("requested", orderId, result.request!, actor.onwardManager?.username ?? actor.username);
     // Existing preferences apply. Failure never turns a committed request into a retry.
     await notify(before.telegramUsername,
       `Your reshipper has requested ${amount.toFixed(2)} ${currency} for onward delivery on order #${before.code}. Open My Orders to see the separate delivery payment details. Your product payment is unchanged.`);
@@ -253,9 +261,10 @@ export async function submitOnwardPayment(orderId: string, requestId: string, ac
   }
   return data;
 }
-export async function manageOnwardPayment(gbId: string, orderId: string, requestId: string, actor: UpdateActor,
+export async function manageOnwardPayment(gbId: string, orderId: string, requestId: string, actor: PaymentActor,
   action: "confirm" | "reject" | "cancel", reason?: unknown) {
   const result = await db.transaction(async tx => {
+    if (actor.onwardManager) await groupUpdatesAccess(tx, gbId, actor.onwardManager, true);
     const order = await onwardOrderAccess(tx, orderId, actor, "reshipper", gbId, true);
     const ledger = await read<OnwardLedger>(tx, ledgerKey(orderId)) ?? emptyLedger();
     const request = assertMatches(ledger.request, requestId);
@@ -286,7 +295,7 @@ export async function manageOnwardPayment(gbId: string, orderId: string, request
     return { data: await envelope(tx, order, "reshipper"), changed: true, username: order.telegramUsername, code: order.code };
   });
   if (result.changed && result.data.request) {
-    await audit(action, orderId, result.data.request, actor.username);
+    await audit(action, orderId, result.data.request, actor.onwardManager?.username ?? actor.username);
     await notify(result.username, action === "confirm"
       ? `Your onward-delivery payment for order #${result.code} was confirmed by your reshipper. Your product payment is unchanged.`
       : action === "reject" ? `Your reshipper could not confirm the onward-delivery transaction for order #${result.code}. Open My Orders to see their explanation before sending anything else.`

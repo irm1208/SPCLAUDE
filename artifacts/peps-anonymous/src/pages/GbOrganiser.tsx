@@ -1,6 +1,7 @@
 import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
+import { OrganiserOnwardDelivery } from "@/components/onward-delivery/OrganiserOnwardDelivery";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { OnwardDeliveryMatrixPanel, OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
+import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { parseVendorShippingAmount } from "@/lib/vendor-shipping-settings";
 import { compareOrderAmounts } from "@/lib/order-amount-sort";
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
@@ -12342,7 +12343,7 @@ export function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
   return (
     <div className="space-y-4">
       {error && <ErrorBanner msg={error} onClose={() => setError(null)} />}
-      <OnwardDeliveryMatrixPanel scope="organiser" gbId={gb.id} />
+      <OrganiserOnwardDelivery gbId={gb.id} />
 
       <SectionCard>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

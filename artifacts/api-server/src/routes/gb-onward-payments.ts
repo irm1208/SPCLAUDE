@@ -7,12 +7,13 @@ import { GroupUpdateError, type UpdateActor } from "../lib/group-buy-updates-mod
 import { OnwardDeliveryError } from "../lib/gb-onward-delivery-rules";
 import { type OnwardOrderScope } from "../lib/gb-onward-delivery";
 import { createOnwardPayment, listOnwardPayments, manageOnwardPayment, readOnwardPayment,
-  saveOnwardPaymentSettings, submitOnwardPayment, verifyOnwardPayment } from "../lib/gb-onward-payments";
+  saveOnwardPaymentSettings, submitOnwardPayment, verifyOnwardPayment, organiserOnwardActor } from "../lib/gb-onward-payments";
 
 const router = Router();
 const param = (req: Request, name: string) => String(req.params[name] ?? "");
 const roots = ["/admin/group-buys/:id", "/organiser/group-buys/:id"];
 const reshipperRoot = "/reshipper/gb/:id";
+const organiserReshipperRoot = "/organiser/group-buys/:id/reshippers/:username";
 const memberRoot = "/orders/:orderId/onward-payments";
 const managerOrders = [...roots, reshipperRoot].map(root => `${root}/orders/:orderId/onward-payments`);
 const scope = (req: Request): OnwardOrderScope => req.path.startsWith("/admin/") ? "admin"
@@ -26,6 +27,18 @@ async function managerAuth(req: Request, res: Response, next: NextFunction) {
   await requireOrganiser(req, res, next);
 }
 const noCache = (_req: Request, res: Response, next: NextFunction) => { res.setHeader("Cache-Control", "private, no-store"); next(); };
+const delegatedActor = (req: Request) => organiserOnwardActor(param(req, "id"), param(req, "username"), actor(req));
+router.get(`${organiserReshipperRoot}/onward-payments`, requireOrganiser, noCache, async (req, res) => {
+  res.json(await listOnwardPayments(param(req, "id"), await delegatedActor(req)));
+});
+router.post(`${organiserReshipperRoot}/orders/:orderId/onward-payments`, requireOrganiser, noCache, async (req, res) => {
+  res.json(await createOnwardPayment(param(req, "id"), param(req, "orderId"), await delegatedActor(req), req.body ?? {}));
+});
+for (const action of ["confirm", "reject", "cancel"] as const) {
+  router.post(`${organiserReshipperRoot}/orders/:orderId/onward-payments/:requestId/${action}`, requireOrganiser, noCache, async (req, res) => {
+    res.json(await manageOnwardPayment(param(req, "id"), param(req, "orderId"), param(req, "requestId"), await delegatedActor(req), action, req.body?.reason));
+  });
+}
 router.get(`${reshipperRoot}/onward-payments`, requireReshipper, noCache, async (req, res) => {
   res.json(await listOnwardPayments(param(req, "id"), actor(req)));
 });
@@ -62,5 +75,5 @@ const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
   console.error("[gb-onward-payments]", error);
   res.status(500).json({ error: "Could not load or update the onward-delivery payment. Please retry." });
 };
-router.use([`${reshipperRoot}/onward-payments`, ...managerOrders, memberRoot], handleError);
+router.use([organiserReshipperRoot, `${reshipperRoot}/onward-payments`, ...managerOrders, memberRoot], handleError);
 export default router;

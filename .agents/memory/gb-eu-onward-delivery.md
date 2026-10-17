@@ -38,3 +38,9 @@ Use a separate onward-delivery wallet setting for each reshipper within the grou
 **Why:** The user explicitly chose a separate onward-delivery wallet setting.
 
 **How to apply:** Capture the receiving wallet, final amount, currency conversion and confirmation mode when issuing a request. Later settings changes apply to new requests, not existing debts. Closing a group buy or completing fulfilment must not erase an already-issued delivery debt or alter the original product payment.
+
+Reshippers may update their own matrix prices. Group-buy organisers may edit matrix prices and manage onward-payment requests for their group buys.
+
+**Why:** The user explicitly requested both price editing and payment-request management for organisers, in addition to reshipper price editing.
+
+**How to apply:** Keep one shared matrix per assignment, rather than separate organiser/reshipper copies. Restrict reshippers to their own active assignments. Organiser actions must validate group ownership and retain the selected reshipper's wallet destination and the real organiser's audit identity. Cover both organiser dashboards.

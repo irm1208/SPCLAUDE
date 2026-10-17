@@ -17,16 +17,17 @@ const actor = (req: Request): UpdateActor => scope(req) === "admin" ? { username
   : scope(req) === "organiser" ? { username: req.organiser!.telegramUsername, admin: req.organiser!.isAdmin, adminGbId: req.organiser!.adminGbId }
   : scope(req) === "reshipper" ? { username: req.reshipper!.telegramUsername } : { username: req.account!.telegramUsername };
 async function manageAuth(req: Request, res: Response, next: NextFunction) {
+  if (scope(req) === "reshipper") { await requireReshipper(req, res, next); return; }
   if (scope(req) === "admin") { if (requireAdmin(req, res)) next(); return; }
   await requireOrganiser(req, res, next);
 }
 const noCache = (_req: Request, res: Response, next: NextFunction) => { res.setHeader("Cache-Control", "private, no-store"); next(); };
-router.get(roots.map(root => `${root}/onward-delivery`), manageAuth, noCache, async (req, res) => {
-  res.json({ ...await onwardSettings(p(req, "id"), actor(req)), template: suppliedEuMatrix(),
+router.get([...roots, "/reshipper/gb/:id"].map(root => `${root}/onward-delivery`), manageAuth, noCache, async (req, res) => {
+  res.json({ ...await onwardSettings(p(req, "id"), actor(req), scope(req) === "reshipper"), template: suppliedEuMatrix(),
     countries: EU_DESTINATIONS.map(([code, name]) => ({ code, name })), currencies: ONWARD_CURRENCIES });
 });
-router.put(roots.map(root => `${root}/onward-delivery/:username`), manageAuth, noCache, async (req, res) => {
-  const result = await saveOnwardMatrix(p(req, "id"), p(req, "username"), actor(req), req.body);
+router.put([...roots, "/reshipper/gb/:id"].map(root => `${root}/onward-delivery/:username`), manageAuth, noCache, async (req, res) => {
+  const result = await saveOnwardMatrix(p(req, "id"), p(req, "username"), actor(req), req.body, scope(req) === "reshipper");
   await writeLog("change", "info", "gb_onward_matrix_updated", "Group-buy onward-delivery estimate rates updated", {
     groupBuyId: p(req, "id"), reshipper: p(req, "username"), actor: actor(req).username, enabled: result.matrix.enabled,
   }, req.ip).catch(error => console.error("[gb-onward-delivery:audit]", error));
@@ -54,6 +55,7 @@ const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
   res.status(500).json({ error: "Could not load or save onward delivery. Please retry." });
 };
 router.use(["/group-buys/:id/onward-delivery", "/orders/:orderId/onward-delivery",
+  "/reshipper/gb/:id/onward-delivery",
   ...roots.map(root => `${root}/onward-delivery`), ...roots.map(root => `${root}/orders/:orderId/onward-delivery`),
   "/reshipper/gb/:id/orders/:orderId/onward-delivery"], handleError);
 export default router;

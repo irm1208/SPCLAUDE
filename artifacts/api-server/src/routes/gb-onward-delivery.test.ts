@@ -60,6 +60,15 @@ describe("onward-delivery HTTP boundaries", () => {
     expect((await request("/organiser/group-buys/G/onward-delivery/r", "PUT", {}, suppliedEuMatrix())).status).toBe(401);
     expect(mocks.settings).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
   });
+  it("routes reshipper matrix edits through the self-only ownership guard", async () => {
+    expect((await request("/reshipper/gb/G/onward-delivery")).status).toBe(401);
+    const headers = { "x-test-reshipper": "resh" };
+    expect((await request("/reshipper/gb/G/onward-delivery", "GET", headers)).status).toBe(200);
+    expect(mocks.settings).toHaveBeenCalledWith("G", { username: "resh" }, true);
+    const matrix = suppliedEuMatrix();
+    expect((await request("/reshipper/gb/G/onward-delivery/resh", "PUT", headers, matrix)).status).toBe(200);
+    expect(mocks.save).toHaveBeenCalledWith("G", "resh", { username: "resh" }, matrix, true);
+  });
   it("requires member auth for previews and saved choices", async () => {
     expect((await request("/group-buys/G/onward-delivery/estimate", "POST", {}, { kits: 1 })).status).toBe(401);
     expect((await request("/orders/O/onward-delivery")).status).toBe(401);
@@ -70,12 +79,12 @@ describe("onward-delivery HTTP boundaries", () => {
     expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toContain("no-store");
     const body = await response.json() as any; expect(body.template.rates).toHaveLength(27);
     expect(body.countries).toHaveLength(27); expect(body.currencies).toContain("USD");
-    expect(mocks.settings).toHaveBeenCalledWith("G", { username: "admin", admin: true });
+    expect(mocks.settings).toHaveBeenCalledWith("G", { username: "admin", admin: true }, false);
   });
   it("passes organiser ownership and scoped admin identity into matrix writes", async () => {
     const matrix = suppliedEuMatrix();
     expect((await request("/organiser/group-buys/G/onward-delivery/resh", "PUT", { "x-test-organiser": "lead", "x-test-gb": "G" }, matrix)).status).toBe(200);
-    expect(mocks.save).toHaveBeenCalledWith("G", "resh", { username: "lead", admin: undefined, adminGbId: "G" }, matrix);
+    expect(mocks.save).toHaveBeenCalledWith("G", "resh", { username: "lead", admin: undefined, adminGbId: "G" }, matrix, false);
   });
   it("returns forbidden for cross-group manager access", async () => {
     mocks.settings.mockRejectedValue(new GroupUpdateError("You do not manage this group buy.", 403));

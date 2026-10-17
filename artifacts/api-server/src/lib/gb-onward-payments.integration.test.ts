@@ -77,6 +77,26 @@ describe.skipIf(process.env.ONWARD_PAYMENT_DB_TESTS !== "1")("onward-payment tra
       expect(await api.hasOnwardPaymentTransaction(hash.toUpperCase())).toBe(true);
     });
   });
+  it("allows only the owning organiser to manage a selected reshipper's charges and matrix", async () => {
+    await fixture(async (store, api, f, tx) => {
+      const matrices = await import("./gb-onward-delivery");
+      const own = await matrices.onwardSettings(f.id, { username: f.resh }, true);
+      expect(own.reshippers.map((r: any) => r.username)).toEqual([f.resh]);
+      const rates = suppliedEuMatrix(); rates.rates[0].homeSmall = 29;
+      await matrices.saveOnwardMatrix(f.id, f.resh, { username: f.resh }, rates, true);
+      expect((await matrices.onwardSettings(f.id, { username: f.owner })).reshippers[0].matrix!.rates[0].homeSmall).toBe(29);
+      await expect(matrices.saveOnwardMatrix(f.id, f.resh, { username: f.other }, rates, true)).rejects.toMatchObject({ status: 403 });
+      const delegated = await api.organiserOnwardActor(f.id, f.resh, { username: f.owner });
+      const made = await api.createOnwardPayment(f.id, f.orderId, delegated, newBody());
+      expect(made.request.wallet.walletAddress).toBe(wallet.walletAddress);
+      await api.submitOnwardPayment(f.orderId, made.request.id, { username: f.member }, hash);
+      expect((await api.manageOnwardPayment(f.id, f.orderId, made.request.id, delegated, "confirm")).request.status).toBe("paid");
+      await expect(api.organiserOnwardActor(f.id, f.resh, { username: f.other })).rejects.toMatchObject({ status: 403 });
+      await expect(api.organiserOnwardActor(f.id, f.other, { username: f.owner })).rejects.toMatchObject({ status: 403 });
+      const [order] = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
+      expect(order.grandTotal).toBe("112.00");
+    });
+  });
   it("keeps cancellation/rejection history and requires a new request for changed charges", async () => {
     await fixture(async (_store, api, f) => {
       const first = (await api.createOnwardPayment(f.id, f.orderId, { username: f.resh }, newBody())).request;

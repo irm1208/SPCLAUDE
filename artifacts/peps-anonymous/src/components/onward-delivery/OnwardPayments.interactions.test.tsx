@@ -139,3 +139,40 @@ test("Admin read-only status uses the Admin fetcher and does not render financia
   assert.ok(byId("status-onward-payment-paid"));
   assert.equal(byId("button-onward-confirm-O"), null);
 });
+test("organiser selects a reshipper and manages payments without editing their wallet", async () => {
+  const { OrganiserOnwardDelivery } = await import("./OrganiserOnwardDelivery");
+  let request = makeCharge({ status: "pending_confirmation", txHash: `0x${"b".repeat(64)}` });
+  const urls: string[] = [];
+  const fetcher = async (url: string, init?: RequestInit) => {
+    urls.push(url);
+    if (url.endsWith("/onward-delivery")) return json({
+      reshippers: [{ username: "resh", enabled: true }, { username: "other", enabled: true }], countries: [], template: {},
+    });
+    if (init?.method === "POST") { request = { ...request, status: "paid" }; return json(env(request)); }
+    return json(overview(request));
+  };
+  await render(<OrganiserOnwardDelivery gbId="G" fetcher={fetcher} />);
+  await click("toggle-organiser-onward-payments");
+  assert.ok(urls.includes("/api/organiser/group-buys/G/reshippers/resh/onward-payments"));
+  assert.ok(byId("organiser-onward-wallet"));
+  assert.equal(byId("input-onward-wallet-address"), null);
+  await click("button-expand-onward-payment-O");
+  await click("button-onward-confirm-O");
+  assert.ok(urls.includes("/api/organiser/group-buys/G/reshippers/resh/orders/O/onward-payments/R/confirm"));
+  assert.ok(byId("status-onward-payment-paid"));
+  await type("select-organiser-onward-reshipper", "other");
+  assert.ok(urls.includes("/api/organiser/group-buys/G/reshippers/other/onward-payments"));
+});
+test("reshipper matrix requests and saves use the reshipper-owned API", async () => {
+  const { onwardApi } = await import("../../lib/onward-delivery");
+  const calls: { url: string; init?: RequestInit }[] = [];
+  const fetcher = async (url: string, init?: RequestInit) => {
+    calls.push({ url, init }); return json(init?.method === "PUT" ? { matrix: { enabled: true } } : { reshippers: [] });
+  };
+  await onwardApi.getConfig(fetcher, "reshipper", "G");
+  await onwardApi.saveMatrix(fetcher, "reshipper", "G", "resh", { enabled: true, currency: "USD", rates: [] });
+  assert.equal(calls[0].url, "/api/reshipper/gb/G/onward-delivery");
+  assert.equal(calls[1].url, "/api/reshipper/gb/G/onward-delivery/resh");
+  assert.equal(calls[1].init?.method, "PUT");
+  assert.equal(JSON.parse(String(calls[1].init?.body)).currency, "USD");
+});
