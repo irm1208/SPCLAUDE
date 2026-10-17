@@ -153,3 +153,4 @@
 - [Wholesale fulfilment wording](wholesale-fulfilment-wording.md) — the second wholesale/shared milestone is “Order received by Vendor”; unrelated order wording stays unchanged.
 - [GB progress updates](gb-progress-updates.md) — six manually managed group-wide stages and dated image/note updates; independent of member order/payment statuses.
 - [Reshipper group visibility](reshipper-group-visibility.md) — account-saved personal hiding with restore; never remove assignments or orders, or reuse customer archiving.
+- [GB EU onward delivery](gb-eu-onward-delivery.md) — country/method/quantity estimates cover reshipper-to-member delivery, never vendor shipping; quantity units and payment handling need confirmation.
