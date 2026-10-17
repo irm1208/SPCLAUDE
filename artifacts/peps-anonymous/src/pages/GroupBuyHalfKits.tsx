@@ -3,6 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, ChevronDown, Loader2, Package, RefreshCw } from "lucide-react";
+import { HalfKitClaimDialog } from "@/components/half-kits/HalfKitClaimDialog";
 import {
   HALF_KIT_POLL_MS, claimHalfKit, computeClaimTotals, fetchMemberOffers, formatMoney, isAuthRequired, isPreviewConflict, isHalfKitTaken, newRequestId,
   type ClaimResult, type HalfKitGroup, type MemberOffer, type MemberOrder, type MemberOffersResponse, type HalfKitAvailability,
@@ -57,7 +58,7 @@ export function ClaimConfirmation({ offer, group, order, creditsBalance, useCred
   const t = computeClaimTotals(offer, creditsBalance, useCredits, group.allowCredits);
   const m = (n: number) => formatMoney(group.currency, n);
   return (
-    <dl className="rounded-xl bg-[#F8FAFC] border p-3 text-sm space-y-1.5" style={{ borderColor: "#D0DAE4" }} data-testid="summary-claim">
+    <dl className="rounded-xl border p-3 text-sm space-y-1.5" style={{ background: "var(--t-surface2)", color: "var(--t-text)", borderColor: "var(--t-border)" }} data-testid="summary-claim">
       <Row k="Item" v={`${offer.productName} · 0.5 kit`} />
       <Row k="Added to order" v={`${order.code} (${order.paymentStatus})`} />
       <Row k="Half price" v={m(offer.price)} />
@@ -66,12 +67,12 @@ export function ClaimConfirmation({ offer, group, order, creditsBalance, useCred
       <Row k="Total" v={m(t.total)} strong />
       {t.credits > 0 && <Row k="Credits used" v={`- ${m(t.credits)}`} />}
       <Row k="Cash due now" v={m(t.cash)} strong />
-      <p className="pt-1 text-[11px] text-[#6B7280]">No coupons apply to half kits. {order.paymentStatus === "paid" ? "Your original payment stays confirmed; only this additional amount becomes due." : "This amount is added to your order's payable total."}</p>
+      <p className="pt-1 text-[11px]" style={{ color: "var(--t-muted)" }}>No coupons apply to half kits. {order.paymentStatus === "paid" ? "Your original payment stays confirmed; only this additional amount becomes due." : "This amount is added to your order's payable total."}</p>
     </dl>
   );
 }
 function Row({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
-  return <div className={`flex justify-between gap-3 ${strong ? "font-bold text-[#0F1F38]" : "text-[#374151]"}`}><dt>{k}</dt><dd className="tabular-nums text-right">{v}</dd></div>;
+  return <div className={`flex justify-between gap-3 ${strong ? "font-bold" : ""}`} style={{ color: "var(--t-text)" }}><dt className="shrink-0">{k}</dt><dd className="min-w-0 break-words tabular-nums text-right">{v}</dd></div>;
 }
 
 export default function GroupBuyHalfKits() {
@@ -248,36 +249,34 @@ export function HalfKitOffers({ gbId, embedded = false, enabled = true }: { gbId
       </OfferSection>
 
       {active && q.data && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#0F1F38]/50 p-0 sm:p-4" onClick={close}>
-          <div role="dialog" aria-modal="true" aria-labelledby="claim-title" className="w-full max-w-md rounded-t-2xl sm:rounded-2xl bg-white p-5 space-y-4" onClick={e => e.stopPropagation()}>
-            <h2 id="claim-title" className="text-lg font-bold text-[#0F1F38]">Confirm half kit</h2>
+        <HalfKitClaimDialog pending={claim.isPending} onClose={close} footer={
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={close} disabled={claim.isPending} className="h-10 rounded-xl border px-4 text-sm" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }} data-testid="button-cancel-claim">{isHalfKitTaken(claim.error) ? "Close" : "Cancel"}</button>
+            {!isHalfKitTaken(claim.error) && <button type="button" disabled={!order || claim.isPending || (needsReconfirm && q.isFetching)} onClick={confirm} className="h-10 rounded-xl px-4 text-sm font-bold text-white bg-[#1B3A7A] disabled:opacity-50 inline-flex items-center gap-2" data-testid="button-confirm-claim">
+              {claim.isPending && <Loader2 className="w-4 h-4 animate-spin" />}{needsReconfirm ? "Confirm updated amount" : claim.isError ? "Retry" : "Confirm"}
+            </button>}
+          </div>
+        }>
             <label className="block">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#8A9AAA]">Target order</span>
-              <select className="mt-1 h-10 w-full rounded-lg border px-2 text-sm" style={{ borderColor: "#D0DAE4" }} value={orderId} disabled={claim.isPending}
+              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-muted)" }}>Target order</span>
+              <select className="mt-1 min-h-11 w-full rounded-lg border px-2 text-base" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }} value={orderId} disabled={claim.isPending}
                 onChange={e => setOrderId(e.target.value)} data-testid="select-order">
                 <option value="">Select an order…</option>
                 {orders.map(o => <option key={o.id} value={o.id}>{o.code} · {o.paymentStatus} · due {formatMoney(q.data!.group.currency, o.amountDue)}</option>)}
               </select>
             </label>
             {q.data.group.allowCredits && q.data.creditsBalance > 0 && (
-              <label className="flex items-center gap-2 text-sm text-[#374151]">
+              <label className="flex items-center gap-2 text-sm" style={{ color: "var(--t-text)" }}>
                 <input type="checkbox" className="h-4 w-4 accent-[#2D6BCC]" checked={useCredits} disabled={claim.isPending} onChange={e => setUseCredits(e.target.checked)} data-testid="checkbox-use-credits" />
                 Use credits (balance {formatMoney(q.data.group.currency, q.data.creditsBalance)})
               </label>
             )}
             {order ? <ClaimConfirmation offer={active} group={q.data.group} order={order} creditsBalance={q.data.creditsBalance} useCredits={useCredits} />
-              : <p className="text-sm text-[#6B7280]">Choose which order receives this half.</p>}
+               : <p className="text-sm" style={{ color: "var(--t-muted)" }}>Choose which order receives this half.</p>}
             {needsReconfirm ? (
               <p role="alert" className="text-sm text-amber-900 rounded-lg bg-amber-50 p-2" data-testid="status-reconfirm">The price, credits or availability changed. The summary above is refreshed; please check it and confirm again.</p>
             ) : claim.isError && <p role="alert" className="text-sm text-red-600">{claim.error instanceof Error ? claim.error.message : "Claim failed"}{isHalfKitTaken(claim.error) ? " Please choose another available half kit." : " You can retry safely."}</p>}
-            <div className="flex gap-2 justify-end">
-              <button type="button" onClick={close} disabled={claim.isPending} className="h-10 rounded-xl border border-dashed px-4 text-sm text-[#8A9AAA]" style={{ borderColor: "#D0DAE4" }} data-testid="button-cancel-claim">{isHalfKitTaken(claim.error) ? "Close" : "Cancel"}</button>
-              {!isHalfKitTaken(claim.error) && <button type="button" disabled={!order || claim.isPending || (needsReconfirm && q.isFetching)} onClick={confirm} className="h-10 rounded-xl px-4 text-sm font-bold text-white bg-[#1B3A7A] disabled:opacity-50 inline-flex items-center gap-2" data-testid="button-confirm-claim">
-                {claim.isPending && <Loader2 className="w-4 h-4 animate-spin" />}{needsReconfirm ? "Confirm updated amount" : claim.isError ? "Retry" : "Confirm"}
-              </button>}
-            </div>
-          </div>
-        </div>
+        </HalfKitClaimDialog>
       )}
     </div>
   );

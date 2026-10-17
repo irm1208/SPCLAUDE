@@ -12,7 +12,7 @@ let useHalfKitAvailability: typeof import("../../hooks/use-half-kit-availability
 let dom: JSDOM;
 beforeAll(async () => {
   dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
-  for (const key of ["window", "document", "navigator", "location", "history", "localStorage", "HTMLElement", "HTMLInputElement", "Event", "Node", "MutationObserver"]) {
+  for (const key of ["window", "document", "navigator", "location", "history", "localStorage", "HTMLElement", "HTMLInputElement", "Event", "CustomEvent", "Node", "NodeFilter", "MutationObserver", "getComputedStyle"]) {
     Object.defineProperty(globalThis, key, { configurable: true, value: dom.window[key] });
   }
   Object.defineProperty(globalThis, "addEventListener", { configurable: true, value: dom.window.addEventListener.bind(dom.window) });
@@ -31,6 +31,39 @@ function AvailabilityLink() {
 }
 
 describe("inline half-kit claims", () => {
+  it("opens confirmation outside the product panel with a separate scroll body and accessible actions", async () => {
+    (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+    const data = {
+      group: { id: "g1", name: "Autumn GB", currency: "USDT", allowCredits: false },
+      offers: [{ id: "h1", productId: "p1", productName: "GHRP-2 10mg", price: 25, deliveryCharge: 0, vendorShippingCharge: 0, version: 1 }],
+      orders: [{ id: "o1", code: "12219", paymentStatus: "unpaid", amountDue: 0 }],
+      creditsBalance: 0,
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => data })));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    client.setQueryData(["member-half-kits", "g1"], data);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    document.documentElement.dataset.theme = "dark";
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><HalfKitOffers gbId="g1" embedded /></QueryClientProvider>));
+      await act(async () => (container.querySelector('[data-testid="button-claim-h1"]') as HTMLButtonElement).click());
+      const dialog = document.querySelector('[role="dialog"]')!;
+      expect(dialog).not.toBeNull();
+      expect(container.contains(dialog)).toBe(false);
+      expect(dialog.classList.contains("half-kit-claim-dialog")).toBe(true);
+      expect(dialog.querySelector(".half-kit-claim-body [data-testid='summary-claim']")?.textContent).toContain("USDT 25.00");
+      expect(dialog.querySelector(".half-kit-claim-footer [data-testid='button-confirm-claim']")).not.toBeNull();
+      expect(dialog.querySelector(".half-kit-claim-footer [data-testid='button-cancel-claim']")).not.toBeNull();
+      await act(async () => (dialog.querySelector('[aria-label="Close half-kit confirmation"]') as HTMLButtonElement).click());
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove(); client.clear(); vi.unstubAllGlobals();
+      delete document.documentElement.dataset.theme;
+    }
+  });
   it("starts a normal new-order checkout without prematurely taking an orderless member's half kit", async () => {
     (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
     const data: MemberOffersResponse = {
@@ -126,13 +159,13 @@ describe("inline half-kit claims", () => {
       expect(section.open).toBe(false);
       await act(async () => (container.querySelector('[data-testid="toggle-half-kit-offers"]') as HTMLElement).click());
       await act(async () => (container.querySelector('[data-testid="button-claim-h1"]') as HTMLButtonElement).click());
-      await waitFor(() => expect(container.querySelector('[data-testid="button-confirm-claim"]')).not.toBeNull());
-      await act(async () => (container.querySelector('[data-testid="button-confirm-claim"]') as HTMLButtonElement).click());
+      await waitFor(() => expect(document.querySelector('[data-testid="button-confirm-claim"]')).not.toBeNull());
+      await act(async () => (document.querySelector('[data-testid="button-confirm-claim"]') as HTMLButtonElement).click());
       await waitFor(() => {
-        expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain("Sorry, this half kit was taken 2 seconds ago.");
-        expect(container.querySelector('[data-testid="button-confirm-claim"]')).toBeNull();
+        expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain("Sorry, this half kit was taken 2 seconds ago.");
+        expect(document.querySelector('[data-testid="button-confirm-claim"]')).toBeNull();
         expect(container.querySelector('[data-testid="button-claim-h1"]')).toBeNull();
-        expect(container.querySelector('[data-testid="button-cancel-claim"]')?.textContent).toBe("Close");
+        expect(document.querySelector('[data-testid="button-cancel-claim"]')?.textContent).toBe("Close");
       });
     } finally {
       await act(async () => root.unmount());
@@ -185,8 +218,8 @@ describe("inline half-kit claims", () => {
         expect(container.querySelector('[data-testid="button-claim-h1"]')).not.toBeNull();
       });
       await act(async () => (container.querySelector('[data-testid="button-claim-h1"]') as HTMLButtonElement).click());
-      await waitFor(() => expect(container.querySelector('[data-testid="button-confirm-claim"]')).not.toBeNull());
-      await act(async () => (container.querySelector('[data-testid="button-confirm-claim"]') as HTMLButtonElement).click());
+      await waitFor(() => expect(document.querySelector('[data-testid="button-confirm-claim"]')).not.toBeNull());
+      await act(async () => (document.querySelector('[data-testid="button-confirm-claim"]') as HTMLButtonElement).click());
       await waitFor(() => {
         expect(client.getQueryData<MemberOffersResponse>(["member-half-kits", "g1"])?.offers).toEqual(remainingOffers);
         if (hasOther) {
