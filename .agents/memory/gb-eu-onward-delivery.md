@@ -7,6 +7,8 @@ The EU delivery matrix is for onward delivery from the reshipper to the member, 
 
 Quantity means kits; half a kit counts as 0.5.
 
+The user approved quantity bands of up to 5 kits and over 5 through 25 kits; 5.5 kits uses the larger band.
+
 **Why:** The user explicitly distinguished this shipping leg from vendor shipping and wants these options available per group buy.
 
-**How to apply:** Keep onward estimates separately labelled and stored from vendor-shipping charges. Payment handling and treatment of fractional quantities at band boundaries or quantities outside the supplied bands need clarification before implementation; do not assume them.
+**How to apply:** Keep onward estimates separately labelled and stored from vendor-shipping charges. Payment handling and treatment of quantities above 25 need clarification before implementation; do not assume them.
