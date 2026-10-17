@@ -24,3 +24,11 @@ Use the existing database-backed configuration store for these optional settings
 **Why:** This follows the existing group-update/preference convention without adding a production schema migration or letting an informational estimate become a financial obligation.
 
 **How to apply:** Key matrix identity by stable reshipper assignment rather than mutable username, and preferences by order identity. Removing and re-adding a reshipper should require consciously enabling rates again.
+
+Separate onward-delivery payment requests are approved for existing orders, including closed group buys. Keep the original product payment, vendor shipping and order total untouched.
+
+The reshipper provides their crypto address for onward-delivery charges. Manual confirmation is the default, with a reshipper-panel option to accept manually or automatically.
+
+**Why:** The user wants reshippers to collect the actual onward-delivery charge after product ordering has closed, and explicitly requested both confirmation modes.
+
+**How to apply:** Estimates alone never create an amount owed. Track an explicitly requested onward charge separately. Automatic acceptance must mean verified blockchain receipt, not accepting a submitted transaction ID without verification.
