@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, RefreshCw, Save, Truck, AlertTriangle, MapPin, Home } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Save, Truck, AlertTriangle, MapPin, Home, Check, Info } from "lucide-react";
 import {
   ONWARD_CAPTION, ONWARD_CURRENCIES, RATE_FIELDS, defaultFetcher, filledRateCount, formatOnwardAmount, formatPriceInput,
   methodLabel, normaliseMatrix, onwardApi, parsePriceInput, selectionIsStale, statusMessage,
@@ -207,15 +207,21 @@ function ReshipperMatrixRow({ scope, gbId, fetcher, headers, config, username, s
 
 function Frame({ children, testId }: { children: React.ReactNode; testId: string }) {
   return (
-    <div className="rounded-xl px-4 py-3 space-y-2" data-testid={testId}
-      style={{ background: "var(--t-surface, #fff)", border: "1px solid var(--t-border, #E4E4E7)" }}>
-      <div className="flex items-center gap-2">
-        <Truck className="w-3.5 h-3.5" style={{ color: "var(--t-blue, #2D6BCC)" }} />
-        <p className="text-xs font-bold" style={{ color: "var(--t-text)" }}>Onward delivery estimate <span className="font-normal" style={{ color: "var(--t-subtle)" }}>(optional)</span></p>
-      </div>
-      {children}
-      <p className="text-[11px] leading-snug" style={{ color: "var(--t-subtle)" }}>{ONWARD_CAPTION}</p>
-    </div>
+    <section className="onward-estimate-card" data-testid={testId} aria-label="Onward delivery estimate">
+      <header className="onward-estimate-header">
+        <span className="onward-estimate-icon"><Truck className="h-4 w-4" aria-hidden="true" /></span>
+        <h3>Onward delivery estimate</h3>
+        <span className="onward-estimate-optional">Optional</span>
+      </header>
+      <div className="onward-estimate-content">{children}</div>
+      <footer className="onward-estimate-footer">
+        <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+        <div>
+          <p className="onward-estimate-payment-note">Pay your reshipper later</p>
+          <p>Reshipper to you, not vendor shipping. Not included in your order total.</p>
+        </div>
+      </footer>
+    </section>
   );
 }
 
@@ -231,17 +237,19 @@ function OptionButtons({ estimate, value, onSelect, disabled }: {
   estimate: OnwardEstimate; value: OnwardMethod | null; onSelect?: (m: OnwardMethod | null) => void; disabled?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="onward-estimate-options" role="group" aria-label="Onward delivery preference">
       {estimate.options.map(o => {
         const on = value === o.method;
         const Icon = o.method === "pickup" ? MapPin : Home;
         return (
           <button key={o.method} type="button" disabled={disabled || !onSelect} data-testid={`button-onward-${o.method}`}
             onClick={() => onSelect?.(on ? null : o.method)} aria-pressed={on}
-            className="rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-default"
-            style={{ border: on ? "1.5px solid var(--t-blue, #2D6BCC)" : "1px solid var(--t-border, #E4E4E7)", background: on ? "var(--t-blue-08, rgba(45,107,204,0.08))" : "transparent" }}>
-            <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--t-text)" }}><Icon className="w-3 h-3" />{methodLabel(o.method)}</span>
-            <span className="block text-sm font-bold tabular-nums" style={{ color: on ? "var(--t-blue, #2D6BCC)" : "var(--t-text)" }}>~{formatOnwardAmount(o.amount, estimate.currency)}</span>
+            className="onward-estimate-option">
+            <span className="onward-estimate-option-heading">
+              <span className="onward-estimate-method"><Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{methodLabel(o.method)}</span>
+              <span className="onward-estimate-check" aria-hidden="true">{on && <Check className="h-3 w-3" />}</span>
+            </span>
+            <span className="onward-estimate-amount"><span className="onward-estimate-approx">~</span>{formatOnwardAmount(o.amount, estimate.currency)}</span>
           </button>
         );
       })}
@@ -259,9 +267,11 @@ function EstimateBody({ estimate, value, onSelect, disabled }: {
       {estimate.status === "available" && estimate.options.length > 0 && (
         <>
           <OptionButtons estimate={estimate} value={stale ? null : value} onSelect={onSelect} disabled={disabled} />
-          <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
-            {estimate.kits} kit{estimate.kits === 1 ? "" : "s"} to {estimate.country}{estimate.reshipperUsername ? ` via @${estimate.reshipperUsername}` : ""}{onSelect && !value ? " · tap to choose, tap again to clear" : ""}
-          </p>
+          <div className="onward-estimate-context">
+            <span>{estimate.kits} kit{estimate.kits === 1 ? "" : "s"}{estimate.country ? ` · ${countryName(estimate.country)}` : ""}</span>
+            {estimate.reshipperUsername && <span className="onward-estimate-reshipper">via @{estimate.reshipperUsername}</span>}
+          </div>
+          {onSelect && !value && <p className="onward-estimate-hint">Choose a preference above. Tap again to clear.</p>}
         </>
       )}
       {msg && <Notice text={msg} warn={estimate.status === "quote_required" || estimate.status === "unavailable"} />}
@@ -270,6 +280,11 @@ function EstimateBody({ estimate, value, onSelect, disabled }: {
       )}
     </>
   );
+}
+
+function countryName(code: string) {
+  try { return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code; }
+  catch { return code; }
 }
 
 const Skeleton = () => <div className="grid grid-cols-2 gap-2">{[0, 1].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "var(--t-surface2, #F4F4F5)" }} />)}</div>;
