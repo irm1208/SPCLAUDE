@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Copy, Loader2, RefreshCw, Save, ShieldCheck, Wallet, X, AlertTriangle, Send } from "lucide-react";
 import type { Fetcher } from "@/lib/onward-delivery";
-import { methodLabel } from "@/lib/onward-delivery";
+import { formatOnwardAmount, methodLabel } from "@/lib/onward-delivery";
 import {
   FIAT_CURRENCIES, STATUS_COLOR, STATUS_LABEL, fmtCrypto, fmtDate, fmtFiat, newIdempotencyKey, onwardPayApi, parseAmount,
   prefillFromEstimate, validateSettings,
@@ -139,12 +139,19 @@ function MemberCardBody({ orderId }: { orderId: string }) {
   }, [orderId]);
   useEffect(() => { void load(); return () => ctl.current?.abort(); }, [load]);
 
-  const req = env?.request ?? null;
+  const rawReq = env?.request ?? null;
+  // A cancelled request is history only: nothing is due.
+  const req = rawReq && rawReq.status !== "cancelled" ? rawReq : null;
+  const history = env?.history ?? [];
+  const historyItems = rawReq && rawReq.status === "cancelled" && !history.some(h => h.id === rawReq.id) ? [rawReq, ...history] : history;
   useEffect(() => {
-    const focus = () => { if (document.visibilityState === "visible") void load(); };
-    window.addEventListener("focus", focus);
-    const timer = req?.status === "pending_confirmation" ? window.setInterval(focus, 15_000) : null;
-    return () => { window.removeEventListener("focus", focus); if (timer !== null) window.clearInterval(timer); };
+    const refresh = () => { if (document.visibilityState === "visible") void load(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    // Finite polling: faster while awaiting confirmation, slow otherwise (picks up new requests).
+    const ms = req?.status === "pending_confirmation" ? 15_000 : req?.status === "paid" ? null : 60_000;
+    const timer = ms ? window.setInterval(refresh, ms) : null;
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); if (timer !== null) window.clearInterval(timer); };
   }, [load, req?.status]);
   const run = async (kind: "submit" | "verify") => {
     if (!req) return;
@@ -156,8 +163,11 @@ function MemberCardBody({ orderId }: { orderId: string }) {
     finally { setBusy(null); }
   };
 
-  if (!loading && !error && (!env || (!env.request && env.history.length === 0))) return null;
-  if (loading && !env) return null; // stay invisible until we know a request exists
+  if (loading && !env) return null; // stay invisible until we know the order applies
+  // Without any request or history, only show the guided empty state when this member could pay
+  // for this order (awaitingRequest); unrelated / ineligible orders stay hidden.
+  if (!error && env && !rawReq && history.length === 0 && env.awaitingRequest !== true) return null;
+  if (!error && !env) return null;
 
   return (
     <section className="rounded-xl overflow-hidden" data-testid="card-onward-payment"
@@ -171,20 +181,25 @@ function MemberCardBody({ orderId }: { orderId: string }) {
         {error && <ErrorLine text={error} onRetry={() => void load()} />}
         {req ? (
           <>
-            <div className="flex items-center gap-2"><StatusPill status={req.status} />
+            <div className="flex items-center gap-2" data-testid={`state-onward-${req.status === "pending_confirmation" ? `pending-${req.confirmationMode}` : req.status}`}><StatusPill status={req.status} />
               {loading && <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--t-subtle)" }} />}</div>
             <ChargeDetails c={req} showWallet={!!env?.canSubmit && (req.status === "unpaid" || req.status === "pending_confirmation")} />
             {!env?.canSubmit && (req.status === "unpaid" || req.status === "pending_confirmation") && (
               <ErrorLine text="The order or reshipper assignment has changed. Do not send another payment; contact your organiser to resolve this request." />
             )}
             {req.status === "unpaid" && env?.canSubmit && (
-              <form className="space-y-1.5" onSubmit={e => { e.preventDefault(); if (tx.trim()) void run("submit"); }}>
+              <form className="space-y-2" onSubmit={e => { e.preventDefault(); if (tx.trim()) void run("submit"); }}>
+                <ol className="text-[11px] space-y-1 list-decimal pl-4" style={{ color: "var(--t-muted)" }} data-testid="list-onward-pay-steps">
+                  <li>Send exactly {fmtCrypto(req.cryptoAmount)} {req.wallet.currency} on {req.wallet.network} to the address above. Use the copy buttons.</li>
+                  <li>Paste the transaction hash (TXID) below and choose Submit TXID.</li>
+                  <li>{req.confirmationMode === "automatic" ? "We check the blockchain automatically." : "Your reshipper confirms receipt manually."}</li>
+                </ol>
                 <label htmlFor={`tx-${req.id}`} className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Transaction hash (TXID)</label>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap sm:flex-nowrap">
                   <input id={`tx-${req.id}`} value={tx} onChange={e => setTx(e.target.value)} placeholder="Paste the TXID after sending" autoComplete="off" spellCheck={false}
                     className={`${inputCls} font-mono`} style={inputStyle} data-testid="input-onward-txhash" />
                   <Btn type="submit" disabled={!tx.trim() || busy !== null} testId="button-onward-submit-tx">
-                    {busy === "submit" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Submit
+                    {busy === "submit" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Submit TXID
                   </Btn>
                 </div>
                 <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Send exactly the amount above on the stated network, then submit the TXID. No screenshot needed.</p>
@@ -193,7 +208,7 @@ function MemberCardBody({ orderId }: { orderId: string }) {
             {req.status === "pending_confirmation" && (
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-[11px] flex-1" style={{ color: "var(--t-muted)" }}>
-                  {req.confirmationMode === "automatic" ? "Checking the blockchain. This retries automatically; you can also check now." : "Waiting for your reshipper to confirm they received it."}
+                  {req.confirmationMode === "automatic" ? "TXID received. Automatic blockchain check in progress; this page refreshes on its own, or check now." : "TXID received. Waiting for your reshipper to manually confirm they received it. Do not send again."}
                 </p>
                 {req.confirmationMode === "automatic" && (
                   <Btn tone="ghost" onClick={() => void run("verify")} disabled={busy !== null} testId="button-onward-verify">
@@ -202,11 +217,21 @@ function MemberCardBody({ orderId }: { orderId: string }) {
                 )}
               </div>
             )}
-            {req.status === "paid" && <p className="text-[11px] flex items-center gap-1" style={{ color: "#16a34a" }}><ShieldCheck className="w-3.5 h-3.5" />Onward delivery paid. Thank you.</p>}
+            {req.status === "paid" && <p className="text-[11px] flex items-center gap-1" style={{ color: "#16a34a" }}><ShieldCheck className="w-3.5 h-3.5" />Onward delivery paid and confirmed. Nothing more is due.</p>}
           </>
-        ) : <p className="text-xs" style={{ color: "var(--t-muted)" }}>No open onward delivery payment.</p>}
+        ) : (
+          <div className="space-y-1" data-testid="state-onward-not-requested">
+            <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Not requested yet</p>
+            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+              Onward delivery is paid separately from your product payment. Your reshipper has not requested a delivery payment for this order yet. When they do, the amount, wallet and instructions will appear here.
+              {rawReq?.status === "cancelled" ? " An earlier request was cancelled; nothing is due for it." : ""}
+              {rawReq?.status === "cancelled" && <span data-testid="state-onward-cancelled" className="sr-only">Cancelled request, nothing due</span>}
+            </p>
+            {loading && <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--t-subtle)" }} />}
+          </div>
+        )}
         {actErr && <ErrorLine text={actErr} testId="error-onward-action" />}
-        <History items={env?.history ?? []} currentId={req?.id} />
+        <History items={historyItems} currentId={req?.id} />
       </div>
     </section>
   );
@@ -286,12 +311,12 @@ function ManagerBody({ gbId, fetcher, walletReadOnly }: { gbId: string; fetcher:
   return (
     <section className="rounded-2xl p-4 space-y-4" data-testid="panel-onward-payments" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
       <div className="flex items-center gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>Onward delivery payments</p>
+        <h3 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Collect onward-delivery payments</h3>
         <button type="button" onClick={() => void load()} disabled={loading} className="ml-auto text-[11px] inline-flex items-center gap-1 disabled:opacity-50" style={{ color: "var(--t-muted)" }} data-testid="button-reload-onward-payments">
           <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
-      <p className="text-[11px] -mt-2" style={{ color: "var(--t-subtle)" }}>{walletReadOnly ? "Manage charges on behalf of the selected reshipper, paid to their separate onward wallet." : "Charge members for delivery from you to them, paid in crypto to your onward wallet."} Separate from product payments and never added to order totals.</p>
+      <p className="text-[11px] -mt-2" style={{ color: "var(--t-subtle)" }}>Works for existing and closed group buys, even weeks after product payments were collected. {walletReadOnly ? "Manage charges on behalf of the selected reshipper, paid to their separate onward wallet." : "Charge members for delivery from you to them, paid in crypto to your onward wallet."} Separate from product payments and never added to order totals.</p>
       {error && <ErrorLine text={error} onRetry={() => void load()} />}
       {loading && !data && <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-10 rounded-lg animate-pulse" style={{ background: "var(--t-surface2)" }} />)}</div>}
       {data && (
@@ -305,14 +330,13 @@ function ManagerBody({ gbId, fetcher, walletReadOnly }: { gbId: string; fetcher:
             </div>
           ) : <WalletSettingsForm gbId={gbId} fetcher={fetcher} saved={data.settings} rails={data.rails}
             onSaved={s => setData(d => d ? { ...d, settings: s } : d)} />}
-          <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: "var(--t-blue-08, rgba(45,107,204,0.08))", border: "1px solid var(--t-blue-20, rgba(45,107,204,0.2))", color: "var(--t-text)" }}>
+          <div className="rounded-xl p-3 text-xs space-y-1.5" data-testid="guide-onward-steps" style={{ background: "var(--t-blue-08, rgba(45,107,204,0.08))", border: "1px solid var(--t-blue-20, rgba(45,107,204,0.2))", color: "var(--t-text)" }}>
             <p className="font-semibold">Enabling your wallet does not send payment requests.</p>
-            <p style={{ color: "var(--t-muted)" }}>
-              {data.settings.enabled
-                ? "Choose Request payment beside an order below, review the delivery method and final amount, then send the request."
-                : "Save and enable your onward wallet, then choose Request payment beside an order below."}
-              {" "}The member’s order page will then show the amount, receiving wallet and payment confirmation form.
-            </p>
+            <ol className="space-y-1 list-decimal pl-4" style={{ color: "var(--t-muted)" }}>
+              <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>Wallet saved and enabled</span>{data.settings.enabled ? " (done)." : " (not yet). Tick Accept payments, then choose Save wallet."} Nothing is sent to members.</li>
+              <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>Review each charge.</span> Open an order below; the amount is prefilled from your matrix estimate and member preference. Adjust if needed.</li>
+              <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>Send payment request.</span> Only then does the member’s order page show the amount, your wallet and TXID instructions.</li>
+            </ol>
           </div>
           <div className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>EU orders ({data.orders.length})</p>
@@ -345,7 +369,7 @@ function WalletSettingsForm({ gbId, fetcher, saved, rails, onSaved }: {
       const r = await onwardPayApi.saveSettings(fetcher, gbId, { ...draft, walletAddress: draft.walletAddress.trim() });
       setDirty(false); setDraft(r.settings); onSaved(r.settings);
       setMsg({ ok: true, text: r.settings.enabled
-        ? "Wallet saved. Next, choose Request payment beside an order below. Existing requests keep their original wallet."
+        ? "Wallet saved. Next, choose Review request beside an order below, check the amount, then send the payment request. Existing requests keep their original wallet."
         : "Wallet saved. Enable Accept payments before issuing new requests. Existing requests keep their original wallet." });
     } catch (e) { setMsg({ ok: false, text: errMsg(e) }); } // draft retained
     finally { setSaving(false); }
@@ -358,7 +382,7 @@ function WalletSettingsForm({ gbId, fetcher, saved, rails, onSaved }: {
         <span className="text-xs font-bold" style={{ color: "var(--t-text)" }}>Onward wallet</span>
         {dirty && <span className="text-[10px] font-semibold" style={{ color: "#B4770E" }}>Unsaved</span>}
         <label className="ml-auto flex items-center gap-1.5 text-[11px] cursor-pointer" style={{ color: "var(--t-text)" }}>
-          <input type="checkbox" checked={draft.enabled} onChange={e => set({ enabled: e.target.checked })} data-testid="toggle-onward-wallet-enabled" /> Accept payments
+          <input type="checkbox" checked={draft.enabled} onChange={e => set({ enabled: e.target.checked })} data-testid="toggle-onward-wallet-enabled" /> Accept payments{draft.enabled !== saved.enabled ? " (save to apply)" : ""}
         </label>
       </div>
       <div className="grid sm:grid-cols-2 gap-2">
@@ -384,7 +408,7 @@ function WalletSettingsForm({ gbId, fetcher, saved, rails, onSaved }: {
         <input value={draft.walletAddress} onChange={e => set({ walletAddress: e.target.value })} spellCheck={false} autoComplete="off"
           className={`${inputCls} font-mono`} style={inputStyle} placeholder="Your onward-delivery receiving address" data-testid="input-onward-wallet-address" />
       </label>
-      <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Used only for onward delivery charges, not product payments. Save wallet changes before issuing requests.</p>
+      <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Used only for onward delivery charges, not product payments. Changes, including Accept payments, apply only after Save wallet. Saving never sends requests.</p>
       {(dirty || msg) && (
         <div className="flex items-center gap-2 flex-wrap">
           {msg && <span className="text-[11px] flex-1" role={msg.ok ? "status" : "alert"} style={{ color: msg.ok ? "#16a34a" : "#dc2626" }} data-testid="status-onward-wallet-save">{msg.text}</span>}
@@ -439,8 +463,9 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
         {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
         <span className="text-xs font-bold font-mono" style={{ color: "var(--t-text)" }}>#{row.code}</span>
         <span className="text-xs truncate" style={{ color: "var(--t-muted)" }}>@{row.username}</span>
-        <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>{row.country} · {row.kits} kits</span>
-        <span className="ml-auto">{active ? <StatusPill status={active.status} /> : <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Not requested</span>}</span>
+        <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>{row.country} · {row.kits} kit{row.kits === 1 ? "" : "s"}</span>
+        <span className="text-[10px] min-w-0 break-words" style={{ color: "var(--t-muted)" }} data-testid={`text-onward-row-estimate-${row.id}`}>{estimateSummary(row)}</span>
+        <span className="ml-auto">{active ? <StatusPill status={active.status} /> : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ color: "var(--t-subtle)", border: "1px dashed var(--t-border, #D0DAE4)" }} data-testid={`status-onward-not-requested-${row.id}`}>Not requested</span>}</span>
       </button>
       {!active && row.canRequest && (
         <button type="button" onClick={() => setOpen(true)} disabled={!walletReady || busy !== null}
@@ -448,7 +473,7 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
           title={walletReady ? `Review and request onward delivery payment for order #${row.code}` : "Save and enable your onward wallet first"}
           className="min-h-11 rounded-xl px-3 py-2 text-xs font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 max-w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           style={{ background: "#1B3A7A", color: "#fff" }} data-testid={`button-onward-open-request-${row.id}`}>
-          <Send className="w-3 h-3 shrink-0" />Request payment
+          <Send className="w-3 h-3 shrink-0" />Review request
         </button>
       )}
       </div>
@@ -469,7 +494,7 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
                     <Btn tone="danger" onClick={() => setRejecting(v => !v)} disabled={busy !== null} testId={`button-onward-reject-toggle-${row.id}`}>Reject TX</Btn>
                   </div>
                   {rejecting && (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap sm:flex-nowrap">
                       <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason shown to the member" className={inputCls} style={inputStyle} data-testid={`input-onward-reject-reason-${row.id}`} />
                       <Btn tone="danger" disabled={!reason.trim() || busy !== null} testId={`button-onward-reject-${row.id}`}
                         onClick={() => void act("reject", () => onwardPayApi.action(fetcher, gbId, row.id, active.id, "reject", { reason: reason.trim() })).then(ok => { if (ok) { setReason(""); setRejecting(false); } })}>
@@ -487,8 +512,8 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
           ) : (
               <form onSubmit={e => { e.preventDefault(); void create(); }}>
                 <fieldset disabled={busy !== null} className="space-y-2 min-w-0">
-              <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Review onward delivery charge</p>
-              <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Sending this request adds payment instructions to this member’s order page. Opening this form does not charge them.</p>
+              <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Step 2: review onward delivery charge</p>
+              <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Prefilled from your matrix{row.estimate.selectedMethod ? ` and the member’s ${methodLabel(row.estimate.selectedMethod).toLowerCase()} preference` : ""}. Opening this form does not charge them. Sending adds payment instructions to this member’s order page.</p>
               <div className="grid grid-cols-2 gap-2">
                 {(["pickup", "home"] as const).map(m => (
                   <button key={m} type="button" onClick={() => setMethod(m)} aria-pressed={method === m} data-testid={`button-onward-charge-method-${m}-${row.id}`}
@@ -509,10 +534,10 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
               {prefillAvailable && <button type="button" onClick={usePrefill} className="text-[11px] underline" style={{ color: "var(--t-blue, #2D6BCC)" }} data-testid={`button-onward-prefill-${row.id}`}>Use estimate for {methodLabel(method).toLowerCase()}</button>}
               <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note to member (optional)" maxLength={300}
                 className={inputCls} style={inputStyle} data-testid={`input-onward-charge-note-${row.id}`} />
-              <div className="flex items-center gap-2">
-                <p className="text-[10px] flex-1" style={{ color: "var(--t-subtle)" }}>You set the final amount. The member pays the crypto equivalent to your onward wallet.</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-[10px] flex-1 min-w-[10rem]" style={{ color: "var(--t-subtle)" }}>Step 3. You set the final amount. The member pays the crypto equivalent to your onward wallet.</p>
                 <Btn type="submit" disabled={busy !== null || !amount.trim()} testId={`button-onward-charge-create-${row.id}`}>
-                  {busy === "create" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Request payment
+                  {busy === "create" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Send payment request
                 </Btn>
               </div>
                 </fieldset>
@@ -523,4 +548,14 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
       )}
     </div>
   );
+}
+
+function estimateSummary(row: ReshipperOrderRow): string {
+  const e = row.estimate;
+  const pref = e.selectedMethod;
+  const opt = pref ? e.options.find(o => o.method === pref) : null;
+  if (pref && opt) return `Prefers ${methodLabel(pref).toLowerCase()} · est. ${formatOnwardAmount(opt.amount, e.currency)}`;
+  if (pref) return `Prefers ${methodLabel(pref).toLowerCase()} · no current rate`;
+  if (e.options.length) return `No preference · est. ${e.options.map(o => `${o.method === "pickup" ? "pickup" : "home"} ${formatOnwardAmount(o.amount, e.currency)}`).join(" / ")}`;
+  return e.status === "quote_required" ? "Over 25 kits · quote" : "No matrix estimate";
 }

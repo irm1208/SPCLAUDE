@@ -33,6 +33,12 @@ Enabling “Accept payments” only enables the wallet. Keep reshipper-approved 
 
 **How to apply:** Make request creation easy to find, but require review and submission of each final charge before exposing member payment instructions.
 
+Treat collection as a later, separate task on existing paid group buys, potentially a month after ordering when the reshipper receives the shipment. Explain the reshipper and member steps simply within both interfaces, rather than relying on support explanations.
+
+**Why:** The user said the matrix and enabled wallet did not make it clear how the reshipper collects onward delivery or how the member pays.
+
+**How to apply:** Distinguish wallet setup from sending a request, show the matrix estimate during charge review, and explain the member's waiting, payment and confirmation stages without suggesting the original product payment is owed again.
+
 The reshipper provides their crypto address for onward-delivery charges. Manual confirmation is the default, with a reshipper-panel option to accept manually or automatically.
 
 **Why:** The user wants reshippers to collect the actual onward-delivery charge after product ordering has closed, and explicitly requested both confirmation modes.

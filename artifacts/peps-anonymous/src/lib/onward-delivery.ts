@@ -37,7 +37,7 @@ export interface OnwardEstimate {
 export const RATE_FIELDS = ["pickupSmall", "pickupLarge", "homeSmall", "homeLarge"] as const;
 export type RateField = typeof RATE_FIELDS[number];
 
-export const ONWARD_CAPTION = "Reshipper to you. Estimate only; pay the reshipper later. Not vendor shipping and not included in order total.";
+export const ONWARD_CAPTION = "Reshipper to you. Estimate only; pay when your reshipper sends a payment request. Not vendor shipping and not included in order total.";
 
 /** Blank input -> null (never 0). Invalid/negative -> undefined (reject). */
 export function parsePriceInput(raw: string): number | null | undefined {

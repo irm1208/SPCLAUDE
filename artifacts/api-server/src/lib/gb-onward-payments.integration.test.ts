@@ -55,6 +55,23 @@ describe.skipIf(process.env.ONWARD_PAYMENT_DB_TESTS !== "1")("onward-payment tra
       throw rollback;
     })).rejects.toBe(rollback);
   }
+  it("shows request guidance only for an eligible configured order, including closed paid group buys", async () => {
+    await fixture(async (store, api, f, tx) => {
+      expect(await api.readOnwardPayment(f.orderId, { username: f.member }, "member"))
+        .toMatchObject({ request: null, awaitingRequest: true });
+      await tx.update(store.ordersTable).set({ directShippingRequested: true }).where(eq(store.ordersTable.id, f.orderId));
+      expect(await api.readOnwardPayment(f.orderId, { username: f.member }, "member"))
+        .toMatchObject({ request: null, awaitingRequest: false });
+      await tx.update(store.ordersTable).set({ directShippingRequested: false, status: "Cancelled" }).where(eq(store.ordersTable.id, f.orderId));
+      expect(await api.readOnwardPayment(f.orderId, { username: f.member }, "member"))
+        .toMatchObject({ awaitingRequest: false });
+      await tx.update(store.ordersTable).set({ status: "Submitted" }).where(eq(store.ordersTable.id, f.orderId));
+      const estimates = await import("./gb-onward-delivery");
+      await estimates.saveOnwardMatrix(f.id, f.resh, { username: f.owner }, { ...suppliedEuMatrix(), enabled: false });
+      expect(await api.readOnwardPayment(f.orderId, { username: f.member }, "member"))
+        .toMatchObject({ awaitingRequest: false });
+    });
+  });
   it("creates a closed-GB charge, preserves the original order and snapshots a separate wallet", async () => {
     await fixture(async (store, api, f, tx) => {
       const [before] = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));

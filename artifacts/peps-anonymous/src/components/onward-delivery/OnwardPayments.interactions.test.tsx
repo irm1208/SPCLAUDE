@@ -45,10 +45,48 @@ afterEach(async () => {
 });
 after(() => dom.window.close());
 
-test("member component stays hidden without a payment request", async () => {
+test("member component stays hidden for an unrelated order without a payment request", async () => {
   globalThis.fetch = async () => json(env(null));
   await render(<Components.OnwardPaymentCard orderId="O" />);
   assert.equal(byId("card-onward-payment"), null);
+});
+function capturePreview(name: string) {
+  if (!process.env.ONWARD_REQUEST_PREVIEW) return;
+  writeFileSync(`/tmp/onward-${name}-preview.html`, `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body style="margin:0;padding:16px;background:#F8FAFC;color:#162231;--t-surface:#fff;--t-surface2:#f1f5f9;--t-bg:#F8FAFC;--t-text:#162231;--t-muted:#546579;--t-subtle:#68798b;--t-border:#D0DAE4"><main style="max-width:900px;margin:auto">${document.body.innerHTML}</main></body></html>`);
+}
+test("eligible member sees why payment is not available before the reshipper sends a request", async () => {
+  globalThis.fetch = async () => json(env(null, { awaitingRequest: true }));
+  await render(<Components.OnwardPaymentCard orderId="O" />);
+  assert.ok(byId("state-onward-not-requested"));
+  assert.match(document.body.textContent ?? "", /has not requested|hasn.t requested/i);
+  assert.match(document.body.textContent ?? "", /separately|separate/i);
+  assert.equal(byId("input-onward-txhash"), null);
+  capturePreview("member-waiting");
+});
+test("cancelled request displays nothing due, history and no receiving address", async () => {
+  globalThis.fetch = async () => json(env(makeCharge({ status: "cancelled" })));
+  await render(<Components.OnwardPaymentCard orderId="O" />);
+  assert.ok(byId("state-onward-not-requested"));
+  assert.match(document.body.textContent ?? "", /nothing is due/i);
+  assert.equal(byId("text-onward-address-R"), null);
+  assert.equal(byId("input-onward-txhash"), null);
+  await click("button-toggle-onward-history");
+  assert.ok(byId("row-onward-history-R"));
+});
+test("member picks up a newly issued request on visibility refresh and keeps typed TXID on focus", async () => {
+  let issued = false;
+  globalThis.fetch = async () => json(issued ? env(makeCharge()) : env(null, { awaitingRequest: true }));
+  await render(<Components.OnwardPaymentCard orderId="O" />);
+  assert.ok(byId("state-onward-not-requested"));
+  issued = true;
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  assert.ok(byId("state-onward-unpaid"));
+  assert.ok(byId("text-onward-address-R"));
+  assert.match(byId("list-onward-pay-steps").textContent ?? "", /Send exactly.*Submit TXID/);
+  await type("input-onward-txhash", "unfinished-txid");
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  assert.equal((byId("input-onward-txhash") as HTMLInputElement).value, "unfinished-txid");
+  capturePreview("member-pay");
 });
 test("member submits the exact TX and sees pending without claiming an unpaid request was verified", async () => {
   const charge = makeCharge(); let submitted: unknown;
@@ -68,7 +106,8 @@ test("member submits the exact TX and sees pending without claiming an unpaid re
   assert.deepEqual(submitted, { txHash: `0x${"b".repeat(64)}` });
   assert.ok(byId("status-onward-payment-pending_confirmation"));
   assert.equal(byId("button-onward-verify"), null);
-  assert.match(document.body.textContent ?? "", /Waiting for your reshipper/);
+  assert.match(document.body.textContent ?? "", /reshipper.*confirm|confirm.*reshipper/i);
+  assert.match(document.body.textContent ?? "", /do not send again/i);
 });
 test("stale assignment does not display an address or allow another payment", async () => {
   globalThis.fetch = async () => json(env(makeCharge(), { canSubmit: false }));
@@ -109,14 +148,17 @@ test("eligible orders expose Request payment before expansion without issuing a 
   await render(<Components.OnwardPaymentManager gbId="G" fetcher={fetcher} />);
   const action = byId("button-onward-open-request-O") as HTMLButtonElement;
   assert.ok(action);
-  assert.equal(action.textContent?.trim(), "Request payment");
+  assert.equal(action.textContent?.trim(), "Review request");
   assert.equal(byId("input-onward-charge-amount-O"), null);
-  assert.match(document.body.textContent ?? "", /Enabling your wallet does not send payment requests/);
+  assert.ok(byId("guide-onward-steps"));
+  assert.match(byId("text-onward-row-estimate-O").textContent ?? "", /pickup.*17.30/i);
+  assert.match(document.body.textContent ?? "", /closed group buys/);
   if (process.env.ONWARD_REQUEST_PREVIEW) {
     writeFileSync("/tmp/onward-request-preview.html", `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body style="margin:0;padding:16px;background:#F8FAFC;color:#162231;--t-surface:#fff;--t-bg:#F8FAFC;--t-text:#162231;--t-muted:#546579;--t-subtle:#68798b;--t-border:#D0DAE4"><main style="max-width:900px;margin:auto">${document.body.innerHTML}</main></body></html>`);
   }
   await click("button-onward-open-request-O");
   assert.ok(byId("input-onward-charge-amount-O"));
+  capturePreview("manager-review");
   assert.ok(byId("button-onward-charge-create-O"));
   assert.equal(byId("button-expand-onward-payment-O").getAttribute("aria-expanded"), "true");
   assert.deepEqual(mutations, []);
@@ -139,7 +181,7 @@ test("saving an enabled wallet never issues payment requests automatically", asy
   assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, true);
   await click("button-onward-wallet-save");
   assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, false);
-  assert.match(byId("status-onward-wallet-save").textContent ?? "", /Next, choose Request payment/);
+  assert.match(byId("status-onward-wallet-save").textContent ?? "", /Next, choose Review request/);
   assert.deepEqual(writes, ["PUT"]);
   assert.equal(byId("card-onward-payment"), null);
 });
@@ -152,7 +194,7 @@ test("the collapsed request shortcut stays disabled until the wallet is saved an
   };
   await render(<Components.OnwardPaymentManager gbId="G" fetcher={fetcher} />);
   assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, true);
-  assert.match(document.body.textContent ?? "", /Save and enable your onward wallet/);
+  assert.match(document.body.textContent ?? "", /Tick Accept payments, then choose Save wallet/);
   assert.deepEqual(mutations, []);
 });
 

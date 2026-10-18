@@ -72,7 +72,14 @@ async function envelope(database: DataAccess, order: typeof ordersTable.$inferSe
 }
 export async function readOnwardPayment(orderId: string, actor: UpdateActor, scope: OnwardOrderScope, gbId?: string) {
   const order = await onwardOrderAccess(db, orderId, actor, scope, gbId);
-  return envelope(db, order, scope);
+  const data = await envelope(db, order, scope);
+  // Explain the request step only for a configured onward-delivery route.
+  // An enabled wallet or estimate alone never creates a charge.
+  if (scope === "member" && (!data.request || data.request.status === "cancelled") && canCreate(order) && order.reshipperUsername) {
+    const estimate = await onwardOrderEstimate(orderId, actor, scope, gbId);
+    return { ...data, awaitingRequest: !!estimate.configured && estimate.status !== "not_applicable" };
+  }
+  return { ...data, awaitingRequest: false };
 }
 export async function saveOnwardPaymentSettings(gbId: string, actor: UpdateActor, body: unknown) {
   const settings = parseOnwardPaymentSettings(body);

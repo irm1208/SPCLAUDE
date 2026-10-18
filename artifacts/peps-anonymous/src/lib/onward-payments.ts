@@ -18,7 +18,9 @@ export interface Charge {
   txHash: string | null; verificationNote: string | null;
   createdAt: string; submittedAt: string | null; confirmedAt: string | null;
 }
-export interface Envelope { request: Charge | null; history: Charge[]; canManage: boolean; canSubmit: boolean }
+export interface Envelope { request: Charge | null; history: Charge[]; canManage: boolean; canSubmit: boolean;
+  /** Member view: true when this order is eligible for onward delivery but no request was sent yet. */
+  awaitingRequest?: boolean }
 export interface ReshipperOrderRow {
   id: string; code: string; username: string; country: string; kits: number; orderStatus: string;
   canRequest: boolean; estimate: OnwardEstimate; request: Charge | null;
@@ -64,7 +66,7 @@ export const onwardPayApi = {
 };
 
 export const STATUS_LABEL: Record<ChargeStatus, string> = {
-  unpaid: "Awaiting payment", pending_confirmation: "Pending confirmation", paid: "Paid", cancelled: "Cancelled",
+  unpaid: "Awaiting payment", pending_confirmation: "Awaiting confirmation", paid: "Paid", cancelled: "Cancelled",
 };
 export const STATUS_COLOR: Record<ChargeStatus, string> = {
   unpaid: "#E9A020", pending_confirmation: "#2D6BCC", paid: "#16a34a", cancelled: "#8A9AAA",

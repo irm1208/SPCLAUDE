@@ -45,7 +45,7 @@ function MatrixPanelBody({ scope, gbId, headers, fetcher = defaultFetcher }: Mat
         <Truck className="w-3.5 h-3.5" style={{ color: "#2D6BCC" }} />
         <span className="text-xs font-bold">EU onward delivery estimates</span>
         {config && <span className="text-[10px] text-muted-foreground">{configured}/{config.reshippers.length} reshippers enabled</span>}
-        <span className="ml-auto text-[10px] text-muted-foreground hidden sm:inline">Reshipper to member, paid later</span>
+        <span className="ml-auto text-[10px] text-muted-foreground hidden sm:inline">Reshipper to member, paid when requested</span>
       </button>
       {open && (
         <div className="border-t border-border px-3 py-3 space-y-2.5">
@@ -217,7 +217,7 @@ function Frame({ children, testId }: { children: React.ReactNode; testId: string
       <footer className="onward-estimate-footer">
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" aria-hidden="true" />
         <div>
-          <p className="onward-estimate-payment-note">Pay your reshipper later</p>
+          <p className="onward-estimate-payment-note">Paid separately to your reshipper; pay when requested</p>
           <p>Reshipper to you, not vendor shipping. Not included in your order total.</p>
         </div>
       </footer>
