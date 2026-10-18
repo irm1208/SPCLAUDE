@@ -35,10 +35,13 @@ it("keeps estimates in a cohesive blue card without changing optional selection 
     await act(async () => { await new Promise(r => setTimeout(r, 450)); });
     const card = container.querySelector('[data-testid="card-onward-picker"]')!;
     expect(card.classList.contains("onward-estimate-card")).toBe(true);
+    expect(card.getAttribute("aria-label")).toBe("Potential onwards delivery charge");
+    expect(card.querySelector("h3")?.textContent).toBe("Potential onwards delivery charge");
     expect(card.querySelector(".onward-estimate-options")).not.toBeNull();
     expect(card.querySelector(".onward-estimate-context")?.textContent).toContain("11 kits");
     expect(card.textContent).toContain("Germany");
-    expect(card.textContent).toContain("Pay your reshipper later");
+    expect(card.textContent).toContain("pay when requested");
+    expect(card.textContent).toContain("Estimate only");
     expect(card.textContent).toContain("Not included in your order total");
     const home = card.querySelector('[data-testid="button-onward-home"]') as HTMLButtonElement;
     const pickup = card.querySelector('[data-testid="button-onward-pickup"]') as HTMLButtonElement;
