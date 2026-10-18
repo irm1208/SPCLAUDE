@@ -30,3 +30,10 @@ test("known zero vendor shipping is omitted from order details and receipt PDFs"
   assert.match(source, /showVendorShipping/);
   assert.match(source, /vendorShippingAmount:\s*vendorShippingIsTbd\s*\?\s*null/);
 });
+
+test("receipt confirmation is member-only and refreshes both order detail and account lists", () => {
+  assert.match(source, /!isAdminPreview && !refundActive && \(\s*<OrderReceivedButton/);
+  assert.match(source, /status=\{order.status\} memberReceivedAt=\{order.memberReceivedAt\}/);
+  assert.match(source, /setOrder\(previous => previous \? \{ \.\.\.previous, \.\.\.receipt \}/);
+  assert.match(source, /invalidateQueries\(\{ queryKey: \["account", "orders"\]/);
+});

@@ -1855,6 +1855,7 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
       code: order.code,
       telegramUsername: order.telegramUsername,
       status: order.status,
+      memberReceivedAt: order.memberReceivedAt?.toISOString() ?? null,
       paymentStatus: order.paymentStatus ?? "unpaid",
       grandTotal: parseFloat(String(order.grandTotal)),
       amountDue: parseFloat(String((order as any).amountDue ?? "0")),
@@ -2130,6 +2131,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     currency: obcCurrency,
     groupBuyDeleteLocked: obcDeleteLocked,
     createdAt: (order.createdAt as Date).toISOString(),
+    memberReceivedAt: order.memberReceivedAt?.toISOString() ?? null,
     updatedAt: (order.updatedAt as Date).toISOString(),
     lineItems: lineItems.map(li => ({
       id: li.id,
@@ -2473,6 +2475,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     routingType: (order as any).routingType ?? null,
     batchLocked: (order as any).batchLocked ?? false,
     createdAt: (order.createdAt as Date).toISOString(),
+    memberReceivedAt: order.memberReceivedAt?.toISOString() ?? null,
     updatedAt: (order.updatedAt as Date).toISOString(),
     lineItems: lineItems.map(li => ({
       id: li.id,

@@ -35,6 +35,8 @@ import type { CustomerRefund } from "@/hooks/use-account";
 import type { TrackingPackageView } from "@workspace/shipping/tracking";
 import { safeAddMoney, safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
 import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
+import { OrderReceivedButton } from "@/components/OrderReceivedButton";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -184,6 +186,7 @@ interface OrderDetail {
   batchLocked?: boolean | null;
   notes: string | null;
   status: string;
+  memberReceivedAt?: string | null;
   adminMessage: string | null;
   trackingNumber: string | null;
   trackingPackageViews?: TrackingPackageView[];
@@ -2056,6 +2059,7 @@ function OrderDetailShell({ children }: { children: React.ReactNode }) {
 }
 
 export default function AccountOrderDetail() {
+  const queryClient = useQueryClient();
   const [, params] = useRoute("/account/orders/:id");
   const [, setLocation] = useLocation();
   const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
@@ -3126,6 +3130,14 @@ export default function AccountOrderDetail() {
                       <SecIcon Icon={Pencil} />
                       <span className="font-extrabold" style={{ fontSize: 16, letterSpacing: "-0.01em", color: "var(--t-text)" }}>Actions</span>
                     </div>
+                    {!isAdminPreview && !refundActive && (
+                      <OrderReceivedButton key={order.id} orderId={order.id} status={order.status} memberReceivedAt={order.memberReceivedAt}
+                        onReceived={receipt => {
+                          setOrder(previous => previous ? { ...previous, ...receipt } : previous);
+                          void queryClient.invalidateQueries({ queryKey: ["account", "orders"] });
+                          void queryClient.invalidateQueries({ queryKey: ["account", "group-buys"] });
+                        }} />
+                    )}
                     {refundActive ? (
                       <div role="status" className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>Refund request active — order edits, additional items, and cancellation are temporarily locked.</div>
                     ) : order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (

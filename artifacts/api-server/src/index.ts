@@ -726,6 +726,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE credit_transactions ADD COLUMN IF NOT EXISTS operation_key text`);
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_account_operation_unique ON credit_transactions (account_username, operation_key) WHERE operation_key IS NOT NULL`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_at timestamptz`);
+    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS member_received_at timestamptz`);
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS deleted_by text`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS orders_deleted_at_idx ON orders (deleted_at)`);
     // Outstanding balance the customer still owes (e.g. organiser-added unpaid shipping)

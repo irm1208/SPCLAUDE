@@ -155,3 +155,4 @@
 - [Reshipper group visibility](reshipper-group-visibility.md) — account-saved personal hiding with restore; never remove assignments or orders, or reuse customer archiving.
 - [GB EU onward delivery](gb-eu-onward-delivery.md) — per-reshipper estimates exclude checkout; count kits including halves, ≤5 and >5–25, with payment to the reshipper later.
 - [Account suspension enforcement](account-suspension-enforcement.md) — check current status on every session; order-number/social login and guest order paths must not bypass suspension.
+- [Member order receipt](member-order-receipt-policy.md) — members can confirm their own shipped group-buy, wholesale and shared orders; never complete other members’ parcels or payments.

@@ -28,6 +28,7 @@ export const ordersTable = pgTable("orders", {
   grandTotal: numeric("grand_total", { precision: 10, scale: 2 }).notNull(),
   notes: text("notes"),
   status: text("status").notNull().default("Submitted"),
+  memberReceivedAt: timestamp("member_received_at", { withTimezone: true }),
   adminNotes: text("admin_notes"),
   adminMessage: text("admin_message"),
   trackingNumber: text("tracking_number"),
