@@ -27,6 +27,12 @@ Use the existing database-backed configuration store for these optional settings
 
 Separate onward-delivery payment requests are approved for existing orders, including closed group buys. Keep the original product payment, vendor shipping and order total untouched.
 
+Enabling “Accept payments” only enables the wallet. Keep reshipper-approved requests; do not automatically make selected matrix estimates payable.
+
+**Why:** The user explicitly chose to keep reshipper-approved requests rather than let members pay their matrix price immediately.
+
+**How to apply:** Make request creation easy to find, but require review and submission of each final charge before exposing member payment instructions.
+
 The reshipper provides their crypto address for onward-delivery charges. Manual confirmation is the default, with a reshipper-panel option to accept manually or automatically.
 
 **Why:** The user wants reshippers to collect the actual onward-delivery charge after product ordering has closed, and explicitly requested both confirmation modes.

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
 import React, { act } from "react";
 import { after, afterEach, before, test } from "node:test";
 import type { Root } from "react-dom/client";
@@ -99,6 +100,71 @@ test("reshipper retains wallet edits when saving fails", async () => {
   assert.equal((byId("input-onward-wallet-address") as HTMLInputElement).value, `0x${"d".repeat(40)}`);
   assert.ok(byId("button-onward-wallet-save"));
 });
+test("eligible orders expose Request payment before expansion without issuing a charge", async () => {
+  const mutations: string[] = [];
+  const fetcher = async (_url: string, init?: RequestInit) => {
+    if (init?.method && init.method !== "GET") mutations.push(init.method);
+    return json(overview(null));
+  };
+  await render(<Components.OnwardPaymentManager gbId="G" fetcher={fetcher} />);
+  const action = byId("button-onward-open-request-O") as HTMLButtonElement;
+  assert.ok(action);
+  assert.equal(action.textContent?.trim(), "Request payment");
+  assert.equal(byId("input-onward-charge-amount-O"), null);
+  assert.match(document.body.textContent ?? "", /Enabling your wallet does not send payment requests/);
+  if (process.env.ONWARD_REQUEST_PREVIEW) {
+    writeFileSync("/tmp/onward-request-preview.html", `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body style="margin:0;padding:16px;background:#F8FAFC;color:#162231;--t-surface:#fff;--t-bg:#F8FAFC;--t-text:#162231;--t-muted:#546579;--t-subtle:#68798b;--t-border:#D0DAE4"><main style="max-width:900px;margin:auto">${document.body.innerHTML}</main></body></html>`);
+  }
+  await click("button-onward-open-request-O");
+  assert.ok(byId("input-onward-charge-amount-O"));
+  assert.ok(byId("button-onward-charge-create-O"));
+  assert.equal(byId("button-expand-onward-payment-O").getAttribute("aria-expanded"), "true");
+  assert.deepEqual(mutations, []);
+});
+
+test("saving an enabled wallet never issues payment requests automatically", async () => {
+  let saved = { ...settings, enabled: false };
+  const writes: string[] = [];
+  const fetcher = async (_url: string, init?: RequestInit) => {
+    if (init?.method === "PUT") {
+      writes.push(init.method);
+      saved = JSON.parse(String(init.body));
+      return json({ settings: saved });
+    }
+    if (init?.method && init.method !== "GET") writes.push(init.method);
+    return json({ ...overview(null), settings: saved });
+  };
+  await render(<Components.OnwardPaymentManager gbId="G" fetcher={fetcher} />);
+  await click("toggle-onward-wallet-enabled");
+  assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, true);
+  await click("button-onward-wallet-save");
+  assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, false);
+  assert.match(byId("status-onward-wallet-save").textContent ?? "", /Next, choose Request payment/);
+  assert.deepEqual(writes, ["PUT"]);
+  assert.equal(byId("card-onward-payment"), null);
+});
+
+test("the collapsed request shortcut stays disabled until the wallet is saved and enabled", async () => {
+  const mutations: string[] = [];
+  const fetcher = async (_url: string, init?: RequestInit) => {
+    if (init?.method && init.method !== "GET") mutations.push(init.method);
+    return json({ ...overview(null), settings: { ...settings, enabled: false } });
+  };
+  await render(<Components.OnwardPaymentManager gbId="G" fetcher={fetcher} />);
+  assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, true);
+  assert.match(document.body.textContent ?? "", /Save and enable your onward wallet/);
+  assert.deepEqual(mutations, []);
+});
+
+test("existing charges and ineligible orders do not offer a new-request shortcut", async () => {
+  const snapshot = overview(makeCharge());
+  snapshot.orders.push({ ...snapshot.orders[0], id: "blocked", request: null, canRequest: false });
+  const fetcher = async () => json(snapshot);
+  await render(<Components.OnwardPaymentManager gbId="G" fetcher={fetcher} />);
+  assert.equal(byId("button-onward-open-request-O"), null);
+  assert.equal(byId("button-onward-open-request-blocked"), null);
+});
+
 test("reshipper can create, cancel and reissue without losing the order's eligibility", async () => {
   let request: Charge | null = null, created: Record<string, unknown> | undefined;
   const fetcher = async (url: string, init?: RequestInit) => {

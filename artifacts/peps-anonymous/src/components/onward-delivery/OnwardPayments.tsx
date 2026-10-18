@@ -305,6 +305,15 @@ function ManagerBody({ gbId, fetcher, walletReadOnly }: { gbId: string; fetcher:
             </div>
           ) : <WalletSettingsForm gbId={gbId} fetcher={fetcher} saved={data.settings} rails={data.rails}
             onSaved={s => setData(d => d ? { ...d, settings: s } : d)} />}
+          <div className="rounded-xl p-3 text-xs space-y-1" style={{ background: "var(--t-blue-08, rgba(45,107,204,0.08))", border: "1px solid var(--t-blue-20, rgba(45,107,204,0.2))", color: "var(--t-text)" }}>
+            <p className="font-semibold">Enabling your wallet does not send payment requests.</p>
+            <p style={{ color: "var(--t-muted)" }}>
+              {data.settings.enabled
+                ? "Choose Request payment beside an order below, review the delivery method and final amount, then send the request."
+                : "Save and enable your onward wallet, then choose Request payment beside an order below."}
+              {" "}The member’s order page will then show the amount, receiving wallet and payment confirmation form.
+            </p>
+          </div>
           <div className="space-y-2">
             <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--t-subtle)" }}>EU orders ({data.orders.length})</p>
             {data.orders.length === 0 && <p className="text-xs py-3 text-center rounded-lg" style={{ color: "var(--t-muted)", background: "var(--t-surface2)" }}>No active EU orders assigned to you in this group buy.</p>}
@@ -335,7 +344,9 @@ function WalletSettingsForm({ gbId, fetcher, saved, rails, onSaved }: {
     try {
       const r = await onwardPayApi.saveSettings(fetcher, gbId, { ...draft, walletAddress: draft.walletAddress.trim() });
       setDirty(false); setDraft(r.settings); onSaved(r.settings);
-      setMsg({ ok: true, text: "Saved. Existing requests keep the wallet they were issued with." });
+      setMsg({ ok: true, text: r.settings.enabled
+        ? "Wallet saved. Next, choose Request payment beside an order below. Existing requests keep their original wallet."
+        : "Wallet saved. Enable Accept payments before issuing new requests. Existing requests keep their original wallet." });
     } catch (e) { setMsg({ ok: false, text: errMsg(e) }); } // draft retained
     finally { setSaving(false); }
   };
@@ -373,7 +384,7 @@ function WalletSettingsForm({ gbId, fetcher, saved, rails, onSaved }: {
         <input value={draft.walletAddress} onChange={e => set({ walletAddress: e.target.value })} spellCheck={false} autoComplete="off"
           className={`${inputCls} font-mono`} style={inputStyle} placeholder="Your onward-delivery receiving address" data-testid="input-onward-wallet-address" />
       </label>
-      <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Used only for onward delivery charges, not product payments.</p>
+      <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Used only for onward delivery charges, not product payments. Save wallet changes before issuing requests.</p>
       {(dirty || msg) && (
         <div className="flex items-center gap-2 flex-wrap">
           {msg && <span className="text-[11px] flex-1" role={msg.ok ? "status" : "alert"} style={{ color: msg.ok ? "#16a34a" : "#dc2626" }} data-testid="status-onward-wallet-save">{msg.text}</span>}
@@ -422,15 +433,27 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
 
   return (
     <div className="rounded-xl" style={{ border: "1px solid var(--t-border)" }} data-testid={`row-onward-payment-${row.id}`}>
-      <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-3 py-2 text-left flex-wrap" data-testid={`button-expand-onward-payment-${row.id}`}>
-        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      <div className="flex items-center gap-2 px-3 py-2 flex-wrap">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-controls={`onward-payment-details-${row.id}`}
+        className="min-h-11 min-w-0 flex-1 flex items-center gap-2 text-left flex-wrap" data-testid={`button-expand-onward-payment-${row.id}`}>
+        {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
         <span className="text-xs font-bold font-mono" style={{ color: "var(--t-text)" }}>#{row.code}</span>
         <span className="text-xs truncate" style={{ color: "var(--t-muted)" }}>@{row.username}</span>
         <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>{row.country} · {row.kits} kits</span>
-        <span className="ml-auto">{active ? <StatusPill status={active.status} /> : <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>No charge</span>}</span>
+        <span className="ml-auto">{active ? <StatusPill status={active.status} /> : <span className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Not requested</span>}</span>
       </button>
+      {!active && row.canRequest && (
+        <button type="button" onClick={() => setOpen(true)} disabled={!walletReady || busy !== null}
+          aria-expanded={open} aria-controls={`onward-payment-details-${row.id}`}
+          title={walletReady ? `Review and request onward delivery payment for order #${row.code}` : "Save and enable your onward wallet first"}
+          className="min-h-11 rounded-xl px-3 py-2 text-xs font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 max-w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          style={{ background: "#1B3A7A", color: "#fff" }} data-testid={`button-onward-open-request-${row.id}`}>
+          <Send className="w-3 h-3 shrink-0" />Request payment
+        </button>
+      )}
+      </div>
       {open && (
-        <div className="border-t px-3 py-3 space-y-3" style={{ borderColor: "var(--t-border)" }}>
+        <div id={`onward-payment-details-${row.id}`} className="border-t px-3 py-3 space-y-3" style={{ borderColor: "var(--t-border)" }}>
           {active ? (
             <>
               <ChargeDetails c={active} showWallet />
@@ -464,6 +487,8 @@ function OrderChargeRow({ gbId, fetcher, row, walletReady, onEnvelope }: {
           ) : (
               <form onSubmit={e => { e.preventDefault(); void create(); }}>
                 <fieldset disabled={busy !== null} className="space-y-2 min-w-0">
+              <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Review onward delivery charge</p>
+              <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Sending this request adds payment instructions to this member’s order page. Opening this form does not charge them.</p>
               <div className="grid grid-cols-2 gap-2">
                 {(["pickup", "home"] as const).map(m => (
                   <button key={m} type="button" onClick={() => setMethod(m)} aria-pressed={method === m} data-testid={`button-onward-charge-method-${m}-${row.id}`}
