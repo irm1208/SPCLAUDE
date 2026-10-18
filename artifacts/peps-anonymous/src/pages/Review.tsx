@@ -9,7 +9,7 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { formatGroupCouponAmount } from "@/lib/group-buy-coupon-currency";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useToast } from "@/hooks/use-toast";
-import { useCreateOrder, useUpdateOrder } from "@workspace/api-client-react";
+import { useUpdateOrder } from "@workspace/api-client-react";
 import { useMyGroupBuys, useAccount, useAccountOrders, useCountryLegs, useLogout } from "@/hooks/use-account";
 import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
 import { countKits } from "@/lib/onward-delivery";
@@ -66,6 +66,9 @@ export default function Review() {
   const draft = useDraftStore();
   const queryClient = useQueryClient();
   const [error, setError] = useState("");
+  const [eligibleGroupBuys, setEligibleGroupBuys] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedGroupBuyId, setSelectedGroupBuyId] = useState("");
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [retried, setRetried] = useState(false);
   const [globalVendorShippingWarning, setGlobalVendorShippingWarning] = useState<boolean | null>(null);
   const [showRulesetModal, setShowRulesetModal] = useState(false);
@@ -175,7 +178,6 @@ export default function Review() {
       .catch(() => setGlobalVendorShippingWarning(true));
   }, [draft.groupBuyId]);
 
-  const { mutate: createOrder, isPending: isCreating } = useCreateOrder();
   const { mutate: updateOrder, isPending: isUpdating } = useUpdateOrder();
 
   // Credits opt-in state
@@ -217,7 +219,7 @@ export default function Review() {
 
   const removeCoupon = () => { setCouponCode(null); setCouponDiscount(0); setCouponCurrency(null); setCouponInput(""); setCouponMsg(""); };
 
-  const isPending = isCreating || isUpdating;
+  const isPending = isCreatingOrder || isUpdating;
 
   const effectiveDeliveryPrice = isTopUp ? 0 : draft.deliveryPrice;
   const effectiveVendorShipping = vendorShippingIsKnown ? vendorShippingAmount! : 0;
@@ -254,7 +256,9 @@ export default function Review() {
       couponDiscountQuoted: couponCode ? couponDiscount : undefined,
       creditsApplied: creditsApplied > 0 ? creditsApplied : undefined,
       notes: draft.notes || null,
-      groupBuyId: draft.groupBuyId ?? undefined,
+      groupBuyId: eligibleGroupBuys.length > 0 && selectedGroupBuyId
+        ? selectedGroupBuyId
+        : draft.groupBuyId ?? undefined,
       orderType: draft.orderType ?? null,
       shippingName: draft.shippingName || null,
       shippingPhone: draft.shippingPhone || null,
@@ -292,6 +296,7 @@ export default function Review() {
       tip?: number; testingContribution?: number; grandTotal?: number;
       creditsApplied?: number; adminFee?: number; adminFeeLabel?: string | null;
       creditPolicyBlocked?: boolean;
+      groupBuyId?: string | null;
       notes?: string | null;
       lineItems?: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
     }) => {
@@ -328,6 +333,10 @@ export default function Review() {
       const serverGrandTotal = data.grandTotal ?? grandTotal;
       const serverCreditsApplied = data.creditsApplied ?? creditsApplied;
       const serverAdminFee = data.adminFee ?? adminFeeAmount;
+      const savedGroupBuyId = data.groupBuyId ?? draft.groupBuyId ?? null;
+      const savedGroupBuy = savedGroupBuyId
+        ? myGroupBuys?.find(groupBuy => groupBuy.id === savedGroupBuyId) ?? null
+        : null;
       // The order response snapshots TBD-ness from the server-side group-buy configuration;
       // use it for the saved receipt, while the server's recomputed amount remains authoritative.
       const receivedVendorShipping = data.vendorShipping ?? (vendorShippingIsKnown ? vendorShippingAmount : null);
@@ -353,17 +362,17 @@ export default function Review() {
           lineTotal: item.lineTotal
         })),
         createdAt: new Date().toISOString(),
-        groupBuyId: draft.groupBuyId ?? null,
-        currency: gbCurrency ?? null,
-        paymentsEnabled: activeGb
+        groupBuyId: savedGroupBuyId,
+        currency: savedGroupBuy?.currency ?? (savedGroupBuyId === draft.groupBuyId ? gbCurrency : null),
+        paymentsEnabled: savedGroupBuy
           ? (draft.directShippingRequested
-              ? (activeGb.directShippingPaymentsEnabled !== false)
-              : (activeGb.paymentsEnabled !== false))
+              ? (savedGroupBuy.directShippingPaymentsEnabled !== false)
+              : (savedGroupBuy.paymentsEnabled !== false))
           : undefined,
         vendorShippingAmount: serverVendorShipping,
         vendorShippingIsTbd: serverVendorShippingIsTbd,
         isWholesale: isWholesale,
-        hidePrices: activeGb?.hidePricesOnInvoice ?? false,
+        hidePrices: savedGroupBuy?.hidePricesOnInvoice ?? false,
         adminFeeAmount: serverAdminFee > 0 ? serverAdminFee : null,
         adminFeeLabel: serverAdminFee > 0 ? (data.adminFeeLabel ?? adminFeeLabel ?? null) : null,
       }));
@@ -377,6 +386,37 @@ export default function Review() {
         }).catch(() => {});
       }
       setLocation(resolveOrderSubmitDestination(data, existingOrderId));
+    };
+
+    const postCreateOrder = async (createPayload: typeof payload) => {
+      setIsCreatingOrder(true);
+      setError("");
+      try {
+        const response = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(createPayload),
+        });
+        const data = await response.json();
+        if (
+          response.status === 409 &&
+          data.code === "GROUP_BUY_SELECTION_REQUIRED" &&
+          Array.isArray(data.eligibleGroupBuys)
+        ) {
+          const options = data.eligibleGroupBuys as Array<{ id: string; name: string }>;
+          setEligibleGroupBuys(options);
+          setSelectedGroupBuyId(current => options.some(option => option.id === current) ? current : options[0]?.id ?? "");
+          return;
+        }
+        if (!response.ok) throw new Error(data.error || "Failed to create order");
+        setEligibleGroupBuys([]);
+        onSuccess(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create order");
+      } finally {
+        setIsCreatingOrder(false);
+      }
     };
 
     if (existingOrderId) {
@@ -397,49 +437,14 @@ export default function Review() {
             // ID and place a fresh one
             setRetried(true);
             draft.clearOrderId();
-            if (payload.groupBuyId) {
-              fetch("/api/orders", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify(payload),
-              })
-                .then(async (res) => {
-                  const data = await res.json();
-                  if (!res.ok) throw new Error(data.error || "Failed to create order");
-                  onSuccess(data);
-                })
-                .catch((e: Error) => setError(e.message || "Failed to create order"));
-            } else {
-              createOrder({ data: payload }, {
-                onSuccess,
-                onError: (e: any) => setError((e.data as any)?.error || e.message || "Failed to create order"),
-              });
-            }
+            void postCreateOrder(payload);
           } else {
             setError(errMsg || "Failed to update order");
           }
         }
       });
-    } else if (payload.groupBuyId) {
-      // GB orders: use direct fetch with credentials so the account cookie is sent
-      fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      })
-        .then(async (res) => {
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Failed to create order");
-          onSuccess(data);
-        })
-        .catch((err: Error) => setError(err.message || "Failed to create order"));
     } else {
-      createOrder({ data: payload }, {
-        onSuccess,
-        onError: (err: any) => setError((err.data as any)?.error || err.message || "Failed to create order")
-      });
+      void postCreateOrder(payload);
     }
   };
 
@@ -684,6 +689,33 @@ export default function Review() {
               {error}
             </div>
           )}
+          {eligibleGroupBuys.length > 0 && (
+            <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2">
+              <label htmlFor="group-buy-choice" className="block text-sm font-semibold text-blue-950">
+                Choose which group buy this order belongs to
+              </label>
+              <p className="text-xs text-blue-800">
+                You belong to more than one group buy that accepts every product in this order.
+              </p>
+              <select
+                id="group-buy-choice"
+                value={selectedGroupBuyId}
+                onChange={event => {
+                  setSelectedGroupBuyId(event.target.value);
+                  setError("");
+                }}
+                disabled={isPending}
+                className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-gray-800"
+              >
+                {eligibleGroupBuys.map(groupBuy => (
+                  <option key={groupBuy.id} value={groupBuy.id}>{groupBuy.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-blue-800">
+                The group buy will recheck availability and recalculate the order before it is saved.
+              </p>
+            </section>
+          )}
 
         </motion.div>
       </main>
@@ -711,14 +743,14 @@ export default function Review() {
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isPending}
+              disabled={isPending || (eligibleGroupBuys.length > 0 && !selectedGroupBuyId)}
               className="flex-[2] h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50"
               style={{ background: "var(--t-blue)" }}
             >
               {isPending ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                <><CheckCircle className="w-4 h-4" /> {isTopUp ? "Add to Order" : draft.orderId ? "Update Order" : "Place Order"}</>
+                <><CheckCircle className="w-4 h-4" /> {eligibleGroupBuys.length > 0 ? "Continue with selected group buy" : isTopUp ? "Add to Order" : draft.orderId ? "Update Order" : "Place Order"}</>
               )}
             </button>
           </div>

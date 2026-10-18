@@ -812,8 +812,12 @@ export default function OrderForm() {
   // the draft's GB would wipe the organiser's own in-progress order.
   useEffect(() => {
     if (isPreview) return;
+    // A looked-up GB order can arrive on the plain route from an older link or
+    // persisted navigation. Keep its saved context; a new standalone cart has
+    // no orderId and can still clear stale GB state here.
+    if (!gbId && draft.orderId && draft.groupBuyId) return;
     draft.setGroupBuyId(gbId);
-  }, [gbId, isPreview]);
+  }, [gbId, isPreview, draft.orderId, draft.groupBuyId]);
 
   // OrderForm is the non-wholesale order flow — clear any stale orderType from the draft
   useEffect(() => {

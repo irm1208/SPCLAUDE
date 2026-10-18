@@ -938,7 +938,9 @@ export default function Lookup() {
   const handleEdit = () => {
     if (!foundOrder) return;
     loadExistingOrder(foundOrder);
-    setLocation("/order");
+    setLocation((foundOrder as any).groupBuyId
+      ? `/order?gbId=${encodeURIComponent((foundOrder as any).groupBuyId)}`
+      : "/order");
   };
 
   const handleTopUp = () => {

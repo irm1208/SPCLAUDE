@@ -51,6 +51,7 @@ import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "..
 import { calculateAdditionMerge } from "../lib/order-addition-merge";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 import { centsToUsdString, subtractMoneyClamped, usdToCents } from "../lib/refund-money";
+import { inferGroupBuyContext } from "../lib/group-buy-order-context";
 
 // ── Server-authoritative wholesale shipping ──────────────────────────────────
 // Wholesale shipping is priced by kit-count tiers per destination region, so it must
@@ -527,6 +528,79 @@ router.post("/orders", async (req, res, next): Promise<void> => {
   let normalizedGroupBuyId = clientGroupBuyId && typeof clientGroupBuyId === "string"
     ? clientGroupBuyId.trim().slice(0, 64)
     : null;
+  // A signed-in customer may have lost the GB ID from browser state. Infer it
+  // only when exactly one member GB is accepting orders and contains every
+  // submitted product. The normal GB validation below remains authoritative.
+  const contextUsername = getAccountFromCookie(req);
+  const submittedProductIds = Array.isArray(clientLineItems)
+    ? clientLineItems.map((item: { productId?: unknown }) => item?.productId)
+    : [];
+  if (
+    !normalizedGroupBuyId &&
+    !isWholesaleOrder &&
+    !clientAdditionOfOrderId &&
+    !halfKitCheckout &&
+    contextUsername &&
+    normalizeTg(contextUsername) === tg &&
+    submittedProductIds.length > 0 &&
+    submittedProductIds.every((id): id is string => typeof id === "string" && id.length > 0) &&
+    new Set(submittedProductIds).size === submittedProductIds.length
+  ) {
+    const memberships = await db
+      .select({
+        groupBuyId: accountGroupBuysTable.groupBuyId,
+        allowExtraOrder: accountGroupBuysTable.allowExtraOrder,
+      })
+      .from(accountGroupBuysTable)
+      .where(eq(accountGroupBuysTable.accountId, contextUsername.toLowerCase()));
+
+    if (memberships.length > 0) {
+      const memberGroupBuyIds = [...new Set(memberships.map(row => row.groupBuyId))];
+      const [memberGroups, eligibleProducts] = await Promise.all([
+        db
+          .select({
+            id: groupBuysTable.id,
+            name: groupBuysTable.name,
+            status: groupBuysTable.status,
+            allowExtraOrders: groupBuysTable.allowExtraOrders,
+          })
+          .from(groupBuysTable)
+          .where(inArray(groupBuysTable.id, memberGroupBuyIds)),
+        db
+          .select({
+            groupBuyId: groupBuyProductsTable.groupBuyId,
+            productId: groupBuyProductsTable.productId,
+          })
+          .from(groupBuyProductsTable)
+          .innerJoin(productsTable, eq(groupBuyProductsTable.productId, productsTable.id))
+          .where(and(
+            inArray(groupBuyProductsTable.groupBuyId, memberGroupBuyIds),
+            inArray(groupBuyProductsTable.productId, submittedProductIds),
+            eq(groupBuyProductsTable.active, true),
+            eq(productsTable.active, true),
+          )),
+      ]);
+
+      const resolution = inferGroupBuyContext({
+        authenticatedUsername: contextUsername,
+        submittedUsername: tg,
+        isWholesaleOrder,
+        productIds: submittedProductIds,
+        memberships,
+        groupBuys: memberGroups,
+        eligibleProducts,
+      });
+      if (resolution.kind === "ambiguous") {
+        res.status(409).json({
+          error: "Choose which group buy this order belongs to before continuing.",
+          code: "GROUP_BUY_SELECTION_REQUIRED",
+          eligibleGroupBuys: resolution.eligibleGroupBuys,
+        });
+        return;
+      }
+      if (resolution.kind === "unique") normalizedGroupBuyId = resolution.groupBuyId;
+    }
+  }
   let newHalfGroup: any = null;
   if (halfKitCheckout) {
     const session = getAccountFromCookie(req);
