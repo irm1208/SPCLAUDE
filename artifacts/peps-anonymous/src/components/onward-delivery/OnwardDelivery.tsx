@@ -6,6 +6,7 @@ import {
   type Fetcher, type ManagerScope, type OnwardConfig, type OnwardCurrency, type OnwardEstimate, type OnwardMatrix,
   type OnwardMethod, type RateField,
 } from "@/lib/onward-delivery";
+import { isEuOnwardDestination } from "@/lib/country-shipping-options";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
 const FIELD_LABEL: Record<RateField, string> = { pickupSmall: "Pickup ≤5", pickupLarge: "Pickup >5–25", homeSmall: "Home ≤5", homeLarge: "Home >5–25" };
@@ -321,13 +322,14 @@ export function OnwardDeliveryPicker({ gbId, country, kits, reshipperCode, direc
   const reqId = useRef(0);
   const identity = `${gbId}|${orderId ?? ""}`;
   const identityRef = useRef(identity);
+  const euDestination = isEuOnwardDestination(country);
 
   // A different group buy / order must never show the previous order's estimate.
   if (identityRef.current !== identity) { identityRef.current = identity; if (estimate) setEstimate(null); }
 
   useEffect(() => {
     const id = ++reqId.current;
-    if (!(kits > 0) || directShippingRequested) { setEstimate(null); setError(null); setLoading(false); return; }
+    if (!euDestination || !(kits > 0) || directShippingRequested) { setEstimate(null); setError(null); setLoading(false); return; }
     setLoading(true); setError(null);
     const t = setTimeout(() => {
       onwardApi.estimate(defaultFetcher, gbId, {
@@ -340,9 +342,13 @@ export function OnwardDeliveryPicker({ gbId, country, kits, reshipperCode, direc
         .finally(() => { if (id === reqId.current) setLoading(false); });
     }, 350);
     return () => { clearTimeout(t); };
-  }, [gbId, country, kits, reshipperCode, directShippingRequested, orderId, nonce]);
+  }, [gbId, country, kits, reshipperCode, directShippingRequested, orderId, nonce, euDestination]);
 
   useFocusRefetch(() => setNonce(n => n + 1));
+
+  useEffect(() => {
+    if (!euDestination && value && !readOnly) onChange(null);
+  }, [euDestination, value, readOnly, onChange]);
 
   const noPricedOption = !!estimate && estimate.options.length === 0
     && (estimate.status === "unavailable" || estimate.status === "available");
@@ -350,6 +356,7 @@ export function OnwardDeliveryPicker({ gbId, country, kits, reshipperCode, direc
     if (noPricedOption && value && !readOnly) onChange(null);
   }, [noPricedOption, value, readOnly, onChange]);
 
+  if (!euDestination) return null;
   if (directShippingRequested) return null;
   // No applicable country/quantity rate means there is nothing to show or select.
   if (noPricedOption) return null;

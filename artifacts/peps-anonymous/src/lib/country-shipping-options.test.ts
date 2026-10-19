@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterShippingOptionsForCountry, resolveShippingDestinationCountry } from "./country-shipping-options";
+import { filterShippingOptionsForCountry, isEuOnwardDestination, resolveShippingDestinationCountry } from "./country-shipping-options";
 
 describe("country-scoped group-buy shipping options", () => {
   it("shows only global and matching-country options", async () => {
@@ -24,5 +24,13 @@ describe("country-scoped group-buy shipping options", () => {
     expect(resolveShippingDestinationCountry(null, "United Kingdom", "GB")).toBe("United Kingdom");
     expect(resolveShippingDestinationCountry("", null, "GB")).toBe("GB");
     expect(resolveShippingDestinationCountry("DE", "GB", "FR")).toBe("DE");
+  });
+
+  it("classifies UK/GB as non-EU destinations while allowing EU matrix countries", () => {
+    expect(isEuOnwardDestination("IT")).toBe(true);
+    expect(isEuOnwardDestination("Italy")).toBe(true);
+    expect(isEuOnwardDestination("UK")).toBe(false);
+    expect(isEuOnwardDestination("GB")).toBe(false);
+    expect(isEuOnwardDestination("United Kingdom")).toBe(false);
   });
 });

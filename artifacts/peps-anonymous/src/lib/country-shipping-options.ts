@@ -15,6 +15,16 @@ export function normalizeShippingCountry(raw: string | null | undefined): string
   return COUNTRY_LIST.find(country => country.name.toLowerCase() === value.toLowerCase())?.code ?? null;
 }
 
+const EU_ONWARD_COUNTRY_CODES = new Set([
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU",
+  "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+]);
+
+export function isEuOnwardDestination(raw: string | null | undefined): boolean {
+  const countryCode = normalizeShippingCountry(raw);
+  return countryCode !== null && EU_ONWARD_COUNTRY_CODES.has(countryCode);
+}
+
 export function resolveShippingDestinationCountry(
   shippingCountry: string | null | undefined,
   accountCountry: string | null | undefined,

@@ -61,7 +61,7 @@ The EU quantity-band matrix is only for EU onward-delivery estimates. Other dest
 
 **Why:** The user clarified that only the EU needs the multi-country matrix and non-EU country-specific options should not be shown to other countries.
 
-**How to apply:** Keep UK and other country-specific choices out of the EU matrix. Show only global or destination-matching custom options to members, reject mismatched selections on the server, and retain the standard global methods if no custom option matches.
+**How to apply:** Render the EU matrix picker only for EU destination countries; for UK/GB and other non-EU destinations, omit the component and do not request an estimate. Show only global or destination-matching custom options to members, reject mismatched selections on the server, and retain the standard global methods if no custom option matches.
 
 Country-scoped checkout must submit the same effective destination used to display the option: explicit shipping country, then account country, then country-leg code.
 
