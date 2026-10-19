@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
-import { filterShippingOptionsForCountry } from "@/lib/country-shipping-options";
+import { filterShippingOptionsForCountry, resolveShippingDestinationCountry } from "@/lib/country-shipping-options";
 import { countKits } from "@/lib/onward-delivery";
 import { HalfKitOffers } from "./GroupBuyHalfKits";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
@@ -626,7 +626,7 @@ export default function OrderForm() {
   const myCountryLeg = myCountryLegId ? countryLegs.find(l => l.id === myCountryLegId) ?? null : null;
   // Leg country is only a routing fallback; destination prefers shipping country then account country.
   const legCountryCode = myCountryLeg?.countryCode ?? null;
-  const onwardDestination = draft.shippingCountry || account?.country || legCountryCode || null;
+  const onwardDestination = resolveShippingDestinationCountry(draft.shippingCountry, account?.country, legCountryCode);
   const setOnwardCountryRef = useRef(draft.setOnwardDeliveryCountry);
   setOnwardCountryRef.current = draft.setOnwardDeliveryCountry;
   useEffect(() => {

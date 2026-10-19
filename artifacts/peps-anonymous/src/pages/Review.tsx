@@ -7,6 +7,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { formatGroupCouponAmount } from "@/lib/group-buy-coupon-currency";
+import { resolveShippingDestinationCountry } from "@/lib/country-shipping-options";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useToast } from "@/hooks/use-toast";
 import { useUpdateOrder } from "@workspace/api-client-react";
@@ -264,7 +265,11 @@ export default function Review() {
       shippingPhone: draft.shippingPhone || null,
       shippingEmail: draft.shippingEmail || null,
       shippingAddress: draft.shippingAddress || null,
-      shippingCountry: draft.shippingCountry || null,
+      shippingCountry: resolveShippingDestinationCountry(
+        draft.shippingCountry,
+        account?.country,
+        activeCountryLeg?.countryCode ?? null,
+      ),
       reshipperUsername: draft.preferredReshipperUsername || undefined,
       directShippingRequested: draft.directShippingRequested || undefined,
       directShippingCost: draft.directShippingRequested && draft.deliveryPrice > 0 ? draft.deliveryPrice : undefined,

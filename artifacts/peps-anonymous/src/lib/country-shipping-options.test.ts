@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterShippingOptionsForCountry } from "./country-shipping-options";
+import { filterShippingOptionsForCountry, resolveShippingDestinationCountry } from "./country-shipping-options";
 
 describe("country-scoped group-buy shipping options", () => {
   it("shows only global and matching-country options", async () => {
@@ -18,5 +18,11 @@ describe("country-scoped group-buy shipping options", () => {
     const options = [{ id: "uk-qr", label: "UK QR label", price: 3, country: "GB" }];
 
     expect(filterShippingOptionsForCountry(options, null)).toEqual([]);
+  });
+
+  it("uses the same destination fallback for checkout display and order submission", () => {
+    expect(resolveShippingDestinationCountry(null, "United Kingdom", "GB")).toBe("United Kingdom");
+    expect(resolveShippingDestinationCountry("", null, "GB")).toBe("GB");
+    expect(resolveShippingDestinationCountry("DE", "GB", "FR")).toBe("DE");
   });
 });
