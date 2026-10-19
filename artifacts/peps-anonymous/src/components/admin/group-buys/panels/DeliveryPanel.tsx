@@ -269,7 +269,7 @@ export function DeliveryMethodsSubTab({ secret, gb, onUpdate }: { secret: string
             {savedShipping ? "Saved" : "Save Options"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Postage choices shown to members on the order form for this GB only. If any are defined here, they <strong>replace</strong> the Global Delivery Methods below.</p>
+        <p className="text-xs text-muted-foreground mb-3">Options can be available to everyone or limited to one destination country. Members see the global options plus options for their country. If none match, enabled Global Delivery Methods below remain available. EU onward-delivery estimates are separate.</p>
         <ShippingOptionsEditor options={shippingOptions} onChange={setShippingOptions} currencySym={currSym(gb.currency)} />
       </Card>
 
@@ -278,7 +278,7 @@ export function DeliveryMethodsSubTab({ secret, gb, onUpdate }: { secret: string
           <Package className="w-4 h-4 text-green-500" />
           <h3 className="font-semibold text-sm">Global Delivery Methods</h3>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Toggle global delivery methods for this group buy. Custom postage options above will override these when set.</p>
+        <p className="text-xs text-muted-foreground mb-3">Toggle the fallback delivery methods for this group buy. A matching custom postage option takes priority for that member's country.</p>
         <div className="space-y-2">
           {actionErr && <p className="text-xs text-red-500 px-1">{actionErr}</p>}
           {allDms.map(dm => {

@@ -33,6 +33,7 @@ import { sendTelegramMessage, sendTelegramMessageFull, sendAdminFromTemplate, ge
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
+import { validateGroupBuyShippingOptions } from "../lib/group-buy-shipping-options";
 import reshipperVisibilityRouter from "./reshipper-visibility";
 
 const router: IRouter = Router();
@@ -399,9 +400,9 @@ router.patch("/reshipper/gb/:gbId/settings", requireReshipper, async (req, res):
       : null;
   }
   if (shippingOptions !== undefined) {
-    if (shippingOptions !== null && !Array.isArray(shippingOptions)) {
-      res.status(400).json({ error: "shippingOptions must be an array or null" });
-      return;
+    if (shippingOptions !== null) {
+      const error = validateGroupBuyShippingOptions(shippingOptions);
+      if (error) { res.status(400).json({ error }); return; }
     }
     updates.shippingOptions = shippingOptions ? JSON.stringify(shippingOptions) : null;
   }

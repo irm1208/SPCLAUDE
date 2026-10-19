@@ -3,6 +3,7 @@ import { OrganiserOnwardDelivery } from "@/components/onward-delivery/OrganiserO
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { parseVendorShippingAmount } from "@/lib/vendor-shipping-settings";
+import { normalizeShippingCountry } from "@/lib/country-shipping-options";
 import { compareOrderAmounts } from "@/lib/order-amount-sort";
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
 import { GroupBuyStockControls } from "@/components/GroupBuyStockControls";
@@ -120,7 +121,7 @@ export interface OrganiserGB {
   paymentsEnabled: boolean;
   paymentMessage: string | null;
   paymentMessageEnabled: boolean;
-  shippingOptions: { id: string; label: string; price: number; description?: string; requiresAddress?: boolean; requiresQrCode?: boolean }[];
+  shippingOptions: { id: string; label: string; price: number; description?: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }[];
   organiserPayments: { usdtWallet?: string; revolutHandle?: string; paypalHandle?: string; cryptoCurrency?: string; cryptoNetwork?: string; cryptoWalletAddress?: string; cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null; anonPayEnabled?: boolean; anonPayWallet?: string; anonPayTicker?: string; anonPayNetwork?: string } | null;
   organiserId: string | null;
   labTestSupplier: string | null;
@@ -6214,8 +6215,8 @@ const TROCADOR_COINS = [
 ] as const;
 
 export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: OrganiserGB) => void }) {
-  const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string; requiresAddress: boolean; requiresQrCode: boolean }[]>(
-    (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string; requiresAddress?: boolean; requiresQrCode?: boolean }) => ({ ...o, description: o.description ?? "", priceStr: String(o.price ?? 0), requiresAddress: o.requiresAddress ?? false, requiresQrCode: o.requiresQrCode ?? false }))
+  const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string; country: string; requiresAddress: boolean; requiresQrCode: boolean }[]>(
+    (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }) => ({ ...o, country: normalizeShippingCountry(o.country) ?? "", description: o.description ?? "", priceStr: String(o.price ?? 0), requiresAddress: o.requiresAddress ?? false, requiresQrCode: o.requiresQrCode ?? false }))
   );
   const [payments, setPayments] = useState({
     cryptoOptions: (() => {
@@ -6298,9 +6299,9 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
     setSplitApplying(false);
   };
 
-  const addShipping = () => setShippingOptions(s => [...s, { id: `ship-${Date.now()}`, label: "", description: "", priceStr: "0", requiresAddress: false, requiresQrCode: false }]);
+  const addShipping = () => setShippingOptions(s => [...s, { id: `ship-${Date.now()}`, label: "", description: "", priceStr: "0", country: "", requiresAddress: false, requiresQrCode: false }]);
   const removeShipping = (idx: number) => setShippingOptions(s => s.filter((_, i) => i !== idx));
-  const updateShipping = (idx: number, k: "label" | "description" | "priceStr", v: string) => {
+  const updateShipping = (idx: number, k: "label" | "description" | "priceStr" | "country", v: string) => {
     setShippingOptions(s => s.map((o, i) => i === idx ? { ...o, [k]: v } : o));
   };
   const updateShippingBool = (idx: number, k: "requiresAddress" | "requiresQrCode", v: boolean) => {
@@ -6310,7 +6311,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
   const saveShipping = async () => {
     setSavingShip(true); setError("");
     try {
-      const payload = shippingOptions.map(({ priceStr, ...o }) => ({ ...o, price: parseFloat(priceStr) || 0, requiresAddress: o.requiresAddress, requiresQrCode: o.requiresQrCode }));
+      const payload = shippingOptions.map(({ priceStr, ...o }) => ({ ...o, country: o.country || null, price: parseFloat(priceStr) || 0, requiresAddress: o.requiresAddress, requiresQrCode: o.requiresQrCode }));
       const res = await fetch(`/api/organiser/group-buys/${gb.id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shippingOptions: payload }) });
       if (!res.ok) { const d = await res.json(); setError(d.error || "Failed"); return; }
       onUpdated(await res.json()); setOkShip(true); setTimeout(() => setOkShip(false), 2000);
@@ -6347,7 +6348,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
           <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Add Shipping Courier</p>
           <button onClick={addShipping} className="h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1" style={{ background: "var(--t-blue-10)", color: "var(--t-blue-deep)" }}><Plus className="w-3 h-3" /> Add</button>
         </div>
-        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>The delivery options members can pick at checkout. Give each one a name (e.g. "Standard UK") and its price. The number box is the price in this group buy's currency ({gb.currency}) — e.g. {gb.currency} 5.00.</p>
+        <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Set each option's price and choose which country can see it. “All countries” keeps it available to everyone. If no country-specific option matches, members see the usual delivery methods. Prices use this group buy's currency ({gb.currency}).</p>
         {shippingOptions.length === 0 && <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No shipping options — orders will use global delivery methods.</p>}
         {shippingOptions.map((o, i) => (
           <div key={o.id} className="p-3 rounded-xl space-y-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
@@ -6366,6 +6367,13 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
               className={`${inputCls} text-xs`}
               style={inputStyle}
             />
+            <label className="flex items-center gap-2 text-[11px] font-semibold" style={{ color: "var(--t-subtle)" }}>
+              Available in
+              <select value={o.country} onChange={e => updateShipping(i, "country", e.target.value)} className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle}>
+                <option value="">All countries</option>
+                {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+              </select>
+            </label>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-0.5">
               <label className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer select-none" style={{ color: "var(--t-subtle)" }}>
                 <input type="checkbox" checked={o.requiresAddress} onChange={e => updateShippingBool(i, "requiresAddress", e.target.checked)} className="rounded" />

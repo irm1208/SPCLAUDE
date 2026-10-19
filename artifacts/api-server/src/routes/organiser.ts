@@ -38,6 +38,7 @@ import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-f
 import { callSageAI, type ContentPart } from "../lib/sage-ai";
 import { toSageContentParts, type LabFilePart } from "../lib/gemini-lab-extract";
 import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
+import { validateGroupBuyShippingOptions } from "../lib/group-buy-shipping-options";
 import {
   allocateShipping,
   reconcileShippingAdjustment,
@@ -176,17 +177,7 @@ function formatGb(gb: GroupBuy) {
 }
 
 function validateShippingOptions(opts: unknown): string | null {
-  if (!Array.isArray(opts)) return "shippingOptions must be an array";
-  for (let i = 0; i < opts.length; i++) {
-    const o = opts[i];
-    if (typeof o !== "object" || o === null) return `shippingOptions[${i}] must be an object`;
-    const { id, label, price } = o as Record<string, unknown>;
-    if (typeof id !== "string" || id.trim().length === 0) return `shippingOptions[${i}].id must be a non-empty string`;
-    if (typeof label !== "string" || label.trim().length === 0) return `shippingOptions[${i}].label must be a non-empty string`;
-    const numPrice = typeof price === "number" ? price : parseFloat(String(price));
-    if (!isFinite(numPrice) || numPrice < 0) return `shippingOptions[${i}].price must be a non-negative number`;
-  }
-  return null;
+  return validateGroupBuyShippingOptions(opts);
 }
 
 // ─── Profile Routes ─────────────────────────────────────────────────────────────

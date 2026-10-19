@@ -1,6 +1,7 @@
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import adminProductStockRouter from "./admin-product-stock";
 import { resolveEditedProductId } from "../lib/admin-order-product-links";
+import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
 import { getGbOrderCounts, gbOrderPersonKey, multipleGbOrdersWhere, countMultipleGbOrderPeople } from "../lib/gb-multiple-orders";
 import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
 import {
@@ -10236,8 +10237,8 @@ router.get("/admin/orders/:id/customer-view", async (req, res): Promise<void> =>
     groupBuyPaymentsEnabled = gb?.paymentsEnabled ?? true;
     if (gb?.shippingOptions && order.deliveryMethodId) {
       try {
-        const opts = JSON.parse(gb.shippingOptions) as Array<{ id: string; requiresAddress?: boolean; requiresQrCode?: boolean }>;
-        const matched = opts.find(o => o.id === order.deliveryMethodId);
+        const opts = JSON.parse(gb.shippingOptions) as Array<{ id: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }>;
+        const matched = opts.find(o => o.id === order.deliveryMethodId && shippingOptionMatchesCountry(o, order.shippingCountry));
         if (matched) {
           customShippingRequiresAddress = matched.requiresAddress ?? false;
           customShippingRequiresQrCode = matched.requiresQrCode ?? false;

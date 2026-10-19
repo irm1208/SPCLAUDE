@@ -35,6 +35,7 @@ import { createAlert } from "../lib/create-alert";
 import { writeLog } from "../lib/audit-log";
 import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
 import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
+import { validateGroupBuyShippingOptions } from "../lib/group-buy-shipping-options";
 import {
   reconcileShippingAdjustment,
   ShippingAdjustmentError,
@@ -111,17 +112,7 @@ function resolveAdminFeeOnRecompute(
 
 /** Returns an error string if shippingOptions are malformed, or null if valid. */
 function validateShippingOptions(opts: unknown): string | null {
-  if (!Array.isArray(opts)) return "shippingOptions must be an array";
-  for (let i = 0; i < opts.length; i++) {
-    const o = opts[i];
-    if (typeof o !== "object" || o === null) return `shippingOptions[${i}] must be an object`;
-    const { id, label, price } = o as Record<string, unknown>;
-    if (typeof id !== "string" || id.trim().length === 0) return `shippingOptions[${i}].id must be a non-empty string`;
-    if (typeof label !== "string" || label.trim().length === 0) return `shippingOptions[${i}].label must be a non-empty string`;
-    const numPrice = typeof price === "number" ? price : parseFloat(String(price));
-    if (!isFinite(numPrice) || numPrice < 0) return `shippingOptions[${i}].price must be a non-negative number`;
-  }
-  return null;
+  return validateGroupBuyShippingOptions(opts);
 }
 
 // ── GET /admin/group-buys — list all GBs ──────────────────────

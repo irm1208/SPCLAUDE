@@ -56,3 +56,9 @@ Reshippers may update their own matrix prices. Group-buy organisers may edit mat
 **Why:** The user explicitly requested both price editing and payment-request management for organisers, in addition to reshipper price editing.
 
 **How to apply:** Keep one shared matrix per assignment, rather than separate organiser/reshipper copies. Restrict reshippers to their own active assignments. Organiser actions must validate group ownership and retain the selected reshipper's wallet destination and the real organiser's audit identity. Cover both organiser dashboards.
+
+The EU quantity-band matrix is only for EU onward-delivery estimates. Other destinations, including the UK, use the group buy's existing custom postage options, scoped to a selected country; options may require a member-uploaded QR/label or a delivery address.
+
+**Why:** The user clarified that only the EU needs the multi-country matrix and non-EU country-specific options should not be shown to other countries.
+
+**How to apply:** Keep UK and other country-specific choices out of the EU matrix. Show only global or destination-matching custom options to members, reject mismatched selections on the server, and retain the standard global methods if no custom option matches.

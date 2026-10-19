@@ -24,6 +24,7 @@ import { randomUUID } from "crypto";
 const router: IRouter = Router();
 
 import { normalizeToCode, COUNTRY_CODE_TO_NAME } from "../lib/country-utils";
+import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
 
 async function isMember(telegramUsername: string, groupBuyId: string): Promise<boolean> {
   const rows = await db
@@ -304,6 +305,9 @@ router.get("/group-buys", requireAccount, async (req, res): Promise<void> => {
     .from(accountsTable)
     .where(eq(accountsTable.telegramUsername, tg));
   const accountCountryGb = acctRowGb?.country ?? null;
+  const shippingOptionsCountry = typeof req.query.shippingCountry === "string" && req.query.shippingCountry.trim()
+    ? req.query.shippingCountry
+    : accountCountryGb;
   const archivedGbSet = new Set<string>(acctRowGb?.archivedGroupBuyIds ?? []);
 
   // Forced GBs — GBs where this customer's username is in the forcedUsernames array
@@ -329,8 +333,16 @@ router.get("/group-buys", requireAccount, async (req, res): Promise<void> => {
         (gb.maxKitsPerCustomer != null || gb.maxKitsTotal != null) ? getUserKitCount(gb.id, tg) : Promise.resolve(0),
         gb.maxKitsTotal != null ? getTotalKitCount(gb.id) : Promise.resolve(0),
       ]);
+      const shaped = shapeGb(gb as Record<string, unknown>, productCount);
+      const shippingOptions = Array.isArray(shaped.shippingOptions)
+        ? shaped.shippingOptions.filter((option: unknown) =>
+            typeof option === "object" && option !== null &&
+            shippingOptionMatchesCountry(option as { country?: unknown }, shippingOptionsCountry)
+          )
+        : [];
       return {
-        ...shapeGb(gb as Record<string, unknown>, productCount),
+        ...shaped,
+        shippingOptions,
         maxKitsPerCustomer: gb.maxKitsPerCustomer ?? null,
         maxKitsTotal: gb.maxKitsTotal ?? null,
         kitsOrderedByUser,

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
+import { filterShippingOptionsForCountry } from "@/lib/country-shipping-options";
 import { countKits } from "@/lib/onward-delivery";
 import { HalfKitOffers } from "./GroupBuyHalfKits";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
@@ -588,7 +589,7 @@ export default function OrderForm() {
   const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
   const { data: myGroupBuys } = useMyGroupBuys();
 
-  const [gbShippingOptions, setGbShippingOptions] = React.useState<Array<{ id: string; label: string; price: number; requiresAddress?: boolean }>>([]);
+  const [gbShippingOptions, setGbShippingOptions] = React.useState<Array<{ id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }>>([]);
   const [isLoadingGbInfo, setIsLoadingGbInfo] = React.useState(false);
 
   // Kit limit data from the GB
@@ -684,8 +685,9 @@ export default function OrderForm() {
   );
 
   // When a GB defines its own shipping options, use those; otherwise fall back to relational delivery methods
-  const gbShippingAsDelivery = gbShippingOptions.map(o => ({ id: o.id, name: o.label, price: o.price, description: null, requiresAddress: o.requiresAddress ?? false }));
-  const deliveryMethods = gbId && gbShippingOptions.length > 0
+  const countryShippingOptions = filterShippingOptionsForCountry(gbShippingOptions, onwardDestination);
+  const gbShippingAsDelivery = countryShippingOptions.map(o => ({ id: o.id, name: o.label, price: o.price, description: null, requiresAddress: o.requiresAddress ?? false }));
+  const deliveryMethods = gbId && countryShippingOptions.length > 0
     ? gbShippingAsDelivery
     : (gbId ? gbDeliveryMethods : globalDeliveryMethods);
 
@@ -700,7 +702,7 @@ export default function OrderForm() {
   // NOTE: must be declared before the useEffect below that uses it as a dependency.
   const selectedMethodRequiresAddress = (() => {
     if (!draft.deliveryMethodId) return false;
-    const opt = gbShippingOptions.find(o => o.id === draft.deliveryMethodId);
+    const opt = countryShippingOptions.find(o => o.id === draft.deliveryMethodId);
     return opt?.requiresAddress ?? false;
   })();
 
@@ -722,7 +724,7 @@ export default function OrderForm() {
     setIsLoadingGbInfo(true);
     type GbInfo = {
       id: string; name: string; testingEnabled?: boolean; labTestSupplier?: string | null;
-      shippingOptions?: Array<{ id: string; label: string; price: number; requiresAddress?: boolean }>;
+      shippingOptions?: Array<{ id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }>;
       maxKitsPerCustomer?: number | null;
       maxKitsTotal?: number | null;
       kitsOrderedByUser?: number;
@@ -735,7 +737,7 @@ export default function OrderForm() {
     const fetchGbInfo: Promise<GbInfo | undefined> = isPreview
       ? fetch(`/api/group-buys/${gbId}/buyer-preview`, { credentials: "include" })
           .then(r => r.ok ? (r.json() as Promise<GbInfo>) : undefined)
-      : fetch("/api/group-buys", { credentials: "include" })
+      : fetch(`/api/group-buys${onwardDestination ? `?shippingCountry=${encodeURIComponent(onwardDestination)}` : ""}`, { credentials: "include" })
           .then(r => r.ok ? (r.json() as Promise<GbInfo[]>) : [])
           .then(gbs => gbs.find(g => g.id === gbId));
     fetchGbInfo
@@ -763,7 +765,7 @@ export default function OrderForm() {
         setIsLoadingGbInfo(false);
       });
     return () => { setPageTitle(null); };
-  }, [gbId, isPreview]);
+  }, [gbId, isPreview, onwardDestination]);
 
   const [infoOpenId, setInfoOpenId] = React.useState<string | null>(null);
   const [showAllDsRegions, setShowAllDsRegions] = React.useState(false);
@@ -923,7 +925,7 @@ export default function OrderForm() {
     baseAmount: myGb?.adminFeeAmount,
     label: myGb?.adminFeeLabel,
     countryOverrides: myGb?.adminFeeCountries,
-    shippingCountry: draft.shippingCountry,
+    shippingCountry: draft.shippingCountry || account?.country || legCountryCode || null,
     fallbackCountry: myCountryLeg?.countryName ?? account?.country,
     productSubtotal,
   });
@@ -1606,8 +1608,8 @@ export default function OrderForm() {
                           ...deliveryMethods.map(method => ({
                             id: method.id, name: method.name, price: method.price,
                             description: (method as any).infoEnabled === true
-                              ? (method as any).infoText || method.description || getDeliveryFallbackInfo(method.name) : null,
-                            requiresAddress: gbShippingOptions.find(option => option.id === method.id)?.requiresAddress ?? false,
+                              ? (method as any).infoText || ("description" in method ? method.description : undefined) || getDeliveryFallbackInfo(method.name) : null,
+                           requiresAddress: countryShippingOptions.find(option => option.id === method.id)?.requiresAddress ?? false,
                           })),
                           ...(directShippingInfo?.enabled ? [{
                             id: "__direct_shipping", name: "Direct to Home",

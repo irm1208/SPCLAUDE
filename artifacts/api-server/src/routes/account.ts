@@ -1,4 +1,5 @@
 import { getOnwardOrderPreference } from "../lib/gb-onward-delivery";
+import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import {
   assertNoActiveRefund,
@@ -2312,8 +2313,8 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     // Resolve per-option flags from the chosen custom shipping option
     if (gb?.shippingOptions && order.deliveryMethodId) {
       try {
-        const opts = JSON.parse(gb.shippingOptions) as Array<{ id: string; requiresAddress?: boolean; requiresQrCode?: boolean }>;
-        const matched = opts.find(o => o.id === order.deliveryMethodId);
+        const opts = JSON.parse(gb.shippingOptions) as Array<{ id: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }>;
+        const matched = opts.find(o => o.id === order.deliveryMethodId && shippingOptionMatchesCountry(o, order.shippingCountry));
         if (matched) {
           customShippingRequiresAddress = matched.requiresAddress ?? false;
           customShippingRequiresQrCode = matched.requiresQrCode ?? false;

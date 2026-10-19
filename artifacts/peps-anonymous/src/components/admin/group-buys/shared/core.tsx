@@ -14,6 +14,7 @@ import {
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { currSym } from "@/lib/currency";
+import { normalizeShippingCountry } from "@/lib/country-shipping-options";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { lookupBatchPrefix, findMatchingPeptide } from "@/data/batchPrefixes";
 import { CARRIERS_17TRACK } from "@/lib/carriers";
@@ -113,7 +114,7 @@ export const INFO_CARD_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "success", label: "Success" },
   { value: "error", label: "Error" },
 ];
-export type ShippingOption = { id: string; label: string; price: number; requiresAddress?: boolean; requiresQrCode?: boolean };
+export type ShippingOption = { id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean };
 export type EntryFeePayment = {
   id: string;
   groupBuyId: string;
@@ -213,7 +214,7 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: 
 }) {
   const add = () => onChange([...options, { id: crypto.randomUUID(), label: "", price: 0 }]);
   const remove = (id: string) => onChange(options.filter(o => o.id !== id));
-  const update = (id: string, field: keyof ShippingOption, val: string | number) =>
+  const update = (id: string, field: keyof ShippingOption, val: string | number | boolean) =>
     onChange(options.map(o => o.id === id ? { ...o, [field]: val } : o));
   const move = (idx: number, dir: -1 | 1) => {
     const arr = [...options];
@@ -226,7 +227,7 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: 
   return (
     <div className="space-y-3">
       {options.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-4">No shipping options yet. When options are defined here they will replace the global delivery method selector on the order form for this group buy.</p>
+        <p className="text-sm text-muted-foreground text-center py-4">Add group-buy delivery options. Country-specific options appear only to members in that country; “All countries” options are available to everyone. If none match, the usual delivery methods remain available.</p>
       )}
       {options.map((opt, i) => (
         <div key={opt.id} className="border border-border rounded-xl p-3 space-y-2">
@@ -264,7 +265,19 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: 
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex items-center gap-4 pl-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-6">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Available in
+              <select
+                aria-label={`Country for ${opt.label || "shipping option"}`}
+                value={normalizeShippingCountry(opt.country) ?? ""}
+                onChange={e => update(opt.id, "country", e.target.value || "")}
+                className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+              >
+                <option value="">All countries</option>
+                {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+              </select>
+            </label>
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input
                 type="checkbox"

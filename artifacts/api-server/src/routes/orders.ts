@@ -10,6 +10,7 @@ import { parseHalfKitCheckout, assertHalfKitCheckoutItems, halfKitSelections } f
 import { HalfKitError } from "../lib/half-kit-rules";
 import { editOrderWithHalfKits } from "../lib/half-kit-order-edit";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
+import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
 import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/coupon-redemption";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
@@ -710,8 +711,8 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       .where(eq(groupBuysTable.id, normalizedGroupBuyId));
     if (gbRow?.shippingOptions) {
       try {
-        const opts = JSON.parse(gbRow.shippingOptions) as Array<{ id: string; label: string; price: number }>;
-        const match = opts.find(o => o.id === String(deliveryMethodId));
+        const opts = JSON.parse(gbRow.shippingOptions) as Array<{ id: string; label: string; price: number; country?: string | null }>;
+        const match = opts.find(o => o.id === String(deliveryMethodId) && shippingOptionMatchesCountry(o, req.body?.shippingCountry));
         if (match) {
           deliveryMethodRecord = { id: match.id, name: match.label, price: String(match.price) };
         }
@@ -2297,8 +2298,8 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
       .where(eq(groupBuysTable.id, order.groupBuyId));
     if (gbRow?.shippingOptions) {
       try {
-        const opts = JSON.parse(gbRow.shippingOptions) as Array<{ id: string; label: string; price: number }>;
-        const match = opts.find(o => o.id === String(deliveryMethodId));
+        const opts = JSON.parse(gbRow.shippingOptions) as Array<{ id: string; label: string; price: number; country?: string | null }>;
+        const match = opts.find(o => o.id === String(deliveryMethodId) && shippingOptionMatchesCountry(o, clientShippingCountry ?? order.shippingCountry));
         if (match) {
           deliveryMethodRecord = { id: match.id, name: match.label, price: String(match.price) };
         }
