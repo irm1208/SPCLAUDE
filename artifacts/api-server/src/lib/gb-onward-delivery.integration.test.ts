@@ -99,4 +99,21 @@ describe.skipIf(process.env.ONWARD_DELIVERY_DB_TESTS !== "1")("onward-delivery P
       expect(await api.memberOnwardPreview(f.id, { username: f.member }, { kits: 1, country: "AT", directShippingRequested: true })).toMatchObject({ status: "not_applicable" });
     });
   });
+  it("uses additional covered countries when resolving the reshipper for a new-order estimate", async () => {
+    await fixture(async (store, api, f, tx) => {
+      await tx.update(store.gbReshippersTable)
+        .set({ countries: ["AT", "IT"] })
+        .where(eq(store.gbReshippersTable.gbId, f.id));
+      await api.saveOnwardMatrix(f.id, f.resh, { username: f.owner }, suppliedEuMatrix());
+
+      const estimate = await api.memberOnwardPreview(f.id, { username: f.member }, { kits: 1, country: "Italy" });
+
+      expect(estimate).toMatchObject({
+        status: "available",
+        country: "IT",
+        reshipperUsername: f.resh,
+        options: [{ method: "pickup", amount: 7.5 }, { method: "home", amount: 15 }],
+      });
+    });
+  });
 });

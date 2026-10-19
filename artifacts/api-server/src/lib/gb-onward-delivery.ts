@@ -132,8 +132,16 @@ export async function memberOnwardPreview(gbId: string, actor: UpdateActor, body
       const [leg] = await db.select().from(gbCountryLegsTable).where(eq(gbCountryLegsTable.id, membership.countryLegId));
       legCountry = leg?.countryCode ?? null;
     }
-    const candidatesFor = (destination: unknown) => assignments.filter(row =>
-      normalizeEuCountry(row.country) !== null && normalizeEuCountry(row.country) === normalizeEuCountry(destination));
+    const candidatesFor = (destination: unknown) => {
+      const target = normalizeEuCountry(destination);
+      if (!target) return [];
+      return assignments.filter(row => {
+        const coveredCountries = Array.isArray(row.countries) && row.countries.length > 0
+          ? row.countries
+          : [row.country];
+        return coveredCountries.some(country => normalizeEuCountry(country) === target);
+      });
+    };
     const candidates = (legCountry ? candidatesFor(legCountry) : []);
     const names = [...new Set((candidates.length ? candidates : candidatesFor(country)).map(row => row.reshipperUsername))];
     if (names.length === 1) username = names[0];
