@@ -6371,7 +6371,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
               Available in
               <select value={o.country} onChange={e => updateShipping(i, "country", e.target.value)} className="rounded-lg px-2 py-1.5 text-xs" style={inputStyle}>
                 <option value="">All countries</option>
-                {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+                {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.code === "GB" ? "United Kingdom (UK / GB)" : country.name}</option>)}
               </select>
             </label>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-0.5">

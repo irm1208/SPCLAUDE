@@ -275,7 +275,7 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: 
                 className="rounded-md border border-input bg-background px-2 py-1 text-xs"
               >
                 <option value="">All countries</option>
-                {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+                {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.code === "GB" ? "United Kingdom (UK / GB)" : country.name}</option>)}
               </select>
             </label>
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
