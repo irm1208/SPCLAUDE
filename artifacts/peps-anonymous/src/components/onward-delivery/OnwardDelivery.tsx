@@ -344,9 +344,15 @@ export function OnwardDeliveryPicker({ gbId, country, kits, reshipperCode, direc
 
   useFocusRefetch(() => setNonce(n => n + 1));
 
+  const noPricedOption = !!estimate && estimate.options.length === 0
+    && (estimate.status === "unavailable" || estimate.status === "available");
+  useEffect(() => {
+    if (noPricedOption && value && !readOnly) onChange(null);
+  }, [noPricedOption, value, readOnly, onChange]);
+
   if (directShippingRequested) return null;
-  // Reshipper has no enabled matrix: stay quiet unless a stale saved choice needs clearing.
-  if (estimate?.status === "unavailable" && estimate.configured === false && !value && !loading) return null;
+  // No applicable country/quantity rate means there is nothing to show or select.
+  if (noPricedOption) return null;
   if (!(kits > 0)) return null;
   return (
     <Frame testId="card-onward-picker">

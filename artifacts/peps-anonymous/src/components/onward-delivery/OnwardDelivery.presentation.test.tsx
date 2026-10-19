@@ -60,3 +60,24 @@ it("keeps estimates in a cohesive blue card without changing optional selection 
     container.remove(); vi.unstubAllGlobals();
   }
 });
+
+it("hides the estimate card when the selected country has no matrix rates", async () => {
+  const estimate = {
+    status: "unavailable", configured: true, country: "GB", kits: 1, currency: null,
+    reshipperUsername: "reshipper", selectedMethod: null, options: [],
+  };
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => estimate })));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const change = vi.fn();
+  try {
+    await act(async () => root.render(<Picker gbId="g1" country="GB" kits={1} value="home" onChange={change} />));
+    await act(async () => { await new Promise(r => setTimeout(r, 450)); });
+    expect(change).toHaveBeenLastCalledWith(null);
+    expect(container.querySelector('[data-testid="card-onward-picker"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove(); vi.unstubAllGlobals();
+  }
+});
