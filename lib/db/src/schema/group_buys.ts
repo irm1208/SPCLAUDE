@@ -138,6 +138,7 @@ export const groupBuysTable = pgTable("group_buys", {
   legViewerAccess: jsonb("leg_viewer_access").$type<{ username: string; legIds: string[] }[]>(),
   directShippingEnabled: boolean("direct_shipping_enabled").notNull().default(false), // admin can allow customers to opt for direct home delivery
   directShippingVendorId: text("direct_shipping_vendor_id"), // wholesale vendor used for dynamic direct-shipping cost calculation
+  directShippingMessage: text("direct_shipping_message"),
   directShippingMinKits: numeric("direct_shipping_min_kits", { precision: 10, scale: 1 }).notNull().default("30"),
   // ── Entry fee gate — optional fixed fee a customer must pay before membership is granted ──
   entryFeeEnabled: boolean("entry_fee_enabled").notNull().default(false),

@@ -105,6 +105,7 @@ export type GroupBuy = Record<string, unknown> & {
   allowExtraOrders?: boolean;
   directShippingEnabled?: boolean;
   directShippingVendorId?: string | null;
+  directShippingMessage?: string | null;
   directShippingMinKits?: number | string;
   cryptoRefundsEnabled?: boolean;
 };

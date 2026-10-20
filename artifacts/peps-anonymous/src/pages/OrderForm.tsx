@@ -494,9 +494,10 @@ export default function OrderForm() {
   });
 
   type DirectShippingRegion = { name: string; prices: number[] | null; priceNote: string | null; customNote: string | null };
-  type DirectShippingInfo = { enabled: false } | { enabled: true; vendor: null; minKits: number } | {
+  type DirectShippingInfo = { enabled: false } | { enabled: true; vendor: null; minKits: number; message?: string | null } | {
     enabled: true;
     minKits: number;
+    message?: string | null;
     tiers: string[];
     tierBounds: number[];
     maxKitsPerPackage: number;
@@ -518,6 +519,7 @@ export default function OrderForm() {
 
   const directShippingEligible = Boolean(directShippingInfo?.enabled &&
     countKits(draft.lineItems) >= Number(directShippingInfo.minKits ?? 30));
+  const directShippingMessage = directShippingInfo?.enabled ? directShippingInfo.message?.trim() : "";
   useEffect(() => {
     if (isPreview || draft.additionOfOrderId || draft.orderId || !directShippingInfo) return;
     if (draft.directShippingRequested && !directShippingEligible) {
@@ -1637,7 +1639,7 @@ export default function OrderForm() {
                           ...(directShippingEligible ? [{
                             id: "__direct_shipping", name: "Direct to Home",
                             price: browseTotal > 0 ? estimatedDirectShippingCost : null,
-                            description: "Shipped directly by the vendor.",
+                            description: directShippingMessage || "Shipped directly by the vendor.",
                             requiresAddress: true,
                           }] : []),
                         ],
@@ -2168,7 +2170,7 @@ export default function OrderForm() {
                         <p className="text-sm font-semibold" style={{ color: "var(--t-text, #1A1D1F)" }}>Direct to Home</p>
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(1,118,211,0.1)", color: "#0176D3" }}>VENDOR</span>
                       </div>
-                      <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted, #6B7280)" }}>Contact us for quote</p>
+                      <p className="text-[11px] mt-0.5 whitespace-pre-line break-words" style={{ color: "var(--t-muted, #6B7280)" }}>{directShippingMessage || "Contact us for quote"}</p>
                     </div>
                     <p className="text-sm font-bold shrink-0" style={{ color: "var(--t-muted, #94A3B8)" }}>TBD</p>
                   </button>
@@ -2234,7 +2236,7 @@ export default function OrderForm() {
                       <p className="text-sm font-semibold" style={{ color: "var(--t-text, #1A1D1F)" }}>Direct to Home</p>
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(1,118,211,0.1)", color: "#0176D3" }}>VENDOR</span>
                     </div>
-                    <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted, #6B7280)" }}>Shipped direct by the vendor</p>
+                    <p className="text-[11px] mt-0.5 whitespace-pre-line break-words" style={{ color: "var(--t-muted, #6B7280)" }}>{directShippingMessage || "Shipped direct by the vendor"}</p>
                   </div>
                   <p className="text-sm font-bold shrink-0" style={{ color: estimatedCost != null && totalKits > 0 ? "var(--t-text, #1A1D1F)" : "var(--t-muted, #94A3B8)" }}>
                     {estimatedCost != null && totalKits > 0 ? `$${estimatedCost.toFixed(2)}` : "TBD"}

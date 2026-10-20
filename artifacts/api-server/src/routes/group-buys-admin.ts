@@ -1,3 +1,4 @@
+import { directShippingMessageSchema } from "../lib/direct-shipping-message";
 import { validateGroupProductLabReport } from "../lib/group-product-lab-report";
 import {
   assertNoActiveRefunds,
@@ -452,6 +453,11 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
     (updates as Record<string, unknown>)["sharedShippingCountries"] = Array.isArray(sharedShippingCountries) ? JSON.stringify(sharedShippingCountries) : null;
   }
   if (directShippingEnabled !== undefined) updates.directShippingEnabled = Boolean(directShippingEnabled);
+  if (req.body.directShippingMessage !== undefined) {
+    const message = directShippingMessageSchema.safeParse(req.body.directShippingMessage);
+    if (!message.success) { res.status(400).json({ error: "Direct Shipping message must be text of up to 500 characters, or blank for the default." }); return; }
+    updates.directShippingMessage = message.data;
+  }
   if (directShippingVendorId !== undefined) updates.directShippingVendorId = directShippingVendorId ? String(directShippingVendorId).trim() : null;
   if (req.body.directShippingMinKits !== undefined) {
     const minimum = Number(req.body.directShippingMinKits);
