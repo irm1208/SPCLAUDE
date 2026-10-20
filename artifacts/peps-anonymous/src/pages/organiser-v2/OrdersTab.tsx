@@ -49,6 +49,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: "paid", label: "Paid" },
   { value: "unpaid", label: "Unpaid" },
   { value: "pending-confirmation", label: "Pending payment confirmation" },
+  { value: "test-payments", label: "Test Sent / Test OK" },
   { value: "ready-dispatch", label: "Ready to dispatch" },
   { value: "completed", label: "Completed" },
 ] as const satisfies ReadonlyArray<{ value: OrderStatusFilter; label: string }>;

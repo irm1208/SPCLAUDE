@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { OrganiserOrder } from "./domain/order.ts";
 import {
@@ -61,6 +62,49 @@ const orders: OrganiserOrder[] = [
     shippingOption: "Tracked",
   },
 ];
+
+test("test-payment filter includes Test Sent and Test OK regardless of fulfilment status", () => {
+  const candidates: OrganiserOrder[] = [
+    { ...orders[0], id: "sent", status: "pending", paymentStatus: "test_ready" },
+    { ...orders[0], id: "test-ok", paymentStatus: "test_confirmed" },
+    { ...orders[0], id: "shipped-test", status: "shipped", paymentStatus: " TEST_CONFIRMED " },
+    { ...orders[0], id: "paid", paymentStatus: "confirmed" },
+    { ...orders[0], id: "unpaid", paymentStatus: "unpaid" },
+    { ...orders[0], id: "review", paymentStatus: "pending_confirmation" },
+    { ...orders[0], id: "missing", paymentStatus: undefined },
+  ];
+  assert.deepEqual(
+    filterOrders(candidates, { ...baseFilters, statusFilters: ["test-payments"] }, "").map(o => o.id),
+    ["sent", "test-ok", "shipped-test"],
+  );
+  assert.equal(filterOrders(candidates, baseFilters, "").length, candidates.length);
+});
+
+test("test-payment selection combines with country, method, search and amount sorting", () => {
+  const candidates: OrganiserOrder[] = [
+    { ...orders[0], id: "sent", paymentStatus: "test_ready", total: 80 },
+    { ...orders[0], id: "test-ok", paymentStatus: "test_confirmed", total: 50 },
+    { ...orders[1], id: "other-country", paymentStatus: "test_ready" },
+    { ...orders[0], id: "other-method", paymentStatus: "test_ready", paymentMethod: "PayPal" },
+  ];
+  const filters: OrderFilterValues = {
+    ...baseFilters, statusFilters: ["test-payments"],
+    countryFilters: ["United Kingdom"], paymentMethodFilters: ["USDT"], sortOrder: "amount-asc",
+  };
+  assert.deepEqual(filterOrders(candidates, filters, "john").map(o => o.id), ["test-ok", "sent"]);
+  assert.deepEqual(filterOrders(candidates, filters, "no-match"), []);
+  assert.deepEqual(createOrderFilterChips({ ...baseFilters, statusFilters: ["test-payments"] }), [
+    { id: "status", label: "Status: Test Sent / Test OK" },
+  ]);
+});
+
+test("both organiser screens expose the combined filter on mobile and desktop", () => {
+  const legacy = readFileSync(new URL("../GbOrganiser.tsx", import.meta.url), "utf8");
+  const modern = readFileSync(new URL("./OrdersTab.tsx", import.meta.url), "utf8");
+  assert.equal((legacy.match(/id: "test-payments", label: "Test Sent \/ Test OK"/g) ?? []).length, 2);
+  assert.match(legacy, /filter === "test-payments" \? reviewOrders\.filter\(matchesTestPayment\)/);
+  assert.match(modern, /value: "test-payments", label: "Test Sent \/ Test OK"/);
+});
 
 test("amount sorting works in both directions without changing the original orders", () => {
   assert.deepEqual(filterOrders(orders, { ...baseFilters, sortOrder: "amount-asc" }, "").map(order => order.id), ["ORD-003", "ORD-002", "ORD-001"]);

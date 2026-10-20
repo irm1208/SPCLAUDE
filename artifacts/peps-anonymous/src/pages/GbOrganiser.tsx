@@ -48,7 +48,7 @@ import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 import { getCreditAdjustedTotal } from "@/lib/credit-payment";
 import { hasAppliedCredit } from "@/lib/credit-payment";
-import { matchesCancelledOrRefunded } from "@/lib/group-buy-order-filters";
+import { matchesCancelledOrRefunded, matchesTestPayment } from "@/lib/group-buy-order-filters";
 import { HalfKitManager } from "@/components/half-kits/HalfKitManager";
 import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyUpdatesManager";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
@@ -8213,6 +8213,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
     : filter === "paid" ? reviewOrders.filter(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed")
     : filter === "unpaid" ? reviewOrders.filter(o => o.paymentStatus === "unpaid")
     : filter === "pending_confirmation" ? reviewOrders.filter(o => o.paymentStatus === "pending_confirmation")
+    : filter === "test-payments" ? reviewOrders.filter(matchesTestPayment)
     : filter === "cancelled_refunded" ? reviewOrders.filter(matchesCancelledOrRefunded)
     : reviewOrders.filter(o => o.status.toLowerCase() === filter);
 
@@ -8823,7 +8824,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
         <select value={filter} onChange={e => { setFilter(e.target.value); setPage(1); }}
           className="h-9 px-3 rounded-xl text-[12px] font-semibold w-full appearance-none"
           style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
-          {[{ id: "all", label: "All Statuses" }, { id: "paid", label: "Paid" }, { id: "unpaid", label: "Unpaid" }, { id: "pending_confirmation", label: "Pending Confirmation" }, { id: "submitted", label: "Submitted" }, { id: "shipped", label: "Shipped" }, { id: "cancelled_refunded", label: "Cancelled/Refunded" }].map(f => (
+          {[{ id: "all", label: "All Statuses" }, { id: "paid", label: "Paid" }, { id: "unpaid", label: "Unpaid" }, { id: "pending_confirmation", label: "Pending Confirmation" }, { id: "test-payments", label: "Test Sent / Test OK" }, { id: "submitted", label: "Submitted" }, { id: "shipped", label: "Shipped" }, { id: "cancelled_refunded", label: "Cancelled/Refunded" }].map(f => (
             <option key={f.id} value={f.id}>{f.label}</option>
           ))}
         </select>
@@ -8858,7 +8859,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
 
       {/* ── Status pills — desktop only ── */}
       <div className="hidden sm:flex gap-1.5 flex-wrap">
-        {[{ id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "unpaid", label: "Unpaid" }, { id: "pending_confirmation", label: "Pending Confirmation" }, { id: "submitted", label: "Submitted" }, { id: "shipped", label: "Shipped" }, { id: "cancelled_refunded", label: "Cancelled/Refunded" }].map(f => {
+        {[{ id: "all", label: "All" }, { id: "paid", label: "Paid" }, { id: "unpaid", label: "Unpaid" }, { id: "pending_confirmation", label: "Pending Confirmation" }, { id: "test-payments", label: "Test Sent / Test OK" }, { id: "submitted", label: "Submitted" }, { id: "shipped", label: "Shipped" }, { id: "cancelled_refunded", label: "Cancelled/Refunded" }].map(f => {
           const isActive = filter === f.id;
           const isPending = f.id === "pending_confirmation";
           return (

@@ -1,5 +1,6 @@
 import type { OrganiserOrder } from "./domain/order";
 import { compareOrderAmounts } from "../../lib/order-amount-sort.ts";
+import { matchesTestPayment } from "../../lib/group-buy-order-filters.ts";
 
 export type OrderSortOrder = "newest" | "oldest" | "amount-asc" | "amount-desc";
 export type OrderStatusFilter =
@@ -7,6 +8,7 @@ export type OrderStatusFilter =
   | "paid"
   | "unpaid"
   | "pending-confirmation"
+  | "test-payments"
   | "ready-dispatch"
   | "completed";
 export type OrderFilterChipId = "status" | "country" | "payment" | "order-date" | "payment-date";
@@ -37,6 +39,7 @@ const STATUS_LABELS: Record<OrderStatusFilter, string> = {
   paid: "Paid",
   unpaid: "Unpaid",
   "pending-confirmation": "Pending confirmation",
+  "test-payments": "Test Sent / Test OK",
   "ready-dispatch": "Ready to dispatch",
   completed: "Completed",
 };
@@ -149,6 +152,7 @@ export function filterOrders(
         || (filters.statusFilters.includes("paid") && order.status === "paid")
         || (filters.statusFilters.includes("unpaid") && order.status === "pending" && !isPendingConfirmation)
         || (filters.statusFilters.includes("pending-confirmation") && isPendingConfirmation)
+        || (filters.statusFilters.includes("test-payments") && matchesTestPayment(order))
         || (filters.statusFilters.includes("ready-dispatch") && isReadyDispatch)
         || (filters.statusFilters.includes("completed") && isCompleted);
 
