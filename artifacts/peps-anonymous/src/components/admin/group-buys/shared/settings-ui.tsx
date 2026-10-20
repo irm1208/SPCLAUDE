@@ -2,17 +2,19 @@ import React from "react";
 import { cn } from "@/components/ui";
 
 /** iOS-style switch matching the reference design (black pill, white knob). */
-export function Switch({ checked, onChange, disabled, busy }: {
+export function Switch({ checked, onChange, disabled, busy, ariaLabel }: {
   checked: boolean;
   onChange: () => void;
   disabled?: boolean;
   busy?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled || busy}
       onClick={onChange}
       className={cn(

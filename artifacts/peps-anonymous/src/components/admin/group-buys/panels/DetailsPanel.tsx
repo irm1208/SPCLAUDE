@@ -24,6 +24,7 @@ import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyU
 import { Switch, SettingsSection, SettingsRow } from "../shared/settings-ui";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
 import type { AdminReshipperAssignment } from "./ReshippersPanel";
+import { isVendorShippingIncluded, setVendorShippingIncluded } from "./vendor-shipping-state";
 export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: GroupBuy; onUpdate: (gb: GroupBuy) => void }) {
   const [infoCards, setInfoCards] = useState<InfoCard[]>(gb.infoCards ?? []);
   const [savingCards, setSavingCards] = useState(false);
@@ -1170,18 +1171,34 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
         </p>
         {gb.vendorShippingEnabled && (
           <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Shipping Amount ({currSym(gb.currency ?? "GBP")})</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="e.g. 5.00 (leave blank = TBD)"
-                value={vendorShippingAmount}
-                onChange={e => setVendorShippingAmount(e.target.value)}
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            <SettingsRow
+              label="Vendor shipping included (0)"
+              description={isVendorShippingIncluded(vendorShippingAmount)
+                ? "No separate vendor-shipping charge; it is included in other charges."
+                : "Turn on if members will not be charged vendor shipping separately."}
+            >
+              <Switch
+                ariaLabel="Vendor shipping included (0)"
+                checked={isVendorShippingIncluded(vendorShippingAmount)}
+                onChange={() => setVendorShippingAmount(current =>
+                  setVendorShippingIncluded(current, !isVendorShippingIncluded(current))
+                )}
               />
-            </div>
+            </SettingsRow>
+            {!isVendorShippingIncluded(vendorShippingAmount) && (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Shipping Amount ({currSym(gb.currency ?? "GBP")})</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g. 5.00 (leave blank = TBD)"
+                  value={vendorShippingAmount}
+                  onChange={e => setVendorShippingAmount(e.target.value)}
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Notice Message</label>
               <textarea

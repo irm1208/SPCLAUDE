@@ -43,7 +43,7 @@ test("the switch on sets zero and switch off returns to blank TBD", () => {
 
 - [ ] **Step 2: Run the test and confirm it fails because the helper module is missing**
 
-Run: `cd artifacts/peps-anonymous && node --experimental-strip-types --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
+Run: `cd artifacts/peps-anonymous && pnpm exec tsx --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
 
 Expected: FAIL with module-not-found for `vendor-shipping-state.ts`.
 
@@ -72,7 +72,7 @@ export function setVendorShippingIncluded(
 
 - [ ] **Step 4: Run the focused test and confirm it passes**
 
-Run: `cd artifacts/peps-anonymous && node --experimental-strip-types --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
+Run: `cd artifacts/peps-anonymous && pnpm exec tsx --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
 
 Expected: both tests PASS.
 
@@ -84,21 +84,21 @@ Expected: both tests PASS.
 
 - [ ] **Step 1: Add the integration contract test**
 
-Add a source-level test to the test file using Node `readFileSync` and `new URL("./DetailsPanel.tsx", import.meta.url)`. Assert that the component imports both helpers, renders the **Vendor shipping included (0)** switch with `checked={isVendorShippingIncluded(vendorShippingAmount)}`, changes local amount state through `setVendorShippingIncluded`, and keeps the existing `vendorShippingAmount` save payload.
+Add a source-level test to the test file using Node `readFileSync` and `new URL("./DetailsPanel.tsx", import.meta.url)`. Assert that the component renders the **Vendor shipping included (0)** switch with `checked={isVendorShippingIncluded(vendorShippingAmount)}` and keeps the existing `vendorShippingAmount` save payload. The shared `Switch` has a zero-argument click handler, so the amount update must invert the current derived included state inside its handler. Also assert that the visible label is attached as the switch's accessible name.
 
 - [ ] **Step 2: Run the focused test and confirm the new contract assertion fails**
 
-Run: `cd artifacts/peps-anonymous && node --experimental-strip-types --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
+Run: `cd artifacts/peps-anonymous && pnpm exec tsx --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
 
 Expected: helper behavior tests pass; the integration assertion fails because the panel is not wired yet.
 
 - [ ] **Step 3: Wire the switch without changing the API contract**
 
-Import the tested helpers into `DetailsPanel.tsx`. Inside the existing `gb.vendorShippingEnabled` content, render a `Switch` labelled **Vendor shipping included (0)**. Its checked state comes from `isVendorShippingIncluded(vendorShippingAmount)`. Its `onChange` sets local form state using `setVendorShippingIncluded(vendorShippingAmount, checked)`. When included, show “No separate vendor-shipping charge”; otherwise show the existing numeric amount field. Keep the current notice message field and **Save Vendor Shipping** button unchanged.
+Import the tested helpers into `DetailsPanel.tsx`. Inside the existing `gb.vendorShippingEnabled` content, render a `SettingsRow` labelled **Vendor shipping included (0)** with an accessible `Switch`. Its checked state comes from `isVendorShippingIncluded(vendorShippingAmount)`. Its zero-argument click handler toggles local state using `setVendorShippingIncluded(current, !isVendorShippingIncluded(current))`. Extend the shared `Switch` with an optional `ariaLabel` prop. When included, show “No separate vendor-shipping charge”; otherwise show the existing numeric amount field. Keep the current notice message field and **Save Vendor Shipping** button unchanged.
 
 - [ ] **Step 4: Run focused tests, typecheck, and production build**
 
-Run: `cd artifacts/peps-anonymous && node --experimental-strip-types --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
+Run: `cd artifacts/peps-anonymous && pnpm exec tsx --test src/components/admin/group-buys/panels/vendor-shipping-state.test.ts`
 
 Expected: all focused tests PASS.
 
