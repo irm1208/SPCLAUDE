@@ -10,6 +10,8 @@ import {
   deleteWholesaleUpdateImage, downloadWholesaleUpdateImage, storePageUpdateImage,
 } from "./wholesale-update-images";
 import { queueGroupBuyUpdateNotification } from "./group-buy-update-notifications";
+import { groupBuyMoqSnapshots } from "./group-buy-moq";
+import { moqKey, parseMoqInput, readMoqSettings } from "./group-buy-moq-model";
 
 type DataAccess = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
 type Scope = "member" | "organiser" | "admin";
@@ -55,9 +57,10 @@ async function findUpdate(database: DataAccess, groupId: string, id: string) {
 }
 export async function groupBuyUpdates(id: string, actor: UpdateActor, scope: Scope, database = db) {
   const group = await groupUpdatesAccess(database, id, actor, scope !== "member");
-  const [progress, rows] = await Promise.all([
+  const [progress, rows, moqs] = await Promise.all([
     storedProgress(database, id),
     database.select().from(siteConfigTable).where(like(siteConfigTable.key, likePrefix(updatePrefix(id)))),
+    groupBuyMoqSnapshots(database, [id], scope !== "member"),
   ]);
   const updates = rows.map(row => readGroupUpdate(row.value))
     .filter(record => record.groupBuyId === id && (scope !== "member" || record.published))
@@ -66,6 +69,7 @@ export async function groupBuyUpdates(id: string, actor: UpdateActor, scope: Sco
   return {
     groupBuy: { id: group.id, name: group.name },
     stage: progress?.stage ?? defaultGroupProgress(group), stageUpdatedAt: progress?.updatedAt ?? null, updates,
+    moq: moqs.get(id) ?? null,
   };
 }
 
@@ -91,12 +95,38 @@ export async function groupBuyProgressSummaries(username: string, database = db)
   const rows = await database.select().from(siteConfigTable)
     .where(inArray(siteConfigTable.key, groups.map(group => progressKey(group.id))));
   const progress = new Map(rows.map(row => [row.key, readProgress(row.value)]));
+  const moqs = await groupBuyMoqSnapshots(database, groups.map(group => group.id), false);
   return {
     progress: Object.fromEntries(groups.map(group => {
       const saved = progress.get(progressKey(group.id));
-      return [group.id, { stage: saved?.stage ?? defaultGroupProgress(group), stageUpdatedAt: saved?.updatedAt ?? null }];
+      return [group.id, {
+        stage: saved?.stage ?? defaultGroupProgress(group), stageUpdatedAt: saved?.updatedAt ?? null,
+        moq: moqs.get(group.id) ?? null,
+      }];
     })),
   };
+}
+
+export async function setGroupBuyMoq(
+  id: string, actor: UpdateActor, scope: "admin" | "organiser",
+  body: Record<string, unknown>, database = db,
+) {
+  const input = parseMoqInput(body);
+  await database.transaction(async tx => {
+    await groupUpdatesAccess(tx, id, actor, true, true);
+    const [row] = await tx.select().from(siteConfigTable).where(eq(siteConfigTable.key, moqKey(id))).limit(1);
+    const previous = row ? readMoqSettings(row.value) : null;
+    if ((previous?.updatedAt ?? null) !== input.expectedUpdatedAt) {
+      throw new GroupUpdateError("MOQ changed in another session. Refresh and review it before saving.", 409);
+    }
+    const updatedAt = new Date(Math.max(Date.now(), previous?.updatedAt ? Date.parse(previous.updatedAt) + 1 : 0)).toISOString();
+    const value = JSON.stringify({
+      enabled: input.enabled, targetKits: input.targetKits, showToMembers: input.showToMembers, updatedAt,
+    });
+    await tx.insert(siteConfigTable).values({ key: moqKey(id), value })
+      .onConflictDoUpdate({ target: siteConfigTable.key, set: { value } });
+  });
+  return groupBuyUpdates(id, actor, scope, database);
 }
 
 export async function setGroupBuyProgress(id: string, actor: UpdateActor, scope: "admin" | "organiser", body: Record<string, unknown>, database = db) {

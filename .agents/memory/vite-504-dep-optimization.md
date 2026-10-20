@@ -13,9 +13,9 @@ Clearing `node_modules/.vite` forces Vite to rediscover all deps from scratch. F
 
 Add `optimizeDeps.entries` to `vite.config.ts` listing every page file in `src/pages/`. Vite then scans all possible imports in ONE pass at startup, stabilises chunk hashes before any user request arrives, and never needs to restart mid-load.
 
-**How to apply:** Any time a new page is added to `src/pages/`, add its path to the `optimizeDeps.entries` array in `vite.config.ts`.
+**How to apply:** Scan the application bootstrap as well as every page. Page-only scanning misses provider and renderer imports, which can trigger re-optimisation and invalid-hook errors during the first render. Keep new pages covered too.
 
 ## Rules
 
 - **Never clear `node_modules/.vite` on a live session** without following up with a full warmup (curl all pages from localhost, wait 60s+, verify hash stability before user access).
-- If a warmup is needed, verify with: `cat node_modules/.vite/deps/_metadata.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('hash','?'))"` before and after fetching all pages — they must match.
+- During warmup, compare dependency metadata before and after loading all pages, including `browserHash` (not just the config `hash`); newly discovered dependencies can change browser chunks without changing the config hash.

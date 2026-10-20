@@ -7,6 +7,7 @@ import {
   type GbStage, type GbUpdate, type GbUpdatesResponse, type GbUpdatesScope,
 } from "@/lib/group-buy-updates";
 import { GroupBuyProgressTracker } from "./GroupBuyProgressTracker";
+import { GroupBuyMoqSettings } from "./GroupBuyMoqSettings";
 
 const V = {
   text: "var(--t-text, #0F1F38)", muted: "var(--t-muted, #6B7280)", border: "var(--t-border, #D0DAE4)",
@@ -287,6 +288,11 @@ function ManagerBody({ scope, groupBuyId, headers }: Props) {
       )}
       {d && (
         <>
+          <GroupBuyMoqSettings moq={d.moq} scope={scope} gbId={groupBuyId} run={run} blocked={pending}
+            reload={async () => {
+              const response = await q.refetch({ throwOnError: true });
+              return response.data?.moq ?? null;
+            }} />
           <StageControl data={d} run={run} blocked={pending}
             mutate={(stage, expected, alert) => saveStage(scope, groupBuyId, stage, expected, alert)}
             onConflict={() => { qc.invalidateQueries({ queryKey: key }); qc.invalidateQueries({ queryKey: gbuKeys.progressAll }); }} />

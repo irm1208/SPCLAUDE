@@ -38,6 +38,7 @@ export default defineConfig({
   // Replit edge proxy timeout and returning 504s on the .replit.dev domain.
   optimizeDeps: {
     entries: [
+      "src/main.tsx",
       "src/pages/AccountOrderDetail.tsx",
       "src/pages/AccountOrders.tsx",
       "src/pages/Admin.tsx",

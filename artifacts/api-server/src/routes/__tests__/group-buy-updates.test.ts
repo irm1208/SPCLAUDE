@@ -17,6 +17,12 @@ vi.mock("drizzle-orm", () => ({
   isNull: (column: string) => (row: Row) => row[column] == null,
   like: (column: string, prefix: string) => (row: Row) => String(row[column]).startsWith(prefix.slice(0, -1).replace(/\\([\\%_])/g, "$1")),
   sql: (strings: TemplateStringsArray, ...values: unknown[]) => {
+    if (strings.join("").includes("NOT IN ('cancelled'")) {
+      return (row: Row) => !["cancelled", "canceled", "draft"].includes(String(row.status).trim().toLowerCase());
+    }
+    if (strings.join("").includes("<> 'refunded'")) {
+      return (row: Row) => String(row.paymentStatus).trim().toLowerCase() !== "refunded";
+    }
     if (strings.join("").includes("gb_update_delivery:")) {
       return (row: Row) => String(row.key).startsWith("gb_update_delivery:")
         && JSON.parse(String(row.value)).pending.length > 0
@@ -29,12 +35,30 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@workspace/db", () => {
   const group = { table: "groups", id: "id", organiserId: "organiserId" };
   const members = { table: "members", id: "id", groupBuyId: "groupBuyId", accountId: "accountId" };
-  const orders = { table: "orders", id: "id", groupBuyId: "groupBuyId", telegramUsername: "telegramUsername", deletedAt: "deletedAt" };
+  const orders = { table: "orders", id: "id", groupBuyId: "groupBuyId", telegramUsername: "telegramUsername", deletedAt: "deletedAt", status: "status", paymentStatus: "paymentStatus" };
+  const items = { table: "items", orderId: "orderId", quantity: "quantity", isOos: "isOos" };
   const config = { table: "config", key: "key", value: "value" };
   const rows = (table: { table: string }) => data.tables[table.table] ?? [];
   let queue = Promise.resolve();
   const database = {
-    select: (fields?: Record<string, string>) => ({ from: (table: { table: string }) => ({ where: (predicate: Predicate) => {
+    select: (fields?: Record<string, string>) => ({ from: (table: { table: string }) => ({
+      innerJoin: (_joined: unknown, _on: unknown) => ({
+        where: (predicate: Predicate) => ({
+          groupBy: async () => {
+            const totals = new Map<string, number>();
+            for (const order of rows(table)) {
+              for (const item of rows(items).filter(item => item.orderId === order.id)) {
+                if (predicate({ ...order, ...item })) {
+                  const id = String(order.groupBuyId);
+                  totals.set(id, (totals.get(id) ?? 0) + Number(item.quantity));
+                }
+              }
+            }
+            return [...totals].map(([groupBuyId, quantity]) => ({ groupBuyId, orderedKits: String(quantity) }));
+          },
+        }),
+      }),
+      where: (predicate: Predicate) => {
       const found = rows(table).filter(predicate).map(row => fields
         ? Object.fromEntries(Object.entries(fields).map(([name, column]) => [name, row[column]])) : row);
       const query = {
@@ -84,7 +108,7 @@ vi.mock("@workspace/db", () => {
       finally { release(); }
     },
   };
-  return { db: database, groupBuysTable: group, accountGroupBuysTable: members, ordersTable: orders, siteConfigTable: config };
+  return { db: database, groupBuysTable: group, accountGroupBuysTable: members, ordersTable: orders, orderLineItemsTable: items, siteConfigTable: config };
 });
 vi.mock("../../middleware/account-auth", () => ({
   requireAccount: (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -156,7 +180,7 @@ beforeEach(() => {
     ],
     members: [{ id: "m", groupBuyId: "GB1", accountId: "member" }, { id: "b", groupBuyId: "GB1", accountId: "blocked" }],
     orders: [{ id: "o", groupBuyId: "GB1", telegramUsername: "historical", deletedAt: null, paymentStatus: "confirmed", grandTotal: "100.00" }],
-    config: [],
+    config: [], items: [],
   };
   data.failInsertAt = 0; data.insertCount = 0;
   data.notify.mockReset().mockResolvedValue({ ok: true });
@@ -165,6 +189,70 @@ beforeEach(() => {
 });
 
 describe("group-buy progress and announcements API", () => {
+  const moq = (body: Record<string, unknown> = {}, headers: Record<string, string> = manager, root = management) =>
+    request(`${root}/moq`, {
+      method: "PUT", headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ enabled: true, targetKits: 100, showToMembers: false, expectedUpdatedAt: null, ...body }),
+    });
+  it("MOQ management requires owner/admin authentication and validates the target", async () => {
+    expect((await moq({}, {})).status).toBe(401);
+    expect((await moq({}, { "x-test-organiser": "other" })).status).toBe(403);
+    expect((await moq({}, member)).status).toBe(401);
+    expect((await moq({}, { "x-test-organiser": "admin", "x-test-gb-session": "GB2" })).status).toBe(403);
+    expect((await moq({ targetKits: 0 })).status).toBe(400);
+    expect((await moq({ targetKits: 0.25 })).status).toBe(400);
+    expect(data.tables.config).toEqual([]);
+    expect((await moq({}, { "x-test-admin": "yes" }, "/admin/group-buys/GB1")).status).toBe(200);
+  });
+  it("counts paid/unpaid half kits from active orders only, scoped to this group buy", async () => {
+    const fixtures = [
+      ["paid", "Submitted", "confirmed", null, "GB1", 60, false],
+      ["unpaid", "Submitted", "unpaid", null, "GB1", 5.5, false],
+      ["shipped", "Shipped", "test_confirmed", null, "GB1", 1, false],
+      ["cancelled", "Cancelled", "confirmed", null, "GB1", 90, false],
+      ["refunded", "Submitted", "refunded", null, "GB1", 90, false],
+      ["deleted", "Submitted", "unpaid", "2026-01-01", "GB1", 90, false],
+      ["draft", "draft", "unpaid", null, "GB1", 90, false],
+      ["other", "Submitted", "confirmed", null, "GB2", 90, false],
+      ["oos", "Submitted", "confirmed", null, "GB1", 90, true],
+    ];
+    for (const [id, status, paymentStatus, deletedAt, groupBuyId, quantity, isOos] of fixtures) {
+      data.tables.orders.push({ id, status, paymentStatus, deletedAt, groupBuyId });
+      data.tables.items.push({ orderId: id, quantity, isOos });
+    }
+    const unchanged = structuredClone(data.tables.orders);
+    const response = await moq();
+    expect(response.status).toBe(200);
+    const detail = await getBody<Detail>(response);
+    expect(detail.moq).toMatchObject({ enabled: true, orderedKits: 66.5, targetKits: 100, remainingKits: 33.5, met: false });
+    expect(data.tables.orders).toEqual(unchanged);
+    const loaded = await getBody<Detail>(await request(`${management}/updates`, { headers: manager }));
+    expect(loaded.moq).toEqual(detail.moq);
+    data.tables.items[0].quantity = 100;
+    const updated = await getBody<Detail>(await request(`${management}/updates`, { headers: manager }));
+    expect(updated.moq).toMatchObject({ orderedKits: 106.5, remainingKits: 0, met: true });
+  });
+  it("keeps MOQ private until member visibility is enabled and removes it when disabled", async () => {
+    const first = await getBody<Detail>(await moq());
+    expect((await getBody<Detail>(await request("/group-buys/GB1/updates", { headers: member }))).moq).toBeNull();
+    let summary = await getBody<{ progress: Record<string, { moq: unknown }> }>(
+      await request("/group-buys/progress", { headers: member }));
+    expect(summary.progress.GB1.moq).toBeNull();
+    const publicConfig = await getBody<Detail>(await moq({ showToMembers: true, expectedUpdatedAt: first.moq!.updatedAt }));
+    expect((await getBody<Detail>(await request("/group-buys/GB1/updates", { headers: member }))).moq).toMatchObject({ targetKits: 100, orderedKits: 0 });
+    summary = await getBody(await request("/group-buys/progress", { headers: member }));
+    expect(summary.progress.GB1.moq).toMatchObject({ targetKits: 100 });
+    await moq({ enabled: false, showToMembers: true, expectedUpdatedAt: publicConfig.moq!.updatedAt });
+    expect((await getBody<Detail>(await request("/group-buys/GB1/updates", { headers: member }))).moq).toBeNull();
+    expect((await request("/group-buys/GB1/updates", { headers: { "x-test-member": "blocked" } })).status).toBe(403);
+  });
+  it("serializes concurrent MOQ saves and rejects stale changes without modifying payments", async () => {
+    const before = structuredClone(data.tables.orders);
+    const responses = await Promise.all([moq({ targetKits: 100 }), moq({ targetKits: 200 })]);
+    expect(responses.map(response => response.status).sort()).toEqual([200, 409]);
+    expect(data.tables.orders).toEqual(before);
+    expect(data.tables.config.filter(row => row.key === "gb_moq:GB1")).toHaveLength(1);
+  });
   it("requires authentication and isolates members and organisers to their own groups", async () => {
     expect((await request("/group-buys/GB1/updates")).status).toBe(401);
     expect((await request("/group-buys/GB2/updates", { headers: member })).status).toBe(403);

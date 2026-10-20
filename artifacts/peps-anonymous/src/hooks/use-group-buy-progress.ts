@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useAccount } from "@/hooks/use-account";
 import { displayStage, fetchCustomerUpdates, fetchProgress, gbuKeys, GBU_POLL_MS, staleUserKeys, type GbStage } from "@/lib/group-buy-updates";
+import type { GroupBuyMoq } from "@/lib/group-buy-moq";
 
 /**
  * Drops ONLY the previous user's cached progress/updates when the signed-in user changes.
@@ -39,10 +40,10 @@ export function useGroupBuyProgressMap() {
 }
 
 /** Undefined while loading or when the first load failed: never shows an Open fallback on error. */
-export function useGroupBuyStage(gbId: string, lifecycle?: string | null): { stage: GbStage | undefined; unavailable: boolean } {
+export function useGroupBuyStage(gbId: string, lifecycle?: string | null): { stage: GbStage | undefined; unavailable: boolean; moq?: GroupBuyMoq | null } {
   const q = useGroupBuyProgressMap();
   const stage = displayStage({ data: q.data, isLoading: q.isLoading, isError: q.isError, enabled: q.enabled }, gbId, lifecycle);
-  return { stage, unavailable: q.isError && !q.data };
+  return { stage, unavailable: q.isError && !q.data, moq: q.data?.[gbId]?.moq };
 }
 
 export function useCustomerGroupBuyUpdates(gbId: string | null) {

@@ -42,12 +42,9 @@
 - [Crypto lock reset on edit](crypto-lock-reset-on-edit.md) — every total-changing order edit must clear paymentUsdAmount (unless paid-like: confirmed/test_confirmed); a 3% staleness check alone leaks small edits.
 - [ERC-20 stablecoin currency authority](erc20-stablecoin-currency-authority.md) — customer USDT/USDC choice only on ETH ERC-20 rail; validate vs server options, persist + re-read at verify, never trust client currency.
 - [Invoice group-buy currency](invoice-group-currency.md) — seed USD/USDT/USDC group-buy invoices as USD; invoice documents support fiat currencies only.
-- [Reshipper dispatch orders scope](reshipper-dispatch-orders-scope.md) — /reshipper/dispatch/orders runs adminOrdersHandler; reshipper scope must narrow by ownership (reshipperUsername OR dispatchedByReshipper==me), NOT country-leg, or it leaks all reshippers' orders.
+- [Dispatch lessons](dispatch-lessons.md) — role-scoped routing and ownership, shared Admin parity, zero-parcel summaries and incoming manifest privacy.
 - [Order status timeline stepper](order-timeline-stepper.md) — fulfilment stepper "current" must reflect real status only (never over-claim); Paid is a payment overlay; omit fields data lacks.
-- [Dispatch factory router auth scoping](dispatch-router-auth-scoping.md) — root-mounted role-scoped dispatch routers must path-scope their auth middleware (router.use(cfg.prefix,...)) or admin's requireAdmin 503s sibling /reshipper|organiser/dispatch/* before they reach their own router.
 - [api-server vitest + db mock](api-server-vitest-db-mock.md) — mock @workspace/db via schema-only export (no Pool); scoped routers use path-less auth, so mount only the router under test, not both.
-- [Dispatch parcel gating](dispatch-parcel-gating.md) — GB dispatch reshipper list + Order Overview must not be gated on delivered parcels; union active-order reshippers, render overview for reshipper+all scopes with zero parcels.
-- [Shared dispatch admin parity](shared-dispatch-admin-parity.md) — AdminDispatch.tsx is shared by admin/reshipper/organiser; any UI addition must be gated by cfg.role to keep admin byte-identical.
 - [Order additions / top-ups](order-additions-topup.md) — additions persist additionOfOrderId marker; server forces free shipping + locked parent address on POST/PUT/shipping-address; require parent paymentStatus==='confirmed'; UI zeroes vendor shipping too.
 - [Wholesale shared guidance lockstep](wholesale-shared-guidance-lockstep.md) — presentation-only next-step banner/wizard/tracker must mirror page readiness/money checks exactly, else "all set while fee owed" money-integrity UX bugs.
 - [Wholesale onward roster gate](wholesale-onward-canconfirm-gate.md) — onward roster/Manage UI must AND share.onward.canConfirm with share.onward.enabled (backend sets canConfirm independent of enabled); config path uses canManage, not enabled.
@@ -60,7 +57,7 @@
 - [Wholesale shared shipping split integrity](wholesale-shared-shipping-split.md) — per-member vendorShipping is a cross-member split snapshotted at lock; never recompute from one order; block shared-order edits + reconcile grandTotal from member shipping_share snapshot.
 - [Wholesale onward tracking (masked)](wholesale-onward-tracking.md) — mask server-side in buildShareResponse; UI gate on server canEditTracking not creator flag; conditional writes + per-number guard on async fetch.
 - [Wholesale per-member onward address](wholesale-onward-member-address.md) — each member's onward forwarding address is private to recipient+owner only (gated in buildShareResponse); recipient can't set one; not vendor-priced; conditional status-gated write.
-- [Wholesale lab-report batch-prefix matching](wholesale-lab-batch-prefix-matching.md) — CoAs match by batch prefix at exact DOSE level (never other strengths); vendor table stale vs live data (verify DB labels before adding); ambiguous blends unmatched.
+- [Lab-report policies](lab-report-policies.md) — batch and exact-dose matching, measured potency versus label strength, warehouse prefixes, title consistency and purity thresholds.
 - [Wholesale MAIN-parcel masked tracking](wholesale-main-tracking.md) — orders.trackingNumber is truth, share.mainTracking* is a cache keyed to it; non-recipients get masked+number-HIDDEN (privacy note, like onward); conditional cache-key writes + dirty-rerun + scan self-heals stale terminal keys; never fetch in the polled GET.
 - [Admin order tracking write side-effects](admin-order-tracking-notify-side-effects.md) — PATCH tracking auto-sets Shipped + notifies customer with no old/new compare; bulk/group tracking writes MUST skip members already at the value or they spam duplicate notifications.
 - [Wholesale order shipping server-authority](wholesale-order-shipping-authority.md) — customer wholesale POST/PUT must recompute vendorShipping from tier table (never trust client); fallback-to-client only for non-calculable regions is intentional.
@@ -69,7 +66,6 @@
 - [Wholesale public groups](wholesale-public-groups.md) — public shared orders: first-publish Telegram announce detected under row lock; topic needs BOTH chat+topic envs; creator+recipient fee-exempt.
 - [Sage discuss daily quota](sage-discuss-daily-quota.md) — /blood-tests/discuss is N/day (default 10) via atomic UPDATE on discuss_count+discuss_count_date; clamp limit ≥1, day-conditional rollback, exhaustion MUST return 429 error:"limit_reached".
 - [Sage stale no-data history](sage-stale-history.md) — stale assistant upload requests can override loaded biomarker context; sanitize them server-side when current data exists.
-- [Lab report batch-prefix matching](lab-report-batch-prefix-matching.md) — lab_tests.mgAmount is measured potency not label dose; always match reports via batch-code prefix, never exact mgAmount/name.
 - [Canvas scroll phantom bug](canvas-scroll-phantom-bug.md) — "dashboard won't scroll" where scrollbar-drag works but trackpad/wheel doesn't = Replit board capturing wheel over the iframe tile; app scrolls fine, open in a real tab; don't fix in code.
 - [Mobile drawer body-lock breaks desktop scroll](mobile-drawer-body-lock.md) — a global md:hidden drawer's body-overflow lock must be viewport-scoped or a stale mobile open freezes desktop scroll; zustand setOpen takes a boolean, setOpen(o=>!o) stores the function (permanently truthy).
 - [Portal lab-tests vs blood-tests](portal-labtests-vs-bloodtests.md) — two DIFFERENT CustomerPortal sections: blood-tests=member bloodwork (KPI counts bloodTestCount), lab-tests=product CoA reports (useListLabTests); label nav by destination.
@@ -93,7 +89,6 @@
 - [Mockup registry Git churn](mockup-registry-git-churn.md) — sandbox registry discovery must sort paths; unsorted glob output lets duplicate preview servers rewrite a tracked file and blocks Git pulls.
 - [Sage AI model admin override](sage-ai-model-admin-override.md) — explicit model param skips fallback chain; a stale site_config sage_ai_model row can pin a proxy-account-unsupported model, breaking ALL Sage calls with 503 model_not_found.
 - [Embedded app absolute asset paths](embedded-app-absolute-asset-paths.md) — third-party build iframed under a subpath can have runtime fetches hardcoded to site-root paths (base:'./' doesn't cover these); mirror the files at the expected absolute path.
-- [Lab test title resolution sites](lab-test-title-resolution-sites.md) — 3 duplicate title builders (LabTests.tsx, PrototypeLabTests.tsx, LabTestsPopup.tsx) must stay in sync; popup had zero batch-code resolution before.
 - [Sage visual extraction format](sage-visual-extraction-format.md) — GPT-5.5 needs OpenAI image_url parts; rasterize PDFs first and strip Zhihuiai think wrappers before JSON parsing.
 - [Lab test field multilayer drop](lab-test-field-multilayer-drop.md) — "field missing" bugs can hide independently in prompt/mapping/payload/backend-insert; trace field name through all 4 layers + backfill existing rows.
 - [Order preview draft isolation](order-preview-draft-isolation.md) — preview/read-only order-form modes must guard EVERY persisted-draft write or they wipe the user's real in-progress draft; hide member-only action prompts too.
@@ -120,11 +115,7 @@
 - [Qiyunle turnover is product-level](qiyunle-product-turnover.md) — OOS/restock uses total stock across batches; any new batch can close the product’s open OOS period.
 - [BMURFS package integrity](bmurfs-package-integrity.md) — international delivery can mean handoff; historical pairing requires explicit roles; tracking edits must not roll back refreshed histories.
 - [Standalone crypto checkout boundary](standalone-crypto-checkout-boundary.md) — Open Crypto Checkout may live in main, but must remain independently distributable and uncoupled from Peps.
-- [Admin 2FA scope](admin-2fa-scope.md) — 2FA is admin-only; disabled mode accepts shared secret at login, then uses revocable sessions without storing the secret.
-- [Admin fetch interceptor recursion](admin-fetch-interceptor-recursion.md) — capture native fetch before monkey-patching global fetch, or enabled-mode admin requests recurse until the browser crashes.
-- [Admin 2FA standalone pages](admin-2fa-standalone-pages.md) — separate admin tabs do not inherit the main tab’s fetch interceptor; restore session and route mutations through AdminAuthController.
-- [Admin step-up scope](admin-step-up-scope.md) — after login, extra TOTP is only for admin security and money destinations; routine operations rely on session+CSRF.
-- [Admin startup outages vs authentication](admin-startup-auth-resilience.md) — 503 during production bootstrap is not a rejected admin session; retry bootstrap and never log out on transient rechecks.
+- [Admin authentication lessons](admin-auth-lessons.md) — admin-only 2FA, revocable sessions, fetch recursion, standalone tabs, step-up boundaries and startup resilience.
 - [Tracking refresh coordination](tracking-refresh-coordination.md) — provider work is six-hour DB-first, terminal/cooldown gated, identity-deduped, and all delayed writes require full-identity CAS.
 - [Order code allocation](order-code-allocation.md) — shared-order locks serialize max-code allocation, but ordinary orders do not; a global DB sequence/counter is needed to prevent cross-flow duplicates.
 - [Publish startup readiness](publish-startup-readiness.md) — bind the API port before database bootstrap; keep normal API traffic gated until bootstrap succeeds.
@@ -135,7 +126,6 @@
 - [Crypto refund completion](admin-manual-refund-completion.md) — automatic verification sums one/two TXIDs; Admin-only bypass still preserves replay, locks, audit, notification, and terminal guards.
 - [Shared-order active membership invariant](shared-order-active-membership-invariant.md) — an active wholesale_shared order must have a member row pointing to its exact order ID; removal and FS3 must enforce this.
 - [GB reshipper routing field consistency](gb-reshipper-routing-field-consistency.md) — assigned reshipper wins over stale routingType; manual assign/clear must update both fields together.
-- [Reshipper fulfilment manifest scope](reshipper-fulfilment-manifest-scope.md) — mixed assigned/unclaimed order feeds must be narrowed before calculating a reshipper’s incoming items.
 - [Invoice PDF binary assets](invoice-pdf-binary-assets.md) — assemble PDF streams as buffers with exact lengths; resolve bundled assets from both workspace and artifact working directories.
 - [Publish-safe unique identities](publish-safe-unique-identities.md) — Replit publish mangles expression indexes; persist a canonical identity and use a plain unique constraint.
 - [Invoice edit isolation](invoice-edit-isolation.md) — invoice saves are PDF-document overrides only; never write invoice lines, totals, shipping, or notes back to orders.
@@ -143,8 +133,6 @@
 - [Worktree dependency links](worktree-dependency-links.md) — an isolated worktree may lack package-level workspace symlinks even while the main workspace's node_modules is populated.
 - [Minified storage SDK AbortSignal](storage-sdk-abortsignal-minify.md) — node-fetch v2 rejects minified abort-controller signals; preserve names in the API production bundle.
 - [Account identity refresh](account-identity-refresh.md) — username changes need refreshed account-scoped caches after the renewed cookie, not just client-side navigation.
-- [Lab-test warehouse codes](lab-test-warehouse-codes.md) — US/UK batch prefixes identify warehouses, not different products; preserve product and dose matching.
-- [Lab-test purity policy](lab-test-purity-policy.md) — fail below 98% for non-HGH; HGH fails below 95%, with exactly 95% passing.
 - [Group-buy credit opt-out](group-buy-credit-policy.md) — disable new credit deductions, never unwind credits already applied or reject completed-operation replays.
 - [Group-buy coupons](group-buy-coupons.md) — scoped product-only discounts, immutable identity, preserved redemption history, and transactional usage limits.
 - [Active organiser UI](organiser-active-ui-paths.md) — verify both dashboard routes; users should not need to switch dashboards to find promised organiser controls.
@@ -157,3 +145,4 @@
 - [Account suspension enforcement](account-suspension-enforcement.md) — check current status on every session; order-number/social login and guest order paths must not bypass suspension.
 - [Member order receipt](member-order-receipt-policy.md) — members can confirm their own shipped group-buy, wholesale and shared orders; never complete other members’ parcels or payments.
 - [Node 20 TypeScript tests](node20-tsx-test-runner.md) — this workspace's Node 20 cannot use `--experimental-strip-types`; run TypeScript tests with `pnpm exec tsx`.
+- [Group-buy MOQ policy](group-buy-moq-policy.md) — group-wide kit target, half kits count as 0.5, active paid and unpaid orders count; member visibility is a separate opt-in.

@@ -7,7 +7,7 @@ import { GroupUpdateError, type UpdateActor } from "../lib/group-buy-updates-mod
 import { WholesaleUpdateValidationError } from "../lib/wholesale-updates";
 import { WHOLESALE_IMAGE_LIMIT } from "../lib/wholesale-update-images";
 import {
-  groupBuyUpdates, groupBuyProgressSummaries, setGroupBuyProgress,
+  groupBuyUpdates, groupBuyProgressSummaries, setGroupBuyProgress, setGroupBuyMoq,
   saveGroupBuyUpdate, deleteGroupBuyUpdate, groupBuyUpdateImage,
 } from "../lib/group-buy-updates";
 import { writeLog } from "../lib/audit-log";
@@ -49,6 +49,14 @@ router.put(management.map(path => `${path}/progress`), managementAuth, noCache, 
   await audit(req, "group_buy_progress_updated", { stage: result.stage });
   res.json(result);
 });
+router.put(management.map(path => `${path}/moq`), managementAuth, noCache, async (req, res) => {
+  const result = await setGroupBuyMoq(param(req, "id"), actor(req, true), scope(req), req.body);
+  await audit(req, "group_buy_moq_updated", {
+    enabled: result.moq?.enabled, targetKits: result.moq?.targetKits,
+    showToMembers: result.moq?.showToMembers,
+  });
+  res.json(result);
+});
 router.post(paths, managementAuth, upload, async (req, res) => {
   const result = await saveGroupBuyUpdate(param(req, "id"), null, actor(req, true), scope(req), req.body, req.file?.buffer);
   await audit(req, "group_buy_update_created", { updateId: result.update.id, published: result.update.published });
@@ -83,5 +91,5 @@ const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
   console.error("[group-buy-updates]", error);
   res.status(500).json({ error: "Could not complete the group-buy update request. Please try again." });
 };
-router.use(["/group-buys/progress", "/group-buys/:id/updates", ...paths, ...management.map(path => `${path}/progress`)], handleError);
+router.use(["/group-buys/progress", "/group-buys/:id/updates", ...paths, ...management.flatMap(path => [`${path}/progress`, `${path}/moq`])], handleError);
 export default router;

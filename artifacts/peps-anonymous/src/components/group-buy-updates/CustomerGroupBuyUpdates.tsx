@@ -4,6 +4,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { useCustomerGroupBuyUpdates } from "@/hooks/use-group-buy-progress";
 import { GBU_ANCHOR, GB_STAGE_LABEL, formatUpdateDate } from "@/lib/group-buy-updates";
 import { GroupBuyProgressTracker } from "./GroupBuyProgressTracker";
+import { GroupBuyMoqProgress } from "./GroupBuyMoqProgress";
 
 /** Member-only: whole-group progress + organiser notes. Not individual parcel tracking. */
 export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabled: boolean }) {
@@ -31,6 +32,8 @@ export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabl
   }
   const d = q.data;
   return (
+    <div className="space-y-3">
+    <GroupBuyMoqProgress moq={d?.moq} />
     <details ref={disclosure} id={GBU_ANCHOR} data-testid="gb-customer-updates" aria-labelledby="gb-progress-heading" className="group scroll-mt-24 rounded-2xl px-4 sm:px-5 py-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
       <summary data-testid="toggle-gb-progress" className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg [&::-webkit-details-marker]:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2D6BCC]">
         <h2 id="gb-progress-heading" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#8A9AAA" }}>Group buy progress</h2>
@@ -65,6 +68,7 @@ export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabl
       )}
       </div>
     </details>
+    </div>
   );
 }
 

@@ -1,3 +1,5 @@
+import { parseGroupBuyMoq, type GroupBuyMoq } from "./group-buy-moq";
+
 export const GB_STAGES = ["open", "closed", "ordered", "in_transit", "with_reshipper", "dispatched"] as const;
 export type GbStage = (typeof GB_STAGES)[number];
 export const GB_STAGE_LABEL: Record<GbStage, string> = {
@@ -16,8 +18,8 @@ export interface GbUpdate {
   kind: "note" | "status"; stage?: GbStage; imageUrl: string | null; createdAt: string; updatedAt: string;
   telegramAlertQueued?: boolean;
 }
-export interface GbUpdatesResponse { groupBuy: { id: string; name: string }; stage: GbStage; stageUpdatedAt: string | null; updates: GbUpdate[] }
-export interface GbProgressEntry { stage: GbStage; stageUpdatedAt: string | null }
+export interface GbUpdatesResponse { groupBuy: { id: string; name: string }; stage: GbStage; stageUpdatedAt: string | null; updates: GbUpdate[]; moq?: GroupBuyMoq | null }
+export interface GbProgressEntry { stage: GbStage; stageUpdatedAt: string | null; moq?: GroupBuyMoq | null }
 
 export const isStage = (v: unknown): v is GbStage => typeof v === "string" && (GB_STAGES as readonly string[]).includes(v);
 export const stageIndex = (s: GbStage | undefined) => (s ? GB_STAGES.indexOf(s) : -1);
@@ -76,6 +78,7 @@ export function parseUpdatesResponse(raw: unknown): GbUpdatesResponse {
     groupBuy: { id: String(gb.id ?? ""), name: String(gb.name ?? "") },
     stage: r.stage, stageUpdatedAt: typeof r.stageUpdatedAt === "string" ? r.stageUpdatedAt : null,
     updates: sortNewestFirst(updates),
+    ...(r.moq !== undefined ? { moq: parseGroupBuyMoq(r.moq) } : {}),
   };
 }
 export function parseProgressResponse(raw: unknown): Record<string, GbProgressEntry> {
@@ -86,7 +89,10 @@ export function parseProgressResponse(raw: unknown): Record<string, GbProgressEn
     const e = v as Record<string, unknown> | null;
     if (!e || !isStage(e.stage)) throw new GbUpdatesError(`Invalid progress entry for ${k}`, 0);
     if (e.stageUpdatedAt !== null && e.stageUpdatedAt !== undefined && typeof e.stageUpdatedAt !== "string") throw new GbUpdatesError(`Invalid progress entry for ${k}`, 0);
-    out[k] = { stage: e.stage, stageUpdatedAt: typeof e.stageUpdatedAt === "string" ? e.stageUpdatedAt : null };
+    out[k] = {
+      stage: e.stage, stageUpdatedAt: typeof e.stageUpdatedAt === "string" ? e.stageUpdatedAt : null,
+      ...(e.moq !== undefined ? { moq: parseGroupBuyMoq(e.moq) } : {}),
+    };
   }
   return out;
 }
@@ -138,6 +144,16 @@ export async function fetchCustomerUpdates(gbId: string, signal?: AbortSignal) {
 }
 export const fetchManagedUpdates = async (scope: GbUpdatesScope, gbId: string, signal?: AbortSignal) =>
   parseUpdatesResponse(await req<unknown>(`${manageBase(scope, gbId)}/updates`, { signal }));
+export async function saveMoqSettings(
+  scope: GbUpdatesScope, gbId: string,
+  settings: { enabled: boolean; targetKits: number | null; showToMembers: boolean },
+  expectedUpdatedAt: string | null,
+) {
+  return parseUpdatesResponse(await req<unknown>(`${manageBase(scope, gbId)}/moq`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...settings, expectedUpdatedAt }),
+  }));
+}
 export async function saveStage(scope: GbUpdatesScope, gbId: string, stage: GbStage, expectedUpdatedAt: string | null, sendTelegramAlert = false) {
   const r = parseUpdatesResponse(await req<unknown>(`${manageBase(scope, gbId)}/progress`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage, expectedUpdatedAt, sendTelegramAlert }),
