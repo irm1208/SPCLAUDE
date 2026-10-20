@@ -80,6 +80,8 @@ app.use([
   "/api/admin/dispatch/:gbId/save-dispatch-image",
 ], express.json({ limit: "40mb" }));
 app.use("/api/organiser/group-buys/:id/products/stock", express.json({ limit: "1mb" }));
+// Large, bounded per-order payout/review manifests; not binary uploads.
+app.use("/api/admin/reshippers/:username/gb/:gbId/payouts", express.json({ limit: "2mb" }));
 // Bounded purchased-line manifests and cumulative receipts, not binary uploads.
 app.use([
   "/api/admin/group-buys/:id/supplier-fulfilment",

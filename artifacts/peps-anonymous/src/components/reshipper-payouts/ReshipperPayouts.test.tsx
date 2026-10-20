@@ -1,0 +1,156 @@
+import type { Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+// @ts-expect-error jsdom is available through the workspace test harness.
+import { JSDOM } from "jsdom";
+
+const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" });
+for (const n of ["window", "document", "navigator", "HTMLElement", "HTMLInputElement", "HTMLSelectElement", "Event", "Node"])
+  vi.stubGlobal(n, n === "window" ? dom.window : dom.window[n]);
+vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+const { act, createElement } = await import("react");
+const { createRoot } = await import("react-dom/client");
+const { ReshipperPayouts } = await import("./ReshipperPayouts");
+import type { PayoutData, PayoutOrder } from "../../lib/reshipper-payouts";
+
+const order = (o: Partial<PayoutOrder>): PayoutOrder => ({ orderId: "o1", code: "PA-101", member: "mira", currency: "USD", adminFeeMinor: 1000, postageMinor: 500,
+  paidAdminMinor: 0, paidPostageMinor: 0, remainingAdminMinor: 1000, remainingPostageMinor: 500, status: "owed", reviewReason: null, reviewedAt: null,
+  reviewable: false, eligible: true, collector: "admin", ...o });
+const data = (): PayoutData => ({
+  orders: [order({}), order({ orderId: "o2", code: "PA-102", member: "teo" }), order({ orderId: "o3", code: "PA-103", currency: "GBP" }),
+    order({ orderId: "o4", code: "PA-104", status: "needs_review", eligible: false, reviewable: true, collector: null, remainingAdminMinor: 0, remainingPostageMinor: 0 })],
+  payouts: [{ id: "p1", amountMinor: 735, currency: "USD", paidAt: "2025-03-02", method: "wise", reference: "W-88", destination: "acct 4471", note: "", recordedBy: "admin1", recordedAt: "2025-03-02T10:00:00Z",
+    allocations: [{ orderId: "o9", code: "PA-099", member: "lux", adminFeeMinor: 500, postageMinor: 235 }], voidedAt: "2025-03-03", voidReason: "Wrong account" }],
+  totals: [{ currency: "USD", entitledMinor: 3000, paidMinor: 0, owedMinor: 3000, onHoldMinor: 1500 }], needsReviewCount: 1, sourceNotice: "", paymentDetails: { wallet: "0xabc" },
+});
+const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+
+let root: Root; let el: HTMLDivElement;
+beforeEach(() => { el = document.createElement("div"); document.body.appendChild(el); root = createRoot(el); });
+afterEach(() => { act(() => root.unmount()); el.remove(); });
+const flush = () => act(async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0)); });
+const render = async (props: Record<string, unknown>) => { await act(async () => root.render(createElement(ReshipperPayouts, props as never))); await flush(); };
+const q = <T extends Element = HTMLElement>(s: string) => el.querySelector(s) as unknown as T;
+const byLabel = (l: string) => q<HTMLInputElement>(`[aria-label="${l}"]`);
+const btn = (t: string) => [...el.querySelectorAll("button")].find(b => b.textContent?.trim().startsWith(t)) as HTMLButtonElement;
+const click = (e: Element) => act(async () => { (e as HTMLElement).click(); });
+function type(input: HTMLInputElement | HTMLSelectElement, value: string) {
+  const proto = input.tagName === "SELECT" ? dom.window.HTMLSelectElement.prototype : dom.window.HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(input, value);
+  input.dispatchEvent(new dom.window.Event(input.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
+}
+const inputByLabelText = (t: string) => [...el.querySelectorAll("label")].find(l => l.textContent?.startsWith(t))!.querySelector("input,select") as HTMLInputElement;
+
+it("reshipper sees read-only totals and history, no mutating controls", async () => {
+  const fetcher = vi.fn(async (_p: string, _i?: RequestInit) => json(data()));
+  await render({ mode: "reshipper", gbId: "g1", fetcher });
+  expect(fetcher.mock.calls[0][0]).toBe("/api/reshipper/gb/g1/payouts");
+  expect(el.textContent).toContain("USD 30.00");
+  expect(el.textContent).toContain("Voided 2025-03-03: Wrong account");
+  expect(el.querySelectorAll('input[type="checkbox"]').length).toBe(0);
+  expect(btn("Void")).toBeUndefined();
+  expect(el.textContent).not.toContain("Record payout");
+});
+
+it("admin picks a group, then selects visible eligible rows of one currency", async () => {
+  const fetcher = vi.fn(async (p: string) => p.endsWith("/payouts/groups") ? json({ groups: [{ id: "g7", name: "Spring", currency: "usd" }] }) : json(data()));
+  await render({ mode: "admin", username: "kai", fetcher });
+  await act(async () => type(q<HTMLSelectElement>("select"), "g7")); await flush();
+  expect(fetcher.mock.calls.at(-1)![0]).toBe("/api/admin/reshippers/kai/gb/g7/payouts");
+  await act(async () => type(q<HTMLInputElement>('input[type="search"]'), "teo"));
+  await click(byLabel("Select all visible eligible orders"));
+  expect(byLabel("Select order PA-102").checked).toBe(true);
+  await act(async () => type(q<HTMLInputElement>('input[type="search"]'), ""));
+  expect(byLabel("Select order PA-101").checked).toBe(false);
+  expect(byLabel("Select order PA-103").disabled).toBe(true);
+  expect(el.textContent).toContain("reference only");
+  expect(inputByLabelText("Destination actually paid to").value).toBe("");
+});
+
+it("validates allocation totals, previews, keeps operationId on retry and shows server error", async () => {
+  const posts: { path: string; body: { operationId: string; amount: string; allocations: unknown[] } }[] = [];
+  let fail = true;
+  const fetcher = vi.fn(async (p: string, init?: RequestInit) => {
+    if (init?.method === "POST") { posts.push({ path: p, body: JSON.parse(String(init.body)) }); return fail ? json({ error: "Ledger locked" }, 409) : json(data()); }
+    return json(data());
+  });
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  await click(byLabel("Select order PA-101"));
+  await act(async () => type(byLabel("Postage for PA-101"), "9.00"));
+  expect(el.textContent).toContain("postage exceeds");
+  await act(async () => type(byLabel("Postage for PA-101"), "2.50"));
+  await act(async () => {
+    type(inputByLabelText("Amount paid"), "12.00"); type(inputByLabelText("Method"), "cash");
+    type(inputByLabelText("Reference"), "R1"); type(inputByLabelText("Destination actually paid to"), "In person");
+  });
+  expect(el.textContent).toContain("must equal allocations (USD 12.50)");
+  await act(async () => type(inputByLabelText("Amount paid"), "12.50"));
+  expect(btn("Preview allocations").disabled).toBe(true);
+  await click(el.querySelector('section[aria-label="Record payout"] input[type="checkbox"]')!);
+  await click(btn("Preview allocations"));
+  expect(q('[aria-label="Payout preview"]').textContent).toContain("2.50");
+  await click(btn("Record payout")); await flush();
+  expect(q('[role="alert"]').textContent).toContain("Ledger locked");
+  expect(inputByLabelText("Reference").value).toBe("R1");
+  fail = false;
+  await click(btn("Record payout")); await flush();
+  expect(posts).toHaveLength(2);
+  expect(posts[1].body.operationId).toBe(posts[0].body.operationId);
+  expect(posts[0].path).toBe("/api/admin/reshippers/kai/gb/g1/payouts");
+  expect(posts[0].body).toMatchObject({ amount: "12.50", currency: "USD", confirmedDestination: true, allocations: [{ orderId: "o1", adminFee: "10.00", postage: "2.50" }] });
+});
+
+it("admin reviews needs_review rows with capped fees and audited reason", async () => {
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => json(data()));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  const radio = [...el.querySelectorAll('input[type="radio"]')][0] as HTMLInputElement;
+  await click(radio);
+  await act(async () => type(byLabel("Review admin fee for PA-104"), "11.00"));
+  expect(el.textContent).toContain("cannot exceed the current fee");
+  await act(async () => { type(byLabel("Review admin fee for PA-104"), "10.00"); type(inputByLabelText("Reason (audited)"), "Bank statement"); });
+  await click(btn("Confirm 1 reviewed")); await flush();
+  const call = fetcher.mock.calls.find(c => c[1]?.method === "POST")!;
+  expect(call[0]).toBe("/api/admin/reshippers/kai/gb/g1/payouts/review");
+  expect(JSON.parse(String(call[1]!.body))).toEqual({ reason: "Bank statement", orders: [{ orderId: "o4", collector: "admin", adminFee: "10.00", postage: "5.00" }] });
+});
+
+it("shows load errors with retry", async () => {
+  const fetcher = vi.fn(async () => json({ error: "Not your group buy" }, 403));
+  await render({ mode: "reshipper", gbId: "g1", fetcher });
+  expect(q('[role="alert"]').textContent).toContain("Not your group buy");
+});
+
+it("uses settled review caps and enforces a 5-character reason", async () => {
+  const d = data();
+  Object.assign(d.orders[3], { reviewAdminMinor: 1250, reviewPostageMinor: 300 });
+  const fetcher = vi.fn(async (_p: string, _i?: RequestInit) => json(d));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  expect(el.textContent).toContain("Max: USD 12.50 fee, USD 3.00 postage");
+  await click(el.querySelectorAll('input[type="radio"]')[0]);
+  expect(byLabel("Review admin fee for PA-104").value).toBe("12.50");
+  await act(async () => type(byLabel("Review postage for PA-104"), "3.01"));
+  expect(el.textContent).toContain("cannot exceed the current fee");
+  await act(async () => { type(byLabel("Review postage for PA-104"), "3.00"); type(inputByLabelText("Reason (audited)"), "ok"); });
+  expect(el.textContent).toContain("at least 5 characters");
+  expect(btn("Confirm 1 reviewed").disabled).toBe(true);
+  await act(async () => type(inputByLabelText("Reason (audited)"), "Fee raised"));
+  await click(btn("Confirm 1 reviewed")); await flush();
+  const call = fetcher.mock.calls.find(c => c[1]?.method === "POST")!;
+  expect(JSON.parse(String(call[1]!.body)).orders[0]).toEqual({ orderId: "o4", collector: "admin", adminFee: "12.50", postage: "3.00" });
+});
+
+it("correction toggle exposes previously reviewed orders only on demand", async () => {
+  const d = data();
+  d.orders = [order({ orderId: "o5", code: "PA-105", status: "not_owed", collector: "reshipper", reviewable: true, eligible: false }), order({ orderId: "o6", code: "PA-106" })];
+  d.needsReviewCount = 0;
+  const fetcher = vi.fn(async (_p: string, _i?: RequestInit) => json(d));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  expect(byLabel("Review admin fee for PA-105")).toBeNull();
+  expect(el.querySelectorAll('input[type="radio"]').length).toBe(0);
+  await click(btn("Correct a previous review (1)"));
+  expect(el.textContent).toContain("Currently: Paid directly to reshipper");
+  await click(el.querySelectorAll('input[type="radio"]')[0]);
+  await act(async () => type(inputByLabelText("Reason (audited)"), "Was Admin-held after all"));
+  await click(btn("Confirm 1 reviewed")); await flush();
+  const call = fetcher.mock.calls.find(c => c[1]?.method === "POST")!;
+  expect(JSON.parse(String(call[1]!.body)).orders).toEqual([{ orderId: "o5", collector: "admin", adminFee: "10.00", postage: "5.00" }]);
+});

@@ -9,6 +9,12 @@ The Admin will owe reshippers the admin fee and onward-shipping fee, and needs t
 
 **How to apply:** Distinguish customer charges collected from Admin-to-reshipper settlement. A collected-fees summary alone is not proof a reshipper has been paid, and a payout must not change the member's payment or fulfilment status.
 
+Historical collection ownership must be explicitly reviewed before those fees become payable by Admin. Current payment-routing settings are not evidence of who received an old payment.
+
+**Why:** Existing orders do not reliably snapshot the original receiving wallet/recipient, and reshipper assignments and payment targets can change later. Inferring history from current settings could pay postage twice.
+
+**How to apply:** Keep uncertain fees on review/hold, distinguish Admin-held fees from directly received reshipper payments, and retain the review reason and prior financial snapshots. An external payout record is not an on-chain verification claim.
+
 The reshipper dashboard should show collected admin fees and member delivery/postage for the selected group buy. Do not include vendor shipping in that shipping total.
 
 **Why:** The user asked for a dashboard card so reshippers know how much was collected, and explicitly selected “Member delivery/postage only.”

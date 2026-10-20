@@ -24,6 +24,7 @@ import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 import { ReshipperGroupBuyPicker } from "@/components/ReshipperGroupBuyPicker";
 import { ReshipperCollectionsCard } from "@/components/ReshipperCollectionsCard";
+import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import type { ReshipperCollectionOrder } from "@/lib/reshipper-collections";
 import type { CustomPostageOption } from "@/lib/country-shipping-options";
 import { reshipperShippingCountries, visibleReshipperShippingOptions } from "@/lib/reshipper-shipping-options";
@@ -345,7 +346,7 @@ function StatCard({ label, value, sub, color = "var(--t-text)", icon: Icon }: { 
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ orders, gbName, country, currency, reshipperUsername }: { orders: ROrder[]; gbName: string; country: string; currency?: string; reshipperUsername: string }) {
+function OverviewTab({ orders, gbName, country, currency, reshipperUsername, gbId }: { orders: ROrder[]; gbName: string; country: string; currency?: string; reshipperUsername: string; gbId: string }) {
   const total = orders.length;
   const paid = orders.filter(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed").length;
   const unpaid = orders.filter(o => o.paymentStatus === "unpaid").length;
@@ -367,6 +368,10 @@ function OverviewTab({ orders, gbName, country, currency, reshipperUsername }: {
       </div>
 
       <ReshipperCollectionsCard orders={orders} reshipperUsername={reshipperUsername} currency={currency} />
+      <details className="rounded-2xl border p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)" }}>
+        <summary className="cursor-pointer text-sm font-semibold" style={{ color: "var(--t-text)" }}>Fees owed by Admin & payout history</summary>
+        <div className="mt-4"><ReshipperPayouts key={gbId} mode="reshipper" gbId={gbId} fetcher={reshipFetch} /></div>
+      </details>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard label="Total Orders" value={total} icon={Package} />
@@ -4308,7 +4313,7 @@ export default function ReshipperPage() {
               {activeTab === "overview" && (
                 ordersLoading
                   ? <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} /></div>
-                  : <OverviewTab orders={orders} gbName={currentAssignment.gb?.name ?? currentAssignment.gbId} country={currentAssignment.country} currency={currentAssignment.gb?.currency} reshipperUsername={currentAssignment.reshipperUsername} />
+                  : <OverviewTab orders={orders} gbName={currentAssignment.gb?.name ?? currentAssignment.gbId} country={currentAssignment.country} currency={currentAssignment.gb?.currency} reshipperUsername={currentAssignment.reshipperUsername} gbId={selectedGbId} />
               )}
               {activeTab === "fulfilment" && (
                 ordersLoading

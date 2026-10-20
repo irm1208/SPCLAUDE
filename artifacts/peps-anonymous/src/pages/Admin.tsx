@@ -1,4 +1,5 @@
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -25200,7 +25201,12 @@ function ReshippersAdminTab({ secret }: { secret: string }) {
 
   // Detail view
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<"profile" | "assignments" | "orders" | "members" | "activity" | "metrics" | "tglogs">("profile");
+  const [detailTab, setDetailTab] = useState<"profile" | "assignments" | "orders" | "members" | "activity" | "metrics" | "payouts" | "tglogs">("profile");
+  const payoutFetch = useCallback((path: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set("x-admin-secret", secret);
+    return fetch(path, { ...init, headers, credentials: "include" });
+  }, [secret]);
   const [reshipperMetrics, setReshipperMetrics] = useState<any | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [reshipperOrders, setReshipperOrders] = useState<any[]>([]);
@@ -25559,7 +25565,7 @@ function ReshippersAdminTab({ secret }: { secret: string }) {
     const a = accounts.find(x => x.telegramUsername === selectedUsername)!;
     const myAssignments = reshipperAssignments[selectedUsername] ?? [];
     const uniqueMembers = [...new Map(reshipperOrders.map(o => [o.telegramUsername, o])).values()];
-    type DTab = "profile" | "assignments" | "orders" | "members" | "activity" | "metrics" | "tglogs";
+    type DTab = "profile" | "assignments" | "orders" | "members" | "activity" | "metrics" | "payouts" | "tglogs";
     const DETAIL_TABS: { id: DTab; label: string; icon: React.FC<{ className?: string }> }[] = [
       { id: "profile", label: "Profile", icon: User },
       { id: "assignments", label: "Assignments", icon: Globe },
@@ -25567,6 +25573,7 @@ function ReshippersAdminTab({ secret }: { secret: string }) {
       { id: "members", label: "Members", icon: Users },
       { id: "activity", label: "Activity Log", icon: Activity },
       { id: "metrics", label: "Metrics", icon: BarChart3 },
+      { id: "payouts", label: "Fees owed & payouts", icon: CreditCard },
       { id: "tglogs", label: "Telegram Logs", icon: SendHorizonal },
     ];
     const handleDetailTabClick = (id: DTab) => {
@@ -26227,6 +26234,7 @@ function ReshippersAdminTab({ secret }: { secret: string }) {
         )}
 
         {/* ── Metrics tab ── */}
+        {detailTab === "payouts" && <ReshipperPayouts key={a.telegramUsername} mode="admin" username={a.telegramUsername} fetcher={payoutFetch} />}
         {detailTab === "metrics" && (
           <div className="space-y-4">
             {loadingMetrics && (

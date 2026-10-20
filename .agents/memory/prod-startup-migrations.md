@@ -7,6 +7,10 @@ description: Keep PostgreSQL schema changes owned by Drizzle and Replit Publish,
 
 New schema changes belong only in the Drizzle schema and flow to production through Replit Publish. Do not add new `CREATE TABLE`, `ALTER TABLE`, constraints, or indexes to the application startup path.
 
+Replit promotes the **applied development database schema**, including changes made through manual development SQL. An API build without `drizzle-kit migrate` is not evidence of a missing rollout. Reference SQL may document additive DDL, but must not become a second automatic build/startup migration owner.
+
+**Source:** https://docs.replit.com/features/data-and-storage/development-and-production (official documentation checked on 2026-10-20).
+
 **Why:** Dual-owning admin 2FA tables in Drizzle and startup DDL gave development and production identical foreign keys with different names. Publish then tried to drop and recreate four valid constraints and failed during promotion.
 
 **How to apply:** Define tables, indexes, constraints, and delete/update actions in the Drizzle schema; apply the normal development database push; inspect the publish schema diff; then publish. Treat existing startup DDL as legacy migration debt, not a pattern to copy.

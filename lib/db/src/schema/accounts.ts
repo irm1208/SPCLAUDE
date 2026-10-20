@@ -17,6 +17,8 @@ export type OrganiserRole = typeof ORGANISER_ROLES[number];
 
 export const accountsTable = pgTable("accounts", {
   telegramUsername: text("telegram_username").primaryKey(),
+  // Immutable, server-assigned identity for financial history; a username can change.
+  reshipperPayoutId: text("reshipper_payout_identity").unique("accounts_reshipper_payout_identity_unique"),
   passwordHash: text("password_hash"),
   email: text("email"),
   accountStatus: text("account_status").notNull().default("active"),
