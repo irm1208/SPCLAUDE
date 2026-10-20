@@ -10,11 +10,12 @@ import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useState, useEffect } from "react";
 import PaymentPanel from "@/components/PaymentPanel";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
-import { useAccount, useAccountOrders, useLogout } from "@/hooks/use-account";
+import { useAccount, useAccountOrders, useLogout, useMyGroupBuys } from "@/hooks/use-account";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { COUNTRIES } from "@/data/countries";
 import { generateReceiptPDF, type Receipt, type ReceiptLineItem } from "@/lib/generate-receipt-pdf";
+import { shouldShowSuccessVendorShippingWarning } from "@/lib/success-vendor-shipping";
 
 export type { Receipt, ReceiptLineItem };
 
@@ -302,31 +303,39 @@ export default function Success() {
   const [downloading, setDownloading] = useState(false);
   const [confirmedTxHash, setConfirmedTxHash] = useState<string | null>(null);
   const [confirmedCurrency, setConfirmedCurrency] = useState<string>("USDT");
-  const [globalVendorWarning, setGlobalVendorWarning] = useState(true);
   const [addressSaved, setAddressSaved] = useState(false);
   const [hubSection, setHubSection] = useState<HubSection>("orders");
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/config")
-      .then(r => r.json())
-      .then(d => setGlobalVendorWarning(d.vendorShippingWarning !== false))
-      .catch(() => {});
-  }, []);
 
   const receiptRaw = localStorage.getItem("peps:lastReceipt");
   const receipt: Receipt | null = receiptRaw ? (() => {
     try { return JSON.parse(receiptRaw); } catch { return null; }
   })() : null;
 
+  const receiptGroupBuyId = receipt?.groupBuyId ?? null;
+  const { data: currentGroupBuys, refetch: refetchGroupBuys } = useMyGroupBuys(
+    isLoggedIn && !!receiptGroupBuyId,
+  );
+  useEffect(() => {
+    if (!isLoggedIn || !receiptGroupBuyId) return;
+    const refreshVendorShipping = () => {
+      if (!document.hidden) void refetchGroupBuys();
+    };
+    refreshVendorShipping();
+    window.addEventListener("focus", refreshVendorShipping);
+    const timer = window.setInterval(refreshVendorShipping, 30_000);
+    return () => {
+      window.removeEventListener("focus", refreshVendorShipping);
+      window.clearInterval(timer);
+    };
+  }, [isLoggedIn, receiptGroupBuyId, refetchGroupBuys]);
+  const currentGroupBuy = currentGroupBuys?.find(groupBuy => groupBuy.id === receiptGroupBuyId);
+
   const deliveryMethod = receipt?.deliveryMethod ?? "";
   const isRoyalMail = deliveryMethod.toLowerCase().includes("royal mail");
   const isInPost = deliveryMethod.toLowerCase().includes("inpost");
 
-  // Show the TBD warning only if vendor shipping is still to be determined
-  const showVendorWarning = receipt
-    ? (receipt.vendorShippingIsTbd === true)
-    : globalVendorWarning;
+  const showVendorWarning = shouldShowSuccessVendorShippingWarning(receipt, currentGroupBuy);
 
   const handleDownloadReceipt = () => {
     if (!receipt) return;
