@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Download, Plus, Trash2 } from "lucide-react";
+import { SupplierBatchFulfilment } from "./SupplierBatchFulfilment";
 import {
   EU_BATCH_COUNTRIES, supplierKey, supplierRequest, downloadSupplierCsv,
   type SupplierScope, type SupplierData, type BatchConfig, type BatchProposal, type SupplierBatch,
@@ -26,7 +27,10 @@ export function parseCountries(s: string): string[] {
   return [...new Set(s.toUpperCase().split(/[\s,;]+/).filter(Boolean).map(c => (c === "UK" ? "GB" : c)))];
 }
 
-interface Props { groupBuyId: string; scope: SupplierScope; headers?: Record<string, string> }
+interface Props {
+  groupBuyId: string; scope: SupplierScope; headers?: Record<string, string>;
+  onViewOrders?: (batchId: string, orderId?: string) => void; onDispatch?: () => void;
+}
 type Draft = { enabled: boolean; telegramAlerts: boolean; regions: { id: string; name: string; countries: string; targetKits: string }[] };
 const toDraft = (c: BatchConfig): Draft => ({
   enabled: c.enabled, telegramAlerts: c.telegramAlerts,
@@ -195,8 +199,9 @@ function ProposalCard({ p, enabled, busy, onConfirm }: { p: BatchProposal; enabl
   );
 }
 
-function BatchCard({ b, busy, act, exportCsv }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown) => Promise<boolean>; exportCsv: (id: string) => Promise<void> }) {
+function BatchCard({ b, busy, act, exportCsv, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; context: Props }) {
   const [mode, setMode] = useState<"ordered" | "release" | null>(null);
+  const [showFulfilment, setShowFulfilment] = useState(false);
   const [reason, setReason] = useState("");
   const blocked = b.exceptions.length > 0;
   return (
@@ -216,6 +221,12 @@ function BatchCard({ b, busy, act, exportCsv }: { b: SupplierBatch; busy: boolea
         </ul>
       )}
       <OrdersDetail p={b.snapshot} />
+      {b.state === "ordered" && <div className="space-y-3">
+        <button type="button" className={btn} style={{ background: NAVY }} aria-expanded={showFulfilment} onClick={() => setShowFulfilment(v => !v)}>
+          {showFulfilment ? "Close" : "Manage"} supplier packages &amp; receipt
+        </button>
+        {showFulfilment && <SupplierBatchFulfilment {...context} initialBatchId={b.id} />}
+      </div>}
       {b.state === "prepared" && !mode && (
         <div className="flex flex-wrap gap-2">
           <button type="button" data-testid={`button-ordered-${b.id}`} disabled={busy || blocked} onClick={() => setMode("ordered")} className={btn} style={{ background: NAVY }}>Mark ordered from supplier & process these orders</button>
@@ -250,7 +261,7 @@ function BatchCard({ b, busy, act, exportCsv }: { b: SupplierBatch; busy: boolea
   );
 }
 
-function Body({ groupBuyId, scope, headers }: Props) {
+function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
   const qc = useQueryClient();
   const key = supplierKey(scope, groupBuyId);
   const [busy, setBusy] = useState(false);
@@ -325,7 +336,11 @@ function Body({ groupBuyId, scope, headers }: Props) {
       <section className="space-y-2">
         <p className={label} style={{ color: "#8A9AAA" }}>Batch history</p>
         {d.batches.length === 0 && <p className="text-xs" style={{ color: V.muted }}>No supplier batches yet.</p>}
-        {d.batches.map(b => <BatchCard key={b.id} b={b} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} />)}
+        <details className="rounded-xl border p-3" style={{ borderColor: V.border }}>
+          <summary className="cursor-pointer text-sm font-semibold" style={{ color: V.text }}>Shipping &amp; receipt overview</summary>
+          <div className="mt-3"><SupplierBatchFulfilment groupBuyId={groupBuyId} scope={scope} headers={headers} onViewOrders={onViewOrders} onDispatch={onDispatch} /></div>
+        </details>
+        {d.batches.map(b => <BatchCard key={b.id} b={b} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}
       </section>
       {d.events.length > 0 && (
         <section className="space-y-1">

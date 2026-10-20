@@ -52,6 +52,8 @@ import { matchesCancelledOrRefunded, matchesTestPayment } from "@/lib/group-buy-
 import { HalfKitManager } from "@/components/half-kits/HalfKitManager";
 import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyUpdatesManager";
 import { SupplierBatchManager } from "@/components/supplier-batches/SupplierBatchManager";
+import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierBatchFulfilment";
+import { selectSupplierOrderBatch } from "@/components/supplier-batches/OrderBatchFilter";
 import { useOrderBatches, OrderBatchFilter, OrderBatchBadge } from "@/components/supplier-batches/OrderBatchFilter";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
@@ -13765,7 +13767,7 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "fulfilment" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes" | "supplier-batches";
+type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "fulfilment" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes" | "supplier-batches" | "supplier-receipt";
 
 const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired: boolean; externalPath?: (gbId: string) => string }[] = [
   { id: "overview", label: "My GBs", icon: LayoutDashboard, gbRequired: false },
@@ -13775,6 +13777,7 @@ const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired
   { id: "shippingsplit", label: "Shipping Split", icon: Calculator, gbRequired: true },
   { id: "orders", label: "Orders", icon: ShoppingBag, gbRequired: true },
   { id: "supplier-batches", label: "Supplier batches", icon: Package, gbRequired: true },
+  { id: "supplier-receipt", label: "Batch shipping & receipt", icon: Truck, gbRequired: true },
   { id: "fulfilment", label: "Fulfilment", icon: Package, gbRequired: true },
   { id: "refunds", label: "Refunds", icon: Wallet, gbRequired: true },
   { id: "summary", label: "Summary", icon: ClipboardList, gbRequired: true },
@@ -14083,7 +14086,12 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
-        {activeTab === "supplier-batches" && selectedGb && <SupplierBatchManager key={selectedGb.id} scope="organiser" groupBuyId={selectedGb.id} />}
+        {activeTab === "supplier-batches" && selectedGb && <SupplierBatchManager key={selectedGb.id} scope="organiser" groupBuyId={selectedGb.id}
+          onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("organiser", selectedGb.id, batchId, orderId); setActiveTab("orders"); }}
+          onDispatch={() => setActiveTab("dispatch")} />}
+        {activeTab === "supplier-receipt" && selectedGb && <SupplierBatchFulfilment key={selectedGb.id} scope="organiser" groupBuyId={selectedGb.id}
+          onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("organiser", selectedGb.id, batchId, orderId); setActiveTab("orders"); }}
+          onDispatch={() => setActiveTab("dispatch")} />}
         {activeTab === "fulfilment" && selectedGb && <FulfilmentTab key={selectedGb.id} gb={selectedGb} />}
         {activeTab === "refunds" && selectedGb && <GroupBuyRefundQueue role="organiser" groupBuyId={selectedGb.id} />}
         {activeTab === "summary" && selectedGb && <SummaryTab gb={selectedGb} />}

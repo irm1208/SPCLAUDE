@@ -105,7 +105,7 @@ async function getTrackingInfoWithCarrierFallback(
   };
 }
 
-function parseTrack17Response(accepted: unknown, classifyWholesaleStatus = false): {
+export function parseTrack17Response(accepted: unknown, classifyWholesaleStatus = false): {
   status: string;
   statusCode: number;
   events: { date: string; status: string; location: string }[];
@@ -558,6 +558,9 @@ async function runRefresh(): Promise<void> {
     const onwardCount = await refreshWholesaleOnwardParcels();
     const mainCount = await refreshWholesaleMainParcels();
     const individualCount = await refreshIndividualOrders();
+    // Private supplier packages share the provider coordinator, not member parcel feeds.
+    const { refreshDueSupplierShipments } = await import("./supplier-shipment-tracking");
+    await refreshDueSupplierShipments();
     console.log(`[tracking-auto-refresh] Done — ${parcelCount} parcel(s), ${packageCount} package(s), ${onwardCount} onward parcel(s), ${mainCount} shared main parcel(s), ${individualCount} individual order(s) updated`);
   } catch (err) {
     console.error("[tracking-auto-refresh] Run failed:", err);

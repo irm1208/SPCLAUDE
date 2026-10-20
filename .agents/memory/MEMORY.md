@@ -148,3 +148,4 @@
 - [Group-buy MOQ policy](group-buy-moq-policy.md) — group-wide kit target, half kits count as 0.5, active paid and unpaid orders count; member visibility is a separate opt-in.
 - [PostgreSQL snapshot concurrency](postgres-snapshot-concurrency.md) — canonicalize JSONB hashes; use generation/state CAS because JS Date loses PostgreSQL microseconds.
 - [Member list completion](member-group-buy-completion.md) — Completed group buys and orders are reversible personal categories, not shared lifecycle or delivery changes.
+- [Supplier shipment privacy](supplier-shipment-privacy.md) — private supplier packages must not feed member parcel broadcasts; legacy Direct defaults do not establish a confirmed shipping destination.

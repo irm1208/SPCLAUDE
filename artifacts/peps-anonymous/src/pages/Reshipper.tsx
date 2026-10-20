@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
+import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierBatchFulfilment";
 import { palette, ACCENT, ACCENT_SOFT, FONT } from "@/components/dashboard-theme";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import { useThemeStore } from "@/hooks/use-theme";
@@ -3779,9 +3780,10 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
   );
 }
 
-type RTab = "overview" | "fulfilment" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "dispatch" | "payments" | "broadcast";
+type RTab = "overview" | "fulfilment" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "supplier" | "dispatch" | "payments" | "broadcast";
 
 const TAB_HELP: Record<RTab, string> = {
+  supplier: "Supplier batches assigned to you. Check each box against its expected contents and enter usable, damaged and missing quantities. Carrier delivery does not confirm contents or ship any member order. Use Member dispatch only after the goods are ready.",
   overview: "A quick snapshot of this group buy: how many orders you have, totals at a glance, and your progress. Start here to see where things stand.",
   fulfilment: "A complete manifest of every item currently assigned to you for this Group Buy. Expand a product to see the member orders it belongs to.",
   orders: "The orders you're responsible for reshipping. Tap any order to see its items, the customer's address, tracking, and to update its status.",
@@ -3841,6 +3843,7 @@ const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "qr",        label: "QR Codes",  icon: QrCode },
   { id: "shipping",  label: "Shipping",  icon: Truck },
   { id: "parcels",   label: "Parcels",   icon: Package },
+  { id: "supplier", label: "Supplier batches & receipt", icon: Package },
   { id: "dispatch",  label: "Dispatch & Packaging Slips", icon: FileText },
   { id: "payments",  label: "Payments",  icon: CreditCard },
   { id: "broadcast", label: "Broadcast", icon: MessageSquare },
@@ -4309,6 +4312,7 @@ export default function ReshipperPage() {
                 <ShippingTab key={selectedGbId} gbId={selectedGbId} initialGb={currentAssignment.gb} onGbUpdate={updateGbInAssignment} allowPayments={currentAssignment.allowPayments} allowVendorShippingSplit={currentAssignment.allowVendorShippingSplit} />
               )}
               {activeTab === "parcels" && <ParcelsTab key={selectedGbId} gbId={selectedGbId} />}
+              {activeTab === "supplier" && <SupplierBatchFulfilment key={selectedGbId} scope="reshipper" groupBuyId={selectedGbId} onDispatch={() => setActiveTab("dispatch")} />}
               {activeTab === "dispatch" && <DispatchManager cfg={dispatchCfg} />}
               {activeTab === "payments" && me && (
                 <PaymentsTab key={selectedGbId} assignment={currentAssignment} me={me} onAssignmentUpdate={updateAssignment} />

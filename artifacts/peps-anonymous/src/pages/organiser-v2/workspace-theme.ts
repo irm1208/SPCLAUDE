@@ -16,6 +16,7 @@ export const WORKSPACE_PAGE_TREATMENT = {
   members: "table",
   orders: "table",
   "supplier-batches": "logistics",
+  "supplier-receipt": "logistics",
   broadcast: "composer",
   parcels: "logistics",
   dispatch: "logistics",

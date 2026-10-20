@@ -42,9 +42,11 @@ import { LegShippingCalcSubTab } from "./panels/LegCalcPanel";
 import ShippingSplitTab from "@/pages/ShippingSplitTab";
 import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 import { SupplierBatchManager } from "@/components/supplier-batches/SupplierBatchManager";
+import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierBatchFulfilment";
+import { selectSupplierOrderBatch } from "@/components/supplier-batches/OrderBatchFilter";
 
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "./shared/core";
-export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "refunds" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes" | "supplier-batches";
+export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "refunds" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes" | "supplier-batches" | "supplier-receipt";
 
 export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
   secret: string;
@@ -94,6 +96,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
       items: [
         { id: "orders", label: "Orders", icon: ShoppingCart },
         { id: "supplier-batches", label: "Supplier batches", icon: Package },
+        { id: "supplier-receipt", label: "Batch shipping & receipt", icon: Truck },
         { id: "members", label: "Members", icon: Users },
         { id: "waitlist", label: "Waitlist", icon: Clock },
         { id: "payment", label: "Payment Status", icon: CreditCard },
@@ -244,7 +247,12 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
           {activeTab === "refunds" && <GroupBuyRefundQueue role="admin" adminSecret={secret} groupBuyId={currentGb.id} />}
           {activeTab === "parcels" && <ParcelsSubTab secret={secret} gb={currentGb} />}
           {activeTab === "orders" && <OrdersSubTab secret={secret} gb={currentGb} />}
-          {activeTab === "supplier-batches" && <SupplierBatchManager key={currentGb.id} scope="admin" groupBuyId={currentGb.id} headers={{"x-admin-secret":secret}} />}
+          {activeTab === "supplier-batches" && <SupplierBatchManager key={currentGb.id} scope="admin" groupBuyId={currentGb.id} headers={{"x-admin-secret":secret}}
+            onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("admin", currentGb.id, batchId, orderId); selectTab("orders"); }}
+            onDispatch={() => selectTab("fulfilment")} />}
+          {activeTab === "supplier-receipt" && <SupplierBatchFulfilment key={currentGb.id} scope="admin" groupBuyId={currentGb.id} headers={{"x-admin-secret":secret}}
+            onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("admin", currentGb.id, batchId, orderId); selectTab("orders"); }}
+            onDispatch={() => selectTab("fulfilment")} />}
           {activeTab === "testing" && <TestingSubTab secret={secret} gb={currentGb} />}
           {activeTab === "intlshipping" && <IntlShippingTab secret={secret} groupBuyId={currentGb.id} readonly={false} />}
           {activeTab === "adminfeecountry" && <AdminFeeCountriesSubTab secret={secret} gb={currentGb} onUpdate={handleUpdate} />}

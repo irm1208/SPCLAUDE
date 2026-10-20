@@ -8,6 +8,8 @@ import type { SampleGB } from "./data";
 import OverviewTabV3 from "./OverviewTabV3";
 import OrdersTab from "./OrdersTab";
 import { SupplierBatchManager } from "@/components/supplier-batches/SupplierBatchManager";
+import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierBatchFulfilment";
+import { selectSupplierOrderBatch } from "@/components/supplier-batches/OrderBatchFilter";
 import TodoTab from "./TodoTab";
 import DispatchTab from "./DispatchTab";
 import QrCodesTab from "./QrCodesTab";
@@ -197,7 +199,13 @@ export default function Workspace({
   ) : active === "orders" ? (
     <OrdersTab selectedGbId={gb.id} highlightId={highlightId} onOpenDispatch={() => setActive("dispatch")} />
   ) : active === "supplier-batches" ? (
-    <SupplierBatchManager key={gb.id} scope="organiser" groupBuyId={gb.id} />
+    <SupplierBatchManager key={gb.id} scope="organiser" groupBuyId={gb.id}
+      onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("organiser", gb.id, batchId, orderId); setActive("orders"); }}
+      onDispatch={() => setActive("dispatch")} />
+  ) : active === "supplier-receipt" ? (
+    <SupplierBatchFulfilment key={gb.id} scope="organiser" groupBuyId={gb.id}
+      onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("organiser", gb.id, batchId, orderId); setActive("orders"); }}
+      onDispatch={() => setActive("dispatch")} />
   ) : active === "members" ? (
     <MembersTab selectedGbId={gb.id} onOpenOrders={() => setActive("orders")} />
   ) : active === "todos" ? (
