@@ -156,3 +156,4 @@
 - [GB EU onward delivery](gb-eu-onward-delivery.md) — the estimate matrix is EU-only; other countries use country-scoped custom postage options.
 - [Account suspension enforcement](account-suspension-enforcement.md) — check current status on every session; order-number/social login and guest order paths must not bypass suspension.
 - [Member order receipt](member-order-receipt-policy.md) — members can confirm their own shipped group-buy, wholesale and shared orders; never complete other members’ parcels or payments.
+- [Node 20 TypeScript tests](node20-tsx-test-runner.md) — this workspace's Node 20 cannot use `--experimental-strip-types`; run TypeScript tests with `pnpm exec tsx`.
