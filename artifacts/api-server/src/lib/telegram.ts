@@ -212,9 +212,11 @@ interface TgLogCtx {
   recipientUsername?: string;
   /** Stable logical event key for local/provider-side deduplication. */
   eventKey?: string;
+  suppressLog?: boolean;
 }
 
 function logTgMessage(chatId: string, messageText: string, delivered: boolean, errorMessage: string | undefined, ctx: TgLogCtx): void {
+  if (ctx.suppressLog) return;
   db.insert(telegramMessageLogsTable).values({
     recipientType: ctx.recipientType,
     recipientUsername: ctx.recipientUsername ?? null,
@@ -466,6 +468,8 @@ export interface NotifyResult {
 }
 
 export interface NotifyOptions {
+  /** Durable callers already inserted the website event transactionally. */
+  websiteAlreadyRecorded?: boolean;
   /** Do not create an in-app log if this final preference check is disabled. */
   suppressPreferenceDisabledLog?: boolean;
   /** Stable logical event key; Telegram itself may not support idempotency. */
@@ -473,7 +477,7 @@ export interface NotifyOptions {
 }
 
 export function shouldLogPreferenceDisabledNotification(options?: NotifyOptions): boolean {
-  return !options?.suppressPreferenceDisabledLog;
+  return !options?.suppressPreferenceDisabledLog && !options?.websiteAlreadyRecorded;
 }
 
 /**
@@ -516,19 +520,19 @@ export async function notifyUserFull(
     if (!token) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — bot token not configured`);
       // Still record the notification so it appears in the customer's in-app feed.
-      logTgMessage(account.telegramChatId ?? "", text, false, "skipped: bot token not configured (in-app only)", { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey });
+      logTgMessage(account.telegramChatId ?? "", text, false, "skipped: bot token not configured (in-app only)", { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey, suppressLog: options?.websiteAlreadyRecorded });
       return { ok: false, skipped: true };
     }
     if (!account.telegramChatId) {
       console.warn(`[telegram:notify] SKIP event=${prefKey} user=@${bare} — Telegram not linked (no chatId)`);
       // Still record the notification so it appears in the customer's in-app feed.
-      logTgMessage("", text, false, "skipped: Telegram not linked (in-app only)", { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey });
+      logTgMessage("", text, false, "skipped: Telegram not linked (in-app only)", { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey, suppressLog: options?.websiteAlreadyRecorded });
       return { ok: false, skipped: true };
     }
 
     const result = await sendTelegramMessageFull(
       account.telegramChatId, text, "HTML",
-      { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey },
+      { recipientType: "user", recipientUsername: bare, eventKey: options?.eventKey, suppressLog: options?.websiteAlreadyRecorded },
       replyMarkup ? { reply_markup: replyMarkup } : undefined,
     );
     if (result.ok) {

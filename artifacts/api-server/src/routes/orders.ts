@@ -1,6 +1,8 @@
 import { getOnwardOrderPreference, saveOnwardOrderPreference } from "../lib/gb-onward-delivery";
 import { OnwardDeliveryError, validOnwardMethod } from "../lib/gb-onward-delivery-rules";
 import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
+import { assertSupplierOrderEditable } from "../lib/supplier-batch-protection";
+import { normalizeToCode as supplierCountryCode } from "../lib/country-utils";
 import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
 import { calculateCouponDiscount, CouponError, couponProblem, couponQuoteMatches } from "../lib/group-buy-coupon-policy";
 import { assertGroupStock } from "../lib/group-buy-stock";
@@ -2710,6 +2712,10 @@ router.post("/orders/:orderId/shipping-address", async (req, res): Promise<void>
       error: "This is an add-on to an earlier order — it ships to that order's address, which can't be changed here.",
     });
     return;
+  }
+
+  if (shippingCountry && supplierCountryCode(String(shippingCountry)) !== supplierCountryCode(order.shippingCountry ?? "")) {
+    await assertSupplierOrderEditable(db, [order.id]);
   }
 
   if (await isCustomerActionLockedByGb(order.groupBuyId, "address")) {

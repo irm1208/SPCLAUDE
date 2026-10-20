@@ -146,3 +146,4 @@
 - [Member order receipt](member-order-receipt-policy.md) — members can confirm their own shipped group-buy, wholesale and shared orders; never complete other members’ parcels or payments.
 - [Node 20 TypeScript tests](node20-tsx-test-runner.md) — this workspace's Node 20 cannot use `--experimental-strip-types`; run TypeScript tests with `pnpm exec tsx`.
 - [Group-buy MOQ policy](group-buy-moq-policy.md) — group-wide kit target, half kits count as 0.5, active paid and unpaid orders count; member visibility is a separate opt-in.
+- [PostgreSQL snapshot concurrency](postgres-snapshot-concurrency.md) — canonicalize JSONB hashes; use generation/state CAS because JS Date loses PostgreSQL microseconds.

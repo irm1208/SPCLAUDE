@@ -26,6 +26,7 @@ import { runSecurityIncidentRemediation } from "./lib/security-incident-remediat
 import { repairOrder11688InvoiceDamage } from "./lib/order-11688-invoice-damage-repair";
 import { registerRefundNotificationScheduler } from "./lib/refund-notifications";
 import { registerGroupBuyUpdateNotificationScheduler } from "./lib/group-buy-update-notifications";
+import { registerSupplierBatchScheduler } from "./lib/supplier-batch-worker";
 import { stopAllSchedulers } from "./lib/scheduler-registry";
 import { db, ordersTable } from "@workspace/db";
 import { sql, and, eq, isNotNull, isNull, lt } from "drizzle-orm";
@@ -1240,6 +1241,7 @@ function startBackgroundServices(): void {
   startDbBackupVerificationSchedule();
   registerRefundNotificationScheduler(db);
   registerGroupBuyUpdateNotificationScheduler();
+  registerSupplierBatchScheduler();
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
 }
 

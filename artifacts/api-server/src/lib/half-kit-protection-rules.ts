@@ -20,11 +20,16 @@ export function halfKitLegacyMutation(method: string, path: string, body: Record
   // PUT delegates to a claim-preserving additive edit in the authenticated handler.
   // Keep the mutex: it serializes edits against claims, release and payment checks.
   if (match && ["PUT", "DELETE"].includes(method)) return { kind: "order", orderId: match[1], role, block: false };
+  // Match both address endpoints explicitly before the general account/payment
+  // routes. The captured value must be the order ID, never the "orders" segment.
+  match = path.match(/^\/(?:account\/)?orders\/([^/]+)\/shipping-address$/i);
+  if (match && method === "POST") return {kind:"order",orderId:match[1],role:"member",block:false};
   if (method === "POST" && lower === "/orders" && typeof body.additionOfOrderId === "string") {
     return { kind: "order", orderId: body.additionOfOrderId, role, block: false };
   }
   // Hold the same monetary mutex throughout external payment verification, including status GETs.
-  match = path.match(/^\/(?:payments|account\/orders)\/([^/]+)/i)
+  match = path.match(/^\/payments\/([^/]+)(?:\/|$)/i)
+    || path.match(/^\/account\/orders\/([^/]+)(?:\/|$)/i)
     || path.match(/^\/orders\/([^/]+)\/(?:confirm-fiat|payment-screenshot|pay|submit-test|generate-test|init-anonpay|confirm-anonpay|anonpay-status|lock-usdt-rate)/i);
   if (match) return { kind: "order", orderId: match[1], role: "member", block: false,
     ...(lower.endsWith("/refund") ? { refund: true } : {}) };

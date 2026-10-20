@@ -25,6 +25,7 @@ import {
   AtlasStatusBadge,
 } from "./AtlasUi";
 import CompactOrderList from "./CompactOrderList";
+import { useOrderBatches, OrderBatchFilter } from "@/components/supplier-batches/OrderBatchFilter";
 import { GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
 import { isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import OrdersMobileWorkspace from "./OrdersMobileWorkspace";
@@ -66,6 +67,8 @@ const DEFAULT_FILTER_VALUES: OrderFilterValues = {
 };
 
 export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }: { selectedGbId?: string; highlightId?: string; onOpenDispatch?: () => void } = {}) {
+  const supplierBatches = useOrderBatches("organiser", selectedGbId);
+  const batchLabels = Object.fromEntries([...supplierBatches.byOrder].map(([id, b]) => [id, `${b.reference} · ${b.state}${b.exceptions.length ? " · Review" : ""}`]));
   const [searchQuery, setSearchQuery] = useState("");
   const [multipleOnly, setMultipleOnly] = useState(false);
   const [statusFilters, setStatusFilters] = useState<OrderStatusFilter[]>(["all"]);
@@ -93,7 +96,9 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   const orderRepository = useOrderRepository();
   const orders = useOrders();
   const multiplePeople = new Set(orders.filter(isMultipleGbOrder).map(order => order.memberUsername.trim().replace(/^@+/, "").toLowerCase())).size;
-  const mobileModel = useMemo(() => buildMobileOrdersModel(orders), [orders]);
+  const mobileModel = useMemo(() => buildMobileOrdersModel(orders.filter(order =>
+    (!multipleOnly || isMultipleGbOrder(order)) && supplierBatches.matches(order.id))),
+    [orders, multipleOnly, supplierBatches.filter, supplierBatches.byOrder]);
 
   // Edit modal
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -451,8 +456,8 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   };
 
   const filteredOrders = useMemo(
-    () => filterOrders(orders, appliedFilters, searchQuery).filter(order => !multipleOnly || isMultipleGbOrder(order)),
-    [orders, appliedFilters, searchQuery, multipleOnly],
+    () => filterOrders(orders, appliedFilters, searchQuery).filter(order => (!multipleOnly || isMultipleGbOrder(order)) && supplierBatches.matches(order.id)),
+    [orders, appliedFilters, searchQuery, multipleOnly, supplierBatches.filter, supplierBatches.byOrder],
   );
   const draftPreviewOrders = useMemo(
     () => filterOrders(orders, draftFilters, searchQuery),
@@ -585,12 +590,14 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
 
   return (
     <div className="approved-order-desk">
+      <OrderBatchFilter model={supplierBatches} />
       <GbMultipleOrderNotice people={multiplePeople} checked={multipleOnly} onChange={value => { setMultipleOnly(value); if (value) setMobileView("all"); setSelectedOrders([]); }} />
       <div className="orders-mobile-view">
         <OrdersMobileWorkspace
+          batchLabels={batchLabels}
           gbId={selectedGbId}
           model={mobileModel}
-          orders={mobileView === "all" ? filteredOrders : orders.filter(order => !multipleOnly || isMultipleGbOrder(order))}
+          orders={mobileView === "all" ? filteredOrders : orders.filter(order => (!multipleOnly || isMultipleGbOrder(order)) && supplierBatches.matches(order.id))}
           view={mobileView}
           searchQuery={searchQuery}
           activeFilterCount={activeFilterCount}
@@ -923,6 +930,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
           <span className="atlas-result-count">{filteredOrders.length} of {orders.length}</span>
         </div>
         <CompactOrderList
+          batchLabels={batchLabels}
           orders={filteredOrders}
           gbId={selectedGbId}
           selected={selectedOrders}

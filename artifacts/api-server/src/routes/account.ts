@@ -19,6 +19,7 @@ import { randomUUID, createHash, randomInt } from "crypto";
 import { requireAccount, requireAccountIdentity, issueAccountCookieForAccount, refreshAccountCookie, revokeToken, extractJtiFromCookie, getAccountCookieOptions } from "../middleware/account-auth";
 import { writeLog } from "../lib/audit-log";
 import { normalizeToCode as normalizeCountryToCode } from "../lib/country-utils";
+import { assertSupplierOrderEditable } from "../lib/supplier-batch-protection";
 import { notifyUser, sendTelegramMessage, sendAdminMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { createAlert } from "../lib/create-alert";
@@ -2838,11 +2839,16 @@ router.post("/account/orders/:id/shipping-address", requireAccount, async (req, 
   }
 
   if (await isCustomerActionLockedByGb(order.groupBuyId, "address")) {
+    // This check stays after account ownership validation.
     res.status(403).json({
       error: `This group buy is closed — shipping address can no longer be edited.`,
       lockedByGb: true,
     });
     return;
+  }
+
+  if (shippingCountry && normalizeCountryToCode(String(shippingCountry)) !== normalizeCountryToCode(order.shippingCountry ?? "")) {
+    await assertSupplierOrderEditable(db, [order.id]);
   }
 
   const [updated] = await db

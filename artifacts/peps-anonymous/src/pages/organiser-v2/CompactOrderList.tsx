@@ -48,6 +48,7 @@ function fmt(iso: string, withTime = false): string {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
+  batchLabels?: Record<string, string>;
   orders: readonly OrganiserOrder[];
   selected?: readonly string[];
   onSelectionChange?: (ids: string[]) => void;
@@ -79,6 +80,7 @@ export default function CompactOrderList({
   initialExpandedId,
   empty,
   gbId,
+  batchLabels,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId ?? null);
 
@@ -152,6 +154,7 @@ export default function CompactOrderList({
               <span className="orders-compact-cell orders-compact-user" data-label="User name">
                 <strong>@{order.memberUsername}</strong>
                 <GbMultipleOrderBadge order={order} />
+                {batchLabels?.[order.id] && <small style={{ color: "var(--t-blue, #2D6BCC)" }}>{batchLabels[order.id]}</small>}
               </span>
               <span className="orders-compact-cell" data-label="QTY">
                 <strong>{orderQuantity(order)}</strong>

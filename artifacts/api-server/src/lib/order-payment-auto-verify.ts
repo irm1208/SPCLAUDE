@@ -27,6 +27,7 @@ import {
 } from "./payment-verify";
 import { isStablecoin, roundCrypto, fetchUsdPerCoin, fetchFiatToUsd } from "./crypto-pricing";
 import { registerScheduler } from "./scheduler-registry";
+import { requestSupplierReconciliation } from "./supplier-batch-worker";
 import { logCustomerActivity } from "./activity-log";
 import { writeLog } from "./audit-log";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "./telegram";
@@ -475,6 +476,8 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
     }
   } catch (err: any) {
     console.error("[order-auto-verify] Error:", err?.message ?? err);
+  } finally {
+    requestSupplierReconciliation();
   }
 }
 

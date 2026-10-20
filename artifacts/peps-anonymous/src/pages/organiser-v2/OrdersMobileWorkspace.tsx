@@ -6,6 +6,7 @@ import type { OrganiserOrder } from "./domain/order";
 import { selectMobileOrderView, type MobileOrderView, type MobileOrdersModel } from "./orders-mobile-model";
 
 export interface OrdersMobileWorkspaceProps {
+  batchLabels?: Record<string, string>;
   gbId?: string;
   model: MobileOrdersModel;
   orders: readonly OrganiserOrder[];
@@ -31,6 +32,7 @@ export default function OrdersMobileWorkspace(props: OrdersMobileWorkspaceProps)
     <div className="orders-mobile-tabs" role="tablist">{([['needs-action','Needs action'],['all','All orders'],['completed','Completed']] as const).map(([id,label]) => <button type="button" role="tab" aria-selected={view === id} onClick={() => onViewChange(id)} key={id}>{label}</button>)}</div>
     {view === "all" ? <div className="orders-mobile-search"><label><Search aria-hidden="true" /><input type="search" value={searchQuery} onChange={event => onSearchChange(event.target.value)} placeholder="Search orders" /></label><button ref={filterButtonRef} type="button" onClick={onOpenFilters}><SlidersHorizontal aria-hidden="true" /> Filters {activeFilterCount || ""}</button></div> : null}
     <CompactOrderList
+      batchLabels={props.batchLabels}
       orders={visible}
       gbId={props.gbId}
       empty={<div className="orders-mobile-empty" role="status"><strong>No orders in this view</strong><button type="button" onClick={() => onViewChange("all")}>View all orders</button></div>}

@@ -1,4 +1,5 @@
 import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
+import { useOrderBatches, OrderBatchFilter, OrderBatchBadge } from "@/components/supplier-batches/OrderBatchFilter";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { motion, AnimatePresence } from "framer-motion";
@@ -158,6 +159,7 @@ export function parseGbImportItems(items: string): { productName: string; quanti
 }
 
 export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
+  const supplierBatches = useOrderBatches("admin", gb.id, {"x-admin-secret":secret});
   const [orders, setOrders] = useState<GbOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -452,6 +454,7 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
   const uniqueCountries = [...new Set(orders.map(o => o.shippingCountry).filter(Boolean))].sort() as string[];
   const selectedLeg = countryLegFilter !== "all" ? legs.find(l => l.id === countryLegFilter) : null;
   const filtered = orders.filter(o => {
+    if (!supplierBatches.matches(o.id)) return false;
     const matchPayment = paymentMethodFilter === "all" || o.paymentMethod === paymentMethodFilter;
     const matchCountry = countryFilter.size === 0 || countryFilter.has(o.shippingCountry ?? "");
     const matchLeg = countryLegFilter === "all"
@@ -528,6 +531,7 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
 
   return (
     <div className="space-y-3">
+      <OrderBatchFilter model={supplierBatches} />
       {/* ── Primary toolbar ── */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex-1 relative min-w-48">
@@ -1163,6 +1167,7 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                     {/* Line 1: identity + status */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <code className="font-mono text-xs font-semibold">#{o.code}</code>
+                      <OrderBatchBadge model={supplierBatches} orderId={o.id} />
                       <span className="text-xs font-medium truncate">{o.telegramUsername}</span>
                       <span className={cn("px-1.5 py-0.5 rounded-full border text-[10px] font-medium", ORDER_STATUS_COLORS[o.status] ?? "text-muted-foreground border-border")}>{o.status}</span>
                       <span className={cn("px-1.5 py-0.5 rounded-full border text-[10px] font-medium", PAYMENT_STATUS_COLORS[o.paymentStatus] ?? "text-muted-foreground border-border")}>{o.paymentStatus.replace(/_/g, " ")}</span>

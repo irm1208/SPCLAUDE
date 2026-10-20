@@ -5,6 +5,8 @@ import { requireAdmin } from "./require-admin";
 import { requireOrganiser } from "./require-organiser";
 import { halfKitLegacyMutation } from "../lib/half-kit-protection-rules";
 import { halfKitGroup } from "../lib/half-kit-offers";
+import { assertSupplierOrderEditable } from "../lib/supplier-batch-protection";
+import { requestSupplierReconciliation } from "../lib/supplier-batch-worker";
 
 // Locks need their own small pool: borrowing all data connections before running
 // native handlers would leave those handlers waiting forever for a free connection.
@@ -43,6 +45,7 @@ export async function halfKitProtection(req: Request, res: Response, next: NextF
       await client.query("SELECT pg_advisory_unlock_all()");
       await client.query("RESET lock_timeout");
       client.release();
+      requestSupplierReconciliation();
     } catch (error) { client.release(error as Error); console.error("[half-kit protection cleanup]", error); }
   };
   let groups: string[] = [];
@@ -91,6 +94,15 @@ export async function halfKitProtection(req: Request, res: Response, next: NextF
     if (plan.settings) {
       const [group] = await db.select().from(groupBuysTable).where(eq(groupBuysTable.id, groups[0]));
       block = !!group && settingsFields.some(key => settingChanged(group, req.body ?? {}, key));
+    }
+    // Unlike half-kit claims, an allocated supplier snapshot cannot accept
+    // additive edits. Cancellation/refund/payment/status writes remain possible
+    // and become visible exceptions rather than silently requeuing purchases.
+    const material = block || (req.body?.lineItems !== undefined)
+      || req.body?.shippingCountry !== undefined || req.body?.groupBuyId !== undefined;
+    if (material && req.method !== "DELETE" && plan.role !== "member") {
+      await assertSupplierOrderEditable(db, (targetOrders ?? await db.select({ id: ordersTable.id }).from(ordersTable)
+        .where(inArray(ordersTable.groupBuyId, groups))).map(order => order.id));
     }
     if (block || plan.refund) {
       const active = await db.select({ id: claims.id }).from(claims).where(and(

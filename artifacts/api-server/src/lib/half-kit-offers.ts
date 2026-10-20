@@ -9,6 +9,7 @@ import { assertNoActiveRefund } from "./refund-mutation-guard";
 import { fetchFiatToUsd, isStablecoin } from "./crypto-pricing";
 import { claimAmounts, eligibleHalfKitOrder, halfKitClaimPaid, hasRemainingHalf, HalfKitError, halfKitTakenMessage, money, offerMoney } from "./half-kit-rules";
 import { lockHalfKitMoney } from "./half-kit-lock";
+import { assertSupplierOrderEditable } from "./supplier-batch-protection";
 import type { HalfKitCheckout } from "./half-kit-new-order-rules";
 
 type Database = any; // accepts both the workspace DB and a transaction/savepoint in integration tests
@@ -283,6 +284,7 @@ export async function claimHalfKit(groupId: string, offerId: string, actor: Half
     const group = await halfKitGroup(tx, groupId, actor, false, true);
     const account = await ownedAccount(tx, actor.username, input.useCredits);
     const [order] = await tx.select().from(ordersTable).where(eq(ordersTable.id, input.orderId)).for("update");
+    await assertSupplierOrderEditable(tx, [input.orderId]);
     if (!order || order.groupBuyId !== groupId || !same(order.telegramUsername, actor.username)) {
       throw new HalfKitError("Choose one of your own orders in this group buy.", 403);
     }

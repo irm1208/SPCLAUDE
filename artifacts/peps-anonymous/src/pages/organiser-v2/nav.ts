@@ -15,7 +15,7 @@ import {
 export type WorkspaceTabId =
   | "overview"
   | "members"
-  | "orders" | "broadcast"
+  | "orders" | "broadcast" | "supplier-batches"
   | "parcels" | "dispatch" | "qrcodes" | "reshippers" | "legs" | "shipping" | "shipping-split"
   | "pnl" | "labtests" | "testinggroups" | "tickets" | "todos"
   | "settings" | "products" | "rules" | "summary";
@@ -63,6 +63,7 @@ export const WORKSPACE_GROUPS: WorkspaceGroup[] = [
     label: "Orders & money",
     tabs: [
       { id: "orders", label: "Orders", icon: ShoppingBag, description: "View and manage member orders" },
+      { id: "supplier-batches", label: "Supplier batches", icon: Package, description: "Prepare paid regional supplier purchases" },
       { id: "summary", label: "Supplier Summary", icon: ClipboardList, description: "Export order rollup for suppliers" },
       { id: "pnl", label: "Profit & Loss", icon: BarChart3, description: "Revenue and costs breakdown" },
     ],
@@ -104,6 +105,7 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
   description: string;
   primaryAction?: string;
 }> = {
+  "supplier-batches": { title: "Supplier batches", description: "Queue fully paid orders by destination and prepare exact supplier purchases." },
   overview: {
     title: "Overview",
     description: "Monitor orders, payments, fulfillment, and member activity.",

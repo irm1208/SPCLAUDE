@@ -70,6 +70,8 @@ import groupBuyBreakdownRouter from "./group-buy-breakdown";
 import groupBuyRefundsRouter from "./group-buy-refunds";
 import halfKitOffersRouter from "./half-kit-offers";
 import { halfKitProtection } from "../middleware/half-kit-protection";
+import supplierBatchesRouter from "./supplier-batches";
+import { requestSupplierReconciliation } from "../lib/supplier-batch-worker";
 import wholesaleTrackingRouter from "./wholesale-tracking";
 import adminAuthRouter from "./admin-auth";
 import adminInvoicesRouter from "./admin-invoices";
@@ -111,6 +113,15 @@ router.use("/admin", adminAuthorizationMiddleware);
 // Validate session/CSRF first; otherwise session-only admins are rejected as
 // if they had not logged in, before routing and other writes can reach handlers.
 router.use(halfKitProtection);
+// Successful mutations schedule a bounded server-side reconciliation. Automatic
+// payment workers are also covered by the periodic scheduler.
+router.use((req, res, next) => {
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method) && !req.path.includes("/supplier-batches")) {
+    res.once("finish", () => { if (res.statusCode < 400) requestSupplierReconciliation(); });
+  }
+  next();
+});
+router.use(supplierBatchesRouter);
 router.use(adminInvoicesRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { halfKitLegacyMutation } from "./half-kit-protection-rules";
 describe("half-kit legacy mutation protection", () => {
+  it("locks the actual order ID for both shipping-address endpoints", () => {
+    for (const path of ["/account/orders/actual-order-id/shipping-address", "/orders/actual-order-id/shipping-address"]) {
+      expect(halfKitLegacyMutation("POST", path, {shippingCountry:"GB"}))
+        .toEqual({kind:"order",orderId:"actual-order-id",role:"member",block:false});
+    }
+    expect(halfKitLegacyMutation("POST","/account/orders/actual-order-id/verify-balance")?.orderId).toBe("actual-order-id");
+  });
   it("matches Express case-insensitive and decoded paths without changing ID case", () => {
     expect(halfKitLegacyMutation("PUT", "/ORDERS/%41bc")?.orderId).toBe("Abc");
     expect(halfKitLegacyMutation("PATCH", "/ADMIN/ORDERS/%41bc", { clearBalance: true })?.block).toBe(true);

@@ -51,6 +51,8 @@ import { hasAppliedCredit } from "@/lib/credit-payment";
 import { matchesCancelledOrRefunded, matchesTestPayment } from "@/lib/group-buy-order-filters";
 import { HalfKitManager } from "@/components/half-kits/HalfKitManager";
 import { GroupBuyUpdatesManager } from "@/components/group-buy-updates/GroupBuyUpdatesManager";
+import { SupplierBatchManager } from "@/components/supplier-batches/SupplierBatchManager";
+import { useOrderBatches, OrderBatchFilter, OrderBatchBadge } from "@/components/supplier-batches/OrderBatchFilter";
 import { canonicalReshipperUsername, filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 
 const _codeToName: Record<string, string> = Object.fromEntries(COUNTRY_LIST.map(c => [c.code.toLowerCase(), c.name]));
@@ -7560,6 +7562,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
 }
 
 function OrdersTab({ gb }: { gb: OrganiserGB }) {
+  const supplierBatches = useOrderBatches("organiser", gb.id);
   const [orders, setOrders] = useState<OrgOrder[]>([]);
   const [multipleOnly, setMultipleOnly] = useState(false);
   const reviewOrders = useMemo(() => annotateCompleteGbOrderCounts(orders), [orders]);
@@ -8269,7 +8272,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
         o.grandTotal.toFixed(2).includes(q)
       )
     : sortedDateFiltered;
-  const filteredOrders = searchFilteredOrders.filter(o => !multipleOnly || isMultipleGbOrder(o));
+  const filteredOrders = searchFilteredOrders.filter(o => (!multipleOnly || isMultipleGbOrder(o)) && supplierBatches.matches(o.id));
 
   // For the Intl Shipping panel: if the user has ticked any rows in the
   // current country filter, target only those; otherwise target all.
@@ -8321,6 +8324,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
   return (
     <div className="space-y-4">
       {/* Vendor wholesale order modal */}
+      <OrderBatchFilter model={supplierBatches} />
       <AnimatePresence>
         {wholesaleModal && (
           <motion.div
@@ -9323,6 +9327,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                     onClick={ev => ev.stopPropagation()}
                   />
                   <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.06)", color: "#94a3b8", border: "1px solid rgba(255,255,255,0.1)", padding: "2px 8px", borderRadius: 6 }}>#{o.code}</span>
+                  <OrderBatchBadge model={supplierBatches} orderId={o.id} />
                   <GbMultipleOrderBadge order={o} />
                   <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(255,255,255,0.07)", color: "#94a3b8" }}>{o.status}</span>
                   {o.orderType === "test" && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "rgba(249,115,22,0.15)", color: "#F97316", border: "1px solid rgba(249,115,22,0.3)" }}>🧪 TEST</span>}
@@ -13760,7 +13765,7 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "fulfilment" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes";
+type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "fulfilment" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes" | "supplier-batches";
 
 const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired: boolean; externalPath?: (gbId: string) => string }[] = [
   { id: "overview", label: "My GBs", icon: LayoutDashboard, gbRequired: false },
@@ -13769,6 +13774,7 @@ const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired
   { id: "shipping", label: "Ship & Pay", icon: CreditCard, gbRequired: true },
   { id: "shippingsplit", label: "Shipping Split", icon: Calculator, gbRequired: true },
   { id: "orders", label: "Orders", icon: ShoppingBag, gbRequired: true },
+  { id: "supplier-batches", label: "Supplier batches", icon: Package, gbRequired: true },
   { id: "fulfilment", label: "Fulfilment", icon: Package, gbRequired: true },
   { id: "refunds", label: "Refunds", icon: Wallet, gbRequired: true },
   { id: "summary", label: "Summary", icon: ClipboardList, gbRequired: true },
@@ -13794,7 +13800,7 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }
   archived: { color: "#6B7280", bg: "rgba(107,114,128,0.12)", label: "Archived" },
 };
 
-const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "shippingsplit", "orders", "fulfilment", "refunds", "qrcodes"];
+const CORE_TAB_IDS: DashTab[] = ["overview", "edit", "products", "shipping", "shippingsplit", "orders", "supplier-batches", "fulfilment", "refunds", "qrcodes"];
 const OPTIONAL_TAB_IDS: DashTab[] = ["summary", "parcels", "dispatch", "labtests", "pnl", "broadcast", "intlshipping", "adminfeecountry", "sharedshipping", "reshippers", "countrylegs", "rules", "tickets"];
 
 function getTabVisibility(username: string, gbId: string | null): Record<string, boolean> {
@@ -14077,6 +14083,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
+        {activeTab === "supplier-batches" && selectedGb && <SupplierBatchManager key={selectedGb.id} scope="organiser" groupBuyId={selectedGb.id} />}
         {activeTab === "fulfilment" && selectedGb && <FulfilmentTab key={selectedGb.id} gb={selectedGb} />}
         {activeTab === "refunds" && selectedGb && <GroupBuyRefundQueue role="organiser" groupBuyId={selectedGb.id} />}
         {activeTab === "summary" && selectedGb && <SummaryTab gb={selectedGb} />}

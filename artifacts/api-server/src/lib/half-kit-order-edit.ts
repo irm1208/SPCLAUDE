@@ -8,6 +8,7 @@ import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedErr
 import { HalfKitError, money } from "./half-kit-rules";
 import { planHalfKitOrderEdit, type HalfKitEditOptions } from "./half-kit-order-edit-rules";
 import { resolveGroupBuyAdminFee } from "./group-buy-admin-fee";
+import { assertSupplierOrderEditable } from "./supplier-batch-protection";
 
 /**
  * The caller holds the request-wide half-kit money mutex. Do not reacquire it
@@ -19,6 +20,7 @@ export async function editOrderWithHalfKits(tx: any, orderId: string, groupId: s
   insertedLineItems: Array<typeof orderLineItemsTable.$inferSelect>;
   lineItemsToInsert: Array<typeof orderLineItemsTable.$inferSelect>;
 }> {
+  await assertSupplierOrderEditable(tx, [orderId]);
   await assertGroupStock(tx, groupId, input.lineItems.filter((item: any) => Number(item.quantity) > 0), orderId);
   const [order] = await tx.select().from(ordersTable).where(and(
     eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, groupId), isNull(ordersTable.deletedAt),
