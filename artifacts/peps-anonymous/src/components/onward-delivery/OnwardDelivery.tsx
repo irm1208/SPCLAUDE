@@ -212,13 +212,12 @@ function Frame({ children, testId }: { children: React.ReactNode; testId: string
       <header className="onward-estimate-header">
         <span className="onward-estimate-icon"><Truck className="h-4 w-4" aria-hidden="true" /></span>
         <h3>Potential onwards delivery charge</h3>
-        <span className="onward-estimate-optional">Optional</span>
       </header>
       <div className="onward-estimate-content">{children}</div>
       <footer className="onward-estimate-footer">
         <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" aria-hidden="true" />
         <div>
-          <p className="onward-estimate-payment-note">Estimate only. Paid separately to your reshipper; pay when requested</p>
+          <p className="onward-estimate-payment-note">Pay onward delivery after placing your order.</p>
           <p>Reshipper to you, not vendor shipping. Not included in your order total.</p>
         </div>
       </footer>
@@ -311,9 +310,10 @@ function useFocusRefetch(cb: () => void) {
   }, []);
 }
 
-export function OnwardDeliveryPicker({ gbId, country, kits, reshipperCode, directShippingRequested, orderId, value, onChange, readOnly }: {
+export function OnwardDeliveryPicker({ gbId, country, kits, reshipperCode, directShippingRequested, orderId, value, onChange, readOnly, onApplicableChange }: {
   gbId: string; country: string | null; kits: number; reshipperCode?: string | null; directShippingRequested?: boolean;
   orderId?: string | null; value: OnwardMethod | null; onChange: (m: OnwardMethod | null) => void; readOnly?: boolean;
+  onApplicableChange?: (applicable: boolean) => void;
 }) {
   const [estimate, setEstimate] = useState<OnwardEstimate | null>(null);
   const [loading, setLoading] = useState(false);
@@ -352,6 +352,9 @@ export function OnwardDeliveryPicker({ gbId, country, kits, reshipperCode, direc
 
   const noPricedOption = !!estimate && estimate.options.length === 0
     && (estimate.status === "unavailable" || estimate.status === "available");
+  useEffect(() => {
+    onApplicableChange?.(euDestination && !directShippingRequested && !!estimate?.options.length);
+  }, [onApplicableChange, euDestination, directShippingRequested, estimate]);
   useEffect(() => {
     if (noPricedOption && value && !readOnly) onChange(null);
   }, [noPricedOption, value, readOnly, onChange]);

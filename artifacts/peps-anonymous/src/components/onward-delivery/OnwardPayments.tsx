@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Copy, Loader2, RefreshCw, Save, ShieldCheck, Wallet, X, AlertTriangle, Send } from "lucide-react";
 import type { Fetcher } from "@/lib/onward-delivery";
+import { ImmediateDeliveryCheckout } from "./ImmediateDeliveryCheckout";
+import { useQueryClient } from "@tanstack/react-query";
 import { formatOnwardAmount, methodLabel } from "@/lib/onward-delivery";
 import {
   FIAT_CURRENCIES, STATUS_COLOR, STATUS_LABEL, fmtCrypto, fmtDate, fmtFiat, newIdempotencyKey, onwardPayApi, parseAmount,
   prefillFromEstimate, validateSettings,
-  type Charge, type Envelope, type FiatCurrency, type ReadonlySource, type ReshipperOverview, type ReshipperOrderRow, type WalletSettings,
+  type Charge, type Envelope, type CombinedQuote, type FiatCurrency, type ReadonlySource, type ReshipperOverview, type ReshipperOrderRow, type WalletSettings,
 } from "@/lib/onward-payments";
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
@@ -117,16 +119,19 @@ function History({ items, currentId }: { items: Charge[]; currentId?: string }) 
 
 // ─── Member card (AccountOrderDetail) ───────────────────────────────────────
 
-export function OnwardPaymentCard({ orderId }: { orderId: string }) {
-  return <MemberCardBody key={orderId} orderId={orderId} />;
+export function OnwardPaymentCard({ orderId, onProductPaid }: { orderId: string; onProductPaid?: (hash: string, currency: string) => void }) {
+  return <MemberCardBody key={orderId} orderId={orderId} onProductPaid={onProductPaid} />;
 }
-function MemberCardBody({ orderId }: { orderId: string }) {
+function MemberCardBody({ orderId, onProductPaid }: { orderId: string; onProductPaid?: (hash: string, currency: string) => void }) {
+  const queryClient = useQueryClient();
   const [env, setEnv] = useState<Envelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tx, setTx] = useState("");
   const [busy, setBusy] = useState<"submit" | "verify" | null>(null);
   const [actErr, setActErr] = useState<string | null>(null);
+  const [combined, setCombined] = useState<CombinedQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
   const ctl = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -144,6 +149,8 @@ function MemberCardBody({ orderId }: { orderId: string }) {
   const req = rawReq && rawReq.status !== "cancelled" ? rawReq : null;
   const history = env?.history ?? [];
   const historyItems = rawReq && rawReq.status === "cancelled" && !history.some(h => h.id === rawReq.id) ? [rawReq, ...history] : history;
+  useEffect(() => { setCombined(null); }, [rawReq?.id, rawReq?.cryptoAmount, rawReq?.wallet.walletAddress, rawReq?.wallet.currency, rawReq?.wallet.network]);
+  useEffect(() => { if (env?.canCombine === false || env?.canSubmit === false) setCombined(null); }, [env?.canCombine, env?.canSubmit]);
   useEffect(() => {
     const refresh = () => { if (document.visibilityState === "visible") void load(); };
     window.addEventListener("focus", refresh);
@@ -157,8 +164,11 @@ function MemberCardBody({ orderId }: { orderId: string }) {
     if (!req) return;
     setBusy(kind); setActErr(null);
     try {
-      const r = kind === "submit" ? await onwardPayApi.submit(orderId, req.id, tx.trim()) : await onwardPayApi.verify(orderId, req.id);
+      const r = kind === "submit"
+        ? combined ? await onwardPayApi.combinedPay(orderId, req.id, combined.id, tx.trim()) : await onwardPayApi.submit(orderId, req.id, tx.trim())
+        : await onwardPayApi.verify(orderId, req.id);
       setEnv(r); if (kind === "submit") setTx("");
+      if (combined) { onProductPaid?.(tx.trim(), combined.wallet.currency); setCombined(null); void queryClient.invalidateQueries(); }
     } catch (e) { setActErr(errMsg(e)); }
     finally { setBusy(null); }
   };
@@ -179,18 +189,43 @@ function MemberCardBody({ orderId }: { orderId: string }) {
       </div>
       <div className="px-4 py-3 space-y-3">
         {error && <ErrorLine text={error} onRetry={() => void load()} />}
-        {req ? (
+        {env?.needsContact && env.immediate ? (
+          <ImmediateDeliveryCheckout orderId={orderId} config={env.immediate} onReady={setEnv} />
+        ) : req ? (
           <>
             <div className="flex items-center gap-2" data-testid={`state-onward-${req.status === "pending_confirmation" ? `pending-${req.confirmationMode}` : req.status}`}><StatusPill status={req.status} />
               {loading && <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--t-subtle)" }} />}</div>
-            <ChargeDetails c={req} showWallet={!!env?.canSubmit && (req.status === "unpaid" || req.status === "pending_confirmation")} />
+            {!combined && <ChargeDetails c={req} showWallet={!!env?.canSubmit && (req.status === "unpaid" || req.status === "pending_confirmation")} />}
+            {req.status === "unpaid" && env?.canSubmit && env.canCombine && (
+              <div className="rounded-lg border p-3 space-y-2 text-xs">
+                <p>Both payments use the same wallet, token and network. You can pay delivery alone or pay both in one transfer.</p>
+                <button type="button" data-testid="button-onward-combine" disabled={busy !== null || quoting} className="text-[#2D6BCC] font-semibold underline"
+                  onClick={async () => {
+                    if (combined) { setCombined(null); return; }
+                    setQuoting(true); setActErr(null);
+                    try { setCombined((await onwardPayApi.combinedQuote(orderId, req.id)).quote); }
+                    catch (e) { setActErr(errMsg(e)); }
+                    finally { setQuoting(false); }
+                  }}>{quoting ? "Calculating…" : combined ? "Pay delivery only instead" : "Pay product order + delivery together"}</button>
+              </div>
+            )}
+            {combined && req.status === "unpaid" && env?.canSubmit && env.canCombine && (
+              <div className="rounded-lg border p-3 space-y-2 text-xs" data-testid="combined-payment-details">
+                <p>Product order: {fmtCrypto(combined.productCryptoAmount)} {combined.wallet.currency}</p>
+                <p>Onward delivery: {fmtCrypto(combined.deliveryCryptoAmount)} {combined.wallet.currency}</p>
+                <p className="font-bold">Send one transfer: {fmtCrypto(combined.totalCryptoAmount)} {combined.wallet.currency}</p>
+                <p>Network: {combined.wallet.network}</p>
+                <CopyRow label="Combined wallet" value={combined.wallet.walletAddress} mono testId="combined-wallet" />
+                <p>Do not also pay the product payment panel. Both amounts will be recorded separately after this transfer is verified.</p>
+              </div>
+            )}
             {!env?.canSubmit && (req.status === "unpaid" || req.status === "pending_confirmation") && (
               <ErrorLine text="The order or reshipper assignment has changed. Do not send another payment; contact your organiser to resolve this request." />
             )}
             {req.status === "unpaid" && env?.canSubmit && (
               <form className="space-y-2" onSubmit={e => { e.preventDefault(); if (tx.trim()) void run("submit"); }}>
                 <ol className="text-[11px] space-y-1 list-decimal pl-4" style={{ color: "var(--t-muted)" }} data-testid="list-onward-pay-steps">
-                  <li>Send exactly {fmtCrypto(req.cryptoAmount)} {req.wallet.currency} on {req.wallet.network} to the address above. Use the copy buttons.</li>
+                  <li>Send exactly {fmtCrypto(combined?.totalCryptoAmount ?? req.cryptoAmount)} {req.wallet.currency} on {req.wallet.network} to the address above. Use the copy buttons.</li>
                   <li>Paste the transaction hash (TXID) below and choose Submit TXID.</li>
                   <li>{req.confirmationMode === "automatic" ? "We check the blockchain automatically." : "Your reshipper confirms receipt manually."}</li>
                 </ol>
@@ -219,6 +254,8 @@ function MemberCardBody({ orderId }: { orderId: string }) {
             )}
             {req.status === "paid" && <p className="text-[11px] flex items-center gap-1" style={{ color: "#16a34a" }}><ShieldCheck className="w-3.5 h-3.5" />Onward delivery paid and confirmed. Nothing more is due.</p>}
           </>
+        ) : env?.immediate ? (
+          <ImmediateDeliveryCheckout orderId={orderId} config={env.immediate} onReady={setEnv} />
         ) : (
           <div className="space-y-1" data-testid="state-onward-not-requested">
             <p className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>Not requested yet</p>
@@ -331,11 +368,11 @@ function ManagerBody({ gbId, fetcher, walletReadOnly }: { gbId: string; fetcher:
           ) : <WalletSettingsForm gbId={gbId} fetcher={fetcher} saved={data.settings} rails={data.rails}
             onSaved={s => setData(d => d ? { ...d, settings: s } : d)} />}
           <div className="rounded-xl p-3 text-xs space-y-1.5" data-testid="guide-onward-steps" style={{ background: "var(--t-blue-08, rgba(45,107,204,0.08))", border: "1px solid var(--t-blue-20, rgba(45,107,204,0.2))", color: "var(--t-text)" }}>
-            <p className="font-semibold">Enabling your wallet does not send payment requests.</p>
+            <p className="font-semibold">Accept payments lets members pay the EU matrix rate immediately.</p>
             <ol className="space-y-1 list-decimal pl-4" style={{ color: "var(--t-muted)" }}>
               <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>Wallet saved and enabled</span>{data.settings.enabled ? " (done)." : " (not yet). Tick Accept payments, then choose Save wallet."} Nothing is sent to members.</li>
-              <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>Review each charge.</span> Open an order below; the amount is prefilled from your matrix estimate and member preference. Adjust if needed.</li>
-              <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>Send payment request.</span> Only then does the member’s order page show the amount, your wallet and TXID instructions.</li>
+              <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>Members can pay now.</span> They confirm their name, address, country, mobile and email on their order page, then pay your matrix rate.</li>
+              <li><span className="font-semibold" style={{ color: "var(--t-text)" }}>For a different charge, send a request.</span> Review an order below, adjust the amount if needed and send it. Existing requests retain their original amount and wallet.</li>
             </ol>
           </div>
           <div className="space-y-2">
@@ -369,7 +406,7 @@ function WalletSettingsForm({ gbId, fetcher, saved, rails, onSaved }: {
       const r = await onwardPayApi.saveSettings(fetcher, gbId, { ...draft, walletAddress: draft.walletAddress.trim() });
       setDirty(false); setDraft(r.settings); onSaved(r.settings);
       setMsg({ ok: true, text: r.settings.enabled
-        ? "Wallet saved. Next, choose Review request beside an order below, check the amount, then send the payment request. Existing requests keep their original wallet."
+        ? "Wallet saved. Members can now pay the EU matrix rate from their order page. You can also review and send individual requests below. Existing requests keep their original wallet."
         : "Wallet saved. Enable Accept payments before issuing new requests. Existing requests keep their original wallet." });
     } catch (e) { setMsg({ ok: false, text: errMsg(e) }); } // draft retained
     finally { setSaving(false); }

@@ -627,6 +627,9 @@ export default function OrderForm() {
   // Leg country is only a routing fallback; destination prefers shipping country then account country.
   const legCountryCode = myCountryLeg?.countryCode ?? null;
   const onwardDestination = resolveShippingDestinationCountry(draft.shippingCountry, account?.country, legCountryCode);
+  const [euMatrixApplicable, setEuMatrixApplicable] = useState(false);
+  const requiresEuContact = !!gbId && draft.orderType !== "wholesale" && !draft.additionOfOrderId
+    && !draft.directShippingRequested && (euMatrixApplicable || !!draft.onwardDeliveryMethod);
   const setOnwardCountryRef = useRef(draft.setOnwardDeliveryCountry);
   setOnwardCountryRef.current = draft.setOnwardDeliveryCountry;
   useEffect(() => {
@@ -1149,10 +1152,20 @@ export default function OrderForm() {
 
     // For GB orders not using direct shipping, clear any stale address data.
     // For non-GB direct orders the address belongs to the customer — keep it.
-    if (gbId && !draft.directShippingRequested) {
+    if (gbId && !draft.directShippingRequested && !requiresEuContact) {
       draft.setShippingAddress("");
     }
 
+    if (requiresEuContact) {
+      if (!draft.onwardDeliveryMethod) { setError("Please choose your EU onward-delivery option"); return; }
+      if (!draft.shippingName.trim()) { setError("Please enter your full name for EU delivery"); return; }
+      if (!draft.shippingAddress.trim()) { setError("Please enter your delivery address for EU delivery"); return; }
+      if (!draft.shippingCountry.trim()) { setError("Please choose your country for EU delivery"); return; }
+      if (!/^\+?[\d\s().-]+$/.test(draft.shippingPhone.trim()) || draft.shippingPhone.replace(/\D/g, "").length < 7) {
+        setError("Please enter a valid mobile number including its country code"); return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.shippingEmail.trim())) { setError("Please enter a valid email address for EU delivery"); return; }
+    }
     // Validate shipping fields for non-GB direct orders
     if (!gbId) {
       if (!draft.shippingName.trim()) { setError("Please enter your full name"); return; }
@@ -1588,7 +1601,7 @@ export default function OrderForm() {
                       slot={gbId && !isWholesale && !isTopUp && !draft.directShippingRequested ? (
                         <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
                           kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
-                          value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} />
+                          value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} onApplicableChange={setEuMatrixApplicable} />
                       ) : undefined}
                       extras={{
                         notes: draft.notes,
@@ -2316,11 +2329,11 @@ export default function OrderForm() {
           {gbId && !isWholesale && !isTopUp && !draft.directShippingRequested && (
             <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
               kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
-              value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} />
+              value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} onApplicableChange={setEuMatrixApplicable} />
           )}
         </section>
 
-        {(draft.directShippingRequested || !gbId) && (
+        {(draft.directShippingRequested || !gbId || requiresEuContact) && (
           <section className="order-form-shipping space-y-2">
             <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping Details</p>
             <div className="rounded-xl p-4 bg-white border border-gray-100 shadow-sm space-y-3">
@@ -2345,7 +2358,7 @@ export default function OrderForm() {
                 />
               </div>
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Country</label>
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Country{requiresEuContact && " *"}</label>
                 <select
                   value={draft.shippingCountry}
                   onChange={e => draft.setShippingCountry(e.target.value)}
@@ -2357,7 +2370,7 @@ export default function OrderForm() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Phone</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Mobile{requiresEuContact && " *"}</label>
                   <input
                     type="tel"
                     placeholder="+44 7700 900000"
@@ -2367,7 +2380,7 @@ export default function OrderForm() {
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Email</label>
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Email{requiresEuContact && " *"}</label>
                   <input
                     type="email"
                     placeholder="jane@example.com"

@@ -27,11 +27,11 @@ Use the existing database-backed configuration store for these optional settings
 
 Separate onward-delivery payment requests are approved for existing orders, including closed group buys. Keep the original product payment, vendor shipping and order total untouched.
 
-Enabling “Accept payments” only enables the wallet. Keep reshipper-approved requests; do not automatically make selected matrix estimates payable.
+Enabling “Accept payments” now lets members explicitly start payment at their current EU matrix rate without waiting for a reshipper-issued request. Keep staff-issued requests for custom amounts and preserve existing request snapshots.
 
-**Why:** The user explicitly chose to keep reshipper-approved requests rather than let members pay their matrix price immediately.
+**Why:** The user changed the previous request-only policy: “we'll be accepting payments right away” and approved immediate separate delivery payment.
 
-**How to apply:** Make request creation easy to find, but require review and submission of each final charge before exposing member payment instructions.
+**How to apply:** Remove the Optional pill. Require Name, Address, Country, Mobile and Email for EU matrix delivery, including older orders before payment. Resolve the price and wallet on the server; never create a charge as a GET side effect.
 
 Treat collection as a later, separate task on existing paid group buys, potentially a month after ordering when the reshipper receives the shipment. Explain the reshipper and member steps simply within both interfaces, rather than relying on support explanations.
 
@@ -43,7 +43,7 @@ The reshipper provides their crypto address for onward-delivery charges. Manual 
 
 **Why:** The user wants reshippers to collect the actual onward-delivery charge after product ordering has closed, and explicitly requested both confirmation modes.
 
-**How to apply:** Estimates alone never create an amount owed. Track an explicitly requested onward charge separately. Automatic acceptance must mean verified blockchain receipt, not accepting a submitted transaction ID without verification.
+**How to apply:** Estimates alone never create an amount owed. Track a staff-issued or explicitly member-started onward charge separately. Automatic acceptance must mean verified blockchain receipt, not accepting a submitted transaction ID without verification.
 
 Use a separate onward-delivery wallet setting for each reshipper within the group buy, never the product-payment wallet or a global wallet fallback.
 
@@ -62,6 +62,12 @@ The EU quantity-band matrix is only for EU onward-delivery estimates. Other dest
 **Why:** The user clarified that only the EU needs the multi-country matrix and non-EU country-specific options should not be shown to other countries.
 
 **How to apply:** Render the EU matrix picker only for EU destination countries; for UK/GB and other non-EU destinations, omit the component and do not request an estimate. Show only global or destination-matching custom options to members, reject mismatched selections on the server, and retain the standard global methods if no custom option matches.
+
+Members may optionally pay products and onward delivery together only when the receiving wallet, token and network match. Keep both allocations separate and never add delivery to the product order total.
+
+**Why:** The user requested “the option to keep the payments together” and explicitly selected “Combine only when both wallets match.”
+
+**How to apply:** Combined verification must verify the sum, atomically allocate one reserved transaction to those two charges only, and preserve manual reshipper confirmation when configured. Separate transfers remain available; an already-paid product order must never be charged again.
 
 Country-scoped checkout must submit the same effective destination used to display the option: explicit shipping country, then account country, then country-leg code.
 

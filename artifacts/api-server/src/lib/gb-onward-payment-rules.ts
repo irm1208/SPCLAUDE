@@ -72,6 +72,7 @@ export type OnwardCharge = {
   verificationNote: string | null; createdAt: string; submittedAt: string | null;
   confirmedAt: string | null; confirmedBy: string | null;
   lastCheckedAt?: string;
+  combined?: { quoteId: string; productCryptoAmount: number; totalCryptoAmount: number; verified: boolean };
   attempts: { txHash: string; reason: string; rejectedAt: string }[];
 };
 export type OnwardLedger = { request: OnwardCharge | null; history: OnwardCharge[] };

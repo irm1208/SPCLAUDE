@@ -11,7 +11,7 @@ vi.mock("./crypto-pricing", async importOriginal => ({
   fetchFiatToUsd: vi.fn(async () => 1), fetchUsdPerCoin: vi.fn(async () => 1),
 }));
 vi.mock("./audit-log", () => ({ writeLog: vi.fn(async () => {}) }));
-vi.mock("./telegram", () => ({ notifyUser: vi.fn(async () => {}) }));
+vi.mock("./telegram", () => ({ notifyUser: vi.fn(async () => {}), notifyUserFromTemplate: vi.fn(async () => {}), sendAdminFromTemplate: vi.fn(async () => {}) }));
 const wallet = { enabled: true, confirmationMode: "manual", currency: "USDT", network: "Ethereum", walletAddress: `0x${"a".repeat(40)}` };
 const hash = `0x${"b".repeat(64)}`;
 const newBody = () => ({ idempotencyKey: randomUUID(), amount: 17.3, currency: "USD", method: "pickup" });
@@ -36,22 +36,25 @@ describe.skipIf(process.env.ONWARD_PAYMENT_DB_TESTS !== "1")("onward-payment tra
       await tx.insert(store.groupBuysTable).values({ id, name: "Synthetic closed onward payment", organiserId: owner, currency: "USD", status: "closed" });
       await tx.insert(store.accountGroupBuysTable).values({ id: randomUUID(), accountId: member, groupBuyId: id });
       await tx.insert(store.gbReshippersTable).values({ id: assignmentId, gbId: id, reshipperUsername: resh, country: "AT", enabled: true,
+        enabledPaymentMethods: { cryptoEnabled: true },
         reshipperPaymentDetails: { cryptoWalletAddress: `0x${"c".repeat(40)}`, cryptoCurrency: "USDT", cryptoNetwork: "Ethereum" } });
       await tx.insert(store.productsTable).values({ id: productId, name: "Synthetic kit", price: "20" });
       await tx.insert(store.ordersTable).values({
         id: orderId, code: `test-onward-${id}`, telegramUsername: member, groupBuyId: id, reshipperUsername: resh, shippingCountry: "AT",
+        shippingName: "Synthetic Member", shippingAddress: "1 Example Road, Vienna 1010", shippingPhone: "+43 123456789", shippingEmail: "member@example.test",
         deliveryMethod: "Existing delivery", deliveryPrice: "3", vendorShipping: "9", productSubtotal: "100", grandTotal: "112",
         paymentStatus: "confirmed", paymentUsdAmount: "112",
       });
       await tx.insert(store.orderLineItemsTable).values({ id: randomUUID(), orderId, productId, productName: "Synthetic kit",
         quantity: "5", unitPrice: "20", lineTotal: "100" });
       const select = vi.spyOn(store.db, "select").mockImplementation((...args: any[]) => (tx.select as any)(...args));
+      const insert = vi.spyOn(store.db, "insert").mockImplementation((...args: any[]) => (tx.insert as any)(...args));
       const transaction = vi.spyOn(store.db, "transaction").mockImplementation((fn: any) => fn(tx));
       try {
         await estimates.saveOnwardMatrix(id, resh, { username: owner }, suppliedEuMatrix());
         await api.saveOnwardPaymentSettings(id, { username: resh }, wallet);
         await run(store, api, { id, orderId, productId, assignmentId, owner, member, resh, other }, tx);
-      } finally { select.mockRestore(); transaction.mockRestore(); }
+      } finally { select.mockRestore(); insert.mockRestore(); transaction.mockRestore(); }
       throw rollback;
     })).rejects.toBe(rollback);
   }
@@ -70,6 +73,83 @@ describe.skipIf(process.env.ONWARD_PAYMENT_DB_TESTS !== "1")("onward-payment tra
       await estimates.saveOnwardMatrix(f.id, f.resh, { username: f.owner }, { ...suppliedEuMatrix(), enabled: false });
       expect(await api.readOnwardPayment(f.orderId, { username: f.member }, "member"))
         .toMatchObject({ awaitingRequest: false });
+    });
+  });
+  it("lets the member pay the current matrix rate immediately without a reshipper request", async () => {
+    await fixture(async (store, api, f, tx) => {
+      const before = (await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
+      expect((await api.readOnwardPayment(f.orderId, { username: f.member }, "member")).immediate.options).toHaveLength(2);
+      await expect(api.startMemberOnwardPayment(f.orderId, { username: f.other }, { method: "pickup", idempotencyKey: randomUUID() })).rejects.toMatchObject({ status: 403 });
+      const data = await api.startMemberOnwardPayment(f.orderId, { username: f.member }, {
+        method: "pickup", amount: 0.01, walletAddress: "attacker", idempotencyKey: randomUUID(),
+      });
+      expect(data.request).toMatchObject({ amount: 17.3, currency: "USD", wallet: { walletAddress: wallet.walletAddress }, status: "unpaid" });
+      expect((await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0])
+        .toMatchObject({ grandTotal: before.grandTotal, paymentStatus: "confirmed", paymentTxHash: before.paymentTxHash });
+    });
+  });
+  it("requires complete contact details and an enabled wallet before immediate payment", async () => {
+    await fixture(async (store, api, f, tx) => {
+      await tx.update(store.ordersTable).set({ shippingEmail: null }).where(eq(store.ordersTable.id, f.orderId));
+      await expect(api.startMemberOnwardPayment(f.orderId, { username: f.member }, { method: "pickup", idempotencyKey: randomUUID() }))
+        .rejects.toThrow(/email/i);
+      await api.saveOnwardPaymentSettings(f.id, { username: f.resh }, { ...wallet, enabled: false });
+      await expect(api.startMemberOnwardPayment(f.orderId, { username: f.member }, {
+        method: "pickup", shippingEmail: "member@example.test", idempotencyKey: randomUUID(),
+      })).rejects.toMatchObject({ status: 409 });
+      expect((await api.readOnwardPayment(f.orderId, { username: f.member }, "member")).request).toBeNull();
+    });
+  });
+  it("rejects combining different wallets and confirms one verified matching transfer without changing totals", async () => {
+    await fixture(async (store, api, f, tx) => {
+      await tx.update(store.ordersTable).set({ paymentStatus: "unpaid", paymentUsdAmount: null }).where(eq(store.ordersTable.id, f.orderId));
+      await tx.update(store.groupBuysTable).set({ paymentsEnabled: true }).where(eq(store.groupBuysTable.id, f.id));
+      await tx.insert(store.siteConfigTable).values({ key: "paymentRoutingEnabled", value: "true" })
+        .onConflictDoUpdate({ target: store.siteConfigTable.key, set: { value: "true" } });
+      await api.createOnwardPayment(f.id, f.orderId, { username: f.resh }, newBody());
+      let data = await api.readOnwardPayment(f.orderId, { username: f.member }, "member");
+      await expect(api.quoteCombinedOnwardPayment(f.orderId, data.request.id, { username: f.member })).rejects.toThrow(/different wallets/i);
+      await tx.update(store.gbReshippersTable).set({ reshipperPaymentDetails: {
+        cryptoWalletAddress: wallet.walletAddress, cryptoCurrency: "USDT", cryptoNetwork: "Ethereum",
+      } }).where(eq(store.gbReshippersTable.id, f.assignmentId));
+      const { quote } = await api.quoteCombinedOnwardPayment(f.orderId, data.request.id, { username: f.member });
+      expect(quote).toMatchObject({ productCryptoAmount: 112, deliveryCryptoAmount: 17.3, totalCryptoAmount: 129.3 });
+      chain.verify.mockResolvedValue({ verified: true, amountUsdt: 129.3, blockConfirmations: 6 });
+      data = await api.payCombinedOnward(f.orderId, data.request.id, { username: f.member }, { quoteId: quote.id, txHash: hash });
+      expect(data).toMatchObject({ combinedVerified: true, request: { status: "pending_confirmation", combined: { verified: true } } });
+      const [paid] = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
+      expect(paid).toMatchObject({ paymentStatus: "confirmed", paymentTxHash: hash, grandTotal: "112.00" });
+      expect(await api.reserveProductPaymentTransaction(hash, randomUUID())).toBe(false);
+      await expect(api.manageOnwardPayment(f.id, f.orderId, data.request.id, { username: f.resh }, "reject", "reject"))
+        .rejects.toThrow(/already verified/i);
+      await api.manageOnwardPayment(f.id, f.orderId, data.request.id, { username: f.resh }, "confirm");
+      expect((await api.payCombinedOnward(f.orderId, data.request.id, { username: f.member }, { quoteId: quote.id, txHash: hash })).combinedVerified).toBe(true);
+    });
+  });
+  it("does not mark either payment paid for an underpaid combined transfer or an edited order", async () => {
+    await fixture(async (store, api, f, tx) => {
+      await tx.update(store.ordersTable).set({ paymentStatus: "unpaid", paymentUsdAmount: null }).where(eq(store.ordersTable.id, f.orderId));
+      await tx.update(store.groupBuysTable).set({ paymentsEnabled: true, organiserPayments: {
+        cryptoWalletAddress: wallet.walletAddress, cryptoCurrency: "USDT", cryptoNetwork: "Ethereum",
+      } }).where(eq(store.groupBuysTable.id, f.id));
+      await tx.update(store.gbReshippersTable).set({ reshipperPaymentDetails: {
+        cryptoWalletAddress: wallet.walletAddress, cryptoCurrency: "USDT", cryptoNetwork: "Ethereum",
+      } }).where(eq(store.gbReshippersTable.id, f.assignmentId));
+      await tx.insert(store.siteConfigTable).values({ key: "paymentRoutingEnabled", value: "true" })
+        .onConflictDoUpdate({ target: store.siteConfigTable.key, set: { value: "true" } });
+      const data = await api.createOnwardPayment(f.id, f.orderId, { username: f.resh }, newBody());
+      const { quote } = await api.quoteCombinedOnwardPayment(f.orderId, data.request.id, { username: f.member });
+      chain.verify.mockResolvedValue({ verified: false, underpayment: true, amountPaid: 112, shortfall: 17.3 });
+      await expect(api.payCombinedOnward(f.orderId, data.request.id, { username: f.member }, { quoteId: quote.id, txHash: hash }))
+        .rejects.toThrow(/not verified yet/i);
+      const [unpaid] = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
+      expect(unpaid.paymentStatus).toBe("unpaid");
+      expect((await api.readOnwardPayment(f.orderId, { username: f.member }, "member")).request.status).toBe("unpaid");
+      await tx.update(store.ordersTable).set({ grandTotal: "150" }).where(eq(store.ordersTable.id, f.orderId));
+      chain.verify.mockClear();
+      await expect(api.payCombinedOnward(f.orderId, data.request.id, { username: f.member }, { quoteId: quote.id, txHash: hash }))
+        .rejects.toThrow(/changed/i);
+      expect(chain.verify).not.toHaveBeenCalled();
     });
   });
   it("creates a closed-GB charge, preserves the original order and snapshots a separate wallet", async () => {
@@ -231,6 +311,7 @@ describe.skipIf(process.env.ONWARD_PAYMENT_DB_TESTS !== "1")("onward-payment tra
         await tx.insert(store.productsTable).values({ id: productId, name: "Synthetic concurrent kit", price: "20" });
         for (const orderId of orderIds) {
           await tx.insert(store.ordersTable).values({ id: orderId, code: `concurrent-${orderId}`, telegramUsername: member, groupBuyId: id,
+            shippingName: "Synthetic Member", shippingAddress: "1 Example Road, Vienna 1010", shippingPhone: "+43 123456789", shippingEmail: "member@example.test",
             reshipperUsername: resh, shippingCountry: "AT", deliveryMethod: "Existing delivery", deliveryPrice: "3",
             vendorShipping: "9", productSubtotal: "20", grandTotal: "32", paymentStatus: "confirmed" });
           await tx.insert(store.orderLineItemsTable).values({ id: randomUUID(), orderId, productId, productName: "Synthetic kit",

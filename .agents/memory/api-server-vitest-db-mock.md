@@ -25,3 +25,10 @@ Auth middleware is mocked per-file (e.g. `../../middleware/require-reshipper`) r
 **Why production works:** the real `requireReshipper`/`requireOrganiser` pass such requests through via the admin-impersonation `next()` branch, so non-matching paths fall through to the next router.
 
 **How to apply:** in tests, isolate each guard by mounting ONLY the router under test (`buildApp(reshipperDispatchRouter)` vs `buildApp(organiserDispatchRouter)`), don't mount both.
+
+## Rollback-fixture transaction isolation
+When redirecting a service's database calls into a rollback-only test transaction, intercept every operation it actually uses, including direct inserts outside its transaction wrapper.
+
+**Why:** A transaction-claim insert through the unmocked outer connection can block on the fixture's own uncommitted claim. After test timeout rolls the fixture back, that waiting insert may proceed and leave an orphan test reservation.
+
+**How to apply:** Route direct insert/select calls into the fixture transaction, restore spies in finally, and mock notification side effects. Use real separate transactions only for deliberate concurrency tests, with explicit fixture cleanup.

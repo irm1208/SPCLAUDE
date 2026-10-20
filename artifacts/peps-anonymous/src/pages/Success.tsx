@@ -9,6 +9,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { useState, useEffect } from "react";
 import PaymentPanel from "@/components/PaymentPanel";
+import { OnwardPaymentCard } from "@/components/onward-delivery/OnwardPayments";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { useAccount, useAccountOrders, useLogout, useMyGroupBuys } from "@/hooks/use-account";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
@@ -474,6 +475,9 @@ export default function Success() {
           )}
         </AnimatePresence>
 
+        {orderId && receipt?.groupBuyId && <div className="w-full mb-5"><OnwardPaymentCard orderId={orderId} onProductPaid={(hash, currency) => {
+          setConfirmedTxHash(hash); setConfirmedCurrency(currency);
+        }} /></div>}
         {orderId && receipt && !confirmedTxHash && receipt.paymentsEnabled !== false && (receipt.amountDue ?? receipt.grandTotal) > 0 && (
           <motion.div
             initial={{ y: 20, opacity: 0 }}

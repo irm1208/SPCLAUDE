@@ -7,7 +7,8 @@ import { GroupUpdateError, type UpdateActor } from "../lib/group-buy-updates-mod
 import { OnwardDeliveryError } from "../lib/gb-onward-delivery-rules";
 import { type OnwardOrderScope } from "../lib/gb-onward-delivery";
 import { createOnwardPayment, listOnwardPayments, manageOnwardPayment, readOnwardPayment,
-  saveOnwardPaymentSettings, submitOnwardPayment, verifyOnwardPayment, organiserOnwardActor } from "../lib/gb-onward-payments";
+  saveOnwardPaymentSettings, submitOnwardPayment, verifyOnwardPayment, organiserOnwardActor, startMemberOnwardPayment,
+  quoteCombinedOnwardPayment, payCombinedOnward } from "../lib/gb-onward-payments";
 
 const router = Router();
 const param = (req: Request, name: string) => String(req.params[name] ?? "");
@@ -58,6 +59,15 @@ router.get(managerOrders, managerAuth, noCache, async (req, res) => {
 });
 router.get(memberRoot, requireAccount, noCache, async (req, res) => {
   res.json(await readOnwardPayment(param(req, "orderId"), actor(req), "member"));
+});
+router.post(`${memberRoot}/start`, requireAccount, noCache, async (req, res) => {
+  res.json(await startMemberOnwardPayment(param(req, "orderId"), actor(req), req.body ?? {}));
+});
+router.post(`${memberRoot}/:requestId/combined-quote`, requireAccount, noCache, async (req, res) => {
+  res.json(await quoteCombinedOnwardPayment(param(req, "orderId"), param(req, "requestId"), actor(req)));
+});
+router.post(`${memberRoot}/:requestId/combined-pay`, requireAccount, noCache, async (req, res) => {
+  res.json(await payCombinedOnward(param(req, "orderId"), param(req, "requestId"), actor(req), req.body ?? {}));
 });
 router.post(`${memberRoot}/:requestId/submit`, requireAccount, noCache, async (req, res) => {
   res.json(await submitOnwardPayment(param(req, "orderId"), param(req, "requestId"), actor(req), req.body?.txHash));

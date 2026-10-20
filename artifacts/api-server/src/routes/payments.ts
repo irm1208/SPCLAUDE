@@ -206,7 +206,7 @@ function labelPaymentMethod(txHash: string | null | undefined, method?: string):
   return "—";
 }
 
-async function firePaymentNotifications(
+export async function firePaymentNotifications(
   order: PaymentOrderFields,
   event: "confirmed" | "submitted",
   method?: string,
@@ -288,6 +288,24 @@ export async function toUsdIfGbp(amount: number, groupBuyId: string | null): Pro
   if (!gb || cur === "USD") return amount;
   const rate = await fetchFiatToUsd(cur);
   return Math.round(amount * rate * 100) / 100;
+}
+
+/** Shared with the authenticated combined product/onward checkout. */
+export async function assertCombinedProductPaymentsOpen(order: typeof ordersTable.$inferSelect, database: Pick<typeof db, "select"> = db) {
+  const { OnwardDeliveryError } = await import("../lib/gb-onward-delivery-rules");
+  if (!order.groupBuyId || order.directShippingRequested || order.deletedAt || ["Cancelled", "Refunded"].includes(order.status))
+    throw new OnwardDeliveryError("This order is not eligible for combined payment.", 409);
+  const [gb] = await database.select().from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
+  if (!gb?.paymentsEnabled) throw new OnwardDeliveryError("Product payments are not currently open for this group buy.", 403);
+  if (order.countryLegId) {
+    const [leg] = await database.select().from(gbCountryLegsTable).where(eq(gbCountryLegsTable.id, order.countryLegId));
+    if (leg?.paymentBlocked) throw new OnwardDeliveryError("Payments are paused for your shipping country.", 403);
+  }
+  const [account] = await database.select({ country: accountsTable.country }).from(accountsTable)
+    .where(eq(accountsTable.telegramUsername, order.telegramUsername.replace(/^@/, "")));
+  const country = normaliseCountry(account?.country ?? order.shippingCountry);
+  if ((gb.allowedCountries?.length && (!country || !gb.allowedCountries.includes(country)))
+    || (country && gb.excludedCountries?.includes(country))) throw new OnwardDeliveryError("Payments from your country are not currently accepted.", 403);
 }
 
 /**

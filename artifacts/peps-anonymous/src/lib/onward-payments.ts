@@ -20,7 +20,11 @@ export interface Charge {
 }
 export interface Envelope { request: Charge | null; history: Charge[]; canManage: boolean; canSubmit: boolean;
   /** Member view: true when this order is eligible for onward delivery but no request was sent yet. */
-  awaitingRequest?: boolean }
+  awaitingRequest?: boolean; canCombine?: boolean; needsContact?: boolean;
+  immediate?: { options: { method: "pickup" | "home"; amount: number }[]; currency: string; selectedMethod: "pickup" | "home" | null;
+    contact: DeliveryContact } | null }
+export type DeliveryContact = { shippingName: string; shippingAddress: string; shippingCountry: string; shippingPhone: string; shippingEmail: string };
+export type CombinedQuote = { id: string; productCryptoAmount: number; deliveryCryptoAmount: number; totalCryptoAmount: number; wallet: Charge["wallet"] };
 export interface ReshipperOrderRow {
   id: string; code: string; username: string; country: string; kits: number; orderStatus: string;
   canRequest: boolean; estimate: OnwardEstimate; request: Charge | null;
@@ -57,6 +61,12 @@ export const onwardPayApi = {
   action: (f: Fetcher, gbId: string, orderId: string, requestId: string, act: "confirm" | "reject" | "cancel", body: object = {}) =>
     call<Envelope>(f, `/api/reshipper/gb/${e(gbId)}/orders/${e(orderId)}/onward-payments/${e(requestId)}/${act}`, "POST", body),
   member: (orderId: string, signal?: AbortSignal) => call<Envelope>(defaultFetcher, `/api/orders/${e(orderId)}/onward-payments`, "GET", undefined, undefined, signal),
+  start: (orderId: string, body: DeliveryContact & { method: "pickup" | "home"; idempotencyKey: string }) =>
+    call<Envelope>(defaultFetcher, `/api/orders/${e(orderId)}/onward-payments/start`, "POST", body),
+  combinedQuote: (orderId: string, requestId: string) =>
+    call<{ quote: CombinedQuote }>(defaultFetcher, `/api/orders/${e(orderId)}/onward-payments/${e(requestId)}/combined-quote`, "POST", {}),
+  combinedPay: (orderId: string, requestId: string, quoteId: string, txHash: string) =>
+    call<Envelope>(defaultFetcher, `/api/orders/${e(orderId)}/onward-payments/${e(requestId)}/combined-pay`, "POST", { quoteId, txHash }),
   submit: (orderId: string, requestId: string, txHash: string) => call<Envelope>(defaultFetcher, `/api/orders/${e(orderId)}/onward-payments/${e(requestId)}/submit`, "POST", { txHash }),
   verify: (orderId: string, requestId: string) => call<Envelope>(defaultFetcher, `/api/orders/${e(orderId)}/onward-payments/${e(requestId)}/verify`, "POST", {}),
   inspect: (s: ReadonlySource, signal?: AbortSignal) => {

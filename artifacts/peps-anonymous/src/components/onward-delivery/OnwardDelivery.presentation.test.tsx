@@ -40,8 +40,8 @@ it("keeps estimates in a cohesive blue card without changing optional selection 
     expect(card.querySelector(".onward-estimate-options")).not.toBeNull();
     expect(card.querySelector(".onward-estimate-context")?.textContent).toContain("11 kits");
     expect(card.textContent).toContain("Germany");
-    expect(card.textContent).toContain("pay when requested");
-    expect(card.textContent).toContain("Estimate only");
+    expect(card.textContent).toContain("Pay onward delivery after placing your order");
+    expect(card.querySelector(".onward-estimate-optional")).toBeNull();
     expect(card.textContent).toContain("Not included in your order total");
     const home = card.querySelector('[data-testid="button-onward-home"]') as HTMLButtonElement;
     const pickup = card.querySelector('[data-testid="button-onward-pickup"]') as HTMLButtonElement;

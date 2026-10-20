@@ -1,4 +1,4 @@
-import { getOnwardOrderPreference, saveOnwardOrderPreference } from "../lib/gb-onward-delivery";
+import { getOnwardOrderPreference, saveOnwardOrderPreference, validateEuDeliveryCheckout } from "../lib/gb-onward-delivery";
 import { OnwardDeliveryError, validOnwardMethod } from "../lib/gb-onward-delivery-rules";
 import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
 import { assertSupplierOrderEditable } from "../lib/supplier-batch-protection";
@@ -635,6 +635,12 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     }
   }
 
+  if (normalizedGroupBuyId && !isWholesaleOrder) {
+    try { await validateEuDeliveryCheckout(normalizedGroupBuyId, { username: tg }, req.body); }
+    catch (error) {
+      res.status(error instanceof OnwardDeliveryError ? error.status : 400).json({ error: (error as Error).message }); return;
+    }
+  }
   // ── Addition (top-up) order validation ────────────────────────────────────
   // A non-null additionOfOrderId marks this as a free-shipping "addition" of a
   // parent order: it rides along with the parent's shipment, so every shipping
@@ -1590,10 +1596,10 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       countryLegId: resolvedCountryLegId,
       routingType: codeRoutingType ?? (normalizedGroupBuyId ? "direct" : null),
       orderType: clientOrderType === "wholesale" ? "wholesale" : null,
-      shippingName: ((clientOrderType === "wholesale" || clientDirectShippingRequested === true) && clientShippingName) ? String(clientShippingName).trim().slice(0, 120) || null : null,
+      shippingName: clientShippingName ? String(clientShippingName).trim().slice(0, 120) || null : null,
       shippingPhone: clientShippingPhone ? String(clientShippingPhone).trim().slice(0, 40) || null : null,
       shippingEmail: clientShippingEmail ? String(clientShippingEmail).trim().slice(0, MAX_SHIPPING_EMAIL_LENGTH) || null : null,
-      shippingAddress: ((clientOrderType === "wholesale" || clientDirectShippingRequested === true) && clientShippingAddress) ? String(clientShippingAddress).trim().slice(0, 500) || null : null,
+      shippingAddress: clientShippingAddress ? String(clientShippingAddress).trim().slice(0, 1024) || null : null,
       ipAddress: (() => { const xff = req.headers["x-forwarded-for"]; const raw = Array.isArray(xff) ? xff[0] : xff; return raw?.split(",")[0]?.trim() || req.ip || null; })(),
       couponCode: appliedCouponCode,
       couponDiscount: couponDiscount.toFixed(2),
@@ -2251,6 +2257,12 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     return;
   }
 
+  if (order.groupBuyId && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared") {
+    try { await validateEuDeliveryCheckout(order.groupBuyId, { username: tg }, { ...order, ...req.body }, rawId); }
+    catch (error) {
+      res.status(error instanceof OnwardDeliveryError ? error.status : 400).json({ error: (error as Error).message }); return;
+    }
+  }
   // Shared wholesale orders are materialised from a locked shared parcel. Their items
   // and per-member shipping split are frozen at lock time and managed at the share
   // level — editing an individual order here would drop the cross-member shipping
@@ -2514,6 +2526,13 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   if (activeHalfClaims.length) {
     if (!order.groupBuyId) throw new HalfKitError("This reserved half-kit order needs organiser review.");
     const result = await editOrderWithHalfKits(tx, rawId, order.groupBuyId, req.body);
+    if (req.body.onwardDeliveryMethod) await tx.update(ordersTable).set({
+      shippingName: String(clientShippingName ?? order.shippingName ?? "").trim(),
+      shippingAddress: String(clientShippingAddress ?? order.shippingAddress ?? "").trim(),
+      shippingPhone: String(clientShippingPhone ?? order.shippingPhone ?? "").trim(),
+      shippingEmail: String(clientShippingEmail ?? order.shippingEmail ?? "").trim(),
+      shippingCountry: String(clientShippingCountry ?? order.shippingCountry ?? "").trim(),
+    }).where(eq(ordersTable.id, rawId));
     await saveOnwardOrderPreference(tx, rawId, req.body.onwardDeliveryMethod);
     return result;
   }
@@ -2548,12 +2567,12 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
         : (clientDirectShippingRequested === true && clientDirectShippingCost != null
           ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
           : null),
-      ...(isWholesaleOrder && {
-        shippingName: clientShippingName ? String(clientShippingName).trim().slice(0, 256) : null,
-        shippingPhone: clientShippingPhone ? String(clientShippingPhone).trim().slice(0, 64) : null,
-        shippingEmail: clientShippingEmail ? String(clientShippingEmail).trim().slice(0, 256) : null,
-        shippingAddress: clientShippingAddress ? String(clientShippingAddress).trim().slice(0, 1024) : null,
-        shippingCountry: clientShippingCountry ? String(clientShippingCountry).trim().slice(0, 128) : null,
+      ...((isWholesaleOrder || (order.groupBuyId && req.body.onwardDeliveryMethod)) && {
+        shippingName: String(clientShippingName ?? order.shippingName ?? "").trim().slice(0, 256) || null,
+        shippingPhone: String(clientShippingPhone ?? order.shippingPhone ?? "").trim().slice(0, 64) || null,
+        shippingEmail: String(clientShippingEmail ?? order.shippingEmail ?? "").trim().slice(0, 256) || null,
+        shippingAddress: String(clientShippingAddress ?? order.shippingAddress ?? "").trim().slice(0, 1024) || null,
+        shippingCountry: String(clientShippingCountry ?? order.shippingCountry ?? "").trim().slice(0, 128) || null,
       }),
     })
     .where(refundMutableOrderWhere(eq(ordersTable.id, rawId)))

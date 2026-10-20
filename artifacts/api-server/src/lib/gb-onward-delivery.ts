@@ -4,6 +4,7 @@ import {
   ordersTable, orderLineItemsTable, siteConfigTable,
 } from "@workspace/db";
 import { groupUpdatesAccess } from "./group-buy-updates";
+import { deliveryContactError } from "./eu-delivery-checkout";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import {
   estimateOnwardDelivery, normalizeEuCountry, OnwardDeliveryError, parseOnwardMatrix,
@@ -150,6 +151,18 @@ export async function memberOnwardPreview(gbId: string, actor: UpdateActor, body
 }
 
 export type OnwardOrderScope = "member" | "admin" | "organiser" | "reshipper";
+export async function validateEuDeliveryCheckout(gbId: string, actor: UpdateActor, body: Record<string, any>, orderId?: string) {
+  if (body.directShippingRequested === true || body.additionOfOrderId) return false;
+  const estimate = await memberOnwardPreview(gbId, actor, {
+    country: body.shippingCountry, kits: (body.lineItems ?? []).reduce((n: number, item: any) => n + Number(item.quantity), 0),
+    reshipperCode: body.reshipperCode, orderId,
+  });
+  if (!estimate.configured || !estimate.options.length) return false;
+  const error = deliveryContactError(body);
+  if (error) throw new OnwardDeliveryError(error);
+  if (!estimate.options.some(option => option.method === body.onwardDeliveryMethod)) throw new OnwardDeliveryError("Choose your EU onward-delivery option.");
+  return true;
+}
 export async function onwardOrderAccess(database: DataAccess, orderId: string, actor: UpdateActor, scope: OnwardOrderScope, gbId?: string, lock = false) {
   const query = database.select().from(ordersTable).where(and(eq(ordersTable.id, orderId), isNull(ordersTable.deletedAt))).limit(1);
   const [order] = await (lock ? query.for("update") : query);
@@ -166,7 +179,7 @@ export async function onwardOrderAccess(database: DataAccess, orderId: string, a
   }
   return order;
 }
-async function estimateForOrder(database: DataAccess, order: typeof ordersTable.$inferSelect) {
+export async function estimateForOrder(database: DataAccess, order: typeof ordersTable.$inferSelect) {
   const lines = await database.select({ quantity: orderLineItemsTable.quantity }).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, order.id));
   const kits = lines.reduce((sum, row) => sum + Number(row.quantity), 0);
   const country = order.shippingCountry || (await accountFor(database, order.telegramUsername))?.country;

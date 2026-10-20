@@ -3,6 +3,7 @@ import { writeFileSync } from "node:fs";
 import React, { act } from "react";
 import { after, afterEach, before, test } from "node:test";
 import type { Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // @ts-expect-error Existing workspace browser-test dependency.
 import { JSDOM } from "../../../../../node_modules/.pnpm/jsdom@26.1.0_bufferutil@4.1.0_utf-8-validate@6.0.6/node_modules/jsdom/lib/api.js";
 // @ts-expect-error Existing workspace browser-test dependency.
@@ -26,7 +27,7 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify(data),
 const byId = (id: string) => document.querySelector(`[data-testid="${id}"]`) as HTMLElement;
 async function render(node: React.ReactNode) {
   const mount = document.createElement("div"); document.body.append(mount); root = createRoot(mount);
-  await act(async () => { root!.render(node); });
+  await act(async () => { root!.render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{node}</QueryClientProvider>); });
 }
 async function click(id: string) { await act(async () => { fireEvent.click(byId(id)); }); }
 async function type(id: string, value: string) { await act(async () => { fireEvent.change(byId(id), { target: { value } }); }); }
@@ -42,6 +43,41 @@ before(async () => {
 });
 afterEach(async () => {
   await act(async () => { root?.unmount(); }); root = undefined; document.body.innerHTML = ""; globalThis.fetch = originalFetch;
+});
+test("immediate EU checkout requires five contact fields and creates a server-priced delivery payment", async () => {
+  let submitted: any;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith("/start")) { submitted = JSON.parse(String(init?.body)); return json(env(makeCharge())); }
+    return json(env(null, { awaitingRequest: true, immediate: {
+      options: [{ method: "pickup", amount: 17.3 }], currency: "USD", selectedMethod: "pickup",
+      contact: { shippingName: "Jane Smith", shippingAddress: "1 Example Road", shippingCountry: "AT", shippingPhone: "+43 123456789", shippingEmail: "jane@example.test" },
+    } }));
+  };
+  await render(<Components.OnwardPaymentCard orderId="O" />);
+  for (const field of ["shippingName", "shippingAddress", "shippingCountry", "shippingPhone", "shippingEmail"])
+    assert.equal((byId(`input-eu-${field}`) as HTMLInputElement).required, true);
+  await click("button-eu-delivery-start");
+  assert.equal(submitted.method, "pickup");
+  assert.equal(submitted.shippingEmail, "jane@example.test");
+  assert.equal(submitted.amount, undefined);
+  assert.ok(byId("state-onward-unpaid"));
+});
+test("a matching-wallet combined checkout displays and submits the full amount, not delivery alone", async () => {
+  let submitted: any;
+  const quote = { id: "Q", productCryptoAmount: 100, deliveryCryptoAmount: 17.3, totalCryptoAmount: 117.3, wallet: settings };
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith("/combined-quote")) return json({ quote });
+    if (String(url).endsWith("/combined-pay")) { submitted = JSON.parse(String(init?.body)); return json(env(makeCharge({ status: "paid" }))); }
+    return json(env(makeCharge(), { canCombine: true }));
+  };
+  await render(<Components.OnwardPaymentCard orderId="O" />);
+  await click("button-onward-combine");
+  assert.match(byId("combined-payment-details").textContent ?? "", /117.3/);
+  assert.match(byId("list-onward-pay-steps").textContent ?? "", /117.3/);
+  await type("input-onward-txhash", "0x" + "a".repeat(64));
+  await click("button-onward-submit-tx");
+  assert.equal(submitted.quoteId, "Q");
+  assert.equal(submitted.txHash, "0x" + "a".repeat(64));
 });
 after(() => dom.window.close());
 
@@ -181,7 +217,7 @@ test("saving an enabled wallet never issues payment requests automatically", asy
   assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, true);
   await click("button-onward-wallet-save");
   assert.equal((byId("button-onward-open-request-O") as HTMLButtonElement).disabled, false);
-  assert.match(byId("status-onward-wallet-save").textContent ?? "", /Next, choose Review request/);
+  assert.match(byId("status-onward-wallet-save").textContent ?? "", /Members can now pay the EU matrix rate/);
   assert.deepEqual(writes, ["PUT"]);
   assert.equal(byId("card-onward-payment"), null);
 });
