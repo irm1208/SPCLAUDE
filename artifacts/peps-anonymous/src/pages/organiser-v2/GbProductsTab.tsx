@@ -1,3 +1,4 @@
+import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
 import {
   Fragment,
   useCallback,
@@ -490,6 +491,7 @@ export default function GbProductsTab({
 
   return (
     <div className="approved-inventory-allocation products-split">
+      <GroupBuyProductLabReports key={selectedGbId} gbId={selectedGbId} />
       <header className="products-split__header">
         <div>
           <span className="products-split__eyebrow">Catalogue workspace</span>

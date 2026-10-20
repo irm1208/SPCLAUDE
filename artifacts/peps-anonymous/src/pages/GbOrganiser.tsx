@@ -1,3 +1,4 @@
+import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
 import { EuCustomPostageImport, PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
 import type { KitPrices } from "@/lib/country-shipping-options";
 import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
@@ -5725,6 +5726,7 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
 
   return (
     <div className="space-y-4">
+      <GroupBuyProductLabReports key={gb.id} gbId={gb.id} />
       <div className="flex items-center justify-between">
         <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Products — {gb.name}</h2>
         <div className="flex gap-2">

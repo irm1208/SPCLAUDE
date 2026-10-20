@@ -8,3 +8,4 @@ description: Links to batch-code matching, dose and warehouse interpretation, ti
 - [Title-resolution consistency](lab-test-title-resolution-sites.md) — multiple customer views must resolve the same report title.
 - [Warehouse prefixes](lab-test-warehouse-codes.md) — warehouse codes must not change product or dose identity.
 - [Purity thresholds](lab-test-purity-policy.md) — non-HGH and HGH use distinct pass thresholds.
+- [Group-buy report selection](group-buy-lab-report-scope.md) — choosing one certificate is group-buy-specific, never a global product change.

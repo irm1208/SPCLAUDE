@@ -152,6 +152,8 @@ export const groupBuyProductsTable = pgTable("group_buy_products", {
   groupBuyId: text("group_buy_id").notNull().references(() => groupBuysTable.id, { onDelete: "cascade" }),
   productId: text("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
   priceOverride: numeric("price_override", { precision: 10, scale: 2 }),
+  // Keep explicit selection if a certificate is removed: unavailable, never broad auto-matching.
+  labReportId: integer("lab_report_id"),
   active: boolean("active").notNull().default(true),
   sortOrder: integer("sort_order"),
   maxPerCustomer: integer("max_per_customer"),

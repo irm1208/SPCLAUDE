@@ -343,13 +343,15 @@ function resolveSearchInfo(productName: string): {
   return { searchTerms, useExact, displayTitle, mgAmount, filteredMgAmount };
 }
 
-export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnly, batchPrefixes, onClose }: {
+export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnly, batchPrefixes, labReportId, onClose }: {
   productName: string;
   vendor?: string;
   gbLabSupplier?: string | null;
   janoshikOnly?: boolean;
   /** When provided, tests are matched by batch-code prefix instead of by name. */
   batchPrefixes?: string[];
+  /** Explicit group-product choice overrides all automatic matching. */
+  labReportId?: number | null;
   onClose: () => void;
 }) {
   const [allTests, setAllTests] = useState<LabTest[]>([]);
@@ -358,6 +360,7 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
   const [sort, setSort] = useState<SortOption>("newest");
   const [viewIdx, setViewIdx] = useState<number | null>(null);
   const [supplierFilter, setSupplierFilter] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const { searchTerms, useExact, displayTitle, filteredMgAmount } = resolveSearchInfo(productName);
   const effectiveSupplier = gbLabSupplier?.trim() || (vendor?.trim() ?? "");
@@ -369,18 +372,38 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
 
   useEffect(() => {
     setLoading(true);
+    setAllTests([]);
+    setLoadError("");
+    setViewIdx(null);
+    const controller = new AbortController();
+    let active = true;
+    const finish = () => { if (active) setLoading(false); };
+    const cleanup = () => { active = false; controller.abort(); };
+
+    if (labReportId != null) {
+      fetch(`/api/lab-tests/${labReportId}`, { signal: controller.signal })
+        .then(async response => {
+          if (!response.ok) throw new Error("The selected lab report is unavailable. Please contact the organiser.");
+          const report = await response.json();
+          if (report.id !== labReportId) throw new Error("The selected lab report could not be verified.");
+          if (active) setAllTests([report]);
+        })
+        .catch(error => { if (active) setLoadError(error.message || "Could not load the selected lab report."); })
+        .finally(finish);
+      return cleanup;
+    }
 
     // Batch-prefix mode: a single query matching by batch code (used by the
     // wholesale page, where product names don't reliably match test names).
     if (prefixMode) {
       const params = new URLSearchParams({ limit: "200", batchPrefix: prefixKey });
       if (effectiveSupplier) params.set("supplier", effectiveSupplier);
-      fetch(`/api/lab-tests?${params.toString()}`)
+      fetch(`/api/lab-tests?${params.toString()}`, { signal: controller.signal })
         .then(r => r.json())
-        .then(d => setAllTests((Array.isArray(d) ? d : []) as LabTest[]))
-        .catch(() => setAllTests([]))
-        .finally(() => setLoading(false));
-      return;
+        .then(d => { if (active) setAllTests((Array.isArray(d) ? d : []) as LabTest[]); })
+        .catch(() => { if (active) setAllTests([]); })
+        .finally(finish);
+      return cleanup;
     }
 
     const fetches = searchTerms.map(term => {
@@ -392,13 +415,14 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
       }
       if (effectiveSupplier) params.set("supplier", effectiveSupplier);
       if (filteredMgAmount != null) params.set("mgAmount", String(filteredMgAmount));
-      return fetch(`/api/lab-tests?${params.toString()}`)
+      return fetch(`/api/lab-tests?${params.toString()}`, { signal: controller.signal })
         .then(r => r.json())
         .then(d => (Array.isArray(d) ? d : []) as LabTest[])
         .catch(() => [] as LabTest[]);
     });
     Promise.all(fetches)
       .then(results => {
+        if (!active) return;
         const seen = new Set<number>();
         const combined: LabTest[] = [];
         for (const batch of results) {
@@ -411,16 +435,18 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
         }
         setAllTests(combined);
       })
-      .finally(() => setLoading(false));
+      .finally(finish);
+    return cleanup;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefixMode, prefixKey, searchKey, effectiveSupplier, filteredMgAmount]);
+  }, [prefixMode, prefixKey, searchKey, effectiveSupplier, filteredMgAmount, labReportId]);
 
   const supplierFiltered = useMemo(() => {
     let base = allTests;
+    if (labReportId != null) return base;
     if (janoshikOnly) base = base.filter(t => t.janoshikId != null && t.janoshikId !== "");
     if (!isProtocolContext || !supplierFilter) return base;
     return base.filter(t => t.supplier === supplierFilter);
-  }, [allTests, supplierFilter, isProtocolContext, janoshikOnly]);
+  }, [allTests, supplierFilter, isProtocolContext, janoshikOnly, labReportId]);
 
   const uniqueSuppliers = useMemo(() => {
     if (!isProtocolContext) return [];
@@ -547,12 +573,13 @@ export function LabReportPopup({ productName, vendor, gbLabSupplier, janoshikOnl
         {/* Test list — outer div is the scroll container (no flex to avoid shrinking cards) */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="px-4 pt-2 pb-6 flex flex-col gap-2.5">
+            {loadError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
             {loading && (
               <div className="flex justify-center py-12">
                 <Loader2 className="w-5 h-5 animate-spin text-slate-300" />
               </div>
             )}
-            {!loading && visibleTests.length === 0 && (
+            {!loading && !loadError && visibleTests.length === 0 && (
               <div className="text-center py-12 text-slate-400 text-sm">
                 {allTests.length === 0
                   ? "No lab reports found for this product"

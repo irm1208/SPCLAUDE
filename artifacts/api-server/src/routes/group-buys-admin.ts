@@ -1,3 +1,4 @@
+import { validateGroupProductLabReport } from "../lib/group-product-lab-report";
 import {
   assertNoActiveRefunds,
   refundMutableOrderWhere,
@@ -823,6 +824,7 @@ router.get("/admin/group-buys/:id/products", async (req, res): Promise<void> => 
       groupBuyId: groupBuyProductsTable.groupBuyId,
       productId: groupBuyProductsTable.productId,
       priceOverride: groupBuyProductsTable.priceOverride,
+      labReportId: groupBuyProductsTable.labReportId,
       active: groupBuyProductsTable.active,
       sortOrder: groupBuyProductsTable.sortOrder,
       maxPerCustomer: groupBuyProductsTable.maxPerCustomer,
@@ -898,6 +900,9 @@ router.patch("/admin/group-buys/:id/products/:productId", async (req, res): Prom
 
   // Build a strongly-typed partial update — no any casts
   const updates: Partial<Omit<GroupBuyProduct, "id" | "groupBuyId" | "productId">> = {};
+  const report = await validateGroupProductLabReport(req.body.labReportId);
+  if (!report.ok) { res.status(400).json({ error: report.error }); return; }
+  if (report.id !== undefined) updates.labReportId = report.id;
 
   if (priceOverride !== undefined) {
     updates.priceOverride = priceOverride != null && priceOverride !== ""

@@ -473,6 +473,7 @@ router.get("/group-buys/:id/products", requireAccount, async (req, res): Promise
       gbpId: groupBuyProductsTable.id,
       productId: groupBuyProductsTable.productId,
       priceOverride: groupBuyProductsTable.priceOverride,
+      labReportId: groupBuyProductsTable.labReportId,
       active: groupBuyProductsTable.active,
       sortOrder: groupBuyProductsTable.sortOrder,
       maxPerCustomer: groupBuyProductsTable.maxPerCustomer,
@@ -494,6 +495,7 @@ router.get("/group-buys/:id/products", requireAccount, async (req, res): Promise
   const result = rows.map(r => ({
     id: r.productId,
     gbpId: r.gbpId,
+    labReportId: r.labReportId,
     name: r.name,
     category: r.category,
     price: r.priceOverride != null ? parseFloat(r.priceOverride) : parseFloat(r.price),

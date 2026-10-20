@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
-import { filterShippingOptionsForCountry, resolveShippingDestinationCountry, customPostagePrice, type CustomPostageOption } from "@/lib/country-shipping-options";
+import { filterShippingOptionsForCountry, resolveShippingDestinationCountry, normalizeShippingCountry, customPostagePrice, type CustomPostageOption } from "@/lib/country-shipping-options";
+import { groupBuyCountryOptions, type GroupBuyCountryRestrictions } from "@/lib/group-buy-country-options";
 import { countKits } from "@/lib/onward-delivery";
 import { HalfKitOffers } from "./GroupBuyHalfKits";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, ChevronDown, Package, MessageCircle, X, Heart, ArrowRight, Info, Loader2, TestTube, AlertTriangle, Globe, BarChart2, Search, Check, Truck, Home, ShoppingCart, Eye } from "lucide-react";
 import { findProtocol, type Protocol } from "@/data/protocols";
-import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
@@ -451,6 +451,8 @@ export default function OrderForm() {
   const gbId = searchParams.get("gbId") ?? null;
   // Organiser "preview as buyer" mode — read-only view of the order form; ordering disabled
   const isPreview = !!gbId && searchParams.get("preview") === "1";
+  // Eligibility and hook dependency arrays below read the draft during render.
+  const draft = useDraftStore();
 
   // When in GB mode, fetch GB-specific products/delivery methods
   const { data: globalProducts = [], isLoading: isLoadingGlobalProducts } = useGetProducts();
@@ -467,7 +469,7 @@ export default function OrderForm() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: gbProducts = [], isLoading: isLoadingGbProducts } = useQuery<Array<{ id: string; name: string; price: number; description: string | null; sortOrder: number; category: string | null; mgSize: string | null; halfKitEnabled?: boolean; maxPerCustomer?: number | null }>>({
+  const { data: gbProducts = [], isLoading: isLoadingGbProducts } = useQuery<Array<{ id: string; name: string; price: number; description: string | null; sortOrder: number; category: string | null; mgSize: string | null; halfKitEnabled?: boolean; maxPerCustomer?: number | null; labReportId?: number | null }>>({
     queryKey: ["gb-products", gbId],
     queryFn: async () => {
       if (!gbId) return [];
@@ -558,8 +560,6 @@ export default function OrderForm() {
   const isLoadingProducts = gbId ? isLoadingGbProducts : isLoadingGlobalProducts;
   const isLoadingMethods = gbId ? isLoadingGbMethods : isLoadingGlobalMethods;
 
-  const draft = useDraftStore();
-
   // Calculate direct shipping cost reactively from current kit count + vendor tier pricing
   const estimatedDirectShippingCost = useMemo((): number | null => {
     if (!directShippingInfo?.enabled || !("tiers" in directShippingInfo)) return null;
@@ -610,6 +610,7 @@ export default function OrderForm() {
   const [gbAllowHalfKits, setGbAllowHalfKits] = React.useState<boolean>(true);
   const [gbOrderPageMessage, setGbOrderPageMessage] = React.useState<string | null>(null);
   const [gbCurrency, setGbCurrency] = React.useState<string | null>(null);
+  const [gbDestinationRules, setGbDestinationRules] = React.useState<(GroupBuyCountryRestrictions & { id: string }) | null>(null);
 
   // Organiser buyer-preview: fetch the GB summary directly — the organiser isn't
   // necessarily a member, so the GB won't appear in their /api/group-buys list.
@@ -637,6 +638,12 @@ export default function OrderForm() {
   // Leg country is only a routing fallback; destination prefers shipping country then account country.
   const legCountryCode = myCountryLeg?.countryCode ?? null;
   const onwardDestination = resolveShippingDestinationCountry(draft.shippingCountry, account?.country, legCountryCode);
+  const destinationRules = gbDestinationRules?.id === gbId ? gbDestinationRules : myGb;
+  const countryRulesLoaded = !gbId || Boolean(destinationRules);
+  const availableDeliveryCountries = countryRulesLoaded ? groupBuyCountryOptions(destinationRules) : [];
+  const selectedDeliveryCountry = availableDeliveryCountries.find(country =>
+    normalizeShippingCountry(country) === normalizeShippingCountry(onwardDestination)) ?? "";
+  const deliveryCountryAllowed = Boolean(selectedDeliveryCountry);
   const customEuPostage = filterShippingOptionsForCountry(gbShippingOptions, onwardDestination).some(option => option.source === "eu-postage");
   useEffect(() => {
     // The separate estimate picker has been retired from checkout. Do not
@@ -741,7 +748,7 @@ export default function OrderForm() {
       return;
     }
     setIsLoadingGbInfo(true);
-    type GbInfo = {
+    type GbInfo = GroupBuyCountryRestrictions & {
       id: string; name: string; testingEnabled?: boolean; labTestSupplier?: string | null;
       shippingOptions?: CustomPostageOption[];
       maxKitsPerCustomer?: number | null;
@@ -761,6 +768,7 @@ export default function OrderForm() {
           .then(gbs => gbs.find(g => g.id === gbId));
     fetchGbInfo
       .then((gb: GbInfo | undefined) => {
+        if (gb) setGbDestinationRules({ id: gb.id, allowedCountries: gb.allowedCountries, excludedCountries: gb.excludedCountries });
         setPageTitle(gb?.name ?? null);
         setGbTestingEnabled(gb?.testingEnabled ?? false);
         setGbLabTestSupplier(gb?.labTestSupplier ?? null);
@@ -796,7 +804,7 @@ export default function OrderForm() {
   const [gbLabTestSupplier, setGbLabTestSupplier] = React.useState<string | null>(null);
   const [gbTestingContributionAmount, setGbTestingContributionAmount] = React.useState(15);
   const [infoProtocol, setInfoProtocol] = React.useState<Protocol | null>(null);
-  const [labTestsProduct, setLabTestsProduct] = React.useState<{ productName: string; batchPrefixes: string[] } | null>(null);
+  const [labTestsProduct, setLabTestsProduct] = React.useState<{ productName: string; batchPrefixes: string[]; labReportId?: number | null } | null>(null);
   const [stockModalOpen, setStockModalOpen] = React.useState(false);
   const [stockSearch, setStockSearch] = React.useState("");
   const [stockFilter, setStockFilter] = React.useState<"available" | "limited" | "low" | "full" | null>(null);
@@ -1148,6 +1156,13 @@ export default function OrderForm() {
   const handleReview = () => {
     if (isPreview) {
       setError("You're previewing this group buy as a buyer — orders can't be placed in preview mode.");
+      return;
+    }
+
+    if (gbId && !isTopUp && !draft.orderId && (!countryRulesLoaded || !deliveryCountryAllowed)) {
+      setError(countryRulesLoaded
+        ? "Please select an allowed delivery country for this group buy."
+        : "Delivery countries are still loading. Please wait or refresh the page.");
       return;
     }
 
@@ -1725,11 +1740,11 @@ export default function OrderForm() {
                               </button>
                             );
                           })()}
-                          {item.productName && productLabTestsMap[item.productName] === true && (
+                          {item.productName && (gbProducts.find(product => product.id === item.productId)?.labReportId != null || productLabTestsMap[item.productName] === true) && (
                             <button
                               type="button"
                               onClick={() => {
-                                setLabTestsProduct({ productName: item.productName || "", batchPrefixes: productPrefixesRef.current[item.productName || ""] ?? [] });
+                                setLabTestsProduct({ productName: item.productName || "", batchPrefixes: productPrefixesRef.current[item.productName || ""] ?? [], labReportId: gbProducts.find(product => product.id === item.productId)?.labReportId });
                               }}
                               className="flex items-center gap-1.5 text-sm font-medium transition-colors"
                               style={{ color: "#5B8DEF" }}
@@ -2012,14 +2027,20 @@ export default function OrderForm() {
           <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Delivery</p>
           {gbId && !isTopUp && <label className="block text-xs font-semibold space-y-1" style={{ color: "var(--t-text)" }}>
             <span>Delivery country</span>
-            <select aria-label="Delivery country" disabled={isPreview}
-              value={COUNTRY_LIST.find(country => country.code === onwardDestination)?.name ?? ""}
-              onChange={e => draft.setShippingCountry(e.target.value)}
+            <select aria-label="Delivery country" disabled={isPreview || !countryRulesLoaded || isLoadingGbInfo}
+              value={selectedDeliveryCountry}
+              onChange={e => {
+                draft.setShippingCountry(e.target.value);
+                draft.setDeliveryMethod("", "", 0);
+                draft.setDirectShippingRequested(false);
+              }}
               className="w-full rounded-lg border px-3 py-2.5 text-sm"
               style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}>
-              <option value="">Select country…</option>
-              {COUNTRIES.map(country => <option key={country} value={country}>{country}</option>)}
+              <option value="">{!countryRulesLoaded ? (isLoadingGbInfo ? "Loading allowed countries…" : "Country settings unavailable") : availableDeliveryCountries.length ? "Select country…" : "No delivery countries available"}</option>
+              {availableDeliveryCountries.map(country => <option key={country} value={country}>{country}</option>)}
             </select>
+            {countryRulesLoaded && !deliveryCountryAllowed && <span className="block text-xs" role="status">Please choose one of this group buy’s allowed delivery countries.</span>}
+            {!countryRulesLoaded && !isLoadingGbInfo && <span className="block text-xs" role="status">Sign in to your account and refresh to load this group buy’s delivery countries.</span>}
           </label>}
 
           {draft.additionOfOrderId !== null ? (
@@ -2604,6 +2625,7 @@ export default function OrderForm() {
           <LabReportPopup
             productName={labTestsProduct.productName}
             batchPrefixes={labTestsProduct.batchPrefixes}
+            labReportId={labTestsProduct.labReportId}
             onClose={() => setLabTestsProduct(null)}
           />
         )}

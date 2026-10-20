@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePickerField } from "@/components/DatePickerField";
 import {
@@ -456,6 +457,7 @@ export function ProductsSubTab({ secret, gb }: { secret: string; gb: GroupBuy })
       {showCsvModal && (
         <CsvImportModal secret={secret} gb={gb} onDone={() => { load(); }} onClose={() => setShowCsvModal(false)} />
       )}
+      <GroupBuyProductLabReports key={gb.id} gbId={gb.id} adminSecret={secret} />
 
       {/* ── Row 1: search + action buttons ── */}
       <div className="flex items-center gap-2 flex-wrap">

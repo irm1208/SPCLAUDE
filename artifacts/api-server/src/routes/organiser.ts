@@ -1,3 +1,4 @@
+import { validateGroupProductLabReport } from "../lib/group-product-lab-report";
 import { getGbOrderCounts, gbOrderPersonKey } from "../lib/gb-multiple-orders";
 import { editOrderWithHalfKits } from "../lib/half-kit-order-edit";
 import { organiserHalfKitEditInput } from "../lib/half-kit-organiser-edit";
@@ -1128,6 +1129,7 @@ router.get("/organiser/group-buys/:id/products", requireOrganiser, async (req, r
       groupBuyId: groupBuyProductsTable.groupBuyId,
       productId: groupBuyProductsTable.productId,
       priceOverride: groupBuyProductsTable.priceOverride,
+      labReportId: groupBuyProductsTable.labReportId,
       active: groupBuyProductsTable.active,
       sortOrder: groupBuyProductsTable.sortOrder,
       maxPerCustomer: groupBuyProductsTable.maxPerCustomer,
@@ -1284,6 +1286,8 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
   const [link] = await tx.select({ id: groupBuyProductsTable.id }).from(groupBuyProductsTable)
     .where(and(eq(groupBuyProductsTable.groupBuyId, id), eq(groupBuyProductsTable.productId, productId)));
   if (!link) throw new GroupStockError("Product is not part of this group buy.", 404);
+  const report = await validateGroupProductLabReport(req.body.labReportId, tx);
+  if (!report.ok) { res.status(400).json({ error: report.error }); return; }
 
   const { name, price, category, stock, active, priceOverride, mgSize, maxPerCustomer, feePerKit: patchFeePerKit } = req.body;
 
@@ -1316,7 +1320,8 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
   }
 
   // GB-link fields (priceOverride, maxPerCustomer, feePerKit) — only GB ownership required
-  const gbLinkUpdates: { priceOverride?: string | null; maxPerCustomer?: number | null; feePerKit?: string | null } = {};
+  const gbLinkUpdates: { priceOverride?: string | null; maxPerCustomer?: number | null; feePerKit?: string | null; labReportId?: number | null } = {};
+  if (report.id !== undefined) gbLinkUpdates.labReportId = report.id;
   if (stock !== undefined) await setGroupStockCap(tx, id, productId, stock);
   if (priceOverride !== undefined) {
     gbLinkUpdates.priceOverride = priceOverride != null && priceOverride !== ""
@@ -1338,7 +1343,7 @@ router.patch("/organiser/group-buys/:id/products/:productId", requireOrganiser, 
       .where(and(eq(groupBuyProductsTable.groupBuyId, id), eq(groupBuyProductsTable.productId, productId)));
   }
 
-  return [...Object.keys(productUpdates), ...(stock !== undefined ? ["stock"] : []), ...(priceOverride !== undefined ? ["priceOverride"] : []), ...(maxPerCustomer !== undefined ? ["maxPerCustomer"] : []), ...(patchFeePerKit !== undefined ? ["feePerKit"] : [])];
+  return [...Object.keys(productUpdates), ...(stock !== undefined ? ["stock"] : []), ...(priceOverride !== undefined ? ["priceOverride"] : []), ...(maxPerCustomer !== undefined ? ["maxPerCustomer"] : []), ...(patchFeePerKit !== undefined ? ["feePerKit"] : []), ...(report.id !== undefined ? ["labReportId"] : [])];
   });
   if (!changedFields) return;
   writeLog("change", "info", "organiser_product_updated",
