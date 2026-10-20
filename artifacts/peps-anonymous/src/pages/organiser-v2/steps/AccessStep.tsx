@@ -1,26 +1,27 @@
 import { useState } from "react";
 import { Lock, DollarSign, Users, Globe } from "lucide-react";
 import { V2_CARD_BORDER } from "../theme";
-import { useRegisterSetupSection } from "../setup-draft-context";
+import { useRegisterSetupSection, useSetupDraftSnapshot } from "../setup-draft-context";
 
 // ─── Setup: Access Step ──────────────────────────────────────────────────────
 // Control who can join the group buy: PIN protection, entry fee, blocked accounts,
 // and allowed/excluded countries.
 
 export default function AccessStep() {
-  const [entryFeeEnabled, setEntryFeeEnabled] = useState(false);
-  const [entryFeeAmount, setEntryFeeAmount] = useState("");
-  const [entryFeeLabel, setEntryFeeLabel] = useState("Entry Fee");
+  const saved = useSetupDraftSnapshot().access;
+  const [entryFeeEnabled, setEntryFeeEnabled] = useState(() => saved?.entryFeeEnabled ?? false);
+  const [entryFeeAmount, setEntryFeeAmount] = useState(() => saved?.entryFeeAmount ?? "");
+  const [entryFeeLabel, setEntryFeeLabel] = useState(() => saved?.entryFeeLabel ?? "Entry Fee");
 
-  const [countryMode, setCountryMode] = useState<"all" | "allow" | "block">("all");
-  const [countries, setCountries] = useState<string[]>([]);
+  const [countryMode, setCountryMode] = useState<"all" | "allow" | "block">(() => saved?.countryMode ?? "all");
+  const [countries, setCountries] = useState<string[]>(() => saved?.countries ?? []);
   const [countryInput, setCountryInput] = useState("");
 
-  const [blockedAccounts, setBlockedAccounts] = useState<string[]>([]);
+  const [blockedAccounts, setBlockedAccounts] = useState<string[]>(() => saved?.blockedAccounts ?? []);
   const [blockInput, setBlockInput] = useState("");
 
-  const [pinEnabled, setPinEnabled] = useState(false);
-  const [pin, setPin] = useState("");
+  const [pinEnabled, setPinEnabled] = useState(() => saved?.pinEnabled ?? false);
+  const [pin, setPin] = useState(() => saved?.pin ?? "");
   useRegisterSetupSection("access", {
     entryFeeEnabled, entryFeeAmount, entryFeeLabel, countryMode, countries, blockedAccounts, pinEnabled, pin,
   });

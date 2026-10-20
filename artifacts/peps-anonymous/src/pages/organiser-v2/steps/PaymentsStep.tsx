@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Wallet, DollarSign, CreditCard, Shield } from "lucide-react";
 import { V2_CARD_BORDER } from "../theme";
-import { useRegisterSetupSection } from "../setup-draft-context";
+import { useRegisterSetupSection, useSetupDraftSnapshot } from "../setup-draft-context";
 
 // ─── Setup: Accepting Payments Step ──────────────────────────────────────────
 // Configure how the organiser gets paid. Shows toggles for each payment method
@@ -15,21 +15,22 @@ interface CryptoWallet {
 }
 
 export default function PaymentsStep() {
-  const [cryptoEnabled, setCryptoEnabled] = useState(false);
-  const [cryptoWallets, setCryptoWallets] = useState<CryptoWallet[]>([
+  const saved = useSetupDraftSnapshot().payments;
+  const [cryptoEnabled, setCryptoEnabled] = useState(() => saved?.cryptoEnabled ?? false);
+  const [cryptoWallets, setCryptoWallets] = useState<CryptoWallet[]>(() => saved?.cryptoWallets ?? [
     { id: "1", currency: "USDT", network: "ERC20", address: "" },
   ]);
 
-  const [anonpayEnabled, setAnonpayEnabled] = useState(false);
-  const [anonpayWallet, setAnonpayWallet] = useState("");
-  const [anonpayCurrency, setAnonpayCurrency] = useState("USDT");
-  const [anonpayNetwork, setAnonpayNetwork] = useState("TRC20");
+  const [anonpayEnabled, setAnonpayEnabled] = useState(() => saved?.anonpayEnabled ?? false);
+  const [anonpayWallet, setAnonpayWallet] = useState(() => saved?.anonpayWallet ?? "");
+  const [anonpayCurrency, setAnonpayCurrency] = useState(() => saved?.anonpayCurrency ?? "USDT");
+  const [anonpayNetwork, setAnonpayNetwork] = useState(() => saved?.anonpayNetwork ?? "TRC20");
 
-  const [revolutEnabled, setRevolutEnabled] = useState(false);
-  const [revolutHandle, setRevolutHandle] = useState("");
+  const [revolutEnabled, setRevolutEnabled] = useState(() => saved?.revolutEnabled ?? false);
+  const [revolutHandle, setRevolutHandle] = useState(() => saved?.revolutHandle ?? "");
 
-  const [paypalEnabled, setPaypalEnabled] = useState(false);
-  const [paypalHandle, setPaypalHandle] = useState("");
+  const [paypalEnabled, setPaypalEnabled] = useState(() => saved?.paypalEnabled ?? false);
+  const [paypalHandle, setPaypalHandle] = useState(() => saved?.paypalHandle ?? "");
   useRegisterSetupSection("payments", {
     cryptoEnabled, cryptoWallets, anonpayEnabled, anonpayWallet, anonpayCurrency, anonpayNetwork,
     revolutEnabled, revolutHandle, paypalEnabled, paypalHandle,

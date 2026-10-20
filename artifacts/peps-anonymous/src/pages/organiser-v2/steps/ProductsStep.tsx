@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, Trash2, Package } from "lucide-react";
 import { V2_CARD_BORDER } from "../theme";
-import { useRegisterSetupSection } from "../setup-draft-context";
+import { useRegisterSetupSection, useSetupDraftSnapshot } from "../setup-draft-context";
 
 // ─── Setup: Products Step ────────────────────────────────────────────────────
 // Add and manage products for the group buy. Shows a list of added products with
@@ -16,7 +16,8 @@ interface Product {
 }
 
 export default function ProductsStep() {
-  const [products, setProducts] = useState<Product[]>([
+  const saved = useSetupDraftSnapshot().products;
+  const [products, setProducts] = useState<Product[]>(() => saved?.products ?? [
     { id: "1", name: "", price: "", category: "", stock: "" },
   ]);
   useRegisterSetupSection("products", { products });

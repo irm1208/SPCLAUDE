@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, Trash2, Truck, MapPin, QrCode as QrCodeIcon } from "lucide-react";
 import { V2_CARD_BORDER } from "../theme";
-import { useRegisterSetupSection } from "../setup-draft-context";
+import { useRegisterSetupSection, useSetupDraftSnapshot } from "../setup-draft-context";
 
 // ─── Setup: Shipping Step ────────────────────────────────────────────────────
 // Configure shipping options for the group buy. Each option has a label, price,
@@ -18,7 +18,8 @@ interface ShippingOption {
 }
 
 export default function ShippingStep() {
-  const [options, setOptions] = useState<ShippingOption[]>([
+  const saved = useSetupDraftSnapshot().shipping;
+  const [options, setOptions] = useState<ShippingOption[]>(() => saved?.options ?? [
     { id: "1", label: "", price: "", description: "", region: "UK", requiresAddress: true, requiresQr: false },
   ]);
   useRegisterSetupSection("shipping", { options });

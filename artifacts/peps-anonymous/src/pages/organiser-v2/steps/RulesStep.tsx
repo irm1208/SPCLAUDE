@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FileText, AlertCircle, MessageSquare, Info, Plus, Trash2 } from "lucide-react";
 import { V2_CARD_BORDER } from "../theme";
-import { useRegisterSetupSection } from "../setup-draft-context";
+import { useRegisterSetupSection, useSetupDraftSnapshot } from "../setup-draft-context";
 
 // ─── Setup: Rules & Info Step ────────────────────────────────────────────────
 // Messages, rules, and information shown to members when they view the group buy.
@@ -12,12 +12,13 @@ interface Rule {
 }
 
 export default function RulesStep() {
-  const [welcomeMessage, setWelcomeMessage] = useState("");
-  const [rules, setRules] = useState<Rule[]>([
+  const saved = useSetupDraftSnapshot().rules;
+  const [welcomeMessage, setWelcomeMessage] = useState(() => saved?.welcomeMessage ?? "");
+  const [rules, setRules] = useState<Rule[]>(() => saved?.rules ?? [
     { id: "1", text: "" },
   ]);
-  const [disclaimer, setDisclaimer] = useState("");
-  const [additionalInfo, setAdditionalInfo] = useState("");
+  const [disclaimer, setDisclaimer] = useState(() => saved?.disclaimer ?? "");
+  const [additionalInfo, setAdditionalInfo] = useState(() => saved?.additionalInfo ?? "");
   useRegisterSetupSection("rules", { welcomeMessage, rules, disclaimer, additionalInfo });
 
   const addRule = () => {

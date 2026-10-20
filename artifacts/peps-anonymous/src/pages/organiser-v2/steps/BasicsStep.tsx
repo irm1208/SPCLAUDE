@@ -1,20 +1,21 @@
 import { useState } from "react";
 import { Calendar } from "lucide-react";
 import { V2_CARD_BORDER } from "../theme";
-import { useRegisterSetupSection } from "../setup-draft-context";
+import { useRegisterSetupSection, useSetupDraftSnapshot } from "../setup-draft-context";
 
 // ─── Setup: Basics Step ──────────────────────────────────────────────────────
 // The first wizard step — core GB info: name, description, currency, close date,
 // and supplier details.
 
 export default function BasicsStep() {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [currency, setCurrency] = useState("GBP");
-  const [closeDate, setCloseDate] = useState("");
-  const [manufacturer, setManufacturer] = useState("");
-  const [manufacturerCountry, setManufacturerCountry] = useState("");
-  const [labTestSupplier, setLabTestSupplier] = useState("");
+  const saved = useSetupDraftSnapshot().basics;
+  const [name, setName] = useState(() => saved?.name ?? "");
+  const [description, setDescription] = useState(() => saved?.description ?? "");
+  const [currency, setCurrency] = useState(() => saved?.currency ?? "GBP");
+  const [closeDate, setCloseDate] = useState(() => saved?.closeDate ?? "");
+  const [manufacturer, setManufacturer] = useState(() => saved?.manufacturer ?? "");
+  const [manufacturerCountry, setManufacturerCountry] = useState(() => saved?.manufacturerCountry ?? "");
+  const [labTestSupplier, setLabTestSupplier] = useState(() => saved?.labTestSupplier ?? "");
   useRegisterSetupSection("basics", { name, description, currency, closeDate, manufacturer, manufacturerCountry, labTestSupplier });
 
   return (
