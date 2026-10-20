@@ -27,6 +27,7 @@ import { ReshipperCollectionsCard } from "@/components/ReshipperCollectionsCard"
 import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import type { ReshipperCollectionOrder } from "@/lib/reshipper-collections";
 import { normalizeShippingCountry, type CustomPostageOption } from "@/lib/country-shipping-options";
+import { ReshipperPostageTable, groupEuPostageRows } from "@/components/ReshipperPostageTable";
 import { reshipperShippingCountries, visibleReshipperShippingOptions } from "@/lib/reshipper-shipping-options";
 import { PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
 
@@ -1837,6 +1838,7 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
     setNewOpt(previous => assignedCountries.includes(previous.country) ? previous : { ...previous, country: assignedCountries[0] ?? "" });
   }, [countryScope]);
   const visibleOptions = visibleReshipperShippingOptions(shippingOptions, assignedCountries);
+  const tabledPostage = groupEuPostageRows(visibleOptions);
 
   const [form, setForm] = useState({
     paymentsEnabled: gb?.paymentsEnabled ?? false,
@@ -2047,7 +2049,7 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
           </button>
         </div>
         <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
-          View and edit postage for your assigned countries{assignedCountries.length ? ` (${assignedCountries.join(", ")})` : ""}. Prices apply to new orders; existing orders are unchanged. Global options are view-only.
+          Postage for {assignedCountries.length} assigned {assignedCountries.length === 1 ? "country" : "countries"}. Edit prices, then Save postage. Existing orders are unchanged. Global options are view-only.
         </p>
         {showNewOpt && (
           <div className="flex flex-wrap gap-2 items-end">
@@ -2081,11 +2083,18 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
             </div>
           </div>
         )}
+        <ReshipperPostageTable entries={visibleOptions} currency={gb?.currency ?? "USD"}
+          onChange={(index, kitPrices) => {
+            setMsg("");
+            setShippingOptions(previous => previous.map((option, i) => i === index
+              ? { ...option, kitPrices, price: kitPrices.upTo5 ?? kitPrices.upTo25 ?? 0 } : option));
+          }}
+          onEdit={setEditOptIdx} onRemove={removeOption} />
         {visibleOptions.length === 0
           ? <p className="text-sm py-2" style={{ color: "var(--t-subtle)" }}>No custom shipping options for your assigned countries yet</p>
           : (
             <div className="space-y-2">
-              {visibleOptions.map(({ option: opt, index: idx, editable }) => (
+              {visibleOptions.filter(({ index }) => !tabledPostage.indexes.has(index) || editOptIdx === index).map(({ option: opt, index: idx, editable }) => (
                 <div key={opt.id} className="flex flex-wrap items-center gap-2">
                   {editable && editOptIdx === idx ? (
                     <>
