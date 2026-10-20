@@ -21,6 +21,9 @@ export function reshipperShippingCountries(assignments: { country?: string | nul
 /** Keep source indexes so editing a filtered row never changes another country's option. */
 export function visibleReshipperShippingOptions<T extends CountryScopedShippingOption>(options: T[], countries: string[]) {
   const assigned = new Set(countries.map(normalizeShippingCountry).filter(Boolean));
-  return options.map((option, index) => ({ option, index })).filter(({ option }) =>
+  return options.map((option, index) => ({
+    option, index,
+    editable: Boolean(option.country && assigned.has(normalizeShippingCountry(option.country))),
+  })).filter(({ option }) =>
     !option.country || assigned.has(normalizeShippingCountry(option.country)));
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { OnwardDeliveryMatrixPanel } from "@/components/onward-delivery/OnwardDelivery";
+import { GroupBuyReshipperPayouts } from "@/components/reshipper-payouts/GroupBuyReshipperPayouts";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePickerField } from "@/components/DatePickerField";
 import {
@@ -61,6 +62,11 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const payoutFetch = useCallback((path: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set("x-admin-secret", secret);
+    return fetch(path, { ...init, headers, credentials: "include" });
+  }, [secret]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -269,6 +275,8 @@ export function AdminReshippersSubTab({ secret, gbId }: { secret: string; gbId: 
         ))
       )}
 
+      <GroupBuyReshipperPayouts key={gbId} gbId={gbId}
+        reshippers={assignments.map(assignment => assignment.reshipperUsername)} fetcher={payoutFetch} />
       {assignments.length > 0 && <OnwardDeliveryMatrixPanel scope="admin" gbId={gbId} headers={{ "x-admin-secret": secret }} />}
       {addOpen ? (
         <form onSubmit={handleAdd} className="rounded-xl border border-dashed border-border p-3 space-y-3 bg-muted/20">

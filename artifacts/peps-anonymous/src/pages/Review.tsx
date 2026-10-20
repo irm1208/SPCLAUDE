@@ -12,8 +12,6 @@ import { useDraftStore } from "@/hooks/use-draft-store";
 import { useToast } from "@/hooks/use-toast";
 import { useUpdateOrder } from "@workspace/api-client-react";
 import { useMyGroupBuys, useAccount, useAccountOrders, useCountryLegs, useLogout } from "@/hooks/use-account";
-import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
-import { countKits } from "@/lib/onward-delivery";
 import { RulesetModal } from "@/components/RulesetModal";
 import { useState, useEffect, type ReactNode } from "react";
 import { useSidebarExpanded } from "@/hooks/use-sidebar-expanded";
@@ -24,6 +22,9 @@ import { safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
 import { resolveOrderSubmitDestination } from "./order-submit-destination";
 import { useQueryClient } from "@tanstack/react-query";
 import type { MemberOffersResponse } from "@/lib/half-kit-api";
+import { ReviewShippingDetails } from "@/components/ReviewShippingDetails";
+import { reviewShippingRequirements, validateReviewShippingDetails } from "@/lib/review-shipping-details";
+import { COUNTRY_LIST } from "@/data/countries";
 
 function ReviewShell({ children }: { children: ReactNode }) {
   const [, navigate] = useLocation();
@@ -109,6 +110,12 @@ export default function Review() {
   const activeCountryLeg = activeGb?.countryLegId
     ? countryLegs.find(leg => leg.id === activeGb.countryLegId)
     : null;
+  const shippingRequirements = reviewShippingRequirements(draft);
+  useEffect(() => {
+    if (!shippingRequirements.show || draft.shippingCountry) return;
+    const code = resolveShippingDestinationCountry(null, account?.country, activeCountryLeg?.countryCode);
+    if (code) draft.setShippingCountry(COUNTRY_LIST.find(country => country.code === code)?.name ?? code);
+  }, [shippingRequirements.show, draft.shippingCountry, account?.country, activeCountryLeg?.countryCode, draft.setShippingCountry]);
   const gbCurrency = activeGb?.currency ?? null;
   const hideOrderFormPrices = (activeGb?.status === "closed") && (activeGb?.hidePricesOnOrderForm ?? false);
   const formatPrice = (amount: number) => {
@@ -242,6 +249,8 @@ export default function Review() {
   const needsRuleAcceptance = !!account && (account.ruleAcceptedVersion ?? 0) < (account.rulesetVersion ?? 1);
 
   const doSubmit = () => {
+    const shippingError = validateReviewShippingDetails(draft);
+    if (shippingError) { setError(shippingError); return; }
     const payload = {
       halfKitCheckout: draft.halfKitCheckout ?? undefined,
       telegramUsername: draft.telegramUsername,
@@ -274,8 +283,6 @@ export default function Review() {
       directShippingRequested: draft.directShippingRequested || undefined,
       directShippingCost: draft.directShippingRequested && draft.deliveryPrice > 0 ? draft.deliveryPrice : undefined,
       reshipperCode: draft.reshipperCode || undefined,
-      // Optional onward estimate preference — never part of grandTotal or any money field.
-      onwardDeliveryMethod: !isWholesale && draft.groupBuyId ? draft.onwardDeliveryMethod : undefined,
       // Wholesale orders can never be additions — guard against a stale draft field
       // left over from a previous GB top-up flow in the same browser session.
       additionOfOrderId: isWholesale ? undefined : (draft.additionOfOrderId ?? undefined),
@@ -479,7 +486,7 @@ export default function Review() {
                   {isTopUp && <span className="ml-1 text-xs text-green-600 font-normal">(included)</span>}
                 </span>
               </div>
-              {(draft.directShippingRequested || !draft.groupBuyId || draft.onwardDeliveryMethod || draft.deliveryMethodId?.startsWith("eu-postage-")) && (draft.shippingName || draft.shippingAddress || draft.shippingCountry || draft.shippingPhone || draft.shippingEmail) && (
+              {!shippingRequirements.show && (draft.directShippingRequested || !draft.groupBuyId || draft.onwardDeliveryMethod || draft.deliveryMethodId?.startsWith("eu-postage-")) && (draft.shippingName || draft.shippingAddress || draft.shippingCountry || draft.shippingPhone || draft.shippingEmail) && (
                 <div>
                   <p className="text-xs mb-1 text-gray-400">Shipping Details</p>
                   <div className="text-sm rounded-lg p-3 text-gray-600 bg-gray-50 border border-gray-100 space-y-0.5">
@@ -508,12 +515,11 @@ export default function Review() {
                 </div>
               )}
             </div>
-            {draft.groupBuyId && !isWholesale && !isTopUp && !draft.directShippingRequested && (
-              <OnwardDeliveryPicker gbId={draft.groupBuyId} country={draft.shippingCountry || account?.country || draft.onwardDeliveryCountry || null}
-                kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
-                value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} />
-            )}
           </section>
+
+          {shippingRequirements.show && <ReviewShippingDetails requireEuContact={shippingRequirements.requireEuContact}
+            countryLocked={Boolean(draft.groupBuyId)}
+            onChangeDelivery={() => setLocation(draft.groupBuyId ? `/order?gbId=${draft.groupBuyId}` : "/order")} />}
 
           <section>
             <div className="rounded-xl p-5" style={{ background: "linear-gradient(to right, #1a2040, #252f55, #1f2848)", border: "1px solid rgba(255,255,255,0.07)" }}>

@@ -27,3 +27,11 @@ it("shows only applicable couriers and keeps original indexes and metadata for s
   expect(visibleReshipperShippingOptions(options, ["IT", "DE"]).map(row => row.option.id)).toEqual(["it", "global"]);
   expect(visibleReshipperShippingOptions(options, []).map(row => row.option.id)).toEqual(["global"]);
 });
+
+it("gives the US reshipper editable US postage and read-only global options", () => {
+  const countries = reshipperShippingCountries([{ country: "United States" }]);
+  const visible = visibleReshipperShippingOptions(options, countries);
+  expect(visible.map(row => [row.option.id, row.editable])).toEqual([["us", true], ["global", false]]);
+  expect(visible[0].option.price).toBe(12);
+  expect(visibleReshipperShippingOptions(options, ["UK"]).find(row => row.option.id === "uk")?.editable).toBe(true);
+});

@@ -35,6 +35,7 @@ import { prepareTrackingWrite } from "../lib/tracking-write";
 import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { validateGroupBuyShippingOptions } from "../lib/group-buy-shipping-options";
+import { mergeReshipperPostage, ReshipperPostageError } from "../lib/reshipper-postage-scope";
 import reshipperVisibilityRouter from "./reshipper-visibility";
 import { reshipperPostageReceipts } from "../lib/reshipper-postage-receipts";
 import { onwardChargeLedgerKey } from "../lib/gb-onward-payment-rules";
@@ -403,11 +404,8 @@ router.patch("/reshipper/gb/:gbId/settings", requireReshipper, async (req, res):
       : null;
   }
   if (shippingOptions !== undefined) {
-    if (shippingOptions !== null) {
-      const error = validateGroupBuyShippingOptions(shippingOptions);
-      if (error) { res.status(400).json({ error }); return; }
-    }
-    updates.shippingOptions = shippingOptions ? JSON.stringify(shippingOptions) : null;
+    const error = validateGroupBuyShippingOptions(shippingOptions);
+    if (error) { res.status(400).json({ error }); return; }
   }
   if (vendorShippingEnabled !== undefined) updates.vendorShippingEnabled = Boolean(vendorShippingEnabled);
   if (vendorShippingMode !== undefined) {
@@ -438,18 +436,33 @@ router.patch("/reshipper/gb/:gbId/settings", requireReshipper, async (req, res):
     updates.vendorShippingEqualPct = pct;
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(updates).length === 0 && shippingOptions === undefined) {
     res.status(400).json({ error: "No updatable fields provided" });
     return;
   }
 
-  const [updated] = await db
-    .update(groupBuysTable)
-    .set(updates)
-    .where(eq(groupBuysTable.id, gbId))
-    .returning();
-
-  res.json(formatGbForReshipper(updated));
+  try {
+    const updated = await db.transaction(async tx => {
+      const [current] = await tx.select().from(groupBuysTable).where(eq(groupBuysTable.id, gbId)).for("update");
+      if (!current) throw new ReshipperPostageError("Group buy not found.", 404);
+      if (shippingOptions !== undefined) {
+        const assignments = await tx.select().from(gbReshippersTable).where(and(
+          eq(gbReshippersTable.gbId, gbId),
+          eq(gbReshippersTable.reshipperUsername, req.reshipper!.telegramUsername),
+        )).for("share");
+        if (!assignments.length) throw new ReshipperPostageError("You are no longer assigned to this group buy.");
+        updates.shippingOptions = JSON.stringify(mergeReshipperPostage(
+          parseJson(current.shippingOptions, []), shippingOptions, req.body.shippingOptionsBase, assignments,
+        ));
+      }
+      const [saved] = await tx.update(groupBuysTable).set(updates).where(eq(groupBuysTable.id, gbId)).returning();
+      return saved;
+    });
+    res.json(formatGbForReshipper(updated));
+  } catch (error) {
+    if (error instanceof ReshipperPostageError) { res.status(error.status).json({ error: error.message }); return; }
+    throw error;
+  }
 });
 
 // ── GET /api/reshipper/gb/:gbId/orders — list orders for assigned GB ─────────

@@ -90,3 +90,15 @@ Country-scoped checkout must submit the same effective destination used to displ
 **Why:** The order form can show a valid option using the account/leg fallback while the review payload previously sent only the optional draft country, causing the server to reject the selected method.
 
 **How to apply:** Share one destination-resolution rule between the order form and final order payload; keep the server-side country match authoritative.
+
+New-order checkout must not offer the separate “Potential onwards delivery charge” matrix picker. Use country-specific custom postage instead, retaining its quantity bands and contact requirements.
+
+**Why:** The user chose custom postage as the replacement and explicitly asked to remove the old matrix choice from checkout.
+
+**How to apply:** Keep it absent from both product selection and review; do not require a legacy matrix choice on ordinary checkout. Preserve historical delivery preferences and issued payment requests.
+
+Reshippers must be able to view and edit custom postage for every country they are assigned within a group buy, including US, UK and EU countries.
+
+**Why:** The user explicitly wants country assignment to grant management of that country's postage, not just visibility.
+
+**How to apply:** Enforce the scope server-side as well as in the panel. Keep global options Admin/organiser-managed, preserve other countries' current settings during saves, and do not reprice existing orders when changing rates.

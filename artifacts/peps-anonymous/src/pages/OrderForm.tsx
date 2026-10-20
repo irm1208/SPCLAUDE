@@ -1,15 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
-import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
-import { filterShippingOptionsForCountry, resolveShippingDestinationCountry, customPostagePrice, isEuOnwardDestination, type CustomPostageOption } from "@/lib/country-shipping-options";
+import { filterShippingOptionsForCountry, resolveShippingDestinationCountry, customPostagePrice, type CustomPostageOption } from "@/lib/country-shipping-options";
 import { countKits } from "@/lib/onward-delivery";
 import { HalfKitOffers } from "./GroupBuyHalfKits";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, ChevronDown, Package, MessageCircle, X, Heart, ArrowRight, Info, Loader2, TestTube, AlertTriangle, Globe, BarChart2, Search, Check, Truck, Home, ShoppingCart, Eye } from "lucide-react";
 import { findProtocol, type Protocol } from "@/data/protocols";
-import { COUNTRIES } from "@/data/countries";
+import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
@@ -628,12 +627,11 @@ export default function OrderForm() {
   const legCountryCode = myCountryLeg?.countryCode ?? null;
   const onwardDestination = resolveShippingDestinationCountry(draft.shippingCountry, account?.country, legCountryCode);
   const customEuPostage = filterShippingOptionsForCountry(gbShippingOptions, onwardDestination).some(option => option.source === "eu-postage");
-  const [euMatrixApplicable, setEuMatrixApplicable] = useState(false);
-  const requiresEuContact = !!gbId && draft.orderType !== "wholesale" && !draft.additionOfOrderId
-    && !draft.directShippingRequested && (customEuPostage || (isEuOnwardDestination(onwardDestination) && (euMatrixApplicable || !!draft.onwardDeliveryMethod)));
   useEffect(() => {
-    if (!isPreview && customEuPostage && draft.onwardDeliveryMethod) draft.setOnwardDeliveryMethod(null);
-  }, [customEuPostage, isPreview, draft.onwardDeliveryMethod]);
+    // The separate estimate picker has been retired from checkout. Do not
+    // carry a selection from an older browser draft into a new order.
+    if (!isPreview && draft.onwardDeliveryMethod) draft.setOnwardDeliveryMethod(null);
+  }, [isPreview, draft.onwardDeliveryMethod, draft.setOnwardDeliveryMethod]);
   const setOnwardCountryRef = useRef(draft.setOnwardDeliveryCountry);
   setOnwardCountryRef.current = draft.setOnwardDeliveryCountry;
   useEffect(() => {
@@ -1161,28 +1159,8 @@ export default function OrderForm() {
     const emptyIds = draft.lineItems.filter(i => !i.productId).map(i => i.id);
     emptyIds.forEach(id => draft.removeLineItem(id));
 
-    // For GB orders not using direct shipping, clear any stale address data.
-    // For non-GB direct orders the address belongs to the customer — keep it.
-    if (gbId && !draft.directShippingRequested && !requiresEuContact) {
-      draft.setShippingAddress("");
-    }
-
-    if (requiresEuContact) {
-      if (!customEuPostage && !draft.onwardDeliveryMethod) { setError("Please choose your EU onward-delivery option"); return; }
-      if (!draft.shippingName.trim()) { setError("Please enter your full name for EU delivery"); return; }
-      if (!draft.shippingAddress.trim()) { setError("Please enter your delivery address for EU delivery"); return; }
-      if (!draft.shippingCountry.trim()) { setError("Please choose your country for EU delivery"); return; }
-      if (!/^\+?[\d\s().-]+$/.test(draft.shippingPhone.trim()) || draft.shippingPhone.replace(/\D/g, "").length < 7) {
-        setError("Please enter a valid mobile number including its country code"); return;
-      }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.shippingEmail.trim())) { setError("Please enter a valid email address for EU delivery"); return; }
-    }
-    // Validate shipping fields for non-GB direct orders
-    if (!gbId) {
-      if (!draft.shippingName.trim()) { setError("Please enter your full name"); return; }
-      if (!draft.shippingAddress.trim()) { setError("Please enter your delivery address"); return; }
-    }
-
+    // Contact details are collected and validated on Review Order.
+    // Keep the persisted draft intact when moving between steps.
     setError("");
     setLocation("/review");
   };
@@ -1609,11 +1587,6 @@ export default function OrderForm() {
                       onQuantityChange={handlePanelQuantityChange}
                       onRemove={handlePanelRemove}
                       editingDisabled={isPreview}
-                      slot={gbId && !isWholesale && !isTopUp && !customEuPostage && !draft.directShippingRequested ? (
-                        <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
-                          kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
-                          value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} onApplicableChange={setEuMatrixApplicable} />
-                      ) : undefined}
                       extras={{
                         notes: draft.notes,
                         onNotesChange: draft.setNotes,
@@ -2026,6 +1999,17 @@ export default function OrderForm() {
 
         <section className="order-form-delivery space-y-3">
           <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Delivery</p>
+          {gbId && !isTopUp && <label className="block text-xs font-semibold space-y-1" style={{ color: "var(--t-text)" }}>
+            <span>Delivery country</span>
+            <select aria-label="Delivery country" disabled={isPreview}
+              value={COUNTRY_LIST.find(country => country.code === onwardDestination)?.name ?? ""}
+              onChange={e => draft.setShippingCountry(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2.5 text-sm"
+              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+              <option value="">Select country…</option>
+              {COUNTRIES.map(country => <option key={country} value={country}>{country}</option>)}
+            </select>
+          </label>}
 
           {draft.additionOfOrderId !== null ? (
             <div className="rounded-xl p-4 border-2 border-green-500/30 bg-green-50/50">
@@ -2337,73 +2321,7 @@ export default function OrderForm() {
               )}
             </div>
           )}
-          {gbId && !isWholesale && !isTopUp && !customEuPostage && !draft.directShippingRequested && (
-            <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
-              kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
-              value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} onApplicableChange={setEuMatrixApplicable} />
-          )}
         </section>
-
-        {(draft.directShippingRequested || !gbId || requiresEuContact) && (
-          <section className="order-form-shipping space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipping Details</p>
-            <div className="rounded-xl p-4 bg-white border border-gray-100 shadow-sm space-y-3">
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Full Name <span className="text-red-400">*</span></label>
-                <input
-                  type="text"
-                  placeholder="Jane Smith"
-                  value={draft.shippingName}
-                  onChange={e => draft.setShippingName(e.target.value)}
-                  className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Street Address <span className="text-red-400">*</span></label>
-                <textarea
-                  placeholder={"123 Example Street\nCity, Postcode"}
-                  value={draft.shippingAddress}
-                  onChange={e => draft.setShippingAddress(e.target.value)}
-                  rows={2}
-                  className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200 resize-none"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Country{requiresEuContact && " *"}</label>
-                <select
-                  value={draft.shippingCountry}
-                  onChange={e => draft.setShippingCountry(e.target.value)}
-                  className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 focus:outline-none focus:border-blue-200"
-                >
-                  <option value="">Select country…</option>
-                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Mobile{requiresEuContact && " *"}</label>
-                  <input
-                    type="tel"
-                    placeholder="+44 7700 900000"
-                    value={draft.shippingPhone}
-                    onChange={e => draft.setShippingPhone(e.target.value)}
-                    className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1 block">Email{requiresEuContact && " *"}</label>
-                  <input
-                    type="email"
-                    placeholder="jane@example.com"
-                    value={draft.shippingEmail}
-                    onChange={e => draft.setShippingEmail(e.target.value)}
-                    className="w-full rounded-lg px-3 py-2.5 text-sm border border-gray-200 bg-gray-50 text-gray-800 placeholder:text-gray-400 focus:outline-none focus:border-blue-200"
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
 
         <section className="order-form-notes space-y-2">
           <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Additional Notes</p>

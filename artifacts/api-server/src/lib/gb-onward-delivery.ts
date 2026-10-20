@@ -158,6 +158,10 @@ export async function memberOnwardPreview(gbId: string, actor: UpdateActor, body
 export type OnwardOrderScope = "member" | "admin" | "organiser" | "reshipper";
 export async function validateEuDeliveryCheckout(gbId: string, actor: UpdateActor, body: Record<string, any>, orderId?: string) {
   if (body.directShippingRequested === true || body.additionOfOrderId) return false;
+  // New checkout uses country-scoped custom postage, not the retired matrix
+  // picker. Keep validation for explicit legacy preferences only; existing
+  // issued delivery charges have their own payment flow.
+  if (body.onwardDeliveryMethod == null) return false;
   const estimate = await memberOnwardPreview(gbId, actor, {
     country: body.shippingCountry, kits: (body.lineItems ?? []).reduce((n: number, item: any) => n + Number(item.quantity), 0),
     reshipperCode: body.reshipperCode, orderId,

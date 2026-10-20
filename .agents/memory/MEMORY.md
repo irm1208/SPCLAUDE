@@ -150,3 +150,4 @@
 - [PostgreSQL snapshot concurrency](postgres-snapshot-concurrency.md) — canonicalize JSONB hashes; use generation/state CAS because JS Date loses PostgreSQL microseconds.
 - [Member list completion](member-group-buy-completion.md) — Completed group buys and orders are reversible personal categories, not shared lifecycle or delivery changes.
 - [Supplier shipment privacy](supplier-shipment-privacy.md) — private supplier packages must not feed member parcel broadcasts; legacy Direct defaults do not establish a confirmed shipping destination.
+- [Review shipping country](review-shipping-country.md) — collect contact details on review, but change GB destination with postage selection so country-specific rates stay consistent.

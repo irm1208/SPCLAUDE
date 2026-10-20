@@ -40,7 +40,7 @@ export function PayoutForm({ orders, selection, paymentDetails, write, onRecorde
   else if (amount !== sum) problems.push(`Payout total must equal allocations (${fmt(sum, currency)})`);
   if (!f.paidAt) problems.push("Enter the date paid");
   if (!f.method) problems.push("Choose a method");
-  if (!f.reference.trim()) problems.push("Enter a reference");
+  if (!f.reference.trim()) problems.push(f.method === "crypto" ? "Enter a TXID" : "Enter a reference");
   if (!f.destination.trim()) problems.push(f.method === "cash" ? "Enter a destination, e.g. In person" : "Enter the actual destination paid to");
   if (!confirmed) problems.push("Confirm the destination");
 
@@ -67,7 +67,13 @@ export function PayoutForm({ orders, selection, paymentDetails, write, onRecorde
       <label className="text-xs" style={subtle}>Date paid<input type="date" className={inputCls} style={inputStyle} value={f.paidAt} onChange={e => upd("paidAt", e.target.value)} /></label>
       <label className="text-xs" style={subtle}>Method<select className={inputCls} style={inputStyle} value={f.method} onChange={e => upd("method", e.target.value)}>
         <option value="">Choose method</option>{METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-      <label className="text-xs" style={subtle}>Reference<input className={inputCls} style={inputStyle} value={f.reference} placeholder="Transfer ID or receipt no." onChange={e => upd("reference", e.target.value)} /></label>
+      <label className="text-xs min-w-0" style={subtle}>{f.method === "crypto" ? "TXID (transaction hash)" : "Reference"}
+        <input className={inputCls} style={inputStyle} value={f.reference} maxLength={300}
+          spellCheck={false} autoCapitalize="none"
+          placeholder={f.method === "crypto" ? "Paste the payout transaction hash" : "Transfer ID or receipt no."}
+          onChange={e => upd("reference", e.target.value)} />
+        {f.method === "crypto" && <span className="block mt-1 text-[11px]">Saved with this payout and its orders. Visible to the reshipper; not verified on-chain.</span>}
+      </label>
       <label className="text-xs sm:col-span-2" style={subtle}>Destination actually paid to<input className={inputCls} style={inputStyle} value={f.destination} placeholder={f.method === "cash" ? "In person" : "Account, address or handle used"} onChange={e => { upd("destination", e.target.value); setConfirmed(false); }} /></label>
       <label className="text-xs sm:col-span-2" style={subtle}>Note (optional)<input className={inputCls} style={inputStyle} value={f.note} onChange={e => upd("note", e.target.value)} /></label>
     </div>
@@ -83,6 +89,7 @@ export function PayoutForm({ orders, selection, paymentDetails, write, onRecorde
     {problems.length > 0 && <ul aria-label="Payout problems" className="text-xs space-y-0.5" style={{ color: "#b91c1c" }}>{problems.map(p => <li key={p}>{p}</li>)}</ul>}
     {preview && problems.length === 0 && <div aria-label="Payout preview" className="rounded-xl border p-3 text-xs" style={{ borderColor: "var(--t-blue)" }}>
       <p className="font-semibold mb-2">Preview: {fmt(sum, currency)} via {METHODS.find(m => m[0] === f.method)?.[1]} to {f.destination.trim()} on {f.paidAt}</p>
+      <p className="mb-2 break-all" style={subtle}>{f.method === "crypto" ? "TXID" : "Reference"}: <span className="font-mono">{f.reference.trim()}</span></p>
       <table className="w-full tabular-nums"><thead><tr style={subtle}><th className="text-left font-medium">Order</th><th className="text-right font-medium">Admin fee</th><th className="text-right font-medium">Postage</th></tr></thead>
         <tbody>{allocations.map(x => <tr key={x.o.orderId}><td className="font-mono">{x.o.code}</td><td className="text-right">{toDecimal(x.a)}</td><td className="text-right">{toDecimal(x.p)}</td></tr>)}</tbody></table>
       <p className="mt-2" style={subtle}>This records a payment made outside Peps Anonymous. No money moves.</p>

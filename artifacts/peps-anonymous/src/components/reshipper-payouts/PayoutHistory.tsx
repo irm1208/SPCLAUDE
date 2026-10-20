@@ -32,7 +32,8 @@ export function PayoutHistory({ payouts, canVoid, write }: { payouts: PayoutRece
           <span className={`font-bold tabular-nums ${p.voidedAt ? "line-through" : ""}`}>{fmt(p.amountMinor, p.currency)}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: p.voidedAt ? "#b91c1c" : "#16a34a" }}>{p.voidedAt ? "Voided" : "Paid — recorded by Admin"}</span>
         </div>
-        <p className="text-xs mt-1" style={subtle}>{p.paidAt.slice(0, 10)} · {p.method} · Ref {p.reference} · To {p.destination}</p>
+        <p className="text-xs mt-1 break-words" style={subtle}>{p.paidAt.slice(0, 10)} · {p.method} · To {p.destination}</p>
+        <p className="text-xs mt-1 break-all" style={subtle}>{p.method.trim().toLowerCase() === "crypto" ? "TXID" : "Reference"}: <span className="font-mono select-all">{p.reference}</span></p>
         <p className="text-[11px]" style={subtle}>Recorded by {p.recordedBy} on {p.recordedAt.slice(0, 10)}{p.note ? ` · ${p.note}` : ""}</p>
         {p.voidedAt && <p className="text-xs mt-1" style={{ color: "#b91c1c" }}>Voided {p.voidedAt.slice(0, 10)}: {p.voidReason}</p>}
         <details className="mt-2 text-xs"><summary className="cursor-pointer" style={{ color: "var(--t-blue)" }}>{p.allocations.length} order allocations</summary>

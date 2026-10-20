@@ -66,6 +66,32 @@ it("admin picks a group, then selects visible eligible rows of one currency", as
   expect(inputByLabelText("Destination actually paid to").value).toBe("");
 });
 
+it("records crypto TXIDs and shows the same TXID to the reshipper", async () => {
+  const txid = `0x${"a1".repeat(32)}`;
+  const saved = data();
+  saved.payouts = [{ ...saved.payouts[0], method: "crypto", reference: txid, voidedAt: null, voidReason: null }];
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => json(init?.method === "POST" ? saved : data()));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  await click(byLabel("Select order PA-101"));
+  await act(async () => {
+    type(inputByLabelText("Amount paid"), "15.00");
+    type(inputByLabelText("Method"), "crypto");
+    type(inputByLabelText("Destination actually paid to"), "0xRecipient");
+  });
+  expect(el.textContent).toContain("Enter a TXID");
+  await act(async () => type(inputByLabelText("TXID"), txid));
+  await click(el.querySelector('section[aria-label="Record payout"] input[type="checkbox"]')!);
+  await click(btn("Preview allocations"));
+  expect(q('[aria-label="Payout preview"]').textContent).toContain(txid);
+  await click(btn("Record payout")); await flush();
+  const post = fetcher.mock.calls.find(call => call[1]?.method === "POST")!;
+  expect(JSON.parse(String(post[1]?.body))).toMatchObject({ method: "crypto", reference: txid });
+  expect(q('[aria-label="Payout history"]').textContent).toContain(`TXID: ${txid}`);
+  await render({ mode: "reshipper", gbId: "g2", fetcher: async () => json(saved) });
+  expect(q('[aria-label="Payout history"]').textContent).toContain(`TXID: ${txid}`);
+  expect(q('[aria-label="Payout history"]').textContent).toContain("PA-099");
+});
+
 it("validates allocation totals, previews, keeps operationId on retry and shows server error", async () => {
   const posts: { path: string; body: { operationId: string; amount: string; allocations: unknown[] } }[] = [];
   let fail = true;

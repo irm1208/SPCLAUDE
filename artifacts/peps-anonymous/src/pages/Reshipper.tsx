@@ -26,7 +26,7 @@ import { ReshipperGroupBuyPicker } from "@/components/ReshipperGroupBuyPicker";
 import { ReshipperCollectionsCard } from "@/components/ReshipperCollectionsCard";
 import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import type { ReshipperCollectionOrder } from "@/lib/reshipper-collections";
-import type { CustomPostageOption } from "@/lib/country-shipping-options";
+import { normalizeShippingCountry, type CustomPostageOption } from "@/lib/country-shipping-options";
 import { reshipperShippingCountries, visibleReshipperShippingOptions } from "@/lib/reshipper-shipping-options";
 import { PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
 
@@ -1828,8 +1828,9 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [shippingOptions, setShippingOptions] = useState<ShipOption[]>(gb?.shippingOptions ?? []);
+  const [postageBase, setPostageBase] = useState<ShipOption[]>(gb?.shippingOptions ?? []);
   const [editOptIdx, setEditOptIdx] = useState<number | null>(null);
-  const [newOpt, setNewOpt] = useState({ label: "", price: "", country: assignedCountries[0] ?? "" });
+  const [newOpt, setNewOpt] = useState({ label: "", price: "", country: assignedCountries[0] ?? "", requiresAddress: true, requiresQrCode: false });
   const [showNewOpt, setShowNewOpt] = useState(false);
   const countryScope = assignedCountries.join(",");
   useEffect(() => {
@@ -1857,17 +1858,20 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
   const [qrCouriers, setQrCouriers] = useState<string[]>(derivedCouriers);
   const [newCourier, setNewCourier] = useState("");
 
-  const save = async () => {
+  const save = async (mode: "all" | "postage" = "all") => {
     setSaving(true); setMsg("");
     try {
       const weightedPct = 100 - form.vendorShippingEqualPct;
       const body: Record<string, unknown> = {
-        ...form,
-        qrUploadCouriers: qrCouriers,
-        vendorShippingAmount: form.vendorShippingAmount ? parseFloat(form.vendorShippingAmount) : null,
-        vendorShippingMode: form.vendorShippingEqualPct === 100 ? "equal" : form.vendorShippingEqualPct === 0 ? "weighted" : "equal",
-        vendorShippingEqualPct: form.vendorShippingEqualPct,
+        ...(mode === "all" ? {
+          ...form,
+          qrUploadCouriers: qrCouriers,
+          vendorShippingAmount: form.vendorShippingAmount ? parseFloat(form.vendorShippingAmount) : null,
+          vendorShippingMode: form.vendorShippingEqualPct === 100 ? "equal" : form.vendorShippingEqualPct === 0 ? "weighted" : "equal",
+          vendorShippingEqualPct: form.vendorShippingEqualPct,
+        } : {}),
         shippingOptions,
+        shippingOptionsBase: postageBase,
       };
       void weightedPct;
       const res = await reshipFetch(`/api/reshipper/gb/${gbId}/settings`, {
@@ -1884,6 +1888,9 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
           shippingOptions: data.shippingOptions ?? shippingOptions,
         } as RAssignment["gb"];
         setGb(updatedGb);
+        setShippingOptions(updatedGb.shippingOptions);
+        setPostageBase(updatedGb.shippingOptions);
+        setEditOptIdx(null);
         onGbUpdate(updatedGb);
         setMsg("Saved ✓");
         setTimeout(() => setMsg(""), 2500);
@@ -1908,9 +1915,9 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
 
   const addOption = () => {
     const price = parseFloat(newOpt.price);
-    if (!newOpt.label || isNaN(price) || !assignedCountries.includes(newOpt.country)) return;
-    setShippingOptions(prev => [...prev, { id: `opt-${Date.now()}`, label: newOpt.label.trim(), price, country: newOpt.country }]);
-    setNewOpt({ label: "", price: "", country: assignedCountries[0] ?? "" });
+    if (!newOpt.label.trim() || !Number.isFinite(price) || price < 0 || !assignedCountries.includes(newOpt.country)) return;
+    setShippingOptions(prev => [...prev, { ...newOpt, id: `opt-${Date.now()}`, label: newOpt.label.trim(), price }]);
+    setNewOpt({ label: "", price: "", country: assignedCountries[0] ?? "", requiresAddress: true, requiresQrCode: false });
     setShowNewOpt(false);
   };
 
@@ -1919,9 +1926,9 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
     setEditOptIdx(null);
   };
 
-  const updateOption = (idx: number, field: "label" | "price", val: string) => {
+  const updateOption = (idx: number, field: "label" | "price" | "country" | "requiresAddress" | "requiresQrCode", val: string | boolean) => {
     setShippingOptions(prev => prev.map((o, i) => i === idx
-      ? { ...o, [field]: field === "price" ? parseFloat(val) || 0 : val }
+      ? { ...o, [field]: field === "price" ? parseFloat(String(val)) || 0 : val }
       : o));
   };
 
@@ -2030,8 +2037,9 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
       )}
 
       <section className="rounded-2xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+        <fieldset disabled={saving} className="min-w-0 space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Add Shipping Courier</p>
+          <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Country postage options</p>
           <button onClick={() => setShowNewOpt(v => !v)} disabled={!assignedCountries.length}
             className="h-7 px-3 rounded-lg text-xs font-semibold flex items-center gap-1"
             style={{ background: "var(--t-blue-07)", color: "var(--t-blue-deep)", border: "1px solid var(--t-blue-18)" }}>
@@ -2039,7 +2047,7 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
           </button>
         </div>
         <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
-          Couriers for your assigned countries{assignedCountries.length ? ` (${assignedCountries.join(", ")})` : ""}, plus options available everywhere. Other countries’ settings are kept unchanged.
+          View and edit postage for your assigned countries{assignedCountries.length ? ` (${assignedCountries.join(", ")})` : ""}. Prices apply to new orders; existing orders are unchanged. Global options are view-only.
         </p>
         {showNewOpt && (
           <div className="flex flex-wrap gap-2 items-end">
@@ -2065,20 +2073,40 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
               style={{ background: "var(--t-blue-deep)" }}>
               <Plus className="w-3.5 h-3.5" />
             </button>
+            <div className="w-full flex flex-wrap gap-3 text-xs" style={{ color: "var(--t-text)" }}>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={newOpt.requiresAddress}
+                onChange={e => setNewOpt(f => ({ ...f, requiresAddress: e.target.checked }))} />Requires delivery address</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={newOpt.requiresQrCode}
+                onChange={e => setNewOpt(f => ({ ...f, requiresQrCode: e.target.checked }))} />Requires QR code / postage label upload</label>
+            </div>
           </div>
         )}
         {visibleOptions.length === 0
           ? <p className="text-sm py-2" style={{ color: "var(--t-subtle)" }}>No custom shipping options for your assigned countries yet</p>
           : (
             <div className="space-y-2">
-              {visibleOptions.map(({ option: opt, index: idx }) => (
+              {visibleOptions.map(({ option: opt, index: idx, editable }) => (
                 <div key={opt.id} className="flex flex-wrap items-center gap-2">
-                  {editOptIdx === idx ? (
+                  {editable && editOptIdx === idx ? (
                     <>
                       <input value={opt.label} onChange={e => updateOption(idx, "label", e.target.value)}
                         className={inputCls("text-xs flex-1")} style={inputStyle} />
                       {!opt.kitPrices && <input value={String(opt.price)} onChange={e => updateOption(idx, "price", e.target.value)}
                         type="number" min="0" step="0.01" className={inputCls("text-xs w-20")} style={inputStyle} />}
+                      <div className="w-full space-y-2">
+                        <label className="block text-xs" style={{ color: "var(--t-muted)" }}>Available in
+                          <select aria-label={`Country for ${opt.label}`} value={normalizeShippingCountry(opt.country) ?? ""}
+                            onChange={e => updateOption(idx, "country", e.target.value)} className={inputCls("text-xs mt-1")} style={inputStyle}>
+                            {assignedCountries.map(code => <option key={code} value={code}>{COUNTRY_LIST.find(country => country.code === code)?.name ?? code}</option>)}
+                          </select>
+                        </label>
+                        <div className="flex flex-wrap gap-3 text-xs" style={{ color: "var(--t-text)" }}>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(opt.requiresAddress)}
+                            onChange={e => updateOption(idx, "requiresAddress", e.target.checked)} />Requires delivery address</label>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(opt.requiresQrCode)}
+                            onChange={e => updateOption(idx, "requiresQrCode", e.target.checked)} />Requires QR code / postage label upload</label>
+                        </div>
+                      </div>
                       <button onClick={() => setEditOptIdx(null)} className="w-7 h-7 rounded-lg flex items-center justify-center"
                         style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
                         <Check className="w-3 h-3" style={{ color: "#16A34A" }} />
@@ -2089,16 +2117,20 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
                     </>
                   ) : (
                     <>
-                      <span className="flex-1 text-sm" style={{ color: "var(--t-text)" }}>{opt.label}</span>
+                      <span className="flex-1 text-sm" style={{ color: "var(--t-text)" }}>{opt.label}
+                        <small className="block text-[11px]" style={{ color: "var(--t-muted)" }}>
+                          {opt.country ? COUNTRY_LIST.find(country => country.code === normalizeShippingCountry(opt.country))?.name ?? opt.country : "All countries · managed by Admin / organiser"}
+                        </small>
+                      </span>
                       <span className="text-sm tabular-nums font-bold" style={{ color: "var(--t-muted)" }}>{currencySymbol(gb?.currency)}{fmtCurrency(opt.price)}</span>
-                      <button onClick={() => setEditOptIdx(idx)} className="w-7 h-7 rounded-lg flex items-center justify-center"
+                      {editable && <button aria-label={`Edit ${opt.label}`} onClick={() => setEditOptIdx(idx)} className="w-7 h-7 rounded-lg flex items-center justify-center"
                         style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
                         <Pencil className="w-3 h-3" style={{ color: "var(--t-muted)" }} />
-                      </button>
-                      <button onClick={() => removeOption(idx)} className="w-7 h-7 rounded-lg flex items-center justify-center"
+                      </button>}
+                      {editable && <button aria-label={`Remove ${opt.label}`} onClick={() => removeOption(idx)} className="w-7 h-7 rounded-lg flex items-center justify-center"
                         style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
                         <Trash2 className="w-3 h-3" style={{ color: "#DC2626" }} />
-                      </button>
+                      </button>}
                     </>
                   )}
                 </div>
@@ -2106,6 +2138,13 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
             </div>
           )}
 
+        <button type="button" onClick={() => save("postage")} disabled={saving || !assignedCountries.length}
+          className="h-9 px-4 rounded-xl text-xs font-semibold text-white flex items-center gap-2 disabled:opacity-50"
+          style={{ background: "var(--t-blue-deep)" }}>
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Save postage
+        </button>
+        {msg && <p role="status" className="text-xs" style={{ color: "var(--t-text)" }}>{msg}</p>}
+        </fieldset>
       </section>
 
       {/* QR Couriers — own separate card */}
@@ -2173,7 +2212,7 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
       {msg && (
         <p className="text-sm font-semibold" style={{ color: msg.includes("✓") ? "#16A34A" : "#DC2626" }}>{msg}</p>
       )}
-      <button onClick={save} disabled={saving}
+      <button onClick={() => save()} disabled={saving}
         className="h-10 px-6 rounded-xl text-sm font-bold text-white flex items-center gap-2 disabled:opacity-60"
         style={{ background: "var(--t-blue-deep)" }}>
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
