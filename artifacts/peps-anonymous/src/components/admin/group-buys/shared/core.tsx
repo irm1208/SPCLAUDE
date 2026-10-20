@@ -15,6 +15,7 @@ import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { currSym } from "@/lib/currency";
 import { normalizeShippingCountry } from "@/lib/country-shipping-options";
+import { reshipperShippingCountries } from "@/lib/reshipper-shipping-options";
 import { PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
 import type { KitPrices } from "@/lib/country-shipping-options";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
@@ -104,6 +105,7 @@ export type GroupBuy = Record<string, unknown> & {
   allowExtraOrders?: boolean;
   directShippingEnabled?: boolean;
   directShippingVendorId?: string | null;
+  directShippingMinKits?: number | string;
   cryptoRefundsEnabled?: boolean;
 };
 
@@ -116,7 +118,7 @@ export const INFO_CARD_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "success", label: "Success" },
   { value: "error", label: "Error" },
 ];
-export type ShippingOption = { id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean; source?: string; kitPrices?: KitPrices };
+export type ShippingOption = { id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean; source?: string; kitPrices?: KitPrices; reshipperUsername?: string | null };
 export type EntryFeePayment = {
   id: string;
   groupBuyId: string;
@@ -209,14 +211,15 @@ export function InfoCardsEditor({ cards, onChange }: {
 }
 
 // ─── Shipping Options Editor ──────────────────────────────────
-export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: {
+export function ShippingOptionsEditor({ options, onChange, currencySym = "$", reshippers }: {
   options: ShippingOption[];
   onChange: (opts: ShippingOption[]) => void;
   currencySym?: string;
+  reshippers?: { reshipperUsername: string; country: string; countries: string[] | null; enabled: boolean }[];
 }) {
   const add = () => onChange([...options, { id: crypto.randomUUID(), label: "", price: 0 }]);
   const remove = (id: string) => onChange(options.filter(o => o.id !== id));
-  const update = (id: string, field: keyof ShippingOption, val: string | number | boolean) =>
+  const update = (id: string, field: keyof ShippingOption, val: string | number | boolean | null) =>
     onChange(options.map(o => o.id === id ? { ...o, [field]: val } : o));
   const move = (idx: number, dir: -1 | 1) => {
     const arr = [...options];
@@ -276,13 +279,27 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: 
               <select
                 aria-label={`Country for ${opt.label || "shipping option"}`}
                 value={normalizeShippingCountry(opt.country) ?? ""}
-                onChange={e => update(opt.id, "country", e.target.value || "")}
+                onChange={e => onChange(options.map(row => row.id === opt.id ? { ...row, country: e.target.value || null, reshipperUsername: null } : row))}
                 className="rounded-md border border-input bg-background px-2 py-1 text-xs"
               >
                 <option value="">All countries</option>
                 {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.code === "GB" ? "United Kingdom (UK / GB)" : country.name}</option>)}
               </select>
             </label>
+            {reshippers && <label className="flex w-full min-w-0 items-center gap-2 text-xs text-muted-foreground sm:w-auto">
+              Route to
+              <select aria-label={`Reshipper route for ${opt.label}`} value={opt.reshipperUsername ?? ""}
+                onChange={e => update(opt.id, "reshipperUsername", e.target.value || null)}
+                className="min-w-0 max-w-full flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs">
+                <option value="">Automatic — assigned country reshipper</option>
+                {[...new Set(reshippers.filter(row => row.enabled && opt.country &&
+                  reshipperShippingCountries([row]).includes(normalizeShippingCountry(opt.country) ?? "")).map(row => row.reshipperUsername))].map(username =>
+                  <option key={username} value={username} disabled={!opt.country}>@{username}</option>)}
+                {opt.reshipperUsername && !reshippers.some(row => row.enabled && row.reshipperUsername === opt.reshipperUsername &&
+                  opt.country && reshipperShippingCountries([row]).includes(normalizeShippingCountry(opt.country) ?? "")) &&
+                  <option value={opt.reshipperUsername}>@{opt.reshipperUsername} (unavailable for this country)</option>}
+              </select>
+            </label>}
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input
                 type="checkbox"

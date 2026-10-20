@@ -36,6 +36,7 @@ import { writeLog } from "../lib/audit-log";
 import { confirmEntryFeePayment, rejectEntryFeePayment } from "../lib/gb-entry-fee";
 import { parseGroupBuyAdminFeeCountries, resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 import { validateGroupBuyShippingOptions } from "../lib/group-buy-shipping-options";
+import { validatePostageRouting } from "../lib/group-buy-delivery-routing";
 import {
   reconcileShippingAdjustment,
   ShippingAdjustmentError,
@@ -368,6 +369,9 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
     if (shippingOptions !== null) {
       const soError = validateShippingOptions(shippingOptions);
       if (soError) { res.status(400).json({ error: soError }); return; }
+      const assignments = await db.select().from(gbReshippersTable).where(eq(gbReshippersTable.gbId, id));
+      const routeError = validatePostageRouting(shippingOptions, assignments);
+      if (routeError) { res.status(400).json({ error: routeError }); return; }
     }
     updates.shippingOptions = shippingOptions ? JSON.stringify(shippingOptions) : null;
   }
@@ -448,6 +452,13 @@ router.patch("/admin/group-buys/:id", async (req, res): Promise<void> => {
   }
   if (directShippingEnabled !== undefined) updates.directShippingEnabled = Boolean(directShippingEnabled);
   if (directShippingVendorId !== undefined) updates.directShippingVendorId = directShippingVendorId ? String(directShippingVendorId).trim() : null;
+  if (req.body.directShippingMinKits !== undefined) {
+    const minimum = Number(req.body.directShippingMinKits);
+    if (req.body.directShippingMinKits === null || req.body.directShippingMinKits === "" || !Number.isFinite(minimum) || minimum < 0 || minimum > 100000 || minimum * 2 !== Math.round(minimum * 2)) {
+      res.status(400).json({ error: "Direct Shipping minimum must be a non-negative kit quantity in steps of 0.5." }); return;
+    }
+    updates.directShippingMinKits = minimum.toFixed(1);
+  }
   if (cryptoRefundsEnabled !== undefined) updates.cryptoRefundsEnabled = cryptoRefundsEnabled;
 
   if (invitePin !== undefined) {

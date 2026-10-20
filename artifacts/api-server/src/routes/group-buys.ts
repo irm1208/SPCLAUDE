@@ -618,6 +618,7 @@ router.get("/group-buys/:id/direct-shipping-info", requireAccount, async (req, r
     .select({
       directShippingEnabled: groupBuysTable.directShippingEnabled,
       directShippingVendorId: groupBuysTable.directShippingVendorId,
+      directShippingMinKits: groupBuysTable.directShippingMinKits,
     })
     .from(groupBuysTable)
     .where(eq(groupBuysTable.id, id));
@@ -628,7 +629,7 @@ router.get("/group-buys/:id/direct-shipping-info", requireAccount, async (req, r
   }
 
   if (!gb.directShippingVendorId) {
-    res.json({ enabled: true, vendor: null });
+    res.json({ enabled: true, vendor: null, minKits: Number(gb.directShippingMinKits) });
     return;
   }
 
@@ -638,7 +639,7 @@ router.get("/group-buys/:id/direct-shipping-info", requireAccount, async (req, r
     .where(eq(siteConfigTable.key, "wholesale_vendors"));
 
   if (!configRow?.value) {
-    res.json({ enabled: true, vendor: null });
+    res.json({ enabled: true, vendor: null, minKits: Number(gb.directShippingMinKits) });
     return;
   }
 
@@ -647,7 +648,7 @@ router.get("/group-buys/:id/direct-shipping-info", requireAccount, async (req, r
     const all = JSON.parse(configRow.value) as any[];
     vendor = all.find(v => v.id === gb.directShippingVendorId);
   } catch {
-    res.json({ enabled: true, vendor: null });
+    res.json({ enabled: true, vendor: null, minKits: Number(gb.directShippingMinKits) });
     return;
   }
 
@@ -680,6 +681,7 @@ router.get("/group-buys/:id/direct-shipping-info", requireAccount, async (req, r
 
   res.json({
     enabled: true,
+    minKits: Number(gb.directShippingMinKits),
     tiers,
     tierBounds,
     maxKitsPerPackage: (vendor.maxKitsPerPackage ?? 25) as number,

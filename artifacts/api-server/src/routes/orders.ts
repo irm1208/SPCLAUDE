@@ -1,4 +1,5 @@
 import { getOnwardOrderPreference, saveOnwardOrderPreference, validateEuDeliveryCheckout } from "../lib/gb-onward-delivery";
+import { resolveGroupOrderRoute } from "../lib/group-buy-delivery-routing-service";
 import { OnwardDeliveryError, validOnwardMethod } from "../lib/gb-onward-delivery-rules";
 import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
 import { assertSupplierOrderEditable } from "../lib/supplier-batch-protection";
@@ -1473,50 +1474,26 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       }
     }
 
-    // If there's a country leg, pick reshipper from that leg's country
-    if (resolvedCountryLegId) {
-      const [leg] = await db
-        .select({ countryCode: gbCountryLegsTable.countryCode })
-        .from(gbCountryLegsTable)
-        .where(eq(gbCountryLegsTable.id, resolvedCountryLegId));
-      if (leg) {
-        const candidates = await db
-          .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
-          .from(gbReshippersTable)
-          .where(and(
-            eq(gbReshippersTable.gbId, normalizedGroupBuyId),
-            eq(gbReshippersTable.country, leg.countryCode),
-            eq(gbReshippersTable.enabled, true),
-          ));
-        if (candidates.length === 1) {
-          // Single reshipper — auto-assign immediately
-          autoReshipperUsername = candidates[0].reshipperUsername;
-        }
-        // Multiple reshippers: leave unassigned so reshippers claim from the pool
-      }
-    }
   }
 
-  // Fallback: use shipping country for reshipper lookup (non-leg GBs)
-  if (!autoReshipperUsername && normalizedGroupBuyId && normalizedShippingCountry) {
-    const candidates = await db
-      .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
-      .from(gbReshippersTable)
-      .where(and(
-        eq(gbReshippersTable.gbId, normalizedGroupBuyId),
-        eq(gbReshippersTable.country, normalizedShippingCountry),
-        eq(gbReshippersTable.enabled, true),
-      ));
-    if (candidates.length === 1) {
-      // Single reshipper — auto-assign immediately
-      autoReshipperUsername = candidates[0].reshipperUsername;
-    }
-    // Multiple reshippers: leave unassigned so reshippers claim from the pool
+  let deliveryRoute: Awaited<ReturnType<typeof resolveGroupOrderRoute>> | null = null;
+  if (normalizedGroupBuyId) {
+    try {
+      deliveryRoute = await resolveGroupOrderRoute({
+        gbId: normalizedGroupBuyId, methodId: String(deliveryMethodRecord.id),
+        direct: clientDirectShippingRequested === true,
+        country: normalizedShippingCountry, username: tg,
+        preferred: typeof clientPreferredReshipper === "string" ? clientPreferredReshipper : null,
+        items: clientLineItems,
+      });
+      autoReshipperUsername = deliveryRoute.reshipperUsername;
+    } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
   }
 
   // ── Reshipper invite code — if provided, validate and assign specific reshipper ──
   let codeRoutingType: string | null = null;
   if (normalizedGroupBuyId && clientReshipperCode && typeof clientReshipperCode === "string") {
+    if (deliveryRoute?.routingType === "direct") { res.status(400).json({ error: "A reshipper code cannot be used with Direct Shipping." }); return; }
     const normalizedCode = clientReshipperCode.trim().toUpperCase();
     const [codeReshipper] = await db
       .select({
@@ -1556,6 +1533,9 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       }
     }
 
+    if (deliveryRoute?.fixedReshipper && deliveryRoute.reshipperUsername !== codeReshipper.reshipperUsername) {
+      res.status(400).json({ error: "This postage option is assigned to another reshipper." }); return;
+    }
     autoReshipperUsername = codeReshipper.reshipperUsername;
     codeRoutingType = "reshipper";
   }
@@ -1593,7 +1573,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       shippingCountry: normalizedShippingCountry,
       reshipperUsername: autoReshipperUsername,
       countryLegId: resolvedCountryLegId,
-      routingType: codeRoutingType ?? (normalizedGroupBuyId ? "direct" : null),
+      routingType: codeRoutingType ?? deliveryRoute?.routingType ?? null,
       orderType: clientOrderType === "wholesale" ? "wholesale" : null,
       shippingName: clientShippingName ? String(clientShippingName).trim().slice(0, 120) || null : null,
       shippingPhone: clientShippingPhone ? String(clientShippingPhone).trim().slice(0, 40) || null : null,
@@ -2521,10 +2501,40 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
 
   const activeHalfClaims = await db.select({ id: gbHalfKitClaimsTable.id }).from(gbHalfKitClaimsTable)
     .where(and(eq(gbHalfKitClaimsTable.orderId, rawId), eq(gbHalfKitClaimsTable.state, "active"))).limit(1);
+  let updatedDeliveryRoute: Awaited<ReturnType<typeof resolveGroupOrderRoute>> | null = null;
+  const destinationChanged = typeof clientShippingCountry === "string" &&
+    supplierCountryCode(clientShippingCountry) !== supplierCountryCode(order.shippingCountry ?? "");
+  const deliveryChanged = deliveryMethodRecord.id !== order.deliveryMethodId ||
+    (clientDirectShippingRequested === true) !== Boolean(order.directShippingRequested) || destinationChanged;
+  if (order.groupBuyId && !order.additionOfOrderId && (!order.reshipperUsername || deliveryChanged)) {
+    try {
+      updatedDeliveryRoute = await resolveGroupOrderRoute({
+        gbId: order.groupBuyId, methodId: String(deliveryMethodRecord.id),
+        direct: clientDirectShippingRequested === true,
+        country: typeof clientShippingCountry === "string" ? clientShippingCountry : order.shippingCountry,
+        username: order.telegramUsername, preferred: destinationChanged ? null : order.reshipperUsername, items: clientLineItems,
+        legacyDirectKits: order.directShippingRequested ? oldLineItems.reduce((sum, item) => sum + Number(item.quantity), 0) : undefined,
+      });
+    } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
+  }
+  const routeUpdate = updatedDeliveryRoute ? {
+    reshipperUsername: updatedDeliveryRoute.reshipperUsername, routingType: updatedDeliveryRoute.routingType,
+  } : {};
   const { updatedOrder, insertedLineItems, lineItemsToInsert } = await db.transaction(async tx => {
+  if (updatedDeliveryRoute) {
+    const [routeSnapshot] = await tx.select({ reshipperUsername: ordersTable.reshipperUsername, routingType: ordersTable.routingType })
+      .from(ordersTable).where(eq(ordersTable.id, rawId)).for("update");
+    if (!routeSnapshot || routeSnapshot.reshipperUsername !== order.reshipperUsername || routeSnapshot.routingType !== order.routingType) {
+      throw new HalfKitError("The order's shipping route changed. Reload the order before saving.");
+    }
+  }
   if (activeHalfClaims.length) {
     if (!order.groupBuyId) throw new HalfKitError("This reserved half-kit order needs organiser review.");
     const result = await editOrderWithHalfKits(tx, rawId, order.groupBuyId, req.body);
+    if (updatedDeliveryRoute) {
+      const [routed] = await tx.update(ordersTable).set(routeUpdate).where(eq(ordersTable.id, rawId)).returning();
+      result.updatedOrder = routed;
+    }
     if (req.body.onwardDeliveryMethod || String(deliveryMethodId).startsWith("eu-postage-")) await tx.update(ordersTable).set({
       shippingName: String(clientShippingName ?? order.shippingName ?? "").trim(),
       shippingAddress: String(clientShippingAddress ?? order.shippingAddress ?? "").trim(),
@@ -2544,6 +2554,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     .update(ordersTable)
     .set({
       deliveryMethod: isAddition ? order.deliveryMethod : deliveryMethodRecord.name,
+      ...routeUpdate,
       deliveryMethodId: isAddition ? order.deliveryMethodId : deliveryMethodRecord.id,
       deliveryPrice: deliveryPrice.toFixed(2),
       vendorShipping: vendorShipping.toFixed(2),

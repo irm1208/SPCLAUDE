@@ -6,7 +6,7 @@ export type CountryScopedShippingOption = {
   [key: string]: unknown;
 };
 export type KitPrices = { upTo5: number | null; upTo25: number | null };
-export type CustomPostageOption = { id: string; label: string; price: number; country?: string | null; source?: string; kitPrices?: KitPrices; requiresAddress?: boolean; requiresQrCode?: boolean };
+export type CustomPostageOption = { id: string; label: string; price: number; country?: string | null; source?: string; kitPrices?: KitPrices; requiresAddress?: boolean; requiresQrCode?: boolean; reshipperUsername?: string | null };
 
 export function customPostagePrice(option: { price: number; kitPrices?: KitPrices }, kits: number): number | null {
   if (!option.kitPrices) return option.price;

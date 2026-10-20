@@ -40,7 +40,8 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
     setVendorShippingMessage(gb.vendorShippingMessage ?? "");
     setVendorShippingAmount(gb.vendorShippingAmount != null ? String(gb.vendorShippingAmount) : "");
     setDirectShippingVendorId(gb.directShippingVendorId ?? "");
-  }, [gb.id, gb.infoCards, gb.vendorShippingMessage, gb.vendorShippingAmount, gb.directShippingVendorId]);
+    setDirectShippingMinKits(String(gb.directShippingMinKits ?? 30));
+  }, [gb.id, gb.infoCards, gb.vendorShippingMessage, gb.vendorShippingAmount, gb.directShippingVendorId, gb.directShippingMinKits]);
 
   // Accept Payments toggle
   const [togglingPayments, setTogglingPayments] = useState(false);
@@ -192,6 +193,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
   // Direct Shipping
   const [togglingDirectShipping, setTogglingDirectShipping] = useState(false);
   const [directShippingVendorId, setDirectShippingVendorId] = useState(gb.directShippingVendorId ?? "");
+  const [directShippingMinKits, setDirectShippingMinKits] = useState(String(gb.directShippingMinKits ?? 30));
   const [savingDirectShipping, setSavingDirectShipping] = useState(false);
   const [savedDirectShipping, setSavedDirectShipping] = useState(false);
 
@@ -551,7 +553,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
       const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ directShippingVendorId: directShippingVendorId.trim() || null }),
+        body: JSON.stringify({ directShippingVendorId: directShippingVendorId.trim() || null, directShippingMinKits: Number(directShippingMinKits) }),
       });
       if (res.ok) {
         onUpdate(await res.json());
@@ -1231,6 +1233,12 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
         </p>
         {gb.directShippingEnabled && (
           <div className="space-y-3">
+            <label className="block text-xs font-medium text-muted-foreground">Minimum kits for Direct Shipping
+              <input aria-label="Direct Shipping minimum kits" type="number" min="0" max="100000" step="0.5"
+                value={directShippingMinKits} onChange={e => setDirectShippingMinKits(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm" />
+              <span className="block mt-1 font-normal">Shown only at this kit quantity or above. Half kits count as 0.5. Members must choose it explicitly.</span>
+            </label>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Wholesale Vendor ID <span className="font-normal">(optional — for dynamic cost calc)</span></label>
               <input
@@ -1241,7 +1249,7 @@ export function DetailsSubTab({ secret, gb, onUpdate }: { secret: string; gb: Gr
                 className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
-            <Button size="sm" onClick={saveDirectShipping} disabled={savingDirectShipping} className="gap-1.5">
+            <Button size="sm" onClick={saveDirectShipping} disabled={savingDirectShipping || !directShippingMinKits.trim() || !Number.isFinite(Number(directShippingMinKits)) || Number(directShippingMinKits) < 0 || Number(directShippingMinKits) > 100000 || Number(directShippingMinKits) * 2 !== Math.round(Number(directShippingMinKits) * 2)} className="gap-1.5">
               {savingDirectShipping ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedDirectShipping ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
               {savedDirectShipping ? "Saved" : "Save Direct Shipping"}
             </Button>

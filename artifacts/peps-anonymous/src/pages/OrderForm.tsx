@@ -492,8 +492,9 @@ export default function OrderForm() {
   });
 
   type DirectShippingRegion = { name: string; prices: number[] | null; priceNote: string | null; customNote: string | null };
-  type DirectShippingInfo = { enabled: false } | { enabled: true; vendor: null } | {
+  type DirectShippingInfo = { enabled: false } | { enabled: true; vendor: null; minKits: number } | {
     enabled: true;
+    minKits: number;
     tiers: string[];
     tierBounds: number[];
     maxKitsPerPackage: number;
@@ -512,6 +513,16 @@ export default function OrderForm() {
     enabled: !!gbId,
     staleTime: 60 * 1000,
   });
+
+  const directShippingEligible = Boolean(directShippingInfo?.enabled &&
+    countKits(draft.lineItems) >= Number(directShippingInfo.minKits ?? 30));
+  useEffect(() => {
+    if (isPreview || draft.additionOfOrderId || draft.orderId || !directShippingInfo) return;
+    if (draft.directShippingRequested && !directShippingEligible) {
+      draft.setDirectShippingRequested(false);
+      if (draft.deliveryMethodId === "__direct_shipping") draft.setDeliveryMethod("", "", 0);
+    }
+  }, [isPreview, directShippingInfo, directShippingEligible, draft.directShippingRequested, draft.deliveryMethodId, draft.orderId, draft.additionOfOrderId, draft.setDeliveryMethod, draft.setDirectShippingRequested]);
 
   const { data: gbPopularity = [] } = useQuery<Array<{ productName: string; score: number }>>({
     queryKey: ["gb-popularity", gbId],
@@ -1090,7 +1101,7 @@ export default function OrderForm() {
   const handlePanelDeliverySelect = (methodId: string) => {
     if (isPreview || isTopUp) return;
     if (methodId === "__direct_shipping") {
-      if (!directShippingInfo?.enabled) return;
+      if (!directShippingEligible) return;
       draft.setDeliveryMethod("__direct_shipping", "Direct Shipping to Home", 0);
       draft.setDirectShippingRequested(true);
     } else {
@@ -1608,7 +1619,7 @@ export default function OrderForm() {
                               ? (method as any).infoText || ("description" in method ? method.description : undefined) || getDeliveryFallbackInfo(method.name) : null,
                            requiresAddress: countryShippingOptions.find(option => option.id === method.id)?.requiresAddress ?? false,
                           })),
-                          ...(directShippingInfo?.enabled ? [{
+                          ...(directShippingEligible ? [{
                             id: "__direct_shipping", name: "Direct to Home",
                             price: browseTotal > 0 ? estimatedDirectShippingCost : null,
                             description: "Shipped directly by the vendor.",
@@ -2108,7 +2119,7 @@ export default function OrderForm() {
           )}
 
           {/* Direct Shipping to Home — separate section, shown when GB has directShippingEnabled */}
-          {gbId && directShippingInfo?.enabled && (() => {
+          {gbId && directShippingEligible && directShippingInfo?.enabled && (() => {
             const info = directShippingInfo;
             const isDsSelected = draft.deliveryMethodId === "__direct_shipping";
             const selectDirectShipping = () => {

@@ -4,7 +4,7 @@ import { HalfKitError } from "./half-kit-rules";
 
 type CountryScopedOption = { country?: unknown };
 export type KitPrices = { upTo5: number | null; upTo25: number | null };
-export type CustomPostageOption = { id: string; label: string; price: number; country?: string | null; source?: string; kitPrices?: KitPrices; requiresAddress?: boolean; requiresQrCode?: boolean };
+export type CustomPostageOption = { id: string; label: string; price: number; country?: string | null; source?: string; kitPrices?: KitPrices; requiresAddress?: boolean; requiresQrCode?: boolean; reshipperUsername?: string | null };
 export function customPostagePatch(order: { deliveryPrice: unknown; grandTotal: unknown; amountDue: unknown; paymentStatus: string }, target: number) {
   const delta = Math.round((target - Number(order.deliveryPrice)) * 100) / 100;
   if (!delta) return {};
@@ -71,6 +71,9 @@ export function validateGroupBuyShippingOptions(options: unknown): string | null
       }) || (tiers.upTo5 === null && tiers.upTo25 === null)) return "Enter valid kit-band prices; leave unavailable bands blank";
     }
     if (raw.source === "eu-postage" && (!raw.country || !raw.kitPrices)) return "EU postage requires a country and kit-band prices";
+    if (raw.reshipperUsername != null && (typeof raw.reshipperUsername !== "string" || !raw.reshipperUsername.trim() || raw.reshipperUsername.length > 100)) {
+      return "Choose a valid postage reshipper.";
+    }
     if (raw.country != null && raw.country !== "") {
       if (typeof raw.country !== "string" || !COUNTRY_CODE_TO_NAME[normalizeToCode(raw.country)]) {
         return `shippingOptions[${index}].country must be a supported country`;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { DedicatedDirectShippingSettings } from "../DedicatedDirectShippingSettings";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePickerField } from "@/components/DatePickerField";
 import {
@@ -186,6 +187,18 @@ export function DeliveryMethodsSubTab({ secret, gb, onUpdate }: { secret: string
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>(gb.shippingOptions ?? []);
   const [savingShipping, setSavingShipping] = useState(false);
   const [savedShipping, setSavedShipping] = useState(false);
+  const [routingReshippers, setRoutingReshippers] = useState<{ reshipperUsername: string; country: string; countries: string[] | null; enabled: boolean }[]>([]);
+  const [routingError, setRoutingError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    setRoutingReshippers([]); setRoutingError("");
+    fetch(apiUrl(`/admin/group-buys/${gb.id}/reshippers`), { credentials: "include", headers: { "x-admin-secret": secret }, signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error("Could not load reshipper routing choices. Reload this page to retry.");
+        setRoutingReshippers(await response.json());
+      }).catch(error => { if (!controller.signal.aborted) setRoutingError(error.message); });
+    return () => controller.abort();
+  }, [gb.id, secret]);
 
   useEffect(() => {
     setShippingOptions(gb.shippingOptions ?? []);
@@ -271,10 +284,13 @@ export function DeliveryMethodsSubTab({ secret, gb, onUpdate }: { secret: string
           </Button>
         </div>
         <p className="text-xs text-muted-foreground mb-3">Options can be available to everyone or limited to one destination country. Members see global options plus options for their country. Import EU home/pickup options below to charge delivery at checkout instead of using the separate EU matrix. Existing UK and US options are kept.</p>
-        <ShippingOptionsEditor options={shippingOptions} onChange={setShippingOptions} currencySym={currSym(gb.currency)} />
+        <p className="text-xs text-muted-foreground">Country postage goes through a reshipper, never Direct Shipping. Choose a specific reshipper in “Route to”, or leave automatic country assignment. Direct Shipping is configured separately below.</p>
+        {routingError && <p role="alert" className="text-xs text-red-600">{routingError}</p>}
+        <ShippingOptionsEditor options={shippingOptions} onChange={setShippingOptions} currencySym={currSym(gb.currency)} reshippers={routingReshippers} />
         <div className="mt-4"><EuCustomPostageImport gbId={gb.id} currency={gb.currency || "USD"} scope="admin"
           fetcher={(url, init) => fetch(url, { ...init, credentials: "include", headers: { ...init?.headers, "x-admin-secret": secret } })}
           options={shippingOptions} onChange={options => { setShippingOptions(options); setSavedShipping(false); }} /></div>
+        <DedicatedDirectShippingSettings gb={gb} secret={secret} onUpdate={onUpdate} />
       </Card>
 
       <Card className="p-5">

@@ -36,6 +36,9 @@ export function mergeReshipperPostage(
   if (error) throw new ReshipperPostageError(error, 400);
   const next = proposed as CustomPostageOption[];
   const original = base as CustomPostageOption[];
+  if (next.some(option => (option.reshipperUsername ?? null) !== (original.find(row => row.id === option.id)?.reshipperUsername ?? null))) {
+    throw new ReshipperPostageError("Only Admin or the organiser can change postage routing.");
+  }
   const countries = assignedPostageCountries(assignments);
   const editable = (option: CustomPostageOption) => Boolean(option.country && countries.has(normalizeToCode(option.country)));
   const sameRows = (a: CustomPostageOption[], b: CustomPostageOption[]) => isDeepStrictEqual(
