@@ -18,6 +18,7 @@ import {
   gbParcelsTable,
   gbParcelOptinsTable,
   accountGroupBuysTable,
+  siteConfigTable,
   type GroupBuy,
   type GbParcel,
 } from "@workspace/db";
@@ -35,6 +36,8 @@ import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { validateGroupBuyShippingOptions } from "../lib/group-buy-shipping-options";
 import reshipperVisibilityRouter from "./reshipper-visibility";
+import { reshipperPostageReceipts } from "../lib/reshipper-postage-receipts";
+import { onwardChargeLedgerKey } from "../lib/gb-onward-payment-rules";
 
 const router: IRouter = Router();
 router.use(reshipperVisibilityRouter);
@@ -535,7 +538,27 @@ router.get("/reshipper/gb/:gbId/orders", requireReshipper, async (req, res): Pro
       if (!linesByOrder.has(li.orderId)) linesByOrder.set(li.orderId, []);
       linesByOrder.get(li.orderId)!.push(li);
     }
-    const withItems = filtered.map(o => ({ ...o, lineItems: linesByOrder.get(o.id) ?? [] }));
+    // Read delivery receipts in one batch, not one lookup per order. Only safe
+    // amount/currency summaries belonging to this reshipper leave this endpoint.
+    let ledgerByOrder: Map<string, string> | null = null;
+    try {
+      const ledgers = await db.select({ key: siteConfigTable.key, value: siteConfigTable.value })
+        .from(siteConfigTable).where(inArray(siteConfigTable.key, orderIds.map(onwardChargeLedgerKey)));
+      ledgerByOrder = new Map(ledgers.map(row => [row.key, row.value]));
+    } catch {
+      console.error("[reshipper] Could not load delivery receipt summaries");
+    }
+    const withItems = filtered.map(o => {
+      const row = { ...o, lineItems: linesByOrder.get(o.id) ?? [] };
+      try {
+        if (!ledgerByOrder) throw new Error("Delivery receipt lookup failed");
+        return { ...row, onwardPostageCollected: reshipperPostageReceipts(ledgerByOrder.get(onwardChargeLedgerKey(o.id)) ?? null, o.id, assignment.reshipperUsername) };
+      } catch {
+        // A receipt problem must not take the order list down or silently show
+        // a partial total. The summary card explicitly reports the failure.
+        return { ...row, onwardPostageError: "Delivery receipts could not be loaded. Refresh before relying on these totals." };
+      }
+    });
     res.json(withItems);
     return;
   }

@@ -141,6 +141,7 @@
 - [Wholesale fulfilment wording](wholesale-fulfilment-wording.md) — the second wholesale/shared milestone is “Order received by Vendor”; unrelated order wording stays unchanged.
 - [GB progress updates](gb-progress-updates.md) — six manually managed group-wide stages and dated image/note updates; independent of member order/payment statuses.
 - [Reshipper group visibility](reshipper-group-visibility.md) — account-saved personal hiding with restore; never remove assignments or orders, or reuse customer archiving.
+- [Reshipper collections](reshipper-collection-policy.md) — admin fees plus member postage only, including paid onward receipts; exclude vendor shipping and never mix currencies.
 - [GB EU onward delivery](gb-eu-onward-delivery.md) — EU custom postage replaces the matrix where imported; automatic kit bands, country isolation, legacy payment preservation.
 - [Account suspension enforcement](account-suspension-enforcement.md) — check current status on every session; order-number/social login and guest order paths must not bypass suspension.
 - [Member order receipt](member-order-receipt-policy.md) — members can confirm their own shipped group-buy, wholesale and shared orders; never complete other members’ parcels or payments.

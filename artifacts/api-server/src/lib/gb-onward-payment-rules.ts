@@ -76,3 +76,4 @@ export type OnwardCharge = {
   attempts: { txHash: string; reason: string; rejectedAt: string }[];
 };
 export type OnwardLedger = { request: OnwardCharge | null; history: OnwardCharge[] };
+export const onwardChargeLedgerKey = (orderId: string) => `gb_onward_charge:${orderId}`;

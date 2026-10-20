@@ -13,6 +13,12 @@ Use country-specific Custom Postage Options for EU Home delivery and Pickup poin
 
 ## Legacy matrix and existing payment requests
 
+Reshipper courier lists must follow the reshipper's actual country coverage (multi-country coverage takes precedence over the legacy single country). UK and GB refer to the same destination; explicitly global options still apply everywhere.
+
+**Why:** The user asked to show reshippers only couriers linked to their countries. Filtering a shared group-wide options array must not delete hidden countries' settings or apply an edit to the wrong row.
+
+**How to apply:** Scope new courier options to an assigned country, preserve country/quantity-band/upload metadata on edits, and preserve the full saved array while filtering the displayed rows.
+
 The EU delivery matrix is for onward delivery from the reshipper to the member, not vendor shipping. Rates are estimates, specific to destination country, pickup point versus address delivery, and quantity bands 1–5 and 6–25.
 
 Quantity means kits; half a kit counts as 0.5.

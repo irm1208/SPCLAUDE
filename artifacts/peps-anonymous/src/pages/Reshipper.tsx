@@ -1,6 +1,5 @@
-import { OnwardPaymentManager, OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
+import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { OnwardDeliveryMatrixPanel, OnwardDeliveryReadonly } from "@/components/onward-delivery/OnwardDelivery";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -21,9 +20,14 @@ import { useThemeStore } from "@/hooks/use-theme";
 import { useAccount, useLogout, useAccountOrders } from "@/hooks/use-account";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { ALL_CARRIERS_17TRACK, CARRIER_GROUPS } from "@/data/carriers17track";
-import { COUNTRIES } from "@/data/countries";
+import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { filterAssignedFulfilmentOrders } from "@/lib/reshipper-fulfilment";
 import { ReshipperGroupBuyPicker } from "@/components/ReshipperGroupBuyPicker";
+import { ReshipperCollectionsCard } from "@/components/ReshipperCollectionsCard";
+import type { ReshipperCollectionOrder } from "@/lib/reshipper-collections";
+import type { CustomPostageOption } from "@/lib/country-shipping-options";
+import { reshipperShippingCountries, visibleReshipperShippingOptions } from "@/lib/reshipper-shipping-options";
+import { PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
 
 // ─── Admin impersonation ──────────────────────────────────────────────────────
 // Module-level vars set once when the page initializes in admin preview mode
@@ -72,6 +76,7 @@ interface RAssignment {
   gbId: string;
   reshipperUsername: string;
   country: string;
+  countries?: string[] | null;
   enabledPaymentMethods: Record<string, boolean>;
   reshipperPaymentDetails: ReshipperPaymentDetails | null;
   reshipperFeeEnabled: boolean;
@@ -91,7 +96,7 @@ interface RAssignment {
     qrUploadRoyalMailEnabled: boolean;
     qrUploadMessage: string | null;
     qrUploadCouriers: string[] | null;
-    shippingOptions: { id: string; label: string; price: number }[];
+    shippingOptions: CustomPostageOption[];
     vendorShippingEnabled: boolean;
     vendorShippingAmount: number | null;
     vendorShippingMode: string;
@@ -99,7 +104,7 @@ interface RAssignment {
   } | null;
 }
 
-interface ROrder {
+interface ROrder extends ReshipperCollectionOrder {
   id: string;
   code: string;
   telegramUsername: string;
@@ -340,7 +345,7 @@ function StatCard({ label, value, sub, color = "var(--t-text)", icon: Icon }: { 
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ orders, gbName, country, currency }: { orders: ROrder[]; gbName: string; country: string; currency?: string }) {
+function OverviewTab({ orders, gbName, country, currency, reshipperUsername }: { orders: ROrder[]; gbName: string; country: string; currency?: string; reshipperUsername: string }) {
   const total = orders.length;
   const paid = orders.filter(o => o.paymentStatus === "confirmed" || o.paymentStatus === "test_confirmed").length;
   const unpaid = orders.filter(o => o.paymentStatus === "unpaid").length;
@@ -360,6 +365,8 @@ function OverviewTab({ orders, gbName, country, currency }: { orders: ROrder[]; 
           <Globe className="w-3 h-3" /> {country}
         </p>
       </div>
+
+      <ReshipperCollectionsCard orders={orders} reshipperUsername={reshipperUsername} currency={currency} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard label="Total Orders" value={total} icon={Package} />
@@ -1350,7 +1357,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                         {/* RAIL: order identity + facet nav */}
                         <div className="shrink-0 md:w-[248px] lg:w-[288px] border-b md:border-b-0 md:border-r flex flex-col"
                           style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
-                          <div className="px-3 pt-3"><OnwardDeliveryReadonly source={{ kind: "reshipper", gbId, orderId: order.id, fetcher: reshipFetch }} /><div className="mt-2"><OnwardPaymentReadonly source={{ kind: "reshipper", gbId, orderId: order.id, fetcher: reshipFetch }} /></div></div>
+                          <div className="px-3 pt-3"><OnwardPaymentReadonly source={{ kind: "reshipper", gbId, orderId: order.id, fetcher: reshipFetch }} /></div>
                           <div className="px-4 pt-3.5 pb-3 border-b" style={{ borderColor: "var(--t-border)" }}>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono text-xs font-bold" style={{ color: "var(--t-muted)" }}>{order.code}</span>
@@ -1803,21 +1810,27 @@ function CopyButton({ value }: { value: string }) {
 
 // ─── Shipping Tab ─────────────────────────────────────────────────────────────
 
-function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorShippingSplit }: {
+function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorShippingSplit, assignedCountries }: {
   gbId: string;
   initialGb: RAssignment["gb"];
   onGbUpdate: (updated: RAssignment["gb"]) => void;
   allowPayments?: boolean;
   allowVendorShippingSplit?: boolean;
+  assignedCountries: string[];
 }) {
-  type ShipOption = { id: string; label: string; price: number };
+  type ShipOption = CustomPostageOption;
   const [gb, setGb] = useState(initialGb);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [shippingOptions, setShippingOptions] = useState<ShipOption[]>(gb?.shippingOptions ?? []);
   const [editOptIdx, setEditOptIdx] = useState<number | null>(null);
-  const [newOpt, setNewOpt] = useState<{ label: string; price: string }>({ label: "", price: "" });
+  const [newOpt, setNewOpt] = useState({ label: "", price: "", country: assignedCountries[0] ?? "" });
   const [showNewOpt, setShowNewOpt] = useState(false);
+  const countryScope = assignedCountries.join(",");
+  useEffect(() => {
+    setNewOpt(previous => assignedCountries.includes(previous.country) ? previous : { ...previous, country: assignedCountries[0] ?? "" });
+  }, [countryScope]);
+  const visibleOptions = visibleReshipperShippingOptions(shippingOptions, assignedCountries);
 
   const [form, setForm] = useState({
     paymentsEnabled: gb?.paymentsEnabled ?? false,
@@ -1890,13 +1903,16 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
 
   const addOption = () => {
     const price = parseFloat(newOpt.price);
-    if (!newOpt.label || isNaN(price)) return;
-    setShippingOptions(prev => [...prev, { id: `opt-${Date.now()}`, label: newOpt.label.trim(), price }]);
-    setNewOpt({ label: "", price: "" });
+    if (!newOpt.label || isNaN(price) || !assignedCountries.includes(newOpt.country)) return;
+    setShippingOptions(prev => [...prev, { id: `opt-${Date.now()}`, label: newOpt.label.trim(), price, country: newOpt.country }]);
+    setNewOpt({ label: "", price: "", country: assignedCountries[0] ?? "" });
     setShowNewOpt(false);
   };
 
-  const removeOption = (idx: number) => setShippingOptions(prev => prev.filter((_, i) => i !== idx));
+  const removeOption = (idx: number) => {
+    setShippingOptions(prev => prev.filter((_, i) => i !== idx));
+    setEditOptIdx(null);
+  };
 
   const updateOption = (idx: number, field: "label" | "price", val: string) => {
     setShippingOptions(prev => prev.map((o, i) => i === idx
@@ -1915,8 +1931,6 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
 
   return (
     <div className="space-y-5 max-w-2xl">
-      <OnwardDeliveryMatrixPanel scope="reshipper" gbId={gbId} fetcher={reshipFetch} />
-      <OnwardPaymentManager gbId={gbId} fetcher={reshipFetch} />
       <section className="rounded-2xl p-4 space-y-1" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: "var(--t-subtle)" }}>Settings</p>
         {allowPayments && <Toggle value={form.paymentsEnabled} onChange={v => setForm(f => ({ ...f, paymentsEnabled: v }))} label="Accept Payments" />}
@@ -2013,47 +2027,60 @@ function ShippingTab({ gbId, initialGb, onGbUpdate, allowPayments, allowVendorSh
       <section className="rounded-2xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <div className="flex items-center justify-between">
           <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Add Shipping Courier</p>
-          <button onClick={() => setShowNewOpt(v => !v)}
+          <button onClick={() => setShowNewOpt(v => !v)} disabled={!assignedCountries.length}
             className="h-7 px-3 rounded-lg text-xs font-semibold flex items-center gap-1"
             style={{ background: "var(--t-blue-07)", color: "var(--t-blue-deep)", border: "1px solid var(--t-blue-18)" }}>
             <Plus className="w-3 h-3" /> Add Option
           </button>
         </div>
+        <p className="text-xs" style={{ color: "var(--t-subtle)" }}>
+          Couriers for your assigned countries{assignedCountries.length ? ` (${assignedCountries.join(", ")})` : ""}, plus options available everywhere. Other countries’ settings are kept unchanged.
+        </p>
         {showNewOpt && (
-          <div className="flex gap-2 items-end">
+          <div className="flex flex-wrap gap-2 items-end">
             <div className="flex-1 space-y-1">
               <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Label</label>
               <input type="text" value={newOpt.label} onChange={e => setNewOpt(f => ({ ...f, label: e.target.value }))}
                 placeholder="Standard" className={inputCls("text-xs")} style={inputStyle} autoComplete="off" />
+            </div>
+            <div className="w-full space-y-1">
+              <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Available in</label>
+              <select aria-label="Courier destination country" value={newOpt.country} onChange={e => setNewOpt(previous => ({ ...previous, country: e.target.value }))}
+                className={inputCls("text-xs")} style={inputStyle}>
+                {assignedCountries.map(code => <option key={code} value={code}>{COUNTRY_LIST.find(country => country.code === code)?.name ?? code}</option>)}
+              </select>
             </div>
             <div className="w-24 space-y-1">
               <label className="text-[10px]" style={{ color: "var(--t-subtle)" }}>Price</label>
               <input type="number" value={newOpt.price} onChange={e => setNewOpt(f => ({ ...f, price: e.target.value }))}
                 placeholder="0.00" min="0" step="0.01" className={inputCls("text-xs")} style={inputStyle} />
             </div>
-            <button onClick={addOption} disabled={!newOpt.label || !newOpt.price}
+            <button onClick={addOption} disabled={!newOpt.label || !newOpt.price || !assignedCountries.includes(newOpt.country)}
               className="h-9 px-3 rounded-xl text-xs font-bold text-white disabled:opacity-50"
               style={{ background: "var(--t-blue-deep)" }}>
               <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
-        {shippingOptions.length === 0
-          ? <p className="text-sm py-2" style={{ color: "var(--t-subtle)" }}>No custom shipping options yet</p>
+        {visibleOptions.length === 0
+          ? <p className="text-sm py-2" style={{ color: "var(--t-subtle)" }}>No custom shipping options for your assigned countries yet</p>
           : (
             <div className="space-y-2">
-              {shippingOptions.map((opt, idx) => (
-                <div key={opt.id} className="flex items-center gap-2">
+              {visibleOptions.map(({ option: opt, index: idx }) => (
+                <div key={opt.id} className="flex flex-wrap items-center gap-2">
                   {editOptIdx === idx ? (
                     <>
                       <input value={opt.label} onChange={e => updateOption(idx, "label", e.target.value)}
                         className={inputCls("text-xs flex-1")} style={inputStyle} />
-                      <input value={String(opt.price)} onChange={e => updateOption(idx, "price", e.target.value)}
-                        type="number" min="0" step="0.01" className={inputCls("text-xs w-20")} style={inputStyle} />
+                      {!opt.kitPrices && <input value={String(opt.price)} onChange={e => updateOption(idx, "price", e.target.value)}
+                        type="number" min="0" step="0.01" className={inputCls("text-xs w-20")} style={inputStyle} />}
                       <button onClick={() => setEditOptIdx(null)} className="w-7 h-7 rounded-lg flex items-center justify-center"
                         style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
                         <Check className="w-3 h-3" style={{ color: "#16A34A" }} />
                       </button>
+                      {opt.kitPrices && <div className="w-full"><PostageKitBandInputs value={opt.kitPrices} currency={gb?.currency}
+                        onChange={kitPrices => setShippingOptions(previous => previous.map((option, index) => index === idx
+                          ? { ...option, kitPrices, price: kitPrices.upTo5 ?? kitPrices.upTo25 ?? 0 } : option))} /></div>}
                     </>
                   ) : (
                     <>
@@ -4281,7 +4308,7 @@ export default function ReshipperPage() {
               {activeTab === "overview" && (
                 ordersLoading
                   ? <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} /></div>
-                  : <OverviewTab orders={orders} gbName={currentAssignment.gb?.name ?? currentAssignment.gbId} country={currentAssignment.country} currency={currentAssignment.gb?.currency} />
+                  : <OverviewTab orders={orders} gbName={currentAssignment.gb?.name ?? currentAssignment.gbId} country={currentAssignment.country} currency={currentAssignment.gb?.currency} reshipperUsername={currentAssignment.reshipperUsername} />
               )}
               {activeTab === "fulfilment" && (
                 ordersLoading
@@ -4309,7 +4336,8 @@ export default function ReshipperPage() {
                   : <QrTab key={selectedGbId} gbId={selectedGbId} />
               )}
               {activeTab === "shipping" && (
-                <ShippingTab key={selectedGbId} gbId={selectedGbId} initialGb={currentAssignment.gb} onGbUpdate={updateGbInAssignment} allowPayments={currentAssignment.allowPayments} allowVendorShippingSplit={currentAssignment.allowVendorShippingSplit} />
+                <ShippingTab key={selectedGbId} gbId={selectedGbId} initialGb={currentAssignment.gb} onGbUpdate={updateGbInAssignment} allowPayments={currentAssignment.allowPayments} allowVendorShippingSplit={currentAssignment.allowVendorShippingSplit}
+                  assignedCountries={reshipperShippingCountries(assignments.filter(assignment => assignment.gbId === selectedGbId))} />
               )}
               {activeTab === "parcels" && <ParcelsTab key={selectedGbId} gbId={selectedGbId} />}
               {activeTab === "supplier" && <SupplierBatchFulfilment key={selectedGbId} scope="reshipper" groupBuyId={selectedGbId} onDispatch={() => setActiveTab("dispatch")} />}

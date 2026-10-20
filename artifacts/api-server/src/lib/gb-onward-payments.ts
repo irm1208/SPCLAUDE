@@ -7,6 +7,7 @@ import { samePaymentWallet } from "./eu-delivery-checkout";
 import { assertNoActiveRefund } from "./refund-mutation-guard";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { groupUpdatesAccess } from "./group-buy-updates";
+import { onwardChargeLedgerKey as ledgerKey } from "./gb-onward-payment-rules";
 import { OnwardDeliveryError } from "./gb-onward-delivery-rules";
 import { fetchFiatToUsd, fetchUsdPerCoin, roundCrypto } from "./crypto-pricing";
 import { verifyTransaction } from "./payment-verify";
@@ -24,7 +25,6 @@ export async function organiserOnwardActor(gbId: string, username: string, manag
   const assigned = await assignment(db, gbId, username);
   return { username: assigned.reshipperUsername, onwardManager: manager };
 }
-const ledgerKey = (id: string) => `gb_onward_charge:${id}`;
 const settingsKey = (id: string) => `gb_onward_payment_settings:${id}`;
 const claimKey = (hash: string, network: string) => `gb_onward_tx:${onwardTxIdentity(hash, network)}`;
 const canonicalHash = (hash: string) => /^(?:0x)?[a-f0-9]+$/i.test(hash) ? hash.replace(/^0x/i, "").toLowerCase() : hash;
