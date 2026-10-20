@@ -3686,10 +3686,12 @@ function JoinWithCodeForm({ onJoined, onCancel }: {
 // ─── Main Reshipper Page ──────────────────────────────────────────────────────
 
 // ─── Unclaimed Orders Tab ─────────────────────────────────────────────────────
-function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, currency }: {
+function UnclaimedTab({ gbId, unclaimedOrders, loading, error, onRefresh, onClaim, onClaimBulk, currency }: {
   gbId: string;
   unclaimedOrders: ROrder[];
   loading: boolean;
+  error: string;
+  onRefresh: () => void;
   onClaim: (orderId: string) => Promise<void>;
   onClaimBulk: (orderIds: string[]) => Promise<void>;
   currency?: string;
@@ -3722,12 +3724,13 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
     });
   };
 
-  const allSelected = unclaimedOrders.length > 0 && selected.size === unclaimedOrders.length;
+  const selectableOrders = unclaimedOrders.slice(0, 100);
+  const allSelected = selectableOrders.length > 0 && selectableOrders.every(order => selected.has(order.id));
   const someSelected = selected.size > 0 && !allSelected;
 
   const toggleAll = () => {
     if (allSelected) setSelected(new Set());
-    else setSelected(new Set(unclaimedOrders.map(o => o.id)));
+    else setSelected(new Set(selectableOrders.map(o => o.id)));
   };
 
   const handleClaimSelected = async () => {
@@ -3745,12 +3748,17 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
     return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--t-blue)" }} /></div>;
   }
 
+  if (error) return <div role="alert" className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+    <p className="text-sm">{error}</p>
+    <button type="button" onClick={onRefresh} className="text-sm font-semibold" style={{ color: "var(--t-blue)" }}>Retry shared claim pool</button>
+  </div>;
+
   if (unclaimedOrders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
         <Check className="w-10 h-10" style={{ color: "var(--t-blue)" }} />
-        <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>All orders claimed</p>
-        <p className="text-xs" style={{ color: "var(--t-muted)" }}>No unclaimed orders in your country leg right now.</p>
+        <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>No orders waiting to be claimed</p>
+        <p className="text-xs" style={{ color: "var(--t-muted)" }}>Eligible unassigned orders for your countries appear here. If another reshipper claims one first, it moves to their My Orders.</p>
       </div>
     );
   }
@@ -3767,7 +3775,7 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
         </span>
       </div>
       <p className="text-xs mb-3" style={{ color: "var(--t-muted)" }}>
-        These orders are in your country leg and have not yet been assigned to a reshipper. Tick the ones you'll handle and claim them in one go, or claim individually.
+        Shared claim pool for your assigned countries. Any assigned reshipper for the country can claim an order; the first successful claim owns it, and it moves to their My Orders. Claim individually or select up to 100 at a time. Supplier Direct Shipping is excluded.
       </p>
 
       {/* Select-all + bulk-claim bar */}
@@ -3792,7 +3800,7 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
         </label>
         <button
           onClick={handleClaimSelected}
-          disabled={selected.size === 0 || bulkClaiming}
+          disabled={selected.size === 0 || selected.size > 100 || bulkClaiming}
           className="h-8 px-3 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           style={{ background: "var(--t-blue-deep)" }}
         >
@@ -3819,7 +3827,7 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, onClaim, onClaimBulk, cu
                 type="checkbox"
                 checked={isSelected}
                 onChange={() => toggleOne(o.id)}
-                disabled={bulkClaiming || claiming === o.id}
+                disabled={bulkClaiming || claiming === o.id || (!selected.has(o.id) && selected.size >= 100)}
                 className="mt-1 w-4 h-4 shrink-0 cursor-pointer accent-[var(--t-blue-deep)]"
                 aria-label={`Select order ${o.code ?? o.id}`}
               />
@@ -4001,6 +4009,8 @@ export default function ReshipperPage() {
   const ordersRequestRef = useRef(0);
   const [unclaimedOrders, setUnclaimedOrders] = useState<ROrder[]>([]);
   const [unclaimedLoading, setUnclaimedLoading] = useState(false);
+  const [unclaimedError, setUnclaimedError] = useState("");
+  const unclaimedRequestRef = useRef(0);
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [hiddenGbIds, setHiddenGbIds] = useState<string[]>([]);
   const [showHiddenGbs, setShowHiddenGbs] = useState(false);
@@ -4073,16 +4083,24 @@ export default function ReshipperPage() {
 
   const loadUnclaimed = useCallback(async (gbId: string) => {
     if (!gbId) return;
+    const requestId = ++unclaimedRequestRef.current;
     setUnclaimedLoading(true);
+    setUnclaimedError("");
     try {
       const res = await reshipFetch(`/api/reshipper/gb/${gbId}/unclaimed-orders`, { credentials: "include" });
-      if (res.ok) setUnclaimedOrders(await res.json());
-      else setUnclaimedOrders([]);
-    } finally { setUnclaimedLoading(false); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load the shared claim pool.");
+      if (requestId === unclaimedRequestRef.current) setUnclaimedOrders(data);
+    } catch (error) {
+      if (requestId === unclaimedRequestRef.current) setUnclaimedError(error instanceof Error ? error.message : "Could not load the shared claim pool.");
+    } finally { if (requestId === unclaimedRequestRef.current) setUnclaimedLoading(false); }
   }, []);
 
   useEffect(() => {
     ordersRequestRef.current += 1;
+    unclaimedRequestRef.current += 1;
+    setUnclaimedOrders([]);
+    setUnclaimedError("");
     setOrders([]);
     if (selectedGbId) { loadOrders(selectedGbId); loadUnclaimed(selectedGbId); }
     else { setUnclaimedOrders([]); }
@@ -4148,8 +4166,9 @@ export default function ReshipperPage() {
     } else {
       const data = await res.json().catch(() => ({}));
       alert(data.error ?? "Failed to claim order");
+      await loadUnclaimed(selectedGbId);
     }
-  }, [selectedGbId, loadOrders]);
+  }, [selectedGbId, loadOrders, loadUnclaimed]);
 
   const claimOrdersBulk = useCallback(async (orderIds: string[]) => {
     if (orderIds.length === 0) return;
@@ -4378,6 +4397,8 @@ export default function ReshipperPage() {
                   gbId={selectedGbId}
                   unclaimedOrders={unclaimedOrders}
                   loading={unclaimedLoading}
+                  error={unclaimedError}
+                  onRefresh={() => loadUnclaimed(selectedGbId)}
                   onClaim={claimOrder}
                   onClaimBulk={claimOrdersBulk}
                   currency={currentAssignment.gb?.currency}

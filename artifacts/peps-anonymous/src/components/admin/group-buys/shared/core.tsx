@@ -291,7 +291,7 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$", re
               <select aria-label={`Reshipper route for ${opt.label}`} value={opt.reshipperUsername ?? ""}
                 onChange={e => update(opt.id, "reshipperUsername", e.target.value || null)}
                 className="min-w-0 max-w-full flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs">
-                <option value="">Automatic — assigned country reshipper</option>
+                <option value="">Automatic — country reshipper / shared claim pool</option>
                 {[...new Set(reshippers.filter(row => row.enabled && opt.country &&
                   reshipperShippingCountries([row]).includes(normalizeShippingCountry(opt.country) ?? "")).map(row => row.reshipperUsername))].map(username =>
                   <option key={username} value={username} disabled={!opt.country}>@{username}</option>)}

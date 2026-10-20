@@ -96,7 +96,7 @@ export async function verifyReshipperAssignment(
     .from(gbReshippersTable)
     .where(and(eq(gbReshippersTable.reshipperUsername, username), eq(gbReshippersTable.gbId, gbId)));
 
-  if (!assignment) {
+  if (!assignment || assignment.enabled === false) {
     res.status(403).json({ error: "You are not assigned to this group buy as a reshipper." });
     return null;
   }

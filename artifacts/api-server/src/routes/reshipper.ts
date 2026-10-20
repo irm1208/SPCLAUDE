@@ -2,7 +2,6 @@ import {
   assertNoActiveRefund,
   RefundMutationBlockedError,
   refundMutableOrderWhere,
-  withRefundMutationGuard,
 } from "../lib/refund-mutation-guard";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
@@ -39,6 +38,7 @@ import { mergeReshipperPostage, ReshipperPostageError } from "../lib/reshipper-p
 import reshipperVisibilityRouter from "./reshipper-visibility";
 import { reshipperPostageReceipts } from "../lib/reshipper-postage-receipts";
 import { onwardChargeLedgerKey } from "../lib/gb-onward-payment-rules";
+import { claimReshipperOrders, loadClaimPostage, reshipperClaimWhere, reshipperOwnedWhere } from "../lib/reshipper-order-claims";
 
 const router: IRouter = Router();
 router.use(reshipperVisibilityRouter);
@@ -473,39 +473,11 @@ router.get("/reshipper/gb/:gbId/orders", requireReshipper, async (req, res): Pro
 
   const { status, paymentStatus, username, from, to } = req.query;
 
-  // Find the country leg for this reshipper's assigned country (case-insensitive match
-  // so "GB" and "United Kingdom" style mismatches between reshippers don't break things).
-  const [countryLeg] = await db
-    .select({ id: gbCountryLegsTable.id, countryCode: gbCountryLegsTable.countryCode })
-    .from(gbCountryLegsTable)
-    .where(and(
-      eq(gbCountryLegsTable.gbId, gbId),
-      sql`lower(${gbCountryLegsTable.countryCode}) = lower(${assignment.country.trim()})`,
-    ));
-
-  // Build the where clause:
-  //  • Always include orders explicitly assigned to this reshipper.
-  //    Match legacy case/@ variants so historical routing remains visible.
-  //  • Also include unassigned orders (reshipperUsername IS NULL) in this reshipper's country leg
-  //    so they appear in the queue before they've been claimed/allocated.
-  //  • Once an order has ANY reshipperUsername set, it is only visible to that reshipper —
-  //    this correctly handles two reshippers sharing the same country without relying on
-  //    fragile "count how many reshippers are on this leg" detection.
-  //  • Direct-to-home orders are never the reshipper's concern — excluded in all branches.
+  // My Orders contains owned work only. Unassigned country orders live in Unclaimed.
   const notDirectShipping = sql`(${ordersTable.directShippingRequested} IS NOT TRUE)`;
   const assignedUsername = assignment.reshipperUsername.trim().replace(/^@/, "").toLowerCase();
   const assignedToReshipper = sql`lower(ltrim(btrim(${ordersTable.reshipperUsername}), '@')) = ${assignedUsername}`;
-  const whereClause = countryLeg
-    ? and(
-        eq(ordersTable.groupBuyId, gbId),
-        or(
-          assignedToReshipper,
-          and(isNull(ordersTable.reshipperUsername), eq(ordersTable.countryLegId, countryLeg.id)),
-        ),
-        isNull(ordersTable.deletedAt),
-        notDirectShipping,
-      )
-    : and(eq(ordersTable.groupBuyId, gbId), assignedToReshipper, isNull(ordersTable.deletedAt), notDirectShipping);
+  const whereClause = and(eq(ordersTable.groupBuyId, gbId), assignedToReshipper, isNull(ordersTable.deletedAt), notDirectShipping);
 
   const rows = await db
     .select()
@@ -585,29 +557,12 @@ router.get("/reshipper/gb/:gbId/unclaimed-orders", requireReshipper, async (req,
   const assignment = await verifyReshipperAssignment(req, res, gbId);
   if (!assignment) return;
 
-  const [countryLeg] = await db
-    .select({ id: gbCountryLegsTable.id })
-    .from(gbCountryLegsTable)
-    .where(and(
-      eq(gbCountryLegsTable.gbId, gbId),
-      sql`lower(${gbCountryLegsTable.countryCode}) = lower(${assignment.country.trim()})`,
-    ));
-
-  if (!countryLeg) {
-    res.json([]);
-    return;
-  }
+  const options = await loadClaimPostage(gbId);
 
   const rows = await db
     .select()
     .from(ordersTable)
-    .where(and(
-      eq(ordersTable.groupBuyId, gbId),
-      eq(ordersTable.countryLegId, countryLeg.id),
-      isNull(ordersTable.reshipperUsername),
-      isNull(ordersTable.deletedAt),
-      sql`(${ordersTable.directShippingRequested} IS NOT TRUE)`,
-    ))
+    .where(reshipperClaimWhere(gbId, assignment, options))
     .orderBy(desc(ordersTable.createdAt));
 
   if (rows.length > 0) {
@@ -640,40 +595,12 @@ router.post("/reshipper/gb/:gbId/orders/:orderId/claim", requireReshipper, async
   const assignment = await verifyReshipperAssignment(req, res, gbId);
   if (!assignment) return;
 
-  const [countryLeg] = await db
-    .select({ id: gbCountryLegsTable.id })
-    .from(gbCountryLegsTable)
-    .where(and(
-      eq(gbCountryLegsTable.gbId, gbId),
-      sql`lower(${gbCountryLegsTable.countryCode}) = lower(${assignment.country.trim()})`,
-    ));
-
-  if (!countryLeg) {
-    res.status(400).json({ error: "No country leg configured for your assignment" });
-    return;
-  }
-
-  // Verify the order belongs to this leg, is unclaimed, and is not a direct-to-home order
-  const [order] = await db
-    .select()
-    .from(ordersTable)
-    .where(and(
-      eq(ordersTable.id, orderId),
-      eq(ordersTable.groupBuyId, gbId),
-      eq(ordersTable.countryLegId, countryLeg.id),
-      isNull(ordersTable.reshipperUsername),
-      sql`(${ordersTable.directShippingRequested} IS NOT TRUE)`,
-    ));
-
+  const options = await loadClaimPostage(gbId);
+  const [order] = await claimReshipperOrders(gbId, assignment, [orderId], options);
   if (!order) {
-    res.status(404).json({ error: "Order not found, not in your leg, or already claimed" });
+    res.status(409).json({ error: "This order is no longer available to claim. It may have been claimed by another reshipper. Refresh the shared pool." });
     return;
   }
-
-  await db
-    .update(ordersTable)
-    .set({ reshipperUsername: assignment.reshipperUsername })
-    .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), isNull(ordersTable.reshipperUsername))));
 
   writeLog("change", "info", "order_claimed_by_reshipper",
     `Reshipper @${assignment.reshipperUsername} claimed order ${order.code ?? orderId}`,
@@ -687,42 +614,17 @@ router.post("/reshipper/gb/:gbId/orders/:orderId/claim", requireReshipper, async
 router.post("/reshipper/gb/:gbId/orders/claim-bulk", requireReshipper, async (req, res): Promise<void> => {
   const gbId = String(req.params["gbId"]);
   const orderIds: unknown = req.body?.orderIds;
-  if (!Array.isArray(orderIds) || orderIds.length === 0 || !orderIds.every(x => typeof x === "string")) {
-    res.status(400).json({ error: "orderIds must be a non-empty array of strings" });
+  if (!Array.isArray(orderIds) || orderIds.length === 0 || orderIds.length > 100 || !orderIds.every(x => typeof x === "string")) {
+    res.status(400).json({ error: "Select between 1 and 100 orders to claim." });
     return;
   }
-  const ids = orderIds as string[];
+  const ids = [...new Set(orderIds as string[])];
 
   const assignment = await verifyReshipperAssignment(req, res, gbId);
   if (!assignment) return;
 
-  const [countryLeg] = await db
-    .select({ id: gbCountryLegsTable.id })
-    .from(gbCountryLegsTable)
-    .where(and(
-      eq(gbCountryLegsTable.gbId, gbId),
-      sql`lower(${gbCountryLegsTable.countryCode}) = lower(${assignment.country.trim()})`,
-    ));
-
-  if (!countryLeg) {
-    res.status(400).json({ error: "No country leg configured for your assignment" });
-    return;
-  }
-
-  // Atomic claim: a single UPDATE ... WHERE ... RETURNING so we report exactly
-  // which rows we actually won (race-safe even with concurrent reshippers).
-  // Direct-to-home orders are excluded — reshippers cannot claim them.
-  const claimedRows = await withRefundMutationGuard(db, ids, async tx => tx
-    .update(ordersTable)
-    .set({ reshipperUsername: assignment.reshipperUsername })
-    .where(refundMutableOrderWhere(and(
-      inArray(ordersTable.id, ids),
-      eq(ordersTable.groupBuyId, gbId),
-      eq(ordersTable.countryLegId, countryLeg.id),
-      isNull(ordersTable.reshipperUsername),
-      sql`(${ordersTable.directShippingRequested} IS NOT TRUE)`,
-    )))
-    .returning({ id: ordersTable.id, code: ordersTable.code }));
+  const options = await loadClaimPostage(gbId);
+  const claimedRows = await claimReshipperOrders(gbId, assignment, ids, options);
 
   const claimedIds = claimedRows.map(r => r.id);
   const claimedSet = new Set(claimedIds);
@@ -754,7 +656,7 @@ router.get("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req, 
   const [order] = await db
     .select()
     .from(ordersTable)
-    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+    .where(and(eq(ordersTable.id, orderId), reshipperOwnedWhere(gbId, assignment.reshipperUsername)));
 
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
@@ -807,7 +709,7 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
       sharedOrderId: ordersTable.sharedOrderId,
     })
     .from(ordersTable)
-    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId)));
+    .where(and(eq(ordersTable.id, orderId), reshipperOwnedWhere(gbId, assignment.reshipperUsername)));
 
   if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
 
@@ -877,14 +779,15 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
   const [updated] = await db
     .update(ordersTable)
     .set(updates)
-    .where(refundMutableOrderWhere(trackingWrite ? and(
+    .where(refundMutableOrderWhere(and(
       eq(ordersTable.id, orderId),
-      unchangedTrackingWriteFields(existing),
-    ) : eq(ordersTable.id, orderId)))
+      reshipperOwnedWhere(gbId, assignment.reshipperUsername),
+      trackingWrite ? unchangedTrackingWriteFields(existing) : undefined,
+    )))
     .returning();
   if (!updated) {
     await assertNoActiveRefund(db, orderId);
-    res.status(409).json({ error: "Tracking was changed by another writer; reload and try again" });
+    res.status(409).json({ error: "Order ownership or tracking changed; reload and try again" });
     return;
   }
 
@@ -1649,16 +1552,17 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId/qr-posted", requireReshipper, 
   const [existing] = await db
     .select({ id: ordersTable.id })
     .from(ordersTable)
-    .where(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.deletedAt)));
+    .where(and(eq(ordersTable.id, orderId), reshipperOwnedWhere(gbId, assignment.reshipperUsername)));
 
   if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
 
   const [updated] = await db
     .update(ordersTable)
     .set({ qrPosted: posted })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)))
+    .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), reshipperOwnedWhere(gbId, assignment.reshipperUsername))))
     .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted });
 
+  if (!updated) { res.status(409).json({ error: "Order ownership changed. Refresh your orders." }); return; }
   res.json({ id: updated.id, qrPosted: updated.qrPosted });
 });
 

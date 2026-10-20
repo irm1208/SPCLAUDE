@@ -1,6 +1,6 @@
 ---
 name: GB reshipper routing field consistency
-description: Compatibility and write rules when reshipperUsername conflicts with routingType on Group Buy orders.
+description: Group-buy reshipper routing, shared country claim pools, and separation from supplier Direct Shipping.
 ---
 
 Treat a non-null reshipper assignment as authoritative when older order data conflicts with a stale `direct` routing marker. Manual assignment must set the routing type to reshipper; manual clearing must clear the username and set the route to unrouted.
@@ -20,3 +20,9 @@ Custom country postage routes through reshippers; supplier Direct Shipping is a 
 **Why:** Germany EU pickup postage was incorrectly classified as Direct Shipping because routing checked only a reshipper's first country and defaulted unmatched orders to direct.
 
 **How to apply:** Resolve all assigned countries with country-name and UK/GB alias normalization. Honour an Admin-selected postage reshipper only within their enabled country coverage. Ambiguous ordinary postage must remain unassigned, never become Direct Shipping. Enforce direct-shipping eligibility on the server as well as in the picker; do not bulk reclassify historical orders without review.
+
+Multiple reshippers assigned to the same country share automatically routed, unassigned orders. Claiming gives exclusive ownership to one reshipper, not shared ownership of the order. My Orders should contain owned work, with available work kept separately in Unclaimed.
+
+**Why:** The user clarified that both US reshippers must be able to claim orders, superseding the earlier request to send all US postage to one recipient.
+
+**How to apply:** Keep automatic postage routing unassigned when more than one reshipper covers the destination. A country-leg setup must not be required for the shared pool. Claims must never steal existing assignments or include supplier Direct Shipping. An explicitly reserved Admin postage option remains reserved unless Admin changes it to automatic routing.
