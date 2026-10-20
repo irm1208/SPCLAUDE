@@ -58,7 +58,7 @@ async function currentAssignment(database: DataAccess, order: typeof ordersTable
 function canCreate(order: typeof ordersTable.$inferSelect) {
   // Fulfilment does not erase a delivery debt. Keep settlement available even
   // after dispatch/delivery; never reopen or rewrite the product order.
-  return !order.directShippingRequested && !["Cancelled", "Refunded"].includes(order.status);
+  return !order.directShippingRequested && !order.deliveryMethodId?.startsWith("eu-postage-") && !["Cancelled", "Refunded"].includes(order.status);
 }
 async function envelope(database: DataAccess, order: typeof ordersTable.$inferSelect, scope: OnwardOrderScope) {
   const ledger = await read<OnwardLedger>(database, ledgerKey(order.id)) ?? emptyLedger();

@@ -479,7 +479,7 @@ export default function Review() {
                   {isTopUp && <span className="ml-1 text-xs text-green-600 font-normal">(included)</span>}
                 </span>
               </div>
-              {(draft.directShippingRequested || !draft.groupBuyId || draft.onwardDeliveryMethod) && (draft.shippingName || draft.shippingAddress || draft.shippingCountry || draft.shippingPhone || draft.shippingEmail) && (
+              {(draft.directShippingRequested || !draft.groupBuyId || draft.onwardDeliveryMethod || draft.deliveryMethodId?.startsWith("eu-postage-")) && (draft.shippingName || draft.shippingAddress || draft.shippingCountry || draft.shippingPhone || draft.shippingEmail) && (
                 <div>
                   <p className="text-xs mb-1 text-gray-400">Shipping Details</p>
                   <div className="text-sm rounded-lg p-3 text-gray-600 bg-gray-50 border border-gray-100 space-y-0.5">
@@ -491,7 +491,7 @@ export default function Review() {
                   </div>
                 </div>
               )}
-              {draft.groupBuyId && !draft.directShippingRequested && !draft.onwardDeliveryMethod && draft.shippingAddress && (
+              {draft.groupBuyId && !draft.directShippingRequested && !draft.onwardDeliveryMethod && !draft.deliveryMethodId?.startsWith("eu-postage-") && draft.shippingAddress && (
                 <div>
                   <p className="text-xs mb-1 text-gray-400">Delivery Address</p>
                   <p className="text-sm rounded-lg p-3 whitespace-pre-wrap text-gray-600 bg-gray-50 border border-gray-100">

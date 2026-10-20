@@ -18,6 +18,7 @@ import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { lookupBatchPrefix, findMatchingPeptide } from "@/data/batchPrefixes";
 import { CARRIERS_17TRACK } from "@/lib/carriers";
 import { resolveCountry, apiUrl, INFO_CARD_TYPE_OPTIONS, InfoCardsEditor, ShippingOptionsEditor, CRYPTO_CURRENCIES, TROCADOR_COINS, CRYPTO_NETWORKS, DEFAULT_CRYPTO_NETWORKS, GbPaymentGatewayInlineContent, EU_COUNTRIES, POPULAR_COUNTRIES, GBP_TO_USD, GB_STATUS_STYLES, CopyIdBadge, StatusBadge } from "../shared/core";
+import { EuCustomPostageImport } from "@/components/onward-delivery/EuCustomPostageTools";
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "../shared/core";
 export const GB_STATUSES = ["Draft", "Submitted", "Processing", "Shipped", "Completed", "Cancelled"];
 
@@ -269,8 +270,11 @@ export function DeliveryMethodsSubTab({ secret, gb, onUpdate }: { secret: string
             {savedShipping ? "Saved" : "Save Options"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Options can be available to everyone or limited to one destination country. Members see the global options plus options for their country. If none match, enabled Global Delivery Methods below remain available. EU onward-delivery estimates are separate.</p>
+        <p className="text-xs text-muted-foreground mb-3">Options can be available to everyone or limited to one destination country. Members see global options plus options for their country. Import EU home/pickup options below to charge delivery at checkout instead of using the separate EU matrix. Existing UK and US options are kept.</p>
         <ShippingOptionsEditor options={shippingOptions} onChange={setShippingOptions} currencySym={currSym(gb.currency)} />
+        <div className="mt-4"><EuCustomPostageImport gbId={gb.id} currency={gb.currency || "USD"} scope="admin"
+          fetcher={(url, init) => fetch(url, { ...init, credentials: "include", headers: { ...init?.headers, "x-admin-secret": secret } })}
+          options={shippingOptions} onChange={options => { setShippingOptions(options); setSavedShipping(false); }} /></div>
       </Card>
 
       <Card className="p-5">

@@ -1,10 +1,11 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   db, accountsTable, accountGroupBuysTable, gbCountryLegsTable, gbReshippersTable,
-  ordersTable, orderLineItemsTable, siteConfigTable,
+  ordersTable, orderLineItemsTable, siteConfigTable, groupBuysTable,
 } from "@workspace/db";
 import { groupUpdatesAccess } from "./group-buy-updates";
 import { deliveryContactError } from "./eu-delivery-checkout";
+import { usesCustomEuPostage } from "./group-buy-shipping-options";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import {
   estimateOnwardDelivery, normalizeEuCountry, OnwardDeliveryError, parseOnwardMatrix,
@@ -88,6 +89,8 @@ export async function getOnwardOrderPreference(orderId: string): Promise<OnwardM
 async function reshipperEstimate(database: DataAccess, gbId: string, username: string | null, country: unknown, kits: number, direct: boolean) {
   if (direct) return emptyEstimate("not_applicable", country, kits);
   if (!normalizeEuCountry(country)) return emptyEstimate("unavailable", country, kits, username);
+  const [group] = await database.select({ shippingOptions: groupBuysTable.shippingOptions }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
+  if (usesCustomEuPostage(group?.shippingOptions, country)) return emptyEstimate("not_applicable", country, kits, username);
   const assignments = await database.select().from(gbReshippersTable).where(and(eq(gbReshippersTable.gbId, gbId), eq(gbReshippersTable.enabled, true)));
   if (!username) {
     const matrices = await Promise.all(assignments.map(async row => {
@@ -110,6 +113,8 @@ export async function memberOnwardPreview(gbId: string, actor: UpdateActor, body
   estimateOnwardDelivery(null, body.country, kits);
   let country = body.country;
   if (!country) country = (await accountFor(db, actor.username))?.country;
+  const [group] = await db.select({ shippingOptions: groupBuysTable.shippingOptions }).from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
+  if (usesCustomEuPostage(group?.shippingOptions, country)) return emptyEstimate("not_applicable", country, kits);
   if (body.directShippingRequested === true) return emptyEstimate("not_applicable", country, kits);
   if (body.orderId) {
     const order = await onwardOrderAccess(db, String(body.orderId), actor, "member");

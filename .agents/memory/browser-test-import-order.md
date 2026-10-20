@@ -5,6 +5,12 @@ description: Node JSX runtime and browser-global import ordering can cause test-
 
 In the node/tsx test harness, initialize the jsdom browser globals before importing browser-only routing and portal libraries.
 
+Vitest's automatic jsdom environment cannot resolve the workspace's transitive jsdom installation even though the package exists.
+
+**Why:** jsdom is available through pnpm's versioned package directory but not as a top-level resolvable dependency for the Vitest worker.
+
+**How to apply:** Follow the existing browser tests' explicit JSDOM import and manual global setup; dynamically import browser-dependent modules afterwards. Do not add a production dependency just to enable a test environment.
+
 **Why:** Radix captures document availability when its layout-effect module first loads; an early import permanently selects a no-op effect and its portal stays empty. Wouter likewise installs its history event patch only if the browser globals already exist.
 
 **How to apply:** Dynamically import these libraries after DOM setup in node tests. A missing dialog without a render error can be a test initialization issue rather than an app defect.

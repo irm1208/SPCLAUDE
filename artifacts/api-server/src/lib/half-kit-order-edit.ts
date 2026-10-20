@@ -9,6 +9,7 @@ import { HalfKitError, money } from "./half-kit-rules";
 import { planHalfKitOrderEdit, type HalfKitEditOptions } from "./half-kit-order-edit-rules";
 import { resolveGroupBuyAdminFee } from "./group-buy-admin-fee";
 import { assertSupplierOrderEditable } from "./supplier-batch-protection";
+import { reconcileCustomPostage } from "./custom-postage-reconciliation";
 
 /**
  * The caller holds the request-wide half-kit money mutex. Do not reacquire it
@@ -91,5 +92,5 @@ export async function editOrderWithHalfKits(tx: any, orderId: string, groupId: s
     } else await tx.insert(orderLineItemsTable).values({ ...line, orderId });
   }
   const allLines = await tx.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, orderId));
-  return { updatedOrder, insertedLineItems: allLines, lineItemsToInsert: allLines };
+  return { updatedOrder: await reconcileCustomPostage(tx, orderId) ?? updatedOrder, insertedLineItems: allLines, lineItemsToInsert: allLines };
 }

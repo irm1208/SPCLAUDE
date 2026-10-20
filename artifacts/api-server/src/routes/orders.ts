@@ -12,7 +12,7 @@ import { parseHalfKitCheckout, assertHalfKitCheckoutItems, halfKitSelections } f
 import { HalfKitError } from "../lib/half-kit-rules";
 import { editOrderWithHalfKits } from "../lib/half-kit-order-edit";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
-import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
+import { shippingOptionMatchesCountry, resolveCustomPostage, type CustomPostageOption } from "../lib/group-buy-shipping-options";
 import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
 import { claimCoupon, couponAccountUses, recordCouponRedemption } from "../lib/coupon-redemption";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
@@ -712,19 +712,18 @@ router.post("/orders", async (req, res, next): Promise<void> => {
   }
 
   // If not in delivery_methods, check if it's a custom shipping option on the GB
-  if (!deliveryMethodRecord && normalizedGroupBuyId) {
+  if (normalizedGroupBuyId && !additionParent && String(deliveryMethodId) !== "__direct_shipping") {
     const [gbRow] = await db
       .select({ shippingOptions: groupBuysTable.shippingOptions })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, normalizedGroupBuyId));
     if (gbRow?.shippingOptions) {
       try {
-        const opts = JSON.parse(gbRow.shippingOptions) as Array<{ id: string; label: string; price: number; country?: string | null }>;
-        const match = opts.find(o => o.id === String(deliveryMethodId) && shippingOptionMatchesCountry(o, req.body?.shippingCountry));
-        if (match) {
-          deliveryMethodRecord = { id: match.id, name: match.label, price: String(match.price) };
+        const opts = JSON.parse(gbRow.shippingOptions) as CustomPostageOption[];
+        if (opts.some(o => shippingOptionMatchesCountry(o, req.body?.shippingCountry))) {
+          deliveryMethodRecord = resolveCustomPostage(opts, String(deliveryMethodId), { ...req.body, lineItems: clientLineItems }) ?? undefined;
         }
-      } catch { /* ignore malformed JSON */ }
+      } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : "Invalid postage options" }); return; }
     }
   }
 
@@ -2305,19 +2304,19 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   }
 
   // If not in delivery_methods, check GB shipping options (for GB orders with custom options)
-  if (!deliveryMethodRecord && order.groupBuyId) {
+  if (order.groupBuyId && String(deliveryMethodId) !== "__direct_shipping" && !order.additionOfOrderId) {
     const [gbRow] = await db
       .select({ shippingOptions: groupBuysTable.shippingOptions })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
     if (gbRow?.shippingOptions) {
       try {
-        const opts = JSON.parse(gbRow.shippingOptions) as Array<{ id: string; label: string; price: number; country?: string | null }>;
-        const match = opts.find(o => o.id === String(deliveryMethodId) && shippingOptionMatchesCountry(o, clientShippingCountry ?? order.shippingCountry));
-        if (match) {
-          deliveryMethodRecord = { id: match.id, name: match.label, price: String(match.price) };
+        const opts = JSON.parse(gbRow.shippingOptions) as CustomPostageOption[];
+        if (opts.some(o => shippingOptionMatchesCountry(o, clientShippingCountry ?? order.shippingCountry))) {
+          deliveryMethodRecord = resolveCustomPostage(opts, String(deliveryMethodId), { ...order, ...req.body, lineItems: clientLineItems,
+            shippingCountry: clientShippingCountry ?? order.shippingCountry }) ?? undefined;
         }
-      } catch { /* ignore malformed JSON */ }
+      } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : "Invalid postage options" }); return; }
     }
   }
 
@@ -2526,7 +2525,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   if (activeHalfClaims.length) {
     if (!order.groupBuyId) throw new HalfKitError("This reserved half-kit order needs organiser review.");
     const result = await editOrderWithHalfKits(tx, rawId, order.groupBuyId, req.body);
-    if (req.body.onwardDeliveryMethod) await tx.update(ordersTable).set({
+    if (req.body.onwardDeliveryMethod || String(deliveryMethodId).startsWith("eu-postage-")) await tx.update(ordersTable).set({
       shippingName: String(clientShippingName ?? order.shippingName ?? "").trim(),
       shippingAddress: String(clientShippingAddress ?? order.shippingAddress ?? "").trim(),
       shippingPhone: String(clientShippingPhone ?? order.shippingPhone ?? "").trim(),
@@ -2567,7 +2566,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
         : (clientDirectShippingRequested === true && clientDirectShippingCost != null
           ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
           : null),
-      ...((isWholesaleOrder || (order.groupBuyId && req.body.onwardDeliveryMethod)) && {
+      ...((isWholesaleOrder || (order.groupBuyId && (req.body.onwardDeliveryMethod || String(deliveryMethodId).startsWith("eu-postage-")))) && {
         shippingName: String(clientShippingName ?? order.shippingName ?? "").trim().slice(0, 256) || null,
         shippingPhone: String(clientShippingPhone ?? order.shippingPhone ?? "").trim().slice(0, 64) || null,
         shippingEmail: String(clientShippingEmail ?? order.shippingEmail ?? "").trim().slice(0, 256) || null,

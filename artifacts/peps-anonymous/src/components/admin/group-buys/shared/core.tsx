@@ -15,6 +15,8 @@ import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { currSym } from "@/lib/currency";
 import { normalizeShippingCountry } from "@/lib/country-shipping-options";
+import { PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
+import type { KitPrices } from "@/lib/country-shipping-options";
 import { COUNTRIES, COUNTRY_LIST } from "@/data/countries";
 import { lookupBatchPrefix, findMatchingPeptide } from "@/data/batchPrefixes";
 import { CARRIERS_17TRACK } from "@/lib/carriers";
@@ -114,7 +116,7 @@ export const INFO_CARD_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "success", label: "Success" },
   { value: "error", label: "Error" },
 ];
-export type ShippingOption = { id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean };
+export type ShippingOption = { id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean; source?: string; kitPrices?: KitPrices };
 export type EntryFeePayment = {
   id: string;
   groupBuyId: string;
@@ -255,6 +257,7 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: 
                 min="0"
                 step="0.01"
                 value={opt.price}
+                disabled={!!opt.kitPrices}
                 onChange={e => update(opt.id, "price", parseFloat(e.target.value) || 0)}
                 className="w-20"
                 placeholder="0.00"
@@ -265,6 +268,8 @@ export function ShippingOptionsEditor({ options, onChange, currencySym = "$" }: 
               <X className="w-4 h-4" />
             </button>
           </div>
+          {opt.kitPrices && <PostageKitBandInputs value={opt.kitPrices} currency={currencySym}
+            onChange={kitPrices => onChange(options.map(option => option.id === opt.id ? { ...option, kitPrices, price: kitPrices.upTo5 ?? kitPrices.upTo25 ?? 0 } : option))} />}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-6">
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
               Available in

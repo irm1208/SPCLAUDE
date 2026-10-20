@@ -3,6 +3,16 @@ name: Group-buy EU onward delivery
 description: User-defined scope of the EU reshipper-to-member delivery estimate matrix.
 ---
 
+## Current preference: EU custom postage instead of the matrix
+
+Use country-specific Custom Postage Options for EU Home delivery and Pickup point, keeping both quantity bands automatic: up to 5 kits and over 5 through 25 kits; half kits count as 0.5. Preserve existing UK/US couriers. Imported custom charges are collected during normal checkout rather than as a second matrix payment.
+
+**Why:** The user said the EU matrix was not working and they did not have time to fix it, and explicitly asked to put its entries in Custom Postage Options. They selected keeping both quantity bands automatically.
+
+**How to apply:** Copy the selected saved reshipper prices or supplied template into the ordinary custom postage settings. Do not silently convert currencies or mutate old paid orders. Bypass the legacy matrix and new matrix-payment creation for converted checkout routes, on the server as well as in the UI. Preserve previously issued delivery debts. Groups/countries not converted retain the legacy behavior below.
+
+## Legacy matrix and existing payment requests
+
 The EU delivery matrix is for onward delivery from the reshipper to the member, not vendor shipping. Rates are estimates, specific to destination country, pickup point versus address delivery, and quantity bands 1–5 and 6–25.
 
 Quantity means kits; half a kit counts as 0.5.

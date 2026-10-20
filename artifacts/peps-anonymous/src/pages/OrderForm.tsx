@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
 import { OnwardDeliveryPicker } from "@/components/onward-delivery/OnwardDelivery";
-import { filterShippingOptionsForCountry, resolveShippingDestinationCountry } from "@/lib/country-shipping-options";
+import { filterShippingOptionsForCountry, resolveShippingDestinationCountry, customPostagePrice, isEuOnwardDestination, type CustomPostageOption } from "@/lib/country-shipping-options";
 import { countKits } from "@/lib/onward-delivery";
 import { HalfKitOffers } from "./GroupBuyHalfKits";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
@@ -589,7 +589,7 @@ export default function OrderForm() {
   const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
   const { data: myGroupBuys } = useMyGroupBuys();
 
-  const [gbShippingOptions, setGbShippingOptions] = React.useState<Array<{ id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }>>([]);
+  const [gbShippingOptions, setGbShippingOptions] = React.useState<CustomPostageOption[]>([]);
   const [isLoadingGbInfo, setIsLoadingGbInfo] = React.useState(false);
 
   // Kit limit data from the GB
@@ -627,9 +627,13 @@ export default function OrderForm() {
   // Leg country is only a routing fallback; destination prefers shipping country then account country.
   const legCountryCode = myCountryLeg?.countryCode ?? null;
   const onwardDestination = resolveShippingDestinationCountry(draft.shippingCountry, account?.country, legCountryCode);
+  const customEuPostage = filterShippingOptionsForCountry(gbShippingOptions, onwardDestination).some(option => option.source === "eu-postage");
   const [euMatrixApplicable, setEuMatrixApplicable] = useState(false);
   const requiresEuContact = !!gbId && draft.orderType !== "wholesale" && !draft.additionOfOrderId
-    && !draft.directShippingRequested && (euMatrixApplicable || !!draft.onwardDeliveryMethod);
+    && !draft.directShippingRequested && (customEuPostage || (isEuOnwardDestination(onwardDestination) && (euMatrixApplicable || !!draft.onwardDeliveryMethod)));
+  useEffect(() => {
+    if (!isPreview && customEuPostage && draft.onwardDeliveryMethod) draft.setOnwardDeliveryMethod(null);
+  }, [customEuPostage, isPreview, draft.onwardDeliveryMethod]);
   const setOnwardCountryRef = useRef(draft.setOnwardDeliveryCountry);
   setOnwardCountryRef.current = draft.setOnwardDeliveryCountry;
   useEffect(() => {
@@ -689,7 +693,10 @@ export default function OrderForm() {
 
   // When a GB defines its own shipping options, use those; otherwise fall back to relational delivery methods
   const countryShippingOptions = filterShippingOptionsForCountry(gbShippingOptions, onwardDestination);
-  const gbShippingAsDelivery = countryShippingOptions.map(o => ({ id: o.id, name: o.label, price: o.price, description: null, requiresAddress: o.requiresAddress ?? false }));
+  const gbShippingAsDelivery = countryShippingOptions.flatMap(o => {
+    const price = customPostagePrice(o, countKits(draft.lineItems));
+    return price === null ? [] : [{ id: o.id, name: o.label, price, description: o.kitPrices ? "Delivery price for your kit quantity" : null, requiresAddress: o.requiresAddress ?? false }];
+  });
   const deliveryMethods = gbId && countryShippingOptions.length > 0
     ? gbShippingAsDelivery
     : (gbId ? gbDeliveryMethods : globalDeliveryMethods);
@@ -727,7 +734,7 @@ export default function OrderForm() {
     setIsLoadingGbInfo(true);
     type GbInfo = {
       id: string; name: string; testingEnabled?: boolean; labTestSupplier?: string | null;
-      shippingOptions?: Array<{ id: string; label: string; price: number; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }>;
+      shippingOptions?: CustomPostageOption[];
       maxKitsPerCustomer?: number | null;
       maxKitsTotal?: number | null;
       kitsOrderedByUser?: number;
@@ -1142,6 +1149,10 @@ export default function OrderForm() {
       return;
     }
 
+    if (customEuPostage && countKits(draft.lineItems) > 25) {
+      setError("Orders over 25 kits need an organiser delivery quote. Please contact the organiser before ordering.");
+      return;
+    }
     if (!draft.deliveryMethodId) {
       setError("Please choose a delivery method");
       return;
@@ -1157,7 +1168,7 @@ export default function OrderForm() {
     }
 
     if (requiresEuContact) {
-      if (!draft.onwardDeliveryMethod) { setError("Please choose your EU onward-delivery option"); return; }
+      if (!customEuPostage && !draft.onwardDeliveryMethod) { setError("Please choose your EU onward-delivery option"); return; }
       if (!draft.shippingName.trim()) { setError("Please enter your full name for EU delivery"); return; }
       if (!draft.shippingAddress.trim()) { setError("Please enter your delivery address for EU delivery"); return; }
       if (!draft.shippingCountry.trim()) { setError("Please choose your country for EU delivery"); return; }
@@ -1598,7 +1609,7 @@ export default function OrderForm() {
                       onQuantityChange={handlePanelQuantityChange}
                       onRemove={handlePanelRemove}
                       editingDisabled={isPreview}
-                      slot={gbId && !isWholesale && !isTopUp && !draft.directShippingRequested ? (
+                      slot={gbId && !isWholesale && !isTopUp && !customEuPostage && !draft.directShippingRequested ? (
                         <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
                           kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
                           value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} onApplicableChange={setEuMatrixApplicable} />
@@ -2326,7 +2337,7 @@ export default function OrderForm() {
               )}
             </div>
           )}
-          {gbId && !isWholesale && !isTopUp && !draft.directShippingRequested && (
+          {gbId && !isWholesale && !isTopUp && !customEuPostage && !draft.directShippingRequested && (
             <OnwardDeliveryPicker gbId={gbId} country={onwardDestination} readOnly={isPreview}
               kits={countKits(draft.lineItems)} reshipperCode={draft.reshipperCode} orderId={draft.orderId}
               value={draft.onwardDeliveryMethod} onChange={draft.setOnwardDeliveryMethod} onApplicableChange={setEuMatrixApplicable} />

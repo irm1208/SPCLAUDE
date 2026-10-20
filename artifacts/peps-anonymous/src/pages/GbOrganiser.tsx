@@ -1,3 +1,5 @@
+import { EuCustomPostageImport, PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
+import type { KitPrices } from "@/lib/country-shipping-options";
 import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
 import { OrganiserOnwardDelivery } from "@/components/onward-delivery/OrganiserOnwardDelivery";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -125,7 +127,7 @@ export interface OrganiserGB {
   paymentsEnabled: boolean;
   paymentMessage: string | null;
   paymentMessageEnabled: boolean;
-  shippingOptions: { id: string; label: string; price: number; description?: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }[];
+  shippingOptions: { id: string; label: string; price: number; description?: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean; source?: string; kitPrices?: KitPrices }[];
   organiserPayments: { usdtWallet?: string; revolutHandle?: string; paypalHandle?: string; cryptoCurrency?: string; cryptoNetwork?: string; cryptoWalletAddress?: string; cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null; anonPayEnabled?: boolean; anonPayWallet?: string; anonPayTicker?: string; anonPayNetwork?: string } | null;
   organiserId: string | null;
   labTestSupplier: string | null;
@@ -6219,7 +6221,7 @@ const TROCADOR_COINS = [
 ] as const;
 
 export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: (gb: OrganiserGB) => void }) {
-  const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string; country: string; requiresAddress: boolean; requiresQrCode: boolean }[]>(
+  const [shippingOptions, setShippingOptions] = useState<{ id: string; label: string; description: string; priceStr: string; country: string; requiresAddress: boolean; requiresQrCode: boolean; source?: string; kitPrices?: KitPrices }[]>(
     (Array.isArray(gb.shippingOptions) ? gb.shippingOptions : []).map((o: { id: string; label: string; price: number; description?: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean }) => ({ ...o, country: normalizeShippingCountry(o.country) ?? "", description: o.description ?? "", priceStr: String(o.price ?? 0), requiresAddress: o.requiresAddress ?? false, requiresQrCode: o.requiresQrCode ?? false }))
   );
   const [payments, setPayments] = useState({
@@ -6354,13 +6356,17 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
         </div>
         <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>Set each option's price and choose which country can see it. “All countries” keeps it available to everyone. If no country-specific option matches, members see the usual delivery methods. Prices use this group buy's currency ({gb.currency}).</p>
         {shippingOptions.length === 0 && <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>No shipping options — orders will use global delivery methods.</p>}
+        <EuCustomPostageImport gbId={gb.id} currency={gb.currency} scope="organiser"
+          options={shippingOptions.map(({ priceStr, ...option }) => ({ ...option, price: Number(priceStr) || 0 }))}
+          onChange={options => setShippingOptions(options.map(option => ({ ...option, country: option.country || "", priceStr: String(option.price),
+            description: "", requiresAddress: option.requiresAddress ?? false, requiresQrCode: option.requiresQrCode ?? false })))} />
         {shippingOptions.map((o, i) => (
           <div key={o.id} className="p-3 rounded-xl space-y-2" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
             <div className="flex gap-2 items-center">
               <input value={o.label} onChange={e => updateShipping(i, "label", e.target.value)} placeholder="Label (e.g. Standard UK)" className="flex-1 min-w-0 px-3 rounded-xl text-xs h-9 font-semibold focus:outline-none" style={inputStyle} />
               <div className="w-28 shrink-0 flex items-center gap-1 px-2.5 rounded-xl h-9" style={inputStyle}>
                 <span className="text-xs font-semibold shrink-0" style={{ color: "var(--t-subtle)" }}>{gb.currency}</span>
-                <input value={o.priceStr} onChange={e => updateShipping(i, "priceStr", e.target.value)} placeholder="0.00" inputMode="decimal" className="w-full min-w-0 bg-transparent text-xs focus:outline-none" style={{ color: "var(--t-text)" }} />
+                <input value={o.priceStr} disabled={!!o.kitPrices} onChange={e => updateShipping(i, "priceStr", e.target.value)} placeholder="0.00" inputMode="decimal" className="w-full min-w-0 bg-transparent text-xs focus:outline-none" style={{ color: "var(--t-text)" }} />
               </div>
               <button onClick={() => removeShipping(i)} className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "rgba(220,38,38,0.07)" }}><X className="w-3.5 h-3.5" style={{ color: "#DC2626" }} /></button>
             </div>
@@ -6378,10 +6384,12 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
                 {COUNTRY_LIST.map(country => <option key={country.code} value={country.code}>{country.code === "GB" ? "United Kingdom (UK / GB)" : country.name}</option>)}
               </select>
             </label>
+            {o.kitPrices && <PostageKitBandInputs value={o.kitPrices} currency={gb.currency} onChange={kitPrices => setShippingOptions(previous =>
+              previous.map((option, index) => index === i ? { ...option, kitPrices, priceStr: String(kitPrices.upTo5 ?? kitPrices.upTo25 ?? 0) } : option))} />}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-0.5">
               <label className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer select-none" style={{ color: "var(--t-subtle)" }}>
                 <input type="checkbox" checked={o.requiresAddress} onChange={e => updateShippingBool(i, "requiresAddress", e.target.checked)} className="rounded" />
-                Requires delivery address
+              Requires delivery address
               </label>
               <label className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer select-none" style={{ color: "var(--t-subtle)" }}>
                 <input type="checkbox" checked={o.requiresQrCode} onChange={e => updateShippingBool(i, "requiresQrCode", e.target.checked)} className="rounded" />

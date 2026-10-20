@@ -1,3 +1,4 @@
+import { reconcileCustomPostage } from "./custom-postage-reconciliation";
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
@@ -369,7 +370,8 @@ export async function claimHalfKit(groupId: string, offerId: string, actor: Half
       } : {}),
     });
     else update.paymentUsdAmount = null;
-    const [updated] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
+    const [savedOrder] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
+    const updated = await reconcileCustomPostage(tx, order.id) ?? savedOrder;
     const [taken] = await tx.update(offers).set({ published: false, version: offer.version + 1, updatedAt: new Date() })
       .where(and(eq(offers.id, offerId), eq(offers.version, input.version), eq(offers.published, true))).returning();
     if (!taken) throw new HalfKitError("Someone else claimed this half kit. Refresh the list.");
@@ -462,6 +464,7 @@ async function reverseHalfClaim(tx: Database, claim: any, order: any, account: a
         });
       }
     await tx.update(claims).set({ state: "released", releasedAt: new Date(), releasedBy: actor }).where(eq(claims.id, claim.id));
+    await reconcileCustomPostage(tx, order.id);
 }
 
 /** Whole-order cancellation returns only new half-kit credits, atomically with the deletion.
