@@ -347,9 +347,11 @@ export function useSetGroupBuyArchived() {
       if (!res.ok) throw new Error(data.error || "Failed to update group buy");
       return data as { ok: boolean; archived: boolean };
     },
-    onSuccess: () => {
+    onSuccess: (result, { groupBuyId }) => {
+      qc.setQueryData<GroupBuySummary[]>(["account", "group-buys"], current =>
+        current?.map(gb => gb.id === groupBuyId ? { ...gb, archived: result.archived } : gb),
+      );
       qc.invalidateQueries({ queryKey: ["account", "group-buys"] });
-      qc.refetchQueries({ queryKey: ["account", "group-buys"] });
     },
   });
 }
@@ -947,7 +949,7 @@ export function useHiddenOrders(enabled = true) {
     queryFn: async () => {
       const res = await fetch("/api/account/hidden-orders", { credentials: "include" });
       if (res.status === 401) return [];
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Could not load completed orders");
       return res.json();
     },
     staleTime: 60 * 1000,
@@ -972,9 +974,12 @@ export function useToggleHiddenOrder() {
     onMutate: async ({ orderId, hidden }) => {
       await qc.cancelQueries({ queryKey: ["account", "hidden-orders"] });
       const prev = qc.getQueryData<string[]>(["account", "hidden-orders"]) ?? [];
-      const next = hidden ? [...prev, orderId] : prev.filter(id => id !== orderId);
+      const next = hidden ? [...new Set([...prev, orderId])] : prev.filter(id => id !== orderId);
       qc.setQueryData(["account", "hidden-orders"], next);
       return { prev };
+    },
+    onSuccess: data => {
+      qc.setQueryData(["account", "hidden-orders"], data.hiddenOrderIds);
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(["account", "hidden-orders"], ctx.prev);

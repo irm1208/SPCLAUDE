@@ -147,3 +147,4 @@
 - [Node 20 TypeScript tests](node20-tsx-test-runner.md) — this workspace's Node 20 cannot use `--experimental-strip-types`; run TypeScript tests with `pnpm exec tsx`.
 - [Group-buy MOQ policy](group-buy-moq-policy.md) — group-wide kit target, half kits count as 0.5, active paid and unpaid orders count; member visibility is a separate opt-in.
 - [PostgreSQL snapshot concurrency](postgres-snapshot-concurrency.md) — canonicalize JSONB hashes; use generation/state CAS because JS Date loses PostgreSQL microseconds.
+- [Member list completion](member-group-buy-completion.md) — Completed group buys and orders are reversible personal categories, not shared lifecycle or delivery changes.

@@ -1,4 +1,6 @@
 import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
+import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
+import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,7 +12,7 @@ import {
   ChevronDown, Hash, Check, Search, Boxes, Globe,
   DollarSign,
 } from "lucide-react";
-import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, getAccountHandle, EntryFeeRequiredError, type GroupBuySummary, type EntryFeePaymentInfo } from "@/hooks/use-account";
+import { useAccount, useLogout, useMyGroupBuys, useJoinGroupBuy, useActiveGroupBuys, useCountryLegs, useSetGroupBuyArchived, getAccountHandle, EntryFeeRequiredError, type GroupBuySummary, type EntryFeePaymentInfo } from "@/hooks/use-account";
 import { COUNTRY_LIST } from "@/data/countries";
 import { RulesetModal } from "@/components/RulesetModal";
 import { EntryFeePaymentModal } from "@/components/EntryFeePaymentModal";
@@ -1011,11 +1013,13 @@ function getCloseDateBadge(iso: string | null): { dateStr: string; daysStr: stri
   return { dateStr, daysStr: `${diffMonths}mo left` };
 }
 
-function GroupBuyCard({ gb, index, onCta, onInfo }: {
+function GroupBuyCard({ gb, index, onCta, onInfo, onCompletion, completionPending }: {
   gb: GroupBuySummary;
   index: number;
   onCta: () => void;
   onInfo: () => void;
+  onCompletion: () => void;
+  completionPending: boolean;
 }) {
   const palette = getPalette(index);
   const Icon = palette.icon;
@@ -1031,8 +1035,8 @@ function GroupBuyCard({ gb, index, onCta, onInfo }: {
     ? infoCards.slice(0, 2).map(c => c.title).join(" · ")
     : gb.description ?? null;
 
-  const dotColor = STATUS_DOT[gb.status] ?? STATUS_DOT.draft;
-  const statusLabel = STATUS_LABEL[gb.status] ?? gb.status;
+  const dotColor = gb.archived ? "#34D399" : STATUS_DOT[gb.status] ?? STATUS_DOT.draft;
+  const statusLabel = gb.archived ? "Completed" : STATUS_LABEL[gb.status] ?? gb.status;
 
   return (
     <motion.div
@@ -1132,6 +1136,14 @@ function GroupBuyCard({ gb, index, onCta, onInfo }: {
 
       <div className="relative px-3.5 pb-2.5"><GroupBuyStageBadge gbId={gb.id} lifecycle={gb.status} /></div>
 
+      <div className="relative px-3.5 pb-2.5">
+        <button type="button" onClick={onCompletion} disabled={completionPending}
+          className="w-full min-h-10 px-3 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+          style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)" }}>
+          {completionPending ? "Saving…" : gb.archived ? "Restore group buy" : "Mark as completed"}
+        </button>
+      </div>
+
       {/* Footer bar */}
       <div
         className="relative flex items-center justify-between px-3.5 py-2.5"
@@ -1156,13 +1168,13 @@ function GroupBuyCard({ gb, index, onCta, onInfo }: {
   );
 }
 
-type GbFilter = "all" | "open" | "closed" | "archived";
+type GbFilter = MemberGbFilter;
 
 const FILTER_LABELS: Record<GbFilter, string> = {
   all:      "All",
   open:     "Open",
   closed:   "Closed",
-  archived: "Archived",
+  completed: "Completed",
 };
 
 export default function Groups() {
@@ -1174,6 +1186,8 @@ export default function Groups() {
   const [showJoin, setShowJoin] = useState(false);
   const [labReportProduct, setLabReportProduct] = useState<{ name: string; batchPrefixes: string[] } | null>(null);
   const [filter, setFilter] = useState<GbFilter>("all");
+  const completion = useSetGroupBuyArchived();
+  const [completionError, setCompletionError] = useState("");
 
   const handleLogout = async () => {
     await logout.mutateAsync();
@@ -1248,40 +1262,14 @@ export default function Groups() {
       <main className="flex-1 max-w-md mx-auto w-full px-4 py-5">
         {/* Filter tabs */}
         {!gbLoading && groupBuys.length > 0 && (
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide">
-            {(["all", "open", "closed", "archived"] as GbFilter[]).map(f => {
-              const count = f === "all"
-                ? groupBuys.length
-                : f === "open"    ? groupBuys.filter(g => g.status === "active" && !g.archived).length
-                : f === "closed"  ? groupBuys.filter(g => g.status === "closed" && !g.archived).length
-                :                   groupBuys.filter(g => g.archived).length;
-              const active = filter === f;
-              return (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-semibold transition-all"
-                  style={{
-                    background: active ? "var(--brand-blue)" : "var(--t-surface)",
-                    color: active ? "#fff" : "var(--t-muted)",
-                    border: active ? "1px solid var(--brand-blue)" : "1px solid var(--t-border)",
-                  }}
-                >
-                  {FILTER_LABELS[f]}
-                  <span
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={{
-                      background: active ? "rgba(255,255,255,0.2)" : "var(--t-border)",
-                      color: active ? "#fff" : "var(--t-muted)",
-                    }}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="mb-4 space-y-2">
+            <MemberGroupBuyFilters groups={groupBuys} value={filter} onChange={setFilter} />
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>
+              Completed is personal to your account. Orders and payments are unchanged.
+            </p>
           </div>
         )}
+        {completionError && <p role="alert" className="text-sm mb-3 text-red-600">{completionError}</p>}
 
         {gbLoading && (
           <div className="flex justify-center py-12">
@@ -1305,13 +1293,7 @@ export default function Groups() {
         )}
 
         {!gbLoading && groupBuys.length > 0 && (() => {
-          const filtered = groupBuys.filter(gb => {
-            if (filter === "all")      return true;
-            if (filter === "open")     return gb.status === "active" && !gb.archived;
-            if (filter === "closed")   return gb.status === "closed" && !gb.archived;
-            if (filter === "archived") return !!gb.archived;
-            return true;
-          });
+          const filtered = filterMemberGroupBuys(groupBuys, filter);
           if (filtered.length === 0) {
             return (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -1338,6 +1320,12 @@ export default function Groups() {
                     : setLocation("/account?s=orders")
                   }
                   onInfo={() => setInfoGb(gb)}
+                  completionPending={completion.isPending}
+                  onCompletion={async () => {
+                    setCompletionError("");
+                    try { await completion.mutateAsync({ groupBuyId: gb.id, archived: !gb.archived }); }
+                    catch (e) { setCompletionError(e instanceof Error ? e.message : "Could not update group buy."); }
+                  }}
                 />
               ))}
             </div>

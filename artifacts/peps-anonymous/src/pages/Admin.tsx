@@ -35,6 +35,7 @@ import { AdminWholesaleUpdates } from "@/components/AdminWholesaleUpdates";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
+import { SharedOrderFulfilmentPills } from "@/components/admin/SharedOrderFulfilmentPills";
 import { TrackingPackageEditor } from "@/components/admin/TrackingPackageEditor";
 import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
 import {
@@ -1525,6 +1526,10 @@ function OrdersTab({ secret }: { secret: string }) {
             </span>
             {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
           </button>
+        </div>
+        <div className="mx-4 mb-2 flex flex-wrap items-center gap-1.5">
+          <SharedOrderFulfilmentPills statuses={paymentSummary?.orderStatusPills}
+            shareStatus={paymentSummary?.status} unavailable={sharedPaymentSummaryError} />
         </div>
         <div className="mx-4 mb-2 -mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs">
           <span className="font-semibold text-slate-700">Organiser → Platform</span>

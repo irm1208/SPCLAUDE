@@ -2,6 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { useQueryClient } from "@tanstack/react-query";
 import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
+import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
+import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
+import { OrderListCompletionButton } from "@/components/OrderListCompletionButton";
+import { filterMemberOrderCards, type MemberOrderSection } from "@/lib/member-order-list";
 import { useHalfKitAvailability } from "@/hooks/use-half-kit-availability";
 import { PoolLeaderDashboard } from "@/components/PoolLeaderDashboard";
 import { AccountPoolContributions } from "@/components/AccountPoolContributions";
@@ -306,7 +310,7 @@ const ORDER_KIND_META: Record<OrderCardKind, { label: string; Icon: React.Elemen
 };
 
 function OrderGridCard({
-  order, kind, title, accent, onManage, onReorder, onTracking, onHide, onUnhide, onRemove, isHidden,
+  order, kind, title, accent, onManage, onReorder, onTracking, onHide, onUnhide, onRemove, isHidden, completionPending,
 }: {
   order: Order;
   kind: OrderCardKind;
@@ -319,6 +323,7 @@ function OrderGridCard({
   onUnhide?: () => void;
   onRemove?: () => void;
   isHidden?: boolean;
+  completionPending?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const sMeta = STATUS_META[order.status] ?? { label: order.status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
@@ -334,7 +339,7 @@ function OrderGridCard({
 
   return (
     <div className="rounded-2xl flex flex-col h-full overflow-hidden"
-      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow, opacity: isHidden ? 0.55 : 1 }}>
+      style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: T.shadow }}>
       {/* colour-block header: type icon + title + status */}
       <div className="px-4 pt-3.5 pb-3 flex items-start gap-3 relative overflow-hidden" style={{ background: bandBg }}>
         <div className="absolute -right-6 -top-10 w-28 h-28 rounded-full pointer-events-none" style={{ background: "rgba(255,255,255,0.10)" }} />
@@ -365,16 +370,16 @@ function OrderGridCard({
                     <div className="absolute right-0 top-8 z-[51] w-40 rounded-xl p-1 flex flex-col gap-0.5"
                       style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(0,0,0,0.18)" }}>
                       {isHidden ? (
-                        <button onClick={() => { setMenuOpen(false); onUnhide?.(); }}
+                        <button disabled={completionPending} onClick={() => { setMenuOpen(false); onUnhide?.(); }}
                           className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
                           style={{ color: T.text }}>
-                          <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Unhide
+                          <ArchiveRestore className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Restore order
                         </button>
                       ) : (
-                        <button onClick={() => { setMenuOpen(false); onHide?.(); }}
+                        <button disabled={completionPending} onClick={() => { setMenuOpen(false); onHide?.(); }}
                           className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
                           style={{ color: T.text }}>
-                          <EyeOff className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Hide
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Mark completed
                         </button>
                       )}
                       {cancelled && onRemove && (
@@ -517,6 +522,8 @@ function OrderGridCard({
             </button>
           </div>
         )}
+        <OrderListCompletionButton completed={!!isHidden} pending={!!completionPending}
+          onClick={() => isHidden ? onUnhide?.() : onHide?.()} />
       </div>
       </div>
     </div>
@@ -7211,7 +7218,10 @@ export default function CustomerPortal() {
   const deleteOrderMut = useDeleteOrder();
   const { data: deletedOrders = [], refetch: refetchDeleted } = useDeletedOrders();
   const restoreOrderMut = useRestoreOrder();
-  const { data: hiddenOrderIdsArr = [] } = useHiddenOrders(isLoggedIn);
+  const {
+    data: hiddenOrderIdsArr = [], isLoading: orderCompletionLoading,
+    isError: orderCompletionFailed, refetch: refetchOrderCompletion,
+  } = useHiddenOrders(isLoggedIn);
   const toggleHiddenOrder = useToggleHiddenOrder();
   const { data: lateOptInGbs = [] } = useTestingLateOptIn(isLoggedIn);
   const { data: activePools = [] } = useTestingActivePools(isLoggedIn);
@@ -7285,10 +7295,11 @@ export default function CustomerPortal() {
   const [ordersStatusFilter, setOrdersStatusFilter] = useState<string>("all");
   const [ordersView, setOrdersView] = useState<"grid" | "list">("grid");
   const [gbView, setGbView] = useState<"cards" | "table">("cards");
+  const [gbFilter, setGbFilter] = useState<MemberGbFilter>("all");
   const [ordersPage, setOrdersPage] = useState(1);
   const [orderTypeFilterOpen, setOrderTypeFilterOpen] = useState(false);
   const hiddenOrderIds = new Set(hiddenOrderIdsArr);
-  const [showHidden, setShowHidden] = useState(false);
+  const [orderSection, setOrderSection] = useState<MemberOrderSection>("active");
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
   const [showCompoundForm, setShowCompoundForm] = useState(false);
   const [showCompoundHistory, setShowCompoundHistory] = useState(false);
@@ -7303,7 +7314,6 @@ export default function CustomerPortal() {
   const [leaveConfirmGb, setLeaveConfirmGb] = useState<GroupBuySummary | null>(null);
   const leaveGbMut = useLeaveGroupBuy();
   const archiveGbMut = useSetGroupBuyArchived();
-  const [showArchivedGbs, setShowArchivedGbs] = useState(false);
   const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null);
   const updateCountryMut = useUpdateCountry();
   const [showCountryPrompt, setShowCountryPrompt] = useState(false);
@@ -8187,7 +8197,8 @@ export default function CustomerPortal() {
     allCards.sort((a, b) => (b.order.createdAt || "").localeCompare(a.order.createdAt || ""));
 
     // Type tabs — primary filter bar.
-    const TYPE_TABS: { id: "gb" | "shared" | "wholesale"; label: string; Icon: React.ElementType }[] = [
+    const TYPE_TABS: { id: "all" | "gb" | "shared" | "wholesale"; label: string; Icon: React.ElementType }[] = [
+      { id: "all",       label: "All",          Icon: LayoutGrid },
       { id: "gb",        label: "Group Buy",    Icon: Users },
       { id: "shared",    label: "Shared Order", Icon: UsersRound },
       { id: "wholesale", label: "Wholesale",    Icon: Boxes },
@@ -8204,10 +8215,16 @@ export default function CustomerPortal() {
     const statusLabel = statusDropdownOptions.find(o => o.id === ordersStatusFilter)?.label ?? "All Statuses";
 
     function hideOrder(id: string) {
-      toggleHiddenOrder.mutate({ orderId: id, hidden: true });
+      toggleHiddenOrder.mutate({ orderId: id, hidden: true }, {
+        onSuccess: () => toast({ title: "Moved to Completed", description: "Saved to your account. Payment and delivery statuses are unchanged." }),
+        onError: e => toast({ title: "Could not complete order", description: e.message, variant: "destructive" }),
+      });
     }
     function unhideOrder(id: string) {
-      toggleHiddenOrder.mutate({ orderId: id, hidden: false });
+      toggleHiddenOrder.mutate({ orderId: id, hidden: false }, {
+        onSuccess: () => toast({ title: "Order restored to active orders" }),
+        onError: e => toast({ title: "Could not restore order", description: e.message, variant: "destructive" }),
+      });
     }
     async function removeOrder(id: string) {
       try {
@@ -8219,17 +8236,11 @@ export default function CustomerPortal() {
       }
     }
 
-    const hiddenInView = allCards.filter(c => hiddenOrderIds.has(c.order.id));
-    const q = ordersSearch.trim().toLowerCase();
-    const filteredCards = allCards.filter(c => {
-      if (!showHidden && hiddenOrderIds.has(c.order.id)) return false;
-      if (typeFilter !== "all" && c.kind !== typeFilter) return false;
-      if (ordersStatusFilter !== "all" && c.order.status !== ordersStatusFilter) return false;
-      if (q) {
-        const hay = `${c.title} ${c.order.code} ${c.order.lineItems.map(li => li.productName).join(" ")}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+    const orderListLoading = ordersLoading || orderCompletionLoading;
+    const sectionCards = allCards.filter(c => hiddenOrderIds.has(c.order.id) === (orderSection === "completed"));
+    const completedCount = allCards.filter(c => hiddenOrderIds.has(c.order.id)).length;
+    const filteredCards = orderListLoading || orderCompletionFailed ? [] : filterMemberOrderCards(allCards, hiddenOrderIds, {
+      section: orderSection, type: typeFilter, status: ordersStatusFilter, search: ordersSearch,
     });
 
     const PER_PAGE = 12;
@@ -8264,28 +8275,40 @@ export default function CustomerPortal() {
           {/* ── Header: subtitle ── */}
           <div className="flex items-center justify-between gap-2">
             <p className="text-[13px]" style={{ color: T.subtle }}>Manage and track all your orders</p>
-            {hiddenInView.length > 0 && (
-              <button
-                onClick={() => setShowHidden(v => !v)}
-                className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11.5px] font-semibold shrink-0"
-                style={showHidden
-                  ? { background: hexToRgba("#2D6BCC", 0.1), color: "var(--t-blue)", border: `1px solid ${hexToRgba("#2D6BCC", 0.25)}` }
-                  : { background: T.surface, color: T.subtle, border: `1px solid ${T.border}` }}>
-                {showHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                {showHidden ? "Hide hidden" : `Show hidden (${hiddenInView.length})`}
-              </button>
-            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Order sections">
+              {([
+                { id: "active", label: "Active orders", count: allCards.length - completedCount },
+                { id: "completed", label: "Completed", count: completedCount },
+              ] as const).map(item => (
+                <button key={item.id} type="button" aria-pressed={orderSection === item.id}
+                  onClick={() => { setOrderSection(item.id); setOrdersPage(1); }}
+                  className="min-h-10 px-4 rounded-full text-xs font-semibold"
+                  style={{
+                    background: orderSection === item.id ? "#1B3A7A" : T.surface,
+                    color: orderSection === item.id ? "#FFFFFF" : T.muted,
+                    border: `1px solid ${orderSection === item.id ? "#1B3A7A" : T.border}`,
+                  }}>
+                  {item.label} <span className="ml-1 tabular-nums">{item.count}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs" style={{ color: T.subtle }}>
+              Mark orders completed to clear your active list. This is personal to your account; it does not confirm delivery or change payments.
+            </p>
           </div>
 
           {/* ── Type tabs + toolbar ── */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1 lg:pb-0">
               {TYPE_TABS.map(t => {
-                const count = allCards.filter(c => c.kind === t.id).length;
+                const count = t.id === "all" ? sectionCards.length : sectionCards.filter(c => c.kind === t.id).length;
                 const active = typeFilter === t.id;
                 return (
                   <button key={t.id}
-                    onClick={() => { setTypeFilter(active ? "all" : t.id); setOrdersPage(1); }}
+                    onClick={() => { setTypeFilter(t.id); setOrdersPage(1); }}
                     className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[12.5px] font-semibold whitespace-nowrap transition-all shrink-0"
                     style={active
                       ? { background: T.surface, color: T.text, boxShadow: T.shadow, border: `1px solid ${T.border}` }
@@ -8363,7 +8386,7 @@ export default function CustomerPortal() {
                 </button>
               </div>
 
-              <button onClick={() => refetch()} disabled={ordersLoading}
+              <button onClick={() => { refetch(); refetchOrderCompletion(); }} disabled={orderListLoading}
                 className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center"
                 style={{ background: T.surface, border: `1px solid ${T.border}` }}>
                 <RefreshCw className={`w-4 h-4 ${ordersLoading ? "animate-spin" : ""}`} style={{ color: T.subtle }} />
@@ -8372,14 +8395,21 @@ export default function CustomerPortal() {
           </div>
 
           {/* ── Loading ── */}
-          {ordersLoading && allCards.length === 0 && (
+          {orderListLoading && (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="w-7 h-7 animate-spin" style={{ color: T.subtle }} />
             </div>
           )}
 
           {/* ── Empty: no orders at all ── */}
-          {!ordersLoading && allCards.length === 0 && (
+          {orderCompletionFailed && (
+            <div role="alert" className="rounded-xl border p-4 space-y-2 text-sm" style={{ borderColor: T.border, color: T.text }}>
+              <p>Could not load your completed-order list. Please retry so your orders appear in the correct section.</p>
+              <button type="button" onClick={() => refetchOrderCompletion()} className="font-semibold" style={{ color: T.blueDeep }}>Retry</button>
+            </div>
+          )}
+
+          {!orderListLoading && !orderCompletionFailed && allCards.length === 0 && (
             <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
               className="flex flex-col items-center justify-center py-16 text-center rounded-3xl"
               style={{ background: T.surface, border: `1px solid ${T.border}` }}>
@@ -8397,14 +8427,20 @@ export default function CustomerPortal() {
           )}
 
           {/* ── Empty: filters exclude everything ── */}
-          {!ordersLoading && allCards.length > 0 && filteredCards.length === 0 && (
+          {!orderListLoading && !orderCompletionFailed && allCards.length > 0 && filteredCards.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center rounded-3xl"
               style={{ background: T.surface, border: `1px solid ${T.border}` }}>
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: T.surface2 }}>
                 <Search className="w-7 h-7" style={{ color: T.subtle }} />
               </div>
-              <p className="text-sm font-bold mb-1" style={{ color: T.text }}>No matching orders</p>
-              <p className="text-xs mb-5" style={{ color: T.subtle }}>Try adjusting your search or filters</p>
+              <p className="text-sm font-bold mb-1" style={{ color: T.text }}>
+                {sectionCards.length === 0 ? orderSection === "completed" ? "No completed orders yet" : "No active orders" : "No matching orders"}
+              </p>
+              <p className="text-xs mb-5" style={{ color: T.subtle }}>
+                {sectionCards.length === 0
+                  ? orderSection === "completed" ? "Use Mark as completed on an order to move it here." : "Your completed orders are available in the Completed section."
+                  : "Try adjusting your search or filters"}
+              </p>
               <button onClick={clearFilters}
                 className="h-10 px-6 rounded-xl text-xs font-bold flex items-center gap-2"
                 style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}>
@@ -8429,6 +8465,7 @@ export default function CustomerPortal() {
                       title={c.title}
                       accent={c.accent}
                       isHidden={hiddenOrderIds.has(c.order.id)}
+                      completionPending={toggleHiddenOrder.isPending}
                       onManage={() => handleManage(c.order)}
                       onReorder={c.kind === "wholesale" && c.order.orderType === "wholesale" ? () => handleReorder(c.order) : undefined}
                       onTracking={c.kind === "gb" && c.gb && ["confirmed", "test_confirmed"].includes(c.order.paymentStatus)
@@ -8548,8 +8585,7 @@ export default function CustomerPortal() {
   // ─── Group Buys section ───────────────────────────────────────────────────────
 
   if (section === "groups") {
-    const activeGbs = groupBuys.filter(g => !g.archived);
-    const archivedGbs = groupBuys.filter(g => g.archived);
+    const visibleGbs = filterMemberGroupBuys(groupBuys, gbFilter);
     return (
       <DashboardShell
         activeSection="groups"
@@ -8568,7 +8604,7 @@ export default function CustomerPortal() {
         {/* ── Header: subtitle + actions ── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] whitespace-nowrap" style={{ color: T.subtle }}>
-            {activeGbs.length} active group buy{activeGbs.length !== 1 ? "s" : ""}
+            {visibleGbs.length} group buy{visibleGbs.length !== 1 ? "s" : ""}
           </p>
           <div className="flex items-center gap-2 shrink-0 ml-auto">
             <div className="flex items-center gap-0.5 h-10 p-1 rounded-xl" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
@@ -8598,6 +8634,11 @@ export default function CustomerPortal() {
             </button>
           </div>
         </div>
+
+        <MemberGroupBuyFilters groups={groupBuys} value={gbFilter} onChange={setGbFilter} />
+        <p className="text-xs" style={{ color: T.muted }}>
+          Use a group buy’s menu to mark it completed for your account only. Orders and payments are unchanged.
+        </p>
 
         {groupBuysPageMessage && !gbMsgDismissed && (
           <div
@@ -8632,7 +8673,7 @@ export default function CustomerPortal() {
             <div className="col-span-full flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T.muted }} /></div>
           )}
 
-          {!gbLoading && activeGbs.length === 0 && archivedGbs.length === 0 && (
+          {!gbLoading && groupBuys.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
               className="col-span-full rounded-xl p-8 text-center shadow-sm" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
               <div className="w-14 h-14 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: "var(--t-blue-08)" }}>
@@ -8650,7 +8691,13 @@ export default function CustomerPortal() {
             </motion.div>
           )}
 
-          {!gbLoading && gbView === "cards" && activeGbs.map((gb, idx) => {
+          {!gbLoading && groupBuys.length > 0 && visibleGbs.length === 0 && (
+            <p className="col-span-full py-10 text-center text-sm" style={{ color: T.muted }}>
+              No {gbFilter === "all" ? "" : gbFilter} group buys. Choose All to see your other group buys.
+            </p>
+          )}
+
+          {!gbLoading && gbView === "cards" && visibleGbs.map((gb, idx) => {
             const palette = GB_PALETTE[idx % GB_PALETTE.length];
             const GBIcon = palette.icon;
             const isOrderable = gb.status === "active";
@@ -8666,8 +8713,8 @@ export default function CustomerPortal() {
             const unpaid  = gbOrders.filter(o => o.paymentStatus === "unpaid");
 
             const closeDateBadge = getGBCloseDateBadge(gb.closeDate);
-            const dotColor = GB_STATUS_DOT[gb.status] ?? GB_STATUS_DOT.draft;
-            const statusLabel = GB_STATUS_LABEL[gb.status] ?? gb.status;
+            const dotColor = gb.archived ? "#34D399" : GB_STATUS_DOT[gb.status] ?? GB_STATUS_DOT.draft;
+            const statusLabel = gb.archived ? "Completed" : GB_STATUS_LABEL[gb.status] ?? gb.status;
 
             const orderState = unpaid.length > 0
               ? { label: `${unpaid.length} unpaid`, color: "#F87171" }
@@ -8683,11 +8730,11 @@ export default function CustomerPortal() {
                 : []),
               { label: "Details", icon: Info, onClick: () => setInfoGb(gb) },
               {
-                label: "Archive", icon: Archive, loading: pendingArchiveId === gb.id,
+                label: gb.archived ? "Restore group buy" : "Mark as completed", icon: gb.archived ? ArchiveRestore : CheckCircle2, loading: pendingArchiveId === gb.id,
                 onClick: async () => {
                   setPendingArchiveId(gb.id);
-                  try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: true }); }
-                  catch (e) { toast({ title: "Couldn't archive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
+                  try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: !gb.archived }); }
+                  catch (e) { toast({ title: "Couldn't update group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
                   finally { setPendingArchiveId(null); }
                 },
               },
@@ -8826,7 +8873,7 @@ export default function CustomerPortal() {
             );
           })}
 
-          {!gbLoading && gbView === "table" && activeGbs.length > 0 && (
+          {!gbLoading && gbView === "table" && visibleGbs.length > 0 && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
               className="rounded-xl overflow-hidden" style={{ background: T.surface, border: `1px solid ${T.border}` }}>
               <div className="overflow-x-auto">
@@ -8846,7 +8893,7 @@ export default function CustomerPortal() {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeGbs.map((gb, idx) => {
+                    {visibleGbs.map((gb, idx) => {
                       const palette = GB_PALETTE[idx % GB_PALETTE.length];
                       const GBIcon = palette.icon;
                       const isOrderable = gb.status === "active";
@@ -8862,8 +8909,8 @@ export default function CustomerPortal() {
                             ? { label: `${paid.length} paid`, color: "#059669" }
                             : null;
                       const closeDateBadge = getGBCloseDateBadge(gb.closeDate);
-                      const dotColor = GB_STATUS_DOT[gb.status] ?? GB_STATUS_DOT.draft;
-                      const statusLabel = GB_STATUS_LABEL[gb.status] ?? gb.status;
+                      const dotColor = gb.archived ? "#34D399" : GB_STATUS_DOT[gb.status] ?? GB_STATUS_DOT.draft;
+                      const statusLabel = gb.archived ? "Completed" : GB_STATUS_LABEL[gb.status] ?? gb.status;
                       return (
                         <tr key={gb.id} style={{ borderBottom: `1px solid ${T.border}` }}>
                           <td className="px-4 py-3">
@@ -8922,17 +8969,18 @@ export default function CustomerPortal() {
                               <button
                                 onClick={async () => {
                                   setPendingArchiveId(gb.id);
-                                  try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: true }); }
-                                  catch (e) { toast({ title: "Couldn't archive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
+                                  try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: !gb.archived }); }
+                                  catch (e) { toast({ title: "Couldn't update group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
                                   finally { setPendingArchiveId(null); }
                                 }}
                                 disabled={pendingArchiveId === gb.id}
-                                title="Archive"
-                                className="w-8 h-8 rounded-lg hidden md:flex items-center justify-center"
+                                title={gb.archived ? "Restore group buy" : "Mark as completed"}
+                                aria-label={gb.archived ? "Restore group buy" : "Mark as completed"}
+                                className="w-9 h-9 rounded-lg flex items-center justify-center"
                                 style={{ background: T.surface2, border: `1px solid ${T.border}` }}>
                                 {pendingArchiveId === gb.id
                                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: T.muted }} />
-                                  : <Archive className="w-3.5 h-3.5" style={{ color: T.muted }} />}
+                                  : gb.archived ? <ArchiveRestore className="w-3.5 h-3.5" style={{ color: T.muted }} /> : <CheckCircle2 className="w-3.5 h-3.5" style={{ color: T.muted }} />}
                               </button>
                               <button onClick={() => setLeaveConfirmGb(gb)} title="Leave"
                                 className="w-8 h-8 rounded-lg hidden md:flex items-center justify-center"
@@ -8950,54 +8998,6 @@ export default function CustomerPortal() {
             </motion.div>
           )}
         </div>
-
-        {!gbLoading && archivedGbs.length > 0 && (
-          <div>
-            <button
-              onClick={() => setShowArchivedGbs(v => !v)}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl"
-              style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-              <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: T.muted }}>
-                <Archive className="w-4 h-4" style={{ color: T.muted }} />
-                Archived ({archivedGbs.length})
-              </span>
-              {showArchivedGbs
-                ? <ChevronUp className="w-4 h-4" style={{ color: T.muted }} />
-                : <ChevronDown className="w-4 h-4" style={{ color: T.muted }} />}
-            </button>
-            {showArchivedGbs && (
-              <div className="mt-2 space-y-2">
-                {archivedGbs.map(gb => (
-                  <div key={gb.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl"
-                    style={{ background: T.surface, border: `1px solid ${T.border}` }}>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: T.text }}>{gb.name}</p>
-                      <p className="text-xs truncate" style={{ color: T.muted }}>
-                        by {gb.organiserId ?? "Admin"}{gb.productCount > 0 ? ` · ${gb.productCount} product${gb.productCount !== 1 ? "s" : ""}` : ""}
-                      </p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        setPendingArchiveId(gb.id);
-                        try { await archiveGbMut.mutateAsync({ groupBuyId: gb.id, archived: false }); }
-                        catch (e) { toast({ title: "Couldn't unarchive group buy", description: e instanceof Error ? e.message : undefined, variant: "destructive" }); }
-                        finally { setPendingArchiveId(null); }
-                      }}
-                      disabled={pendingArchiveId === gb.id}
-                      className="shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold"
-                      style={{ background: T.surface2, color: T.text, border: `1px solid ${T.border}` }}>
-                      {pendingArchiveId === gb.id
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <ArchiveRestore className="w-3.5 h-3.5" />}
-                      Unarchive
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         <AnimatePresence>
           {infoGb && <GBInfoModal gb={infoGb} onClose={() => setInfoGb(null)} />}

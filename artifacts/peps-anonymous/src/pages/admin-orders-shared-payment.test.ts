@@ -18,3 +18,11 @@ test("expanding a shared order exposes payment proof and the pending-only admin 
   assert.match(ordersTab, /txHash/);
   assert.match(ordersTab, /\/admin\/wholesale-shares\/\$\{id\}\/confirm-organiser-payment/);
 });
+
+test("collapsed shared-order headers show fulfilment from the complete share summary", () => {
+  const header = ordersTab.slice(ordersTab.indexOf("const renderSharedHeader"), ordersTab.indexOf("Platform payment:"));
+  assert.match(header, /<SharedOrderFulfilmentPills/);
+  assert.match(header, /statuses=\{paymentSummary\?\.orderStatusPills\}/);
+  assert.match(header, /shareStatus=\{paymentSummary\?\.status\}/);
+  assert.match(header, /unavailable=\{sharedPaymentSummaryError\}/);
+});
