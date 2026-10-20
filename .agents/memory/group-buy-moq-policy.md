@@ -20,3 +20,9 @@ Regional supplier batches are a separate concept: country or EU thresholds count
 **Why:** The user plans large group buys with incremental supplier purchases by country/EU, needs exact member-order allocation, and explicitly chose fully paid eligibility and whole-order overflow.
 
 **How to apply:** Do not change the global MOQ to paid-only when adding regional batching. Do not split orders to force an exact target or treat a regional threshold as permission to place an external supplier order.
+
+Explicitly marking a regional batch as ordered from the supplier also moves only that batch's eligible Submitted member orders to Processing. Preparing the batch alone does not process them, and payments remain unchanged.
+
+**Why:** The user approved processing only the orders belonging to the batch when staff mark it ordered from the supplier.
+
+**How to apply:** Keep supplier placement and those status changes atomic and retry-safe. Never regress advanced or cancelled orders, affect other batches, or treat the supplier's bulk shipment as dispatch to individual members.
