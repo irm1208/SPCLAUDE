@@ -6,7 +6,7 @@ const buildSource = readFileSync(fileURLToPath(new URL("../../../build.ts", impo
 const bundledDependencies = buildSource.match(/const allowlist = \[([\s\S]*?)\];/)?.[1] ?? "";
 
 describe("production API bundle", () => {
-  it.each(["file-type", "@replit/object-storage"])(
+  it.each(["file-type", "@replit/object-storage", "@solana/web3.js", "bs58"])(
     "bundles %s because the published artifact has no runtime package links",
     (dependency) => {
       expect(bundledDependencies).toContain(`"${dependency}"`);
