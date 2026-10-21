@@ -11,14 +11,16 @@ export interface ReviewShippingDraft {
   shippingEmail: string;
 }
 
-export function reviewShippingRequirements(draft: ReviewShippingDraft) {
+type ReviewShippingOption = { requiresAddress?: boolean };
+
+export function reviewShippingRequirements(draft: ReviewShippingDraft, option?: ReviewShippingOption) {
   const euPostage = Boolean(draft.groupBuyId && draft.orderType !== "wholesale" && draft.deliveryMethodId?.startsWith("eu-postage-"));
-  const show = !draft.additionOfOrderId && Boolean(draft.directShippingRequested || !draft.groupBuyId || euPostage);
+  const show = !draft.additionOfOrderId && Boolean(draft.directShippingRequested || !draft.groupBuyId || euPostage || option?.requiresAddress);
   return { show, requireEuContact: show && euPostage && !draft.directShippingRequested };
 }
 
-export function validateReviewShippingDetails(draft: ReviewShippingDraft): string | null {
-  const { show, requireEuContact } = reviewShippingRequirements(draft);
+export function validateReviewShippingDetails(draft: ReviewShippingDraft, option?: ReviewShippingOption): string | null {
+  const { show, requireEuContact } = reviewShippingRequirements(draft, option);
   if (!show) return null;
   if (!draft.shippingName.trim()) return requireEuContact ? "Please enter your full name for EU delivery" : "Please enter your full name";
   if (!draft.shippingAddress.trim()) return "Please enter your delivery address";

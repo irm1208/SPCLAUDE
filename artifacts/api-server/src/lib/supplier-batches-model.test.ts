@@ -21,6 +21,27 @@ describe("supplier batching policy", () => {
     expect(eligibleOrder(order("1", 1, { onwardPaymentStatus: "unpaid" }))).toBeNull();
     expect(eligibleOrder(order("1", 1, { paymentConfirmedAt: null }))).toMatch(/date/i);
   });
+  it("excludes explicit and legacy Direct Shipping even when fully paid", () => {
+    for (const extra of [
+      { routingType: "direct", directShippingRequested: true },
+      { routingType: "direct", directShippingRequested: false },
+      { routingType: null, directShippingRequested: true },
+    ]) {
+      expect(eligibleOrder(order("direct", 30, extra))).toMatch(/Direct Shipping/);
+      expect(eligibleOrder(order("direct", 30, { ...extra, status: "Processing" }), true)).toMatch(/Direct Shipping/);
+    }
+  });
+  it("does not exclude large reshipper orders or trust stale direct flags over an assignment", () => {
+    for (const extra of [
+      { routingType: "reshipper", reshipperUsername: "synthetic-reshipper" },
+      { routingType: "reshipper", directShippingRequested: true },
+      { routingType: "direct", reshipperUsername: "synthetic-reshipper", directShippingRequested: true },
+      { routingType: null, reshipperUsername: "synthetic-reshipper", directShippingRequested: true },
+    ]) {
+      expect(eligibleOrder(order("reshipper", 30, extra))).toBeNull();
+      expect(eligibleOrder(order("reshipper", 100, extra))).toBeNull();
+    }
+  });
   it("preserves whole orders and chooses the shortest oldest-paid prefix", () => {
     const queue = [order("b", 10), order("a", 95, { paymentConfirmedAt: "2026-09-01T00:00:00Z" }), order("c", 20)];
     const result = propose(queue.map(o => snapshotOrder(o)), 100);

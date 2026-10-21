@@ -227,7 +227,7 @@ export function parseBatchDate(batchCode: string | null): string | null {
   return `${MONTH_NAMES[d.month - 1]} ${ordinal(d.day)} ${d.year}`;
 }
 
-function purityTier(pct: number, peptideName?: string): { color: string; bg: string; border: string; label: string } {
+function purityTier(pct: number, peptideName: string): { color: string; bg: string; border: string; label: string } {
   const threshold = labTestPurityThreshold(peptideName);
   if (pct >= threshold) return { color: "#059669", bg: "color-mix(in srgb, #059669 10%, transparent)", border: "color-mix(in srgb, #059669 30%, transparent)", label: "Good" };
   return { color: "#DC2626", bg: "color-mix(in srgb, #DC2626 10%, transparent)", border: "color-mix(in srgb, #DC2626 30%, transparent)", label: "Low" };
@@ -451,7 +451,7 @@ export function ReportModal({
                 {test.purityPct != null && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium" style={{ color: "var(--t-muted)" }}>Purity</span>
-                    <span className="text-sm font-bold" style={{ color: purityTier(test.purityPct).color }}>{formatPurity(test.purityPct)}%</span>
+                    <span className="text-sm font-bold" style={{ color: purityTier(test.purityPct, test.peptideName).color }}>{formatPurity(test.purityPct)}%</span>
                   </div>
                 )}
                 {test.endotoxinEuMg != null && (

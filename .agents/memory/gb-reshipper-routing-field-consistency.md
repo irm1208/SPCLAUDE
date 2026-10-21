@@ -21,6 +21,12 @@ Custom country postage routes through reshippers; supplier Direct Shipping is a 
 
 **How to apply:** Resolve all assigned countries with country-name and UK/GB alias normalization. Honour an Admin-selected postage reshipper only within their enabled country coverage. Ambiguous ordinary postage must remain unassigned, never become Direct Shipping. Enforce direct-shipping eligibility on the server as well as in the picker; do not bulk reclassify historical orders without review.
 
+Direct Shipping orders do not count towards regional supplier batches. A 30-kit minimum makes an order eligible for Direct Shipping; it is not a quantity-based exclusion for orders still using a reshipper.
+
+**Why:** The user wants the 100-kit regional batch to exclude the 30-kit orders being fulfilled directly, so the readiness count represents the orders actually purchased together for the region.
+
+**How to apply:** Use the actual route with the assignment and legacy-fallback precedence above. Exclude direct orders from readiness and new batch selection. Preserve saved batch history; flag conflicting prepared batches for release/re-preparation rather than silently changing purchased or reserved membership.
+
 Multiple reshippers assigned to the same country share automatically routed, unassigned orders. Claiming gives exclusive ownership to one reshipper, not shared ownership of the order. My Orders should contain owned work, with available work kept separately in Unclaimed.
 
 **Why:** The user clarified that both US reshippers must be able to claim orders, superseding the earlier request to send all US postage to one recipient.

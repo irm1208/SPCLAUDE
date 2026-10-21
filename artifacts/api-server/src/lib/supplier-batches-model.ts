@@ -36,8 +36,16 @@ export function paymentDate(o: any): string | null {
   const dates = [iso(o.paymentConfirmedAt), iso(o.balanceConfirmedAt)].filter(Boolean) as string[];
   return dates.sort().at(-1) ?? null;
 }
+export function isDirectSupplierOrder(o: {
+  reshipperUsername?: string | null; routingType?: string | null; directShippingRequested?: boolean;
+}): boolean {
+  // Existing reshipper assignments win over historical stale direct flags.
+  if (o.reshipperUsername) return false;
+  return o.routingType === "direct" || (o.routingType == null && o.directShippingRequested === true);
+}
 export function eligibleOrder(o: any, allowPlaced = false, historicalReviewed = false): string | null {
   if (o.deletedAt) return "Deleted order";
+  if (isDirectSupplierOrder(o)) return "Direct Shipping is handled separately, outside regional supplier batches";
   if (o.batchLocked) return "Already locked in a legacy supplier submission—review before including again";
   if (!(allowPlaced ? ["Submitted", "Processing", "Shipped", "Completed"] : ["Submitted"]).includes(o.status)) return `Order is ${o.status}`;
   if (o.paymentStatus !== "confirmed") return "Full payment not confirmed";

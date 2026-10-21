@@ -7,7 +7,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
 import { formatGroupCouponAmount } from "@/lib/group-buy-coupon-currency";
-import { resolveShippingDestinationCountry } from "@/lib/country-shipping-options";
+import { resolveShippingDestinationCountry, type CustomPostageOption } from "@/lib/country-shipping-options";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { useToast } from "@/hooks/use-toast";
 import { useUpdateOrder } from "@workspace/api-client-react";
@@ -20,7 +20,7 @@ import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { resolveReviewAdminFee } from "@/lib/group-buy-admin-fee";
 import { safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exact-money";
 import { resolveOrderSubmitDestination } from "./order-submit-destination";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MemberOffersResponse } from "@/lib/half-kit-api";
 import { ReviewShippingDetails } from "@/components/ReviewShippingDetails";
 import { reviewShippingRequirements, validateReviewShippingDetails } from "@/lib/review-shipping-details";
@@ -110,7 +110,29 @@ export default function Review() {
   const activeCountryLeg = activeGb?.countryLegId
     ? countryLegs.find(leg => leg.id === activeGb.countryLegId)
     : null;
-  const shippingRequirements = reviewShippingRequirements(draft);
+  const needsShippingOptions = Boolean(draft.groupBuyId && draft.orderType !== "wholesale" && !isTopUp && !draft.directShippingRequested);
+  const shippingOptionsQuery = useQuery<CustomPostageOption[]>({
+    queryKey: ["review-shipping-options", draft.groupBuyId, draft.shippingCountry, account?.telegramUsername ?? null],
+    enabled: needsShippingOptions,
+    retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) => {
+      const suffix = draft.shippingCountry ? `?shippingCountry=${encodeURIComponent(draft.shippingCountry)}` : "";
+      const response = await fetch(`/api/group-buys${suffix}`, { credentials: "include", signal });
+      if (!response.ok) throw new Error("Could not load delivery requirements. Please try again.");
+      const groups = await response.json() as Array<{ id: string; shippingOptions?: CustomPostageOption[] }>;
+      const group = Array.isArray(groups) ? groups.find(g => g.id === draft.groupBuyId) : undefined;
+      if (!group || (group.shippingOptions != null && !Array.isArray(group.shippingOptions))) {
+        throw new Error("Could not load this group buy's delivery settings. Return to your order and check your delivery option.");
+      }
+      return group.shippingOptions ?? [];
+    },
+  });
+  const loadingShippingOptions = needsShippingOptions && shippingOptionsQuery.isPending;
+  const shippingOptionsFailed = needsShippingOptions && shippingOptionsQuery.isError;
+  const selectedShippingOption = shippingOptionsQuery.data?.find(option => option.id === draft.deliveryMethodId);
+  const shippingRequirements = reviewShippingRequirements(draft, selectedShippingOption);
   useEffect(() => {
     if (!shippingRequirements.show || draft.shippingCountry) return;
     const code = resolveShippingDestinationCountry(null, account?.country, activeCountryLeg?.countryCode);
@@ -249,7 +271,11 @@ export default function Review() {
   const needsRuleAcceptance = !!account && (account.ruleAcceptedVersion ?? 0) < (account.rulesetVersion ?? 1);
 
   const doSubmit = () => {
-    const shippingError = validateReviewShippingDetails(draft);
+    if (loadingShippingOptions || shippingOptionsFailed) {
+      setError(loadingShippingOptions ? "Please wait for delivery requirements to load." : "Could not load delivery requirements. Please retry before placing your order.");
+      return;
+    }
+    const shippingError = validateReviewShippingDetails(draft, selectedShippingOption);
     if (shippingError) { setError(shippingError); return; }
     const payload = {
       halfKitCheckout: draft.halfKitCheckout ?? undefined,
@@ -498,7 +524,7 @@ export default function Review() {
                   </div>
                 </div>
               )}
-              {draft.groupBuyId && !draft.directShippingRequested && !draft.onwardDeliveryMethod && !draft.deliveryMethodId?.startsWith("eu-postage-") && draft.shippingAddress && (
+              {!shippingRequirements.show && draft.groupBuyId && !draft.directShippingRequested && !draft.onwardDeliveryMethod && !draft.deliveryMethodId?.startsWith("eu-postage-") && draft.shippingAddress && (
                 <div>
                   <p className="text-xs mb-1 text-gray-400">Delivery Address</p>
                   <p className="text-sm rounded-lg p-3 whitespace-pre-wrap text-gray-600 bg-gray-50 border border-gray-100">
@@ -517,6 +543,11 @@ export default function Review() {
             </div>
           </section>
 
+          {loadingShippingOptions && <p role="status" className="text-sm" style={{ color: "var(--t-muted)" }}>Loading delivery details…</p>}
+          {shippingOptionsFailed && <div role="alert" className="rounded-xl border p-4 space-y-2 text-sm" style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+            <p>{shippingOptionsQuery.error instanceof Error ? shippingOptionsQuery.error.message : "Could not load delivery requirements."}</p>
+            <button type="button" onClick={() => void shippingOptionsQuery.refetch()} className="font-semibold underline" style={{ color: "var(--t-blue)" }}>Retry loading delivery details</button>
+          </div>}
           {shippingRequirements.show && <ReviewShippingDetails requireEuContact={shippingRequirements.requireEuContact}
             countryLocked={Boolean(draft.groupBuyId)}
             onChangeDelivery={() => setLocation(draft.groupBuyId ? `/order?gbId=${draft.groupBuyId}` : "/order")} />}
@@ -754,7 +785,7 @@ export default function Review() {
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isPending || (eligibleGroupBuys.length > 0 && !selectedGroupBuyId)}
+              disabled={isPending || loadingShippingOptions || shippingOptionsFailed || (eligibleGroupBuys.length > 0 && !selectedGroupBuyId)}
               className="flex-[2] h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50"
               style={{ background: "var(--t-blue)" }}
             >

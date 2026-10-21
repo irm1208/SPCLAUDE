@@ -248,7 +248,7 @@ export function parseBatchDate(batchCode: string | null): string | null {
   return `${MONTH_NAMES[d.month - 1]} ${ordinal(d.day)} ${d.year}`;
 }
 
-function purityTier(pct: number, peptideName?: string): { color: string; bg: string; border: string; label: string } {
+function purityTier(pct: number, peptideName: string): { color: string; bg: string; border: string; label: string } {
   const threshold = labTestPurityThreshold(peptideName);
   if (pct >= threshold) return { color: "#059669", bg: "rgba(5,150,105,0.10)", border: "rgba(5,150,105,0.28)", label: "Good" };
   return { color: "#DC2626", bg: "rgba(220,38,38,0.10)", border: "rgba(220,38,38,0.28)", label: "Low" };
@@ -518,7 +518,7 @@ export function ReportModal({
                 {test.purityPct != null && (
                   <div className="flex items-center justify-between">
                     <span className="text-xs" style={{ color: "var(--t-muted)" }}>Purity</span>
-                    <span className="text-sm font-bold" style={{ color: purityTier(test.purityPct).color }}>
+                    <span className="text-sm font-bold" style={{ color: purityTier(test.purityPct, test.peptideName).color }}>
                       {formatPurity(test.purityPct)}%
                     </span>
                   </div>
@@ -707,7 +707,7 @@ export function ReportModal({
               <span>{test.supplier}</span>
             </div>
             {test.purityPct != null && (
-              <span className="text-xs font-bold ml-auto" style={{ color: purityTier(test.purityPct).color }}>
+              <span className="text-xs font-bold ml-auto" style={{ color: purityTier(test.purityPct, test.peptideName).color }}>
                 {formatPurity(test.purityPct)}% Purity
               </span>
             )}

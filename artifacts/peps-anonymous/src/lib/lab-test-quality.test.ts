@@ -29,6 +29,17 @@ test("unknown purity is not counted as a failure or a purity pass", () => {
   assert.equal(failsLabTestPurity({ peptideName: "SS-31", purityPct: null }), false);
   assert.equal(isLabTestFailed({ peptideName: "SS-31", purityPct: null, sterilityPass: null, endotoxinEuMg: null }), false);
 });
+test("dose-labelled HGH reports use the inclusive 95% threshold, including the GH36-09 certificate", () => {
+  for (const peptideName of ["HGH 36IU", "HGH36iu", "HGH (36 IU)", "Human Growth Hormone 36 IU", "Somatropin 12.5mg", "Growth Hormone 12000 mcg"]) {
+    assert.equal(labTestPurityThreshold(peptideName), 95, peptideName);
+    assert.equal(failsLabTestPurity({ peptideName, purityPct: 95.696 }), false, peptideName);
+    assert.equal(failsLabTestPurity({ peptideName, purityPct: 95 }), false, peptideName);
+    assert.equal(failsLabTestPurity({ peptideName, purityPct: 94.999 }), true, peptideName);
+  }
+  for (const peptideName of ["HGH Frag 176-191 5mg", "HGH Fragment 176-191", "HGH + BPC-157 36IU", "Not HGH 36IU"]) {
+    assert.equal(labTestPurityThreshold(peptideName), 98, peptideName);
+  }
+});
 
 test("sterility and endotoxin failure rules are unchanged", () => {
   const sample = { peptideName: "HGH", purityPct: 95, sterilityPass: true, endotoxinEuMg: 5 };
@@ -45,5 +56,6 @@ test("all lab-test surfaces share the threshold instead of hardcoded fail cutoff
     assert.ok(!/purityPct\s*<\s*(?:99|95)\b/.test(source), `${path} has a stale failure cutoff`);
     assert.ok(!/purityPct\s*>=\s*(?:99|95)\b/.test(source), `${path} has a stale pass cutoff`);
     assert.ok(!/Good ≥99%|Low <99%/.test(source), `${path} has stale chart labels`);
+    assert.ok(!/purityTier\(test\.purityPct\)/.test(source), `${path} must pass the compound name when colouring purity`);
   }
 });

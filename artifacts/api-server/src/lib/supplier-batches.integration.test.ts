@@ -26,7 +26,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
       });
     }
   });
-  async function fixture(qtys = [95, 10, 20]) {
+  async function fixture(qtys = [95, 10, 20], routes: Record<string, unknown>[] = []) {
     const id = randomUUID(); fixtures.push(id);
     await store.db.insert(store.groupBuysTable).values({ id, name: "Synthetic regional batching test", status: "draft", currency: "USD", organiserId: "synthetic-organiser", organiserCanEditStatus: true });
     const ids: string[] = [];
@@ -36,6 +36,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
         id: oid, code: `test-${k}`, telegramUsername: `synthetic-${k}`, deliveryMethod: "Synthetic",
         productSubtotal: String(qtys[k] * 10), grandTotal: String(qtys[k] * 10),
         groupBuyId: id, shippingCountry: "Italy", paymentStatus: "confirmed", paymentConfirmedAt: new Date(2026, 0, 1 + k),
+        ...routes[k],
       });
       await store.db.insert(store.orderLineItemsTable).values({
         id: randomUUID(), orderId: oid, productId: "synthetic-product", productName: "Synthetic product",
@@ -45,6 +46,44 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts:false,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("does not let 30 direct kits make a 70-kit regional queue ready", async () => {
+    const f = await fixture([70, 30], [{}, { routingType: "direct", directShippingRequested: true }]);
+    const p = f.result.proposals[0];
+    expect(p.queuedKits).toBe(70);
+    expect(p.ready).toBe(false);
+    expect(p.readyAt).toBeNull();
+    expect(p.orders.map((o: any) => o.id)).toEqual([f.ids[0]]);
+    expect(f.result.review.some((o: any) => o.id === f.ids[1])).toBe(false);
+    expect(f.result.events.some((e: any) => e.kind === "ready")).toBe(false);
+    await expect(api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token })).rejects.toThrow(/no longer ready/);
+  });
+  it("processes and exports 100 reshipper kits without including the separate direct order", async () => {
+    const f = await fixture([70, 30, 30], [{}, { routingType: "direct", directShippingRequested: true }, { routingType: "reshipper" }]);
+    const p = f.result.proposals[0];
+    expect(p.kits).toBe(100);
+    expect(p.orders.map((o: any) => o.id)).toEqual([f.ids[0], f.ids[2]]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token });
+    const b = prepared.batches[0];
+    expect((await api.exportSupplierBatch(f.id, b.id, admin)).csv).not.toContain("test-1");
+    await api.orderSupplierBatch(f.id, b.id, admin, { confirm: true });
+    const [direct] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[1]));
+    expect(direct.status).toBe("Submitted");
+    const allocations = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[1]));
+    expect(allocations).toHaveLength(0);
+  });
+  it("blocks an unsent batch changed to Direct Shipping without rewriting its saved history", async () => {
+    const f = await fixture([100, 10]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const b = prepared.batches[0];
+    await store.db.update(store.ordersTable).set({ routingType: "direct", directShippingRequested: true }).where(eq(store.ordersTable.id, f.ids[0]));
+    const current = await api.supplierData(f.id, admin);
+    expect(current.batches[0].exceptions[0].reason).toMatch(/Direct Shipping/);
+    await expect(api.orderSupplierBatch(f.id, b.id, admin, { confirm: true })).rejects.toThrow(/exceptions/);
+    await expect(api.exportSupplierBatch(f.id, b.id, admin)).rejects.toThrow(/blocked/);
+    const released = await api.releaseSupplierBatch(f.id, b.id, admin, { confirm: true, reason: "Direct order must be handled separately" });
+    expect(released.batches[0].snapshot.kits).toBe(100);
+    expect(released.proposals[0].queuedKits).toBe(10);
+  });
   it("reserves only a whole-order prefix, survives two concurrent confirmations, and starts the next queue", async () => {
     const f = await fixture();
     const p = f.result.proposals[0];

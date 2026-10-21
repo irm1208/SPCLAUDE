@@ -103,6 +103,7 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
         </label>
       </div>
       <p className="text-[11px]" style={{ color: V.muted }}>Staff alerts only — members never receive supplier batch alerts.</p>
+      <p className="text-[11px]" style={{ color: V.muted }}>Only fully paid regional orders count towards the target. Direct Shipping orders are handled separately and do not count.</p>
       <div className="space-y-2">
         {draft.regions.length === 0 && <p className="text-xs" style={{ color: V.muted }}>No regions yet. Add one to start grouping paid orders.</p>}
         {draft.regions.map((r, i) => (

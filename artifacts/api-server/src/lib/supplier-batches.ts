@@ -6,7 +6,7 @@ import {
   gbSupplierAllocationsTable as allocations, gbSupplierEligibilityTable as eligibility,
   gbSupplierEventsTable as events, telegramMessageLogsTable,
 } from "@workspace/db";
-import { SupplierBatchError, validateRegions, eligibleOrder, snapshotOrder, propose, fingerprint, csv, type SupplierConfig, type BatchOrder } from "./supplier-batches-model";
+import { SupplierBatchError, validateRegions, eligibleOrder, isDirectSupplierOrder, snapshotOrder, propose, fingerprint, csv, type SupplierConfig, type BatchOrder } from "./supplier-batches-model";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
@@ -48,7 +48,8 @@ async function load(tx: any, id: string) {
     grandTotal: ordersTable.grandTotal, creditsApplied: ordersTable.creditsApplied,
     productSubtotal: ordersTable.productSubtotal, vendorShipping: ordersTable.vendorShipping,
     refundStatus: ordersTable.refundStatus, deletedAt: ordersTable.deletedAt,
-    batchLocked: ordersTable.batchLocked,
+    batchLocked: ordersTable.batchLocked, routingType: ordersTable.routingType,
+    directShippingRequested: ordersTable.directShippingRequested, reshipperUsername: ordersTable.reshipperUsername,
   }).from(ordersTable).where(eq(ordersTable.groupBuyId, id)).orderBy(asc(ordersTable.id)).for("update");
   const ids = parents.map((o: any) => o.id);
   const lines = ids.length ? await tx.select().from(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, ids)).orderBy(asc(orderLineItemsTable.id)).for("update") : [];
@@ -75,6 +76,8 @@ async function state(tx: any, group: any, reconcile = true) {
   const review: any[] = [], queues = new Map<string, BatchOrder[]>();
   for (const o of data.all) {
     if (data.used.some((a: any) => a.orderId === o.id)) continue;
+    // Direct orders neither count towards regional targets nor require queue review.
+    if (isDirectSupplierOrder(o)) continue;
     // Historical fulfilled/processed orders never enter new queues or overwhelm review.
     if (o.deletedAt || ["Cancelled", "Processing", "Shipped", "Completed", "Draft"].includes(o.status) || o.paymentStatus === "refunded") continue;
     const e = data.elig.find((v: any) => v.orderId === o.id);

@@ -23,6 +23,17 @@ it("validates direct shipping and ordinary orders without imposing EU-only field
     expect(validateReviewShippingDetails({ ...draft, shippingAddress: "" })).toMatch(/address/);
   }
 });
+it("collects the address for US and other custom couriers that require it", () => {
+  for (const shippingCountry of ["United States", "United Kingdom"]) {
+    const draft = { ...eu, deliveryMethodId: "custom-address", shippingCountry, shippingPhone: "", shippingEmail: "" };
+    expect(reviewShippingRequirements(draft, { requiresAddress: true })).toEqual({ show: true, requireEuContact: false });
+    expect(validateReviewShippingDetails(draft, { requiresAddress: true })).toBeNull();
+    expect(validateReviewShippingDetails({ ...draft, shippingName: "" }, { requiresAddress: true })).toMatch(/full name/);
+    expect(validateReviewShippingDetails({ ...draft, shippingAddress: "" }, { requiresAddress: true })).toMatch(/address/);
+    expect(reviewShippingRequirements({ ...draft, additionOfOrderId: "parent" }, { requiresAddress: true }).show).toBe(false);
+    expect(reviewShippingRequirements(draft, { requiresAddress: false }).show).toBe(false);
+  }
+});
 it("does not request a new address for top-ups or label-only GB delivery", () => {
   for (const draft of [{ ...eu, additionOfOrderId: "parent" }, { ...eu, deliveryMethodId: "uk-label" }]) {
     expect(reviewShippingRequirements(draft).show).toBe(false);

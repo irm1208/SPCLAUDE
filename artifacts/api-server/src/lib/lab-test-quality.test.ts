@@ -9,6 +9,7 @@ describe("lab-test metrics purity threshold", () => {
     const query = new PgDialect().sqlToQuery(labTestPurityThresholdSql(sql`peptide_name`));
     expect(query.sql).toContain("then 95 else 98 end");
     expect(query.sql).toContain("regexp_replace");
+    expect(query.sql).toContain("(iu|mg|mcg|µg|μg)");
     expect(query.params).toEqual(["hgh", "humangrowthhormone", "growthhormone", "somatropin"]);
     expect(query.params).not.toContain("hghfrag176191");
   });
