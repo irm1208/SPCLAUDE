@@ -160,6 +160,34 @@ it("shows load errors with retry", async () => {
   expect(q('[role="alert"]').textContent).toContain("Not your group buy");
 });
 
+it("bulk-checks payment wallets and shows unmatched orders without marking them paid", async () => {
+  const d = data();
+  Object.assign(d, { collectionWallets: [{ collector: "admin", address: "0xabc", network: "ERC-20", effectiveFrom: "2026-01-01T00:00:00Z", effectiveUntil: null }] });
+  const response = { ...d, walletCheckResults: [{ orderId: "o4", code: "PA-104", collector: null, reason: "Multiple payments need review." }] };
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => json(init?.method === "POST" ? response : d));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  await click(btn("Check payment wallets"));
+  const post = fetcher.mock.calls.find(call => call[1]?.method === "POST")!;
+  expect(post[0]).toBe("/api/admin/reshippers/kai/gb/g1/payouts/check-wallets");
+  expect(JSON.parse(String(post[1]!.body))).toEqual({ orderIds: ["o4"] });
+  expect(el.textContent).toContain("Multiple payments need review.");
+  expect(byLabel("Select order PA-104").disabled).toBe(true);
+});
+
+it("saves a dated wallet ownership declaration for bulk collection checks", async () => {
+  const fetcher = vi.fn(async (_p: string, _init?: RequestInit) => json(data()));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  await act(async () => {
+    type(inputByLabelText("Wallet address"), `0x${"2".repeat(40)}`);
+    type(inputByLabelText("Owned from"), "2026-01-01");
+  });
+  await click(byLabel("Confirm wallet ownership"));
+  await click(btn("Save wallet ownership"));
+  const post = fetcher.mock.calls.find(call => call[1]?.method === "POST")!;
+  expect(post[0]).toBe("/api/admin/reshippers/kai/gb/g1/payouts/wallets");
+  expect(JSON.parse(String(post[1]!.body))).toMatchObject({ collector: "admin", network: "ERC-20", effectiveFrom: "2026-01-01T00:00:00.000Z", confirmed: true });
+});
+
 it("uses settled review caps and enforces a 5-character reason", async () => {
   const d = data();
   Object.assign(d.orders[3], { reviewAdminMinor: 1250, reviewPostageMinor: 300 });

@@ -84,6 +84,10 @@ export function PayoutOrdersTable({ orders, canSelect, selection, onSelectionCha
                   <div><dt style={subtle}>Postage paid</dt><dd>{fmt(o.paidPostageMinor, o.currency)}</dd></div>
                 </dl>
                 {o.reviewReason && <p className="mt-1 text-[11px]" style={subtle}>Review: {o.reviewReason}{o.collector ? ` · held by ${o.collector === "admin" ? "Admin" : "reshipper"}` : ""}</p>}
+                {o.collectionEvidence && <div className="mt-2 text-[11px]" style={subtle}>
+                  <p>Wallet checked · {o.collectionEvidence.network} · {new Date(o.collectionEvidence.checkedAt).toLocaleString()}</p>
+                  <code className="block break-all select-text">{o.collectionEvidence.address}</code>
+                </div>}
               </div>
             </div>
             {sel && <div className="mt-3 grid grid-cols-2 gap-2 sm:max-w-sm">

@@ -3,10 +3,12 @@ import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   read: vi.fn(), groups: vi.fn(), record: vi.fn(), review: vi.fn(), reverse: vi.fn(),
+  wallets: vi.fn(), check: vi.fn(),
 }));
 vi.mock("../lib/reshipper-payouts", () => ({
   readReshipperPayouts: mocks.read, listReshipperPayoutGroups: mocks.groups,
   recordReshipperPayout: mocks.record, reviewReshipperFees: mocks.review, voidReshipperPayout: mocks.reverse,
+  saveCollectionWallet: mocks.wallets, checkReshipperCollectionWallets: mocks.check,
 }));
 vi.mock("../middleware/require-admin", () => ({
   // This is a boolean guard, NOT Express middleware. A successful guard does not call next().
@@ -54,10 +56,19 @@ describe("payout route boundaries", () => {
     expect(mocks.reverse).toHaveBeenCalledWith("target", "gb-1", "receipt", "Incorrect receipt", "treasury-admin");
   });
   it("rejects unauthenticated and reshipper callers on every Admin mutation", async () => {
-    for (const suffix of ["", "/review", "/receipt/void"]) {
+    for (const suffix of ["", "/review", "/receipt/void", "/wallets", "/wallets/remove", "/check-wallets"]) {
       for (const role of [undefined, "reshipper"]) expect((await request(`/api/admin/reshippers/target/gb/gb-1/payouts${suffix}`, role, { reason: "test" })).status).toBe(401);
     }
     expect(mocks.record).not.toHaveBeenCalled(); expect(mocks.review).not.toHaveBeenCalled(); expect(mocks.reverse).not.toHaveBeenCalled();
+    expect(mocks.wallets).not.toHaveBeenCalled(); expect(mocks.check).not.toHaveBeenCalled();
+  });
+  it("uses the authenticated Admin actor for wallet declarations and bulk checks", async () => {
+    await request("/api/admin/reshippers/target/gb/gb-1/payouts/wallets", "admin", { collector: "admin" });
+    expect(mocks.wallets).toHaveBeenCalledWith("target", "gb-1", { collector: "admin" }, "treasury-admin");
+    await request("/api/admin/reshippers/target/gb/gb-1/payouts/wallets/remove", "admin", { confirmed: true });
+    expect(mocks.wallets).toHaveBeenCalledWith("target", "gb-1", { confirmed: true }, "treasury-admin", true);
+    await request("/api/admin/reshippers/target/gb/gb-1/payouts/check-wallets", "admin", { orderIds: ["o1"] });
+    expect(mocks.check).toHaveBeenCalledWith("target", "gb-1", { orderIds: ["o1"] }, "treasury-admin");
   });
   it("derives reshipper ownership from authentication, never from a query parameter", async () => {
     expect((await request("/api/reshipper/gb/gb-1/payouts?username=victim", "reshipper")).status).toBe(200);

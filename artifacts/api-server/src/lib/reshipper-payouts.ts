@@ -1,9 +1,11 @@
 import { db, accountsTable, gbReshippersTable, groupBuysTable, ordersTable, siteConfigTable } from "@workspace/db";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { checkCollectionWallet, collectionPaymentKey, walletOwnershipSchema, type CollectionCheck } from "./payout-wallet-check";
 import {
   applyPayout, buildPayoutView, emptyPayoutLedger, parsePayoutLedger, payoutLedgerKey, payoutReferenceKey,
-  PayoutError, reversePayout, reviewEntitlements, type FeeOrder, type PayoutLedger,
+  PayoutError, digest, reversePayout, reviewEntitlements, type FeeOrder, type PayoutLedger,
 } from "./reshipper-payout-rules";
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -53,6 +55,10 @@ async function context(executor: Executor, username: string, gbId: string, lock 
     deletedAt: ordersTable.deletedAt, refundStatus: ordersTable.refundStatus, routingType: ordersTable.routingType,
     paymentTxHash: ordersTable.paymentTxHash,
     paymentTxHashes: ordersTable.paymentTxHashes, balanceTxHash: ordersTable.balanceTxHash,
+    paymentCryptoCurrency: ordersTable.paymentCryptoCurrency, paymentCryptoNetwork: ordersTable.paymentCryptoNetwork,
+    paymentUsdAmount: ordersTable.paymentUsdAmount, paymentCryptoRate: ordersTable.paymentCryptoRate,
+    paymentConfirmedAt: ordersTable.paymentConfirmedAt, paymentTestAmount: ordersTable.paymentTestAmount,
+    creditsApplied: ordersTable.creditsApplied,
   }).from(ordersTable).leftJoin(accountsTable, eq(accountsTable.telegramUsername, ordersTable.reshipperUsername))
     .where(eq(ordersTable.groupBuyId, gbId)).orderBy(ordersTable.id);
   const orders: FeeOrder[] = await orderQuery;
@@ -63,7 +69,8 @@ async function context(executor: Executor, username: string, gbId: string, lock 
   };
 }
 function view(ctx: Awaited<ReturnType<typeof context>>, includePaymentTxids = false) {
-  return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, includePaymentTxids), paymentDetails: ctx.paymentDetails };
+  return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, includePaymentTxids), paymentDetails: ctx.paymentDetails,
+    ...(includePaymentTxids ? { collectionWallets: ctx.ledger.collectionWallets.filter(w => w.accountId === ctx.recipient.id) } : {}) };
 }
 export async function readReshipperPayouts(username: string, gbId: string, includePaymentTxids = false) {
   // Repeatable-read prevents a payout committed between the ledger and order reads producing a mixed snapshot.
@@ -97,9 +104,28 @@ function selectedOrderIds(body: unknown, field: "orders" | "allocations") {
     entry && typeof entry.orderId === "string" && entry.orderId.length <= 100 ? [entry.orderId] : []))].sort();
 }
 export async function reviewReshipperFees(username: string, gbId: string, body: unknown, actor: string) {
+  return commitFeeReview(username, gbId, body, actor);
+}
+type AutoProof = { orderId: string; orderSnapshot: string; walletsSnapshot: string; result: CollectionCheck; checkedAt: string };
+async function commitFeeReview(username: string, gbId: string, body: unknown, actor: string, proof?: AutoProof) {
   return db.transaction(async tx => {
     const ctx = await context(tx, username, gbId, true, selectedOrderIds(body, "orders"));
+    if (proof) {
+      const order = ctx.orders.find(o => o.id === proof.orderId);
+      const wallets = ctx.ledger.collectionWallets.filter(w => w.accountId === ctx.recipient.id);
+      if (!order || digest(JSON.stringify(order)) !== proof.orderSnapshot || digest(JSON.stringify(wallets)) !== proof.walletsSnapshot ||
+        ctx.ledger.entitlements[order.id]?.reviewedAt)
+        throw new PayoutError("Order or wallet ownership changed during the check. Refresh and retry; no automatic review was saved.", 409);
+    }
     const updates = reviewEntitlements(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, body, actor, new Date().toISOString());
+    if (proof?.result.declaration && proof.result.address && proof.result.network && proof.result.txid) {
+      ctx.ledger.entitlements[proof.orderId].walletEvidence = {
+        declaration: proof.result.declaration, paymentKey: collectionPaymentKey(ctx.orders.find(o => o.id === proof.orderId)!),
+        address: proof.result.address, network: proof.result.network, txid: proof.result.txid, checkedAt: proof.checkedAt,
+      };
+      ctx.ledger.audit.push({ action: "automatic_wallet_review", actor, at: proof.checkedAt,
+        reason: proof.result.reason, details: { orderId: proof.orderId, ...proof.result } });
+    }
     // An order moved into another GB must not acquire a second fee entitlement.
     // Batch reservation reads/writes so hundreds of reviewed orders do not require thousands of SQL round trips.
     const sorted = [...updates].sort((a, b) => a.id.localeCompare(b.id));
@@ -132,6 +158,76 @@ export async function reviewReshipperFees(username: string, gbId: string, body: 
     await tx.update(siteConfigTable).set({ value: JSON.stringify(ctx.ledger), updatedAt: new Date() }).where(eq(siteConfigTable.key, ctx.key));
     return view(ctx, true);
   });
+}
+
+export async function saveCollectionWallet(username: string, gbId: string, body: unknown, actor: string, remove = false) {
+  return db.transaction(async tx => {
+    const ctx = await context(tx, username, gbId, true);
+    const input = z.object({ confirmed: z.literal(true) }).safeParse(body);
+    if (!input.success) throw new PayoutError("Confirm the wallet ownership and dates before saving.");
+    const parsed = walletOwnershipSchema.safeParse({ ...(body as object), accountId: ctx.recipient.id });
+    if (!parsed.success) throw new PayoutError(parsed.error.issues.map(i => i.message).join("; "));
+    const wallet = parsed.data;
+    const same = (w: typeof wallet) => JSON.stringify(w) === JSON.stringify(wallet);
+    if (remove) ctx.ledger.collectionWallets = ctx.ledger.collectionWallets.filter(w => !same(w));
+    else if (!ctx.ledger.collectionWallets.some(same)) {
+      if (ctx.ledger.collectionWallets.filter(w => w.accountId === ctx.recipient.id).length >= 50)
+        throw new PayoutError("At most 50 historical wallets can be declared per reshipper and group buy.");
+      ctx.ledger.collectionWallets.push(wallet);
+    }
+    ctx.ledger.audit.push({ action: remove ? "remove_collection_wallet" : "declare_collection_wallet", actor,
+      at: new Date().toISOString(), reason: "Admin confirmed historical wallet ownership.", details: wallet });
+    await tx.update(siteConfigTable).set({ value: JSON.stringify(ctx.ledger), updatedAt: new Date() }).where(eq(siteConfigTable.key, ctx.key));
+    return view(ctx, true);
+  });
+}
+
+export async function checkReshipperCollectionWallets(username: string, gbId: string, body: unknown, actor: string) {
+  const parsed = z.object({ orderIds: z.array(z.string().min(1).max(100)).min(1).max(20) }).safeParse(body);
+  if (!parsed.success) throw new PayoutError("Select between 1 and 20 orders for each wallet check.");
+  // No database locks are held while calling external blockchain providers.
+  const ctx = await db.transaction(tx => context(tx, username, gbId), { isolationLevel: "repeatable read" });
+  const rows = view(ctx, true).orders;
+  const wallets = ctx.ledger.collectionWallets.filter(w => w.accountId === ctx.recipient.id);
+  const results: (CollectionCheck & { orderId: string; code: string })[] = [];
+  const remainingIds = [...new Set(parsed.data.orderIds)];
+  const deadline = Date.now() + 20000;
+  const checkOne = async (orderId: string) => {
+    const row = rows.find(o => o.orderId === orderId), order = ctx.orders.find(o => o.id === orderId);
+    if (!row || !order || !row.reviewable || row.reviewedAt || row.status !== "needs_review") {
+      results.push({ orderId, code: row?.code ?? orderId, collector: null, reason: "Already reviewed or not eligible. No changes made." });
+      return;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      results.push({ orderId, code: row.code, collector: null, reason: "Batch time limit reached. Retry unmatched orders." });
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const result = await Promise.race([
+      checkCollectionWallet(order, wallets),
+      new Promise<CollectionCheck>(resolve => {
+        timer = setTimeout(() => resolve({ collector: null, reason: "Blockchain check timed out. Retry unmatched orders; no automatic review was saved." }), remaining);
+      }),
+    ]).finally(() => { if (timer) clearTimeout(timer); });
+    if (result.collector) {
+      try {
+        await commitFeeReview(username, gbId, { reason: result.reason, orders: [{
+          orderId, collector: result.collector, adminFee: order.adminFee, postage: order.deliveryPrice,
+        }] }, actor, { orderId, orderSnapshot: digest(JSON.stringify(order)), walletsSnapshot: digest(JSON.stringify(wallets)),
+          result, checkedAt: new Date().toISOString() });
+      } catch (error) {
+        results.push({ orderId, code: row.code, collector: null, reason: error instanceof PayoutError ? error.message : "Could not save the review. Retry; this order was not classified." });
+        return;
+      }
+    }
+    results.push({ ...result, orderId, code: row.code });
+  };
+  // Bound RPC concurrency and the request's chain-check budget. Late RPC results cannot commit a review.
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (remainingIds.length) await checkOne(remainingIds.shift()!);
+  }));
+  return { ...await readReshipperPayouts(username, gbId, true), walletCheckResults: results };
 }
 export async function recordReshipperPayout(username: string, gbId: string, body: unknown, actor: string) {
   return db.transaction(async tx => {

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isValidTxHash } from "./payment-verify";
+import { collectionPaymentKey, walletOwnershipSchema } from "./payout-wallet-check";
 
 export class PayoutError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -10,6 +11,10 @@ const entitlementSchema = z.object({
   accountId: z.string(), code: z.string(), member: z.string(), currency: z.string(),
   adminFeeMinor: minor, postageMinor: minor, fingerprint: z.string(),
   collector: z.enum(["admin", "reshipper"]), reviewedAt: z.string(), reviewedBy: z.string(), reason: z.string(),
+  walletEvidence: z.object({
+    declaration: walletOwnershipSchema, paymentKey: z.string(), address: z.string(),
+    network: z.string(), txid: z.string(), checkedAt: z.string(),
+  }).optional(),
 });
 const allocationSchema = z.object({
   orderId: z.string(), code: z.string(), member: z.string(), adminFeeMinor: minor, postageMinor: minor,
@@ -22,6 +27,7 @@ const receiptSchema = z.object({
 });
 const ledgerSchema = z.object({
   version: z.literal(1), entitlements: z.record(z.string(), entitlementSchema),
+  collectionWallets: z.array(walletOwnershipSchema).default([]),
   payouts: z.array(receiptSchema), audit: z.array(z.object({
     action: z.string(), actor: z.string(), at: z.string(), reason: z.string(),
     details: z.unknown(),
@@ -34,6 +40,9 @@ export interface FeeOrder {
   paymentStatus: string; amountDue: string; adminFee: string; deliveryPrice: string; status: string;
   deletedAt: unknown; refundStatus: string | null; routingType: string | null; paymentTxHash: string | null;
   paymentTxHashes?: string[] | null; balanceTxHash?: string | null;
+  paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null;
+  paymentUsdAmount?: string | null; paymentCryptoRate?: string | null;
+  paymentConfirmedAt?: Date | string | null; paymentTestAmount?: string | null; creditsApplied?: string | number | null;
 }
 export const payoutLedgerKey = (gbId: string) => `reshipper_payouts:v1:${gbId}`;
 export const payoutReferenceKey = (reference: string) => `reshipper_payout_reference:v1:${digest(reference.trim().toLowerCase())}`;
@@ -46,7 +55,7 @@ export function moneyToMinor(raw: unknown): number {
   return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
 }
 export function emptyPayoutLedger(): PayoutLedger {
-  return { version: 1, entitlements: Object.create(null), payouts: [], audit: [] };
+  return { version: 1, entitlements: Object.create(null), payouts: [], audit: [], collectionWallets: [] };
 }
 export function parsePayoutLedger(raw: string | undefined): PayoutLedger {
   if (raw === undefined) return emptyPayoutLedger();
@@ -181,7 +190,10 @@ export function buildPayoutView(ledger: PayoutLedger, orders: FeeOrder[], curren
     const paid = entry ? orderPaid : { admin: 0, postage: 0 };
     const admin = entry?.adminFeeMinor ?? (order ? moneyToMinor(order.adminFee) : 0);
     const postage = entry?.postageMinor ?? (order ? moneyToMinor(order.deliveryPrice) : 0);
-    const changed = !!entry && entry.fingerprint !== fingerprint(order, currency);
+    const walletEvidenceChanged = !!entry?.walletEvidence && (
+      !order || collectionPaymentKey(order) !== entry.walletEvidence.paymentKey ||
+      !ledger.collectionWallets.some(wallet => JSON.stringify(wallet) === JSON.stringify(entry.walletEvidence!.declaration)));
+    const changed = !!entry && (entry.fingerprint !== fingerprint(order, currency) || walletEvidenceChanged);
     const unreviewed = !entry && admin + postage > 0;
     const needsReview = changed || unreviewed || conflict;
     const remainingAdmin = entry ? Math.max(0, admin - paid.admin) : 0;
@@ -192,6 +204,7 @@ export function buildPayoutView(ledger: PayoutLedger, orders: FeeOrder[], curren
       orderId: id, code: entry?.code ?? order?.code ?? id, member: entry?.member ?? order?.telegramUsername ?? "",
       // Incoming customer transactions are for Admin collection review, not the reshipper's read-only response.
       ...(includePaymentTxids ? { paymentTxids: incomingPaymentTxids(order) } : {}),
+      ...(includePaymentTxids && entry?.walletEvidence ? { collectionEvidence: entry.walletEvidence } : {}),
       currency: entry?.currency ?? currency, adminFeeMinor: admin, postageMinor: postage,
       paidAdminMinor: paid.admin, paidPostageMinor: paid.postage,
       remainingAdminMinor: remainingAdmin, remainingPostageMinor: remainingPostage,

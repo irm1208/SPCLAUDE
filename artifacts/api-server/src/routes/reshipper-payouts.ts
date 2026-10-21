@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { getAdminUsername, requireAdmin } from "../middleware/require-admin";
 import { requireReshipper } from "../middleware/require-reshipper";
 import { PayoutError } from "../lib/reshipper-payout-rules";
+import { checkReshipperCollectionWallets, saveCollectionWallet } from "../lib/reshipper-payouts";
 import { listReshipperPayoutGroups, readReshipperPayouts, recordReshipperPayout, reviewReshipperFees, voidReshipperPayout } from "../lib/reshipper-payouts";
 
 const router = Router();
@@ -27,6 +28,12 @@ function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
 router.get("/admin/reshippers/:username/payouts/groups", adminOnly, handle(req => listReshipperPayoutGroups(param(req, "username"))));
 router.get(admin, adminOnly, handle(req => readReshipperPayouts(param(req, "username"), param(req, "gbId"), true)));
 router.post(`${admin}/review`, adminOnly, handle((req, res) => reviewReshipperFees(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
+router.post(`${admin}/wallets`, adminOnly, handle((req, res) =>
+  saveCollectionWallet(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
+router.post(`${admin}/wallets/remove`, adminOnly, handle((req, res) =>
+  saveCollectionWallet(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res), true)));
+router.post(`${admin}/check-wallets`, adminOnly, handle((req, res) =>
+  checkReshipperCollectionWallets(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
 router.post(admin, adminOnly, handle((req, res) => recordReshipperPayout(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
 router.post(`${admin}/:payoutId/void`, adminOnly, handle((req, res) =>
   voidReshipperPayout(param(req, "username"), param(req, "gbId"), param(req, "payoutId"), req.body?.reason, getAdminUsername(res))));

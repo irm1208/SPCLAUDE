@@ -7,6 +7,7 @@ import { PayoutHistory } from "./PayoutHistory";
 import { type Draft, PayoutOrdersTable } from "./PayoutOrdersTable";
 import { PayoutTotals } from "./PayoutTotals";
 import { ReviewPanel } from "./ReviewPanel";
+import { WalletCollectionCheck } from "./WalletCollectionCheck";
 import { usePayoutData } from "./usePayoutData";
 import { card, ErrorNote, Skeleton, subtle } from "./ui";
 
@@ -40,6 +41,7 @@ export function ReshipperPayouts({ mode, username, gbId, fetcher }: ReshipperPay
     {base && error && <ErrorNote message={error} onRetry={retry} />}
     {data && <>
       <PayoutTotals data={data} />
+      {isAdmin && <WalletCollectionCheck key={`wallets-${base}`} data={data} write={write} />}
       {isAdmin && <ReviewPanel key={`review-${base}`} orders={data.orders} write={write} />}
       <PayoutOrdersTable orders={data.orders} canSelect={isAdmin} selection={selection} onSelectionChange={setSelection} />
       {isAdmin && <PayoutForm key={`form-${base}`} orders={data.orders} selection={selection} paymentDetails={data.paymentDetails} write={write} onRecorded={() => setSelection({})} />}

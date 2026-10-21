@@ -9,7 +9,7 @@ The Admin will owe reshippers the admin fee and onward-shipping fee, and needs t
 
 **How to apply:** Distinguish customer charges collected from Admin-to-reshipper settlement. A collected-fees summary alone is not proof a reshipper has been paid, and a payout must not change the member's payment or fulfilment status.
 
-Historical collection ownership must be explicitly reviewed before those fees become payable by Admin. Current payment-routing settings are not evidence of who received an old payment.
+Historical collection ownership must be established before those fees become payable by Admin. Current payment-routing settings are not evidence of who received an old payment. A verified full on-chain payment matched to an Admin-declared, dated wallet owner can establish collection automatically; uncertain cases still need explicit review.
 
 Collection review should show Admin the customer's recorded incoming payment TXIDs, separately from outgoing reshipper-payout TXIDs. Do not expose those incoming transactions in the reshipper payout response.
 
@@ -20,6 +20,12 @@ Collection review should show Admin the customer's recorded incoming payment TXI
 **Why:** Existing orders do not reliably snapshot the original receiving wallet/recipient, and reshipper assignments and payment targets can change later. Inferring history from current settings could pay postage twice.
 
 **How to apply:** Keep uncertain fees on review/hold, distinguish Admin-held fees from directly received reshipper payments, and retain the review reason and prior financial snapshots. An external payout record is not an on-chain verification claim.
+
+The user wants automatic identification of who collected a crypto payment, not a manual blockchain check for each order. Wallet ownership may be declared once for a reshipper/group buy and an effective date range; never infer historical ownership from the current payment configuration.
+
+**Why:** The user explicitly approved automatic wallet checks to avoid reviewing every transaction themselves. Incorrect collection attribution can pay a reshipper twice.
+
+**How to apply:** Require confirmed full-payment chain evidence and a single unambiguous dated owner. Leave split/test/balance/credit-adjusted payments, fiat and missing evidence for review. Preserve prior reviews and payouts, revalidate order/ownership snapshots before committing, and hold automatic entitlements if their supporting evidence or ownership declaration changes.
 
 The reshipper dashboard should show collected admin fees and member delivery/postage for the selected group buy. Do not include vendor shipping in that shipping total.
 

@@ -3,6 +3,7 @@ import {
   moneyToMinor, emptyPayoutLedger, reviewEntitlements, applyPayout, reversePayout, buildPayoutView, parsePayoutLedger,
   type FeeOrder,
 } from "./reshipper-payout-rules";
+import { collectionPaymentKey } from "./payout-wallet-check";
 
 const recipient = { id: "account-a", username: "reshipper-a" };
 const now = "2026-10-20T12:00:00.000Z";
@@ -20,6 +21,21 @@ const payout = (extra: Record<string, unknown> = {}) => ({
   confirmedDestination: true, note: "", allocations: [{ orderId: "order-1", adminFee: "10.00", postage: "5.00" }], ...extra,
 });
 describe("reshipper payout integrity", () => {
+  it("puts automatic reviews back on hold when wallet declarations or incoming payment evidence change", () => {
+    const ledger = emptyPayoutLedger(), current = order();
+    const declaration = { accountId: recipient.id, collector: "admin" as const, network: "ERC-20" as const,
+      address: `0x${"2".repeat(40)}`, effectiveFrom: "2026-01-01T00:00:00.000Z", effectiveUntil: null };
+    ledger.collectionWallets.push(declaration);
+    reviewEntitlements(ledger, [current], "USD", recipient, review(), "Admin", now);
+    ledger.entitlements[current.id].walletEvidence = { declaration, paymentKey: collectionPaymentKey(current),
+      address: declaration.address, network: declaration.network, txid: `0x${"1".repeat(64)}`, checkedAt: now };
+    expect(buildPayoutView(ledger, [current], "USD", recipient).orders[0].status).toBe("owed");
+    expect(buildPayoutView(ledger, [current], "USD", recipient).orders[0]).not.toHaveProperty("collectionEvidence");
+    expect(buildPayoutView(ledger, [order("order-1", { paymentCryptoNetwork: "Solana" })], "USD", recipient).orders[0].eligible).toBe(false);
+    ledger.collectionWallets = [];
+    expect(buildPayoutView(ledger, [current], "USD", recipient).orders[0].status).toBe("needs_review");
+    expect(() => applyPayout(ledger, [current], "USD", recipient, payout(), "Admin", now)).toThrow(/review/i);
+  });
   it("shows genuine incoming payment TXIDs to Admin only, including additional and balance payments", () => {
     const original = `0x${"a".repeat(64)}`, additional = "b".repeat(64), balance = "c".repeat(64);
     const rows = [order("order-1", {
