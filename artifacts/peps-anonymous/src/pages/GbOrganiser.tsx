@@ -1,4 +1,5 @@
 import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
+import { ReshipperFulfilmentDownload } from "@/components/ReshipperFulfilmentDownload";
 import { EuCustomPostageImport, PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
 import type { KitPrices } from "@/lib/country-shipping-options";
 import { OnwardPaymentReadonly } from "@/components/onward-delivery/OnwardPayments";
@@ -7435,7 +7436,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
           <p className="text-xs" style={{ color: "var(--t-subtle)" }}>{visibleOrders.length} orders · {visibleOrders.reduce((sum, o) => sum + kitCount(o), 0)} kits</p>
           {view === "board" && <p className="mt-1 text-[10px] font-semibold" style={{ color: "var(--t-blue)" }}>Drag orders between columns to update routing</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <div className="relative min-w-0 flex-1 sm:w-64">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2" style={{ color: "var(--t-subtle)" }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search username or code…" className="h-9 w-full rounded-lg border bg-transparent pl-9 pr-3 text-xs outline-none" style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }} />
@@ -7447,6 +7448,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
           <button type="button" onClick={() => setReshipperTotalsOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold" style={{ borderColor: "var(--t-border)", color: "var(--t-blue)" }}>
             <BarChart3 className="h-3.5 w-3.5" />Reshipper totals
           </button>
+          <ReshipperFulfilmentDownload key={gb.id} orders={orders} currency={gb.currency} groupBuyName={gb.name} disabled={!!error || !!routingOrderId} />
           <button onClick={() => void load()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
         </div>
       </div>
@@ -7499,6 +7501,10 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
                 <div className="border-b px-3 py-3" style={{ background: colors.head, borderColor: colors.border }}>
                   <p className="text-sm font-black" style={{ color: colors.text }}>{group.label}</p>
                   <p className="mt-0.5 text-[10px]" style={{ color: colors.text }}>{group.orders.length} orders · {group.orders.reduce((sum, o) => sum + kitCount(o), 0)} kits</p>
+                  {group.key.startsWith("reshipper:") && <div className="mt-2">
+                    <ReshipperFulfilmentDownload orders={orders} currency={gb.currency} groupBuyName={gb.name}
+                      reshipperUsername={group.label} disabled={!!error || !!routingOrderId} />
+                  </div>}
                 </div>
                 <div className="max-h-[62vh] space-y-2 overflow-y-auto p-2">
                   {group.orders.map(order => (
@@ -12378,6 +12384,9 @@ export function OrganiserReshippersTab({ gb }: { gb: OrganiserGB }) {
             <p className="text-[11px]" style={{ color: "var(--t-subtle)" }}>
               {loadingOrders ? "Loading assigned orders…" : `${uniqueReshipperNames.length} reshippers · ${combinedReshipperOrders} orders · ${combinedReshipperKits} kits`}
             </p>
+            <div className="mt-2">
+              <ReshipperFulfilmentDownload key={gb.id} orders={orders} currency={gb.currency} groupBuyName={gb.name} disabled={loadingOrders || !!error} />
+            </div>
           </div>
           <button
             type="button"

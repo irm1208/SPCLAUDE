@@ -86,3 +86,10 @@ test("fulfilment displays stablecoin amounts with a dollar symbol", () => {
   assert.match(fulfilment, /gb\.currency === "USDT"/);
   assert.match(fulfilment, /gb\.currency === "USDC"/);
 });
+
+test("reshipper downloads receive all authorised orders rather than search-filtered cards", () => {
+  const fulfilment = source.slice(source.indexOf("function FulfilmentTab"), source.indexOf("function OrdersTab"));
+  assert.match(fulfilment, /<ReshipperFulfilmentDownload[^>]*orders=\{orders\}/);
+  assert.match(fulfilment, /reshipperUsername=\{group\.label\}/);
+  assert.doesNotMatch(fulfilment, /<ReshipperFulfilmentDownload[^>]*orders=\{visibleOrders\}/);
+});
