@@ -114,23 +114,6 @@ function qrUploadMiddleware(req: Request, res: Response, next: NextFunction): vo
 // HELPERS
 // ─────────────────────────────────────────────────────────────
 
-const ISO_TO_COUNTRY: Record<string, string> = {
-  GB: "United Kingdom", IE: "Ireland", BE: "Belgium", NL: "Netherlands",
-  LU: "Luxembourg", DE: "Germany", AT: "Austria", FR: "France",
-  ES: "Spain", PT: "Portugal", IT: "Italy", SE: "Sweden", DK: "Denmark",
-  FI: "Finland", NO: "Norway", EE: "Estonia", LV: "Latvia", LT: "Lithuania",
-  PL: "Poland", CZ: "Czech Republic", SK: "Slovakia", HU: "Hungary",
-  RO: "Romania", BG: "Bulgaria", HR: "Croatia", SI: "Slovenia",
-  GR: "Greece", CY: "Cyprus", MT: "Malta", CH: "Switzerland",
-  US: "United States", CA: "Canada", AU: "Australia",
-};
-
-function normaliseCountry(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  return ISO_TO_COUNTRY[trimmed.toUpperCase()] ?? trimmed;
-}
-
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -3232,8 +3215,6 @@ router.post("/orders/:id/confirm-fiat", requireAccount, async (req, res): Promis
     const [gb] = await db
       .select({
         organiserPayments: groupBuysTable.organiserPayments,
-        allowedCountries: groupBuysTable.allowedCountries,
-        excludedCountries: groupBuysTable.excludedCountries,
       })
       .from(groupBuysTable)
       .where(eq(groupBuysTable.id, order.groupBuyId));
@@ -3241,27 +3222,6 @@ router.post("/orders/:id/confirm-fiat", requireAccount, async (req, res): Promis
     if (!gb) {
       res.status(404).json({ error: "Group buy not found" });
       return;
-    }
-
-    // Country restriction check — same logic as crypto/AnonPay endpoints.
-    // Orders store "@username"; accounts table uses bare username without "@".
-    const allowed = (gb.allowedCountries ?? []) as string[];
-    const excluded = (gb.excludedCountries ?? []) as string[];
-    if (allowed.length > 0 || excluded.length > 0) {
-      const bareUsername = (order.telegramUsername ?? "").replace(/^@/, "");
-      const [acct] = await db
-        .select({ country: accountsTable.country })
-        .from(accountsTable)
-        .where(eq(accountsTable.telegramUsername, bareUsername));
-      const userCountry = normaliseCountry(acct?.country ?? null);
-      if (allowed.length > 0 && (!userCountry || !allowed.includes(userCountry))) {
-        res.status(403).json({ error: `Payments for this group buy are only accepted from: ${allowed.join(", ")}` });
-        return;
-      }
-      if (excluded.length > 0 && userCountry && excluded.includes(userCountry)) {
-        res.status(403).json({ error: `Payments from your country (${userCountry}) are not accepted for this group buy.` });
-        return;
-      }
     }
 
     op = gb.organiserPayments as Record<string, string> | null;

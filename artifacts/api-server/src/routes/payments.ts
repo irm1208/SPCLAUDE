@@ -37,26 +37,6 @@ async function optionalAccountAuth(req: Request, _res: Response, next: NextFunct
 
 const router: IRouter = Router();
 
-// ─── ISO-2 code → full country name (mirrors SHIP_COUNTRIES on the frontend) ──
-// Used to normalise stored country values so "GB" and "United Kingdom" match.
-const ISO_TO_COUNTRY: Record<string, string> = {
-  GB: "United Kingdom", IE: "Ireland", BE: "Belgium", NL: "Netherlands",
-  LU: "Luxembourg", DE: "Germany", AT: "Austria", FR: "France",
-  ES: "Spain", PT: "Portugal", IT: "Italy", SE: "Sweden", DK: "Denmark",
-  FI: "Finland", NO: "Norway", EE: "Estonia", LV: "Latvia", LT: "Lithuania",
-  PL: "Poland", CZ: "Czech Republic", SK: "Slovakia", HU: "Hungary",
-  RO: "Romania", BG: "Bulgaria", HR: "Croatia", SI: "Slovenia",
-  GR: "Greece", CY: "Cyprus", MT: "Malta", CH: "Switzerland",
-  US: "United States", CA: "Canada", AU: "Australia",
-};
-
-/** Expand an ISO-2 code to its full name; leave full names unchanged. */
-function normaliseCountry(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  return ISO_TO_COUNTRY[trimmed.toUpperCase()] ?? trimmed;
-}
-
 // ─── Payment leg blocking helper ─────────────────────────────
 // Returns false (and sends a 403) if the order's country leg has payment_blocked = true.
 async function checkLegPaymentBlocked(
@@ -75,43 +55,8 @@ async function checkLegPaymentBlocked(
   return true;
 }
 
-// ─── Payment country restriction helper ───────────────────────
-async function checkPaymentCountry(
-  order: { telegramUsername: string; shippingCountry: string | null },
-  gb: { allowedCountries: string[] | null | undefined; excludedCountries: string[] | null | undefined },
-  res: Response
-): Promise<boolean> {
-  const allowed = gb.allowedCountries ?? [];
-  const excluded = gb.excludedCountries ?? [];
-  if (allowed.length === 0 && excluded.length === 0) return true;
-
-  // Orders store telegramUsername with a leading "@" (e.g. "@pharmmd") but the
-  // accounts table uses the bare username as primary key (e.g. "pharmmd").
-  // Strip the "@" before looking up the account.
-  const bareUsername = order.telegramUsername?.replace(/^@/, "") ?? "";
-  const [acct] = await db
-    .select({ country: accountsTable.country })
-    .from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, bareUsername));
-
-  // Normalise stored country (may be ISO-2 code like "GB" or full name like "United Kingdom").
-  // The admin restriction lists always use full names; users who saved via the old address form
-  // may have an ISO-2 code stored, so we expand it before comparing.
-  const rawCountry = acct?.country ?? order.shippingCountry ?? null;
-  const userCountry = normaliseCountry(rawCountry);
-
-  if (allowed.length > 0) {
-    if (!userCountry || !allowed.includes(userCountry)) {
-      res.status(403).json({ error: `Payments for this group buy are only accepted from: ${allowed.join(", ")}` });
-      return false;
-    }
-  }
-  if (excluded.length > 0 && userCountry && excluded.includes(userCountry)) {
-    res.status(403).json({ error: `Payments from your country (${userCountry}) are not accepted for this group buy.` });
-    return false;
-  }
-  return true;
-}
+// Country eligibility is enforced when joining/ordering, not when paying an
+// existing order. Explicit group-buy and country-leg payment pauses still apply.
 
 // ─── Shared type: organiser payment methods stored in GB JSONB ─
 export interface OrganiserPayments {
@@ -301,11 +246,6 @@ export async function assertCombinedProductPaymentsOpen(order: typeof ordersTabl
     const [leg] = await database.select().from(gbCountryLegsTable).where(eq(gbCountryLegsTable.id, order.countryLegId));
     if (leg?.paymentBlocked) throw new OnwardDeliveryError("Payments are paused for your shipping country.", 403);
   }
-  const [account] = await database.select({ country: accountsTable.country }).from(accountsTable)
-    .where(eq(accountsTable.telegramUsername, order.telegramUsername.replace(/^@/, "")));
-  const country = normaliseCountry(account?.country ?? order.shippingCountry);
-  if ((gb.allowedCountries?.length && (!country || !gb.allowedCountries.includes(country)))
-    || (country && gb.excludedCountries?.includes(country))) throw new OnwardDeliveryError("Payments from your country are not currently accepted.", 403);
 }
 
 /**
@@ -1419,7 +1359,7 @@ router.post("/orders/:id/generate-test", async (req, res): Promise<void> => {
 
   if (order.groupBuyId) {
     // GB orders: GB-level paymentsEnabled is authoritative — global flag does not apply
-    const [gb] = await db.select({ paymentsEnabled: groupBuysTable.paymentsEnabled, directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled, allowedCountries: groupBuysTable.allowedCountries, excludedCountries: groupBuysTable.excludedCountries }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
+    const [gb] = await db.select({ paymentsEnabled: groupBuysTable.paymentsEnabled, directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
     const directCanBypassClosed = order.directShippingRequested && gb?.directShippingPaymentsEnabled !== false;
     if (!gb || (!gb.paymentsEnabled && !directCanBypassClosed)) {
       res.status(403).json({ error: "Payments are not currently open for this group buy" });
@@ -1429,7 +1369,6 @@ router.post("/orders/:id/generate-test", async (req, res): Promise<void> => {
       res.status(403).json({ error: "Payments are not currently accepted for direct-to-home shipping orders" });
       return;
     }
-    if (!await checkPaymentCountry(order, gb, res)) return;
     if (!await checkLegPaymentBlocked(order, res)) return;
   } else {
     // Non-GB orders: check global paymentsEnabled
@@ -1648,7 +1587,7 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
 
   if (order.groupBuyId) {
     // GB orders: GB-level paymentsEnabled is authoritative — global flag does not apply
-    const [gb] = await db.select({ paymentsEnabled: groupBuysTable.paymentsEnabled, directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled, allowedCountries: groupBuysTable.allowedCountries, excludedCountries: groupBuysTable.excludedCountries }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
+    const [gb] = await db.select({ paymentsEnabled: groupBuysTable.paymentsEnabled, directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
     const directCanBypassClosed = order.directShippingRequested && gb?.directShippingPaymentsEnabled !== false;
     if (!gb || (!gb.paymentsEnabled && !directCanBypassClosed)) {
       writeLog("payment", "warn", "payment_rejected_disabled", `Payment rejected — GB payments disabled for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, groupBuyId: order.groupBuyId, txHash: cleanHash, reason: "GB payments disabled" }, req.ip).catch(() => {});
@@ -1658,10 +1597,6 @@ router.post("/orders/:id/pay", async (req, res): Promise<void> => {
     if (order.directShippingRequested && gb.directShippingPaymentsEnabled === false) {
       writeLog("payment", "warn", "payment_rejected_disabled", `Payment rejected — direct-to-home payments disabled for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, groupBuyId: order.groupBuyId, txHash: cleanHash, reason: "direct shipping payments disabled" }, req.ip).catch(() => {});
       res.status(403).json({ error: "Payments are not currently accepted for direct-to-home shipping orders" });
-      return;
-    }
-    if (!await checkPaymentCountry(order, gb, res)) {
-      writeLog("payment", "warn", "payment_rejected_country", `Payment rejected — country restriction for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, groupBuyId: order.groupBuyId, shippingCountry: order.shippingCountry ?? null, txHash: cleanHash, reason: "country restriction" }, req.ip).catch(() => {});
       return;
     }
     if (!await checkLegPaymentBlocked(order, res)) {
@@ -1839,7 +1774,7 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
 
   // Check payments enabled
   if (order.groupBuyId) {
-    const [gb] = await db.select({ paymentsEnabled: groupBuysTable.paymentsEnabled, directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled, allowedCountries: groupBuysTable.allowedCountries, excludedCountries: groupBuysTable.excludedCountries }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
+    const [gb] = await db.select({ paymentsEnabled: groupBuysTable.paymentsEnabled, directShippingPaymentsEnabled: groupBuysTable.directShippingPaymentsEnabled }).from(groupBuysTable).where(eq(groupBuysTable.id, order.groupBuyId));
     const directCanBypassClosed = order.directShippingRequested && gb?.directShippingPaymentsEnabled !== false;
     if (!gb || (!gb.paymentsEnabled && !directCanBypassClosed)) {
       res.status(403).json({ error: "Payments are not currently open for this group buy" }); return;
@@ -1847,7 +1782,6 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
     if (order.directShippingRequested && gb.directShippingPaymentsEnabled === false) {
       res.status(403).json({ error: "Payments are not currently accepted for direct-to-home shipping orders" }); return;
     }
-    if (!await checkPaymentCountry(order, gb, res)) return;
     if (!await checkLegPaymentBlocked(order, res)) return;
   } else {
     const paymentsEnabled = (await getConfig("paymentsEnabled")) === "true";
