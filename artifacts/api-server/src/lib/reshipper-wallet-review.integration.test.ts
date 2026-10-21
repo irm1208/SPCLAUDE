@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, inArray } from "drizzle-orm";
-import { payoutLedgerKey } from "./reshipper-payout-rules";
+import { payoutLedgerKey, payoutReferenceKey } from "./reshipper-payout-rules";
 
 const chain = vi.hoisted(() => ({ verify: vi.fn() }));
 vi.mock("./payment-verify", async original => ({
@@ -12,9 +12,10 @@ describe.skipIf(process.env.RUN_PAYOUT_DB_TESTS !== "1")("automatic payout colle
   let tables: typeof import("@workspace/db");
   let service: typeof import("./reshipper-payouts");
   const prefix = `wallet_check_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
-  const username = `${prefix}_r`, gb = `${prefix}_gb`, ids = [1, 2, 3, 4].map(n => `${prefix}_${n}`);
+  const username = `${prefix}_r`, gb = `${prefix}_gb`, gb2 = `${prefix}_gb2`, ids = [1, 2, 3, 4, 5].map(n => `${prefix}_${n}`);
+  const payoutTxid = `0x${randomUUID().replaceAll("-", "")}${randomUUID().replaceAll("-", "")}`;
   const adminAddress = `0x${"a".repeat(40)}`, reshipperAddress = `0x${"b".repeat(40)}`;
-  const hashes = [1, 2, 3, 4].map(n => `0x${String(n).repeat(64)}`);
+  const hashes = [1, 2, 3, 4, 6].map(n => `0x${String(n).repeat(64)}`);
   const declaration = (collector: "admin" | "reshipper") => ({
     collector, network: "ERC-20", address: collector === "admin" ? adminAddress : reshipperAddress,
     effectiveFrom: "2020-01-01T00:00:00.000Z", effectiveUntil: null, confirmed: true,
@@ -26,7 +27,9 @@ describe.skipIf(process.env.RUN_PAYOUT_DB_TESTS !== "1")("automatic payout colle
     const { db, accountsTable, groupBuysTable, gbReshippersTable, ordersTable } = tables;
     await db.insert(accountsTable).values({ telegramUsername: username, reshipperStatus: "approved" });
     await db.insert(groupBuysTable).values({ id: gb, name: prefix, currency: "USD" });
+    await db.insert(groupBuysTable).values({ id: gb2, name: `${prefix} second`, currency: "USD" });
     await db.insert(gbReshippersTable).values({ id: `${prefix}_assignment`, gbId: gb, reshipperUsername: username, country: "DE" });
+    await db.insert(gbReshippersTable).values({ id: `${prefix}_assignment2`, gbId: gb2, reshipperUsername: username, country: "DE" });
     await db.insert(ordersTable).values(ids.map((id, i) => ({
       id, code: id, telegramUsername: "test-member", groupBuyId: gb, reshipperUsername: username,
       deliveryMethod: "Test home delivery", deliveryPrice: "20.00", adminFee: "15.00",
@@ -49,10 +52,12 @@ describe.skipIf(process.env.RUN_PAYOUT_DB_TESTS !== "1")("automatic payout colle
     if (!tables) return;
     const { db, ordersTable, groupBuysTable, gbReshippersTable, accountsTable, siteConfigTable, pool } = tables;
     try {
-      await db.delete(siteConfigTable).where(inArray(siteConfigTable.key, [payoutLedgerKey(gb), ...ids.map(id => `reshipper_payout_order_owner:v1:${id}`)]));
+      const [account] = await db.select().from(accountsTable).where(eq(accountsTable.telegramUsername, username));
+      await db.delete(siteConfigTable).where(inArray(siteConfigTable.key, [payoutLedgerKey(gb), payoutLedgerKey(gb2),
+        `reshipper_payout_wallet:v1:${account?.reshipperPayoutId}`, payoutReferenceKey(payoutTxid), ...ids.map(id => `reshipper_payout_order_owner:v1:${id}`)]));
       await db.delete(ordersTable).where(inArray(ordersTable.id, ids));
-      await db.delete(gbReshippersTable).where(eq(gbReshippersTable.gbId, gb));
-      await db.delete(groupBuysTable).where(eq(groupBuysTable.id, gb));
+      await db.delete(gbReshippersTable).where(inArray(gbReshippersTable.gbId, [gb, gb2]));
+      await db.delete(groupBuysTable).where(inArray(groupBuysTable.id, [gb, gb2]));
       await db.delete(accountsTable).where(eq(accountsTable.telegramUsername, username));
     } finally { await pool.end(); }
   }, 30000);
@@ -78,6 +83,29 @@ describe.skipIf(process.env.RUN_PAYOUT_DB_TESTS !== "1")("automatic payout colle
     expect(chain.verify.mock.calls.length).toBe(calls);
     const ledger = await db.select().from(tables.siteConfigTable).where(eq(tables.siteConfigTable.key, payoutLedgerKey(gb)));
     expect(JSON.parse(ledger[0].value!).audit.filter((entry: { action: string }) => entry.action === "automatic_wallet_review")).toHaveLength(2);
+  });
+  it("reuses a saved payout wallet across group buys and preserves one bulk receipt for both sides after wallet changes", async () => {
+    await expect(service.saveReshipperPayoutWallet(username, gb, { address: "bad", network: "ERC-20" }, "Admin-test")).rejects.toThrow("valid wallet");
+    const wallet = { address: reshipperAddress, network: "ERC-20" };
+    await service.saveReshipperPayoutWallet(username, gb, wallet, "Admin-test");
+    expect((await service.readReshipperPayouts(username, gb2, true)).payoutWallet).toEqual(wallet);
+    await service.checkReshipperCollectionWallets(username, gb, { orderIds: [ids[4]] }, "Admin-test");
+    const payload = { operationId: randomUUID(), amount: "70.00", currency: "USD",
+      paidAt: new Date().toISOString().slice(0, 10), method: "crypto", reference: payoutTxid,
+      destination: wallet.address, network: wallet.network, confirmedDestination: true,
+      allocations: [ids[0], ids[4]].map(orderId => ({ orderId, adminFee: "15.00", postage: "20.00" })),
+    };
+    await service.recordReshipperPayout(username, gb, payload, "Admin-test");
+    await service.recordReshipperPayout(username, gb, payload, "Admin-test"); // Retry, not a second payout.
+    await service.saveReshipperPayoutWallet(username, gb, { address: adminAddress, network: "Polygon" }, "Admin-test");
+    const memberView = await service.readReshipperPayouts(username, gb);
+    const adminView = await service.readReshipperPayouts(username, gb, true);
+    expect(memberView.payouts).toHaveLength(1);
+    expect(memberView.payouts).toEqual(adminView.payouts);
+    expect(memberView.payouts[0]).toMatchObject({ amountMinor: 7000, network: "ERC-20", destination: reshipperAddress, reference: payoutTxid });
+    expect(memberView.payouts[0].allocations.map(a => a.orderId).sort()).toEqual([ids[0], ids[4]].sort());
+    expect(memberView.payoutWallet).toEqual({ address: adminAddress, network: "Polygon" });
+    expect(memberView.orders.filter(o => [ids[0], ids[4]].includes(o.orderId)).every(o => o.status === "paid" && !o.eligible)).toBe(true);
   });
   it("rejects changes made while the chain check is in flight", async () => {
     let release!: () => void, started!: () => void;

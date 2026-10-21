@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isValidTxHash } from "./payment-verify";
-import { collectionPaymentKey, walletOwnershipSchema } from "./payout-wallet-check";
+import { collectionPaymentKey, walletOwnershipSchema, parsePayoutWallet } from "./payout-wallet-check";
 
 export class PayoutError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -22,7 +22,7 @@ const allocationSchema = z.object({
 const receiptSchema = z.object({
   id: z.string(), accountId: z.string(), username: z.string(), operationId: z.string(), requestHash: z.string(),
   amountMinor: minor, currency: z.string(), paidAt: z.string(), method: z.string(), reference: z.string(),
-  destination: z.string(), note: z.string(), recordedBy: z.string(), recordedAt: z.string(),
+  destination: z.string(), network: z.string().optional(), note: z.string(), recordedBy: z.string(), recordedAt: z.string(),
   allocations: z.array(allocationSchema), voidedAt: z.string().nullable(), voidReason: z.string().nullable(),
 });
 const ledgerSchema = z.object({
@@ -238,12 +238,15 @@ const payoutSchema = z.object({
   operationId: z.string().uuid(), amount: z.string(), currency: z.string().trim().min(2).max(8),
   paidAt: z.string().min(10).max(40), method: z.string().trim().min(1).max(100),
   reference: z.string().trim().min(1).max(300), destination: z.string().trim().min(1).max(500),
+  network: z.string().trim().min(1).max(60).optional(),
   confirmedDestination: z.literal(true), note: z.string().trim().max(2000).optional().default(""),
   allocations: z.array(z.object({ orderId: z.string().min(1).max(100), adminFee: z.string(), postage: z.string() })).min(1).max(5000),
 });
 export function applyPayout(ledger: PayoutLedger, orders: FeeOrder[], currency: string, recipient: PayoutRecipient,
   raw: unknown, actor: string, now: string) {
   const body = validate(payoutSchema, raw);
+  if (body.method === "crypto" && body.network && !parsePayoutWallet({ address: body.destination, network: body.network }))
+    throw new PayoutError("The payout destination is not a valid address for that network.");
   const amount = moneyToMinor(body.amount);
   if (!amount) throw new PayoutError("The payout amount must be positive.");
   const date = new Date(body.paidAt);
@@ -275,7 +278,8 @@ export function applyPayout(ledger: PayoutLedger, orders: FeeOrder[], currency: 
   const receipt = {
     id: randomUUID(), accountId: recipient.id, username: recipient.username, operationId: body.operationId, requestHash,
     amountMinor: amount, currency: body.currency, paidAt: date.toISOString(), method: body.method, reference: body.reference,
-    destination: body.destination, note, recordedBy: actor, recordedAt: now, allocations: snapshots, voidedAt: null, voidReason: null,
+    destination: body.destination, ...(body.method === "crypto" && body.network ? { network: body.network } : {}),
+    note, recordedBy: actor, recordedAt: now, allocations: snapshots, voidedAt: null, voidReason: null,
   };
   ledger.payouts.push(receipt);
   ledger.audit.push({ action: "payout", actor, at: now, reason: note, details: { payoutId: receipt.id, orderIds: snapshots.map(a => a.orderId) } });

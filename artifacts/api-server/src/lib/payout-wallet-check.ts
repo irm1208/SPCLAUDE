@@ -21,6 +21,16 @@ export const walletOwnershipSchema = z.object({
     ctx.addIssue({ code: "custom", message: "Owned until must be after owned from.", path: ["effectiveUntil"] });
 });
 export type CollectionWallet = z.infer<typeof walletOwnershipSchema>;
+// Payout destinations are separate from historical customer-payment ownership.
+export function parsePayoutWallet(raw: unknown) {
+  const input = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const checked = walletOwnershipSchema.safeParse({
+    address: input.address, network: input.network, accountId: "payout-destination", collector: "reshipper",
+    effectiveFrom: "2000-01-01T00:00:00.000Z", effectiveUntil: null,
+  });
+  if (!checked.success) return null;
+  return { address: checked.data.address, network: checked.data.network };
+}
 export type CollectionCheck = {
   collector: "admin" | "reshipper" | null; reason: string;
   address?: string; network?: string; txid?: string;

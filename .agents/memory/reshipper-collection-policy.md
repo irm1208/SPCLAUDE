@@ -27,6 +27,12 @@ The user wants automatic identification of who collected a crypto payment, not a
 
 **How to apply:** Require confirmed full-payment chain evidence and a single unambiguous dated owner. Leave split/test/balance/credit-adjusted payments, fiat and missing evidence for review. Preserve prior reviews and payouts, revalidate order/ownership snapshots before committing, and hold automatic entitlements if their supporting evidence or ownership declaration changes.
 
+Keep the outgoing reshipper payout wallet concept separate from historical incoming customer-payment wallets. The user wants a simple saved reshipper wallet, selected orders, one transfer and one TXID, with the covered orders visible to the reshipper.
+
+**Why:** The user found collection-wallet setup and manual destination/amount entry confusing and approved a simpler bulk-payout flow.
+
+**How to apply:** Default the main payout screen to selecting payable orders and recording an external transfer. Keep historical checks/corrections secondary, never bypass eligibility, never imply the app sends money, and preserve each receipt's destination/network/order amounts even after the saved wallet changes.
+
 The reshipper dashboard should show collected admin fees and member delivery/postage for the selected group buy. Do not include vendor shipping in that shipping total.
 
 **Why:** The user asked for a dashboard card so reshippers know how much was collected, and explicitly selected “Member delivery/postage only.”

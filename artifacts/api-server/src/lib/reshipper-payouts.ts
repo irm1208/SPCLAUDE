@@ -2,7 +2,7 @@ import { db, accountsTable, gbReshippersTable, groupBuysTable, ordersTable, site
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { checkCollectionWallet, collectionPaymentKey, walletOwnershipSchema, type CollectionCheck } from "./payout-wallet-check";
+import { checkCollectionWallet, collectionPaymentKey, walletOwnershipSchema, parsePayoutWallet, type CollectionCheck } from "./payout-wallet-check";
 import {
   applyPayout, buildPayoutView, emptyPayoutLedger, parsePayoutLedger, payoutLedgerKey, payoutReferenceKey,
   PayoutError, digest, reversePayout, reviewEntitlements, type FeeOrder, type PayoutLedger,
@@ -11,6 +11,7 @@ import {
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 const PREFIX = "reshipper_payouts:v1:";
 const orderOwnerKey = (id: string) => `reshipper_payout_order_owner:v1:${id}`;
+const payoutWalletKey = (id: string) => `reshipper_payout_wallet:v1:${id}`;
 
 async function accountIdentity(executor: Executor, username: string) {
   const columns = { id: accountsTable.reshipperPayoutId, username: accountsTable.telegramUsername };
@@ -62,19 +63,39 @@ async function context(executor: Executor, username: string, gbId: string, lock 
   }).from(ordersTable).leftJoin(accountsTable, eq(accountsTable.telegramUsername, ordersTable.reshipperUsername))
     .where(eq(ordersTable.groupBuyId, gbId)).orderBy(ordersTable.id);
   const orders: FeeOrder[] = await orderQuery;
+  const [walletRow] = await executor.select({ value: siteConfigTable.value }).from(siteConfigTable)
+    .where(eq(siteConfigTable.key, payoutWalletKey(account.id)));
+  const payoutWallet = walletRow?.value ? parsePayoutWallet(JSON.parse(walletRow.value)) : null;
+  if (walletRow?.value && !payoutWallet) throw new PayoutError("Saved payout wallet needs correction. Contact Admin.", 409);
   return {
-    key, ledger, orders, recipient: { id: account.id, username: account.username },
+    key, ledger, orders, payoutWallet, recipient: { id: account.id, username: account.username },
     currency: (group.currency || "USD").trim().toUpperCase(),
     paymentDetails: assignments.length ? { referencesOnly: true, assignments } : null,
   };
 }
 function view(ctx: Awaited<ReturnType<typeof context>>, includePaymentTxids = false) {
-  return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, includePaymentTxids), paymentDetails: ctx.paymentDetails,
+  return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, includePaymentTxids), paymentDetails: ctx.paymentDetails, payoutWallet: ctx.payoutWallet,
     ...(includePaymentTxids ? { collectionWallets: ctx.ledger.collectionWallets.filter(w => w.accountId === ctx.recipient.id) } : {}) };
 }
 export async function readReshipperPayouts(username: string, gbId: string, includePaymentTxids = false) {
   // Repeatable-read prevents a payout committed between the ledger and order reads producing a mixed snapshot.
   return db.transaction(async tx => view(await context(tx, username, gbId), includePaymentTxids), { isolationLevel: "repeatable read" });
+}
+export async function saveReshipperPayoutWallet(username: string, gbId: string, body: unknown, actor: string) {
+  const wallet = parsePayoutWallet(body);
+  if (!wallet) throw new PayoutError("Enter a valid wallet address and supported network.");
+  return db.transaction(async tx => {
+    const ctx = await context(tx, username, gbId, true);
+    const key = payoutWalletKey(ctx.recipient.id), at = new Date().toISOString();
+    // Stable account identity makes this reusable across group buys and username changes.
+    await tx.insert(siteConfigTable).values({ key, value: JSON.stringify(wallet) }).onConflictDoUpdate({
+      target: siteConfigTable.key, set: { value: JSON.stringify(wallet), updatedAt: new Date() },
+    });
+    ctx.ledger.audit.push({ action: "payout_wallet_saved", actor, at, reason: "Saved reshipper payout destination; historical receipts unchanged.",
+      details: { previous: ctx.payoutWallet, next: wallet } });
+    await tx.update(siteConfigTable).set({ value: JSON.stringify(ctx.ledger), updatedAt: new Date() }).where(eq(siteConfigTable.key, ctx.key));
+    return view({ ...ctx, payoutWallet: wallet }, true);
+  });
 }
 export async function listReshipperPayoutGroups(username: string) {
   const account = await accountIdentity(db, username);

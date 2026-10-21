@@ -3,12 +3,13 @@ import { createServer, type Server } from "node:http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   read: vi.fn(), groups: vi.fn(), record: vi.fn(), review: vi.fn(), reverse: vi.fn(),
-  wallets: vi.fn(), check: vi.fn(),
+  wallets: vi.fn(), check: vi.fn(), payoutWallet: vi.fn(),
 }));
 vi.mock("../lib/reshipper-payouts", () => ({
   readReshipperPayouts: mocks.read, listReshipperPayoutGroups: mocks.groups,
   recordReshipperPayout: mocks.record, reviewReshipperFees: mocks.review, voidReshipperPayout: mocks.reverse,
   saveCollectionWallet: mocks.wallets, checkReshipperCollectionWallets: mocks.check,
+  saveReshipperPayoutWallet: mocks.payoutWallet,
 }));
 vi.mock("../middleware/require-admin", () => ({
   // This is a boolean guard, NOT Express middleware. A successful guard does not call next().
@@ -56,7 +57,7 @@ describe("payout route boundaries", () => {
     expect(mocks.reverse).toHaveBeenCalledWith("target", "gb-1", "receipt", "Incorrect receipt", "treasury-admin");
   });
   it("rejects unauthenticated and reshipper callers on every Admin mutation", async () => {
-    for (const suffix of ["", "/review", "/receipt/void", "/wallets", "/wallets/remove", "/check-wallets"]) {
+    for (const suffix of ["", "/review", "/receipt/void", "/wallets", "/wallets/remove", "/check-wallets", "/payout-wallet"]) {
       for (const role of [undefined, "reshipper"]) expect((await request(`/api/admin/reshippers/target/gb/gb-1/payouts${suffix}`, role, { reason: "test" })).status).toBe(401);
     }
     expect(mocks.record).not.toHaveBeenCalled(); expect(mocks.review).not.toHaveBeenCalled(); expect(mocks.reverse).not.toHaveBeenCalled();
@@ -80,5 +81,13 @@ describe("payout route boundaries", () => {
     mocks.read.mockRejectedValueOnce(new PayoutError("Not your group", 403));
     const result = await request("/api/reshipper/gb/gb-1/payouts", "reshipper");
     expect(result.status).toBe(403); expect(await result.json()).toEqual({ error: "Not your group" });
+  });
+  it("saves payout destinations only through authenticated Admin", async () => {
+    const body = { address: `0x${"a".repeat(40)}`, network: "ERC-20" };
+    const path = "/api/admin/reshippers/kai/gb/gb-1/payouts/payout-wallet";
+    expect((await request(path, "reshipper", body)).status).toBe(401);
+    expect(mocks.payoutWallet).not.toHaveBeenCalled();
+    expect((await request(path, "admin", body)).status).toBe(200);
+    expect(mocks.payoutWallet).toHaveBeenCalledWith("kai", "gb-1", body, "treasury-admin");
   });
 });

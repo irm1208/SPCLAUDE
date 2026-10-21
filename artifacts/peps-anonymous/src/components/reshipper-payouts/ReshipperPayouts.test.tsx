@@ -51,6 +51,77 @@ it("reshipper sees read-only totals and history, no mutating controls", async ()
   expect(el.textContent).not.toContain("Record payout");
 });
 
+it("prefills the saved wallet and exact bulk total, then records one TXID covering both orders", async () => {
+  const d = data();
+  Object.assign(d, { payoutWallet: { address: `0x${"6".repeat(40)}`, network: "ERC-20" } });
+  const fetcher = vi.fn(async (_p: string, _i?: RequestInit) => json(d));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  expect(q('details[aria-label="Review & corrections"]').hasAttribute("open")).toBe(false);
+  await click(byLabel("Select all visible eligible orders"));
+  expect(inputByLabelText("Amount paid").value).toBe("30.00");
+  expect(inputByLabelText("Amount paid").readOnly).toBe(true);
+  expect(inputByLabelText("Destination actually paid to").value).toBe(`0x${"6".repeat(40)}`);
+  expect(inputByLabelText("Method").value).toBe("crypto");
+  await act(async () => type(inputByLabelText("TXID"), `0x${"c".repeat(64)}`));
+  await click(el.querySelector('section[aria-label="Record payout"] input[type="checkbox"]')!);
+  await click(btn("Preview payment"));
+  await click(btn("Record payout")); await flush();
+  const body = JSON.parse(String(fetcher.mock.calls.find(c => c[1]?.method === "POST")![1]!.body));
+  expect(body).toMatchObject({ amount: "30.00", network: "ERC-20", destination: `0x${"6".repeat(40)}`, method: "crypto" });
+  expect(body.allocations).toHaveLength(2);
+});
+
+it("saves a reshipper payout wallet separately from customer collection wallets", async () => {
+  const d = data();
+  const address = `0x${"8".repeat(40)}`;
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => json(init?.method === "POST" ? { ...d, payoutWallet: { address, network: "ERC-20" } } : d));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  await act(async () => type(byLabel("Reshipper payout wallet address"), address));
+  await click(btn("Save payout wallet")); await flush();
+  const call = fetcher.mock.calls.find(c => c[1]?.method === "POST")!;
+  expect(call[0]).toBe("/api/admin/reshippers/kai/gb/g1/payouts/payout-wallet");
+  expect(JSON.parse(String(call[1]!.body))).toEqual({ address, network: "ERC-20" });
+  expect(el.textContent).toContain(address);
+  expect(btn("Copy address")).toBeDefined();
+  await render({ mode: "reshipper", gbId: "g2", fetcher: async () => json({ ...d, payoutWallet: { address, network: "ERC-20" } }) });
+  expect(el.textContent).toContain(address);
+  expect(btn("Save payout wallet")).toBeUndefined();
+  expect(q('[aria-label="Payout history"]').textContent).toContain("Orders covered by this payment");
+});
+
+it("keeps an invalid payout wallet draft visible and does not replace the saved wallet on server failure", async () => {
+  const d = data();
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => json(init?.method === "POST" ? { error: "Enter a valid wallet address and supported network." } : d, init?.method === "POST" ? 400 : 200));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  await act(async () => type(byLabel("Reshipper payout wallet address"), "incorrect-address"));
+  await click(btn("Save payout wallet")); await flush();
+  expect(q('[role="alert"]').textContent).toContain("valid wallet");
+  expect(byLabel("Reshipper payout wallet address").value).toBe("incorrect-address");
+  expect(btn("Copy address")).toBeUndefined();
+});
+
+it("invalidates the payout destination confirmation when the saved wallet changes", async () => {
+  const d = data();
+  Object.assign(d, { payoutWallet: { address: `0x${"6".repeat(40)}`, network: "ERC-20" } });
+  let current = d;
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => {
+    if (init?.method === "POST") current = { ...d, payoutWallet: JSON.parse(String(init.body)) };
+    return json(current);
+  });
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  await click(byLabel("Select order PA-101"));
+  await act(async () => type(inputByLabelText("TXID"), `0x${"c".repeat(64)}`));
+  const confirmation = () => el.querySelector('section[aria-label="Record payout"] input[type="checkbox"]') as HTMLInputElement;
+  await click(confirmation());
+  expect(confirmation().checked).toBe(true);
+  await click(btn("Edit wallet"));
+  await act(async () => type(byLabel("Reshipper payout wallet address"), `0x${"9".repeat(40)}`));
+  await click(btn("Save payout wallet")); await flush();
+  expect(inputByLabelText("Destination actually paid to").value).toBe(`0x${"9".repeat(40)}`);
+  expect(confirmation().checked).toBe(false);
+  expect(btn("Preview payment").disabled).toBe(true);
+});
+
 it("admin picks a group, then selects visible eligible rows of one currency", async () => {
   const fetcher = vi.fn(async (p: string) => p.endsWith("/payouts/groups") ? json({ groups: [{ id: "g7", name: "Spring", currency: "usd" }] }) : json(data()));
   await render({ mode: "admin", username: "kai", fetcher });
@@ -62,7 +133,7 @@ it("admin picks a group, then selects visible eligible rows of one currency", as
   await act(async () => type(q<HTMLInputElement>('input[type="search"]'), ""));
   expect(byLabel("Select order PA-101").checked).toBe(false);
   expect(byLabel("Select order PA-103").disabled).toBe(true);
-  expect(el.textContent).toContain("reference only");
+  expect(el.textContent).not.toContain("referencesOnly");
   expect(inputByLabelText("Destination actually paid to").value).toBe("");
 });
 
@@ -81,7 +152,7 @@ it("records crypto TXIDs and shows the same TXID to the reshipper", async () => 
   expect(el.textContent).toContain("Enter a TXID");
   await act(async () => type(inputByLabelText("TXID"), txid));
   await click(el.querySelector('section[aria-label="Record payout"] input[type="checkbox"]')!);
-  await click(btn("Preview allocations"));
+  await click(btn("Preview payment"));
   expect(q('[aria-label="Payout preview"]').textContent).toContain(txid);
   await click(btn("Record payout")); await flush();
   const post = fetcher.mock.calls.find(call => call[1]?.method === "POST")!;
@@ -108,11 +179,10 @@ it("validates allocation totals, previews, keeps operationId on retry and shows 
     type(inputByLabelText("Amount paid"), "12.00"); type(inputByLabelText("Method"), "cash");
     type(inputByLabelText("Reference"), "R1"); type(inputByLabelText("Destination actually paid to"), "In person");
   });
-  expect(el.textContent).toContain("must equal allocations (USD 12.50)");
-  await act(async () => type(inputByLabelText("Amount paid"), "12.50"));
-  expect(btn("Preview allocations").disabled).toBe(true);
+  expect(inputByLabelText("Amount paid").value).toBe("12.50");
+  expect(btn("Preview payment").disabled).toBe(true);
   await click(el.querySelector('section[aria-label="Record payout"] input[type="checkbox"]')!);
-  await click(btn("Preview allocations"));
+  await click(btn("Preview payment"));
   expect(q('[aria-label="Payout preview"]').textContent).toContain("2.50");
   await click(btn("Record payout")); await flush();
   expect(q('[role="alert"]').textContent).toContain("Ledger locked");

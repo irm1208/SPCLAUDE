@@ -8,6 +8,7 @@ import { type Draft, PayoutOrdersTable } from "./PayoutOrdersTable";
 import { PayoutTotals } from "./PayoutTotals";
 import { ReviewPanel } from "./ReviewPanel";
 import { WalletCollectionCheck } from "./WalletCollectionCheck";
+import { PayoutWalletCard } from "./PayoutWalletCard";
 import { usePayoutData } from "./usePayoutData";
 import { card, ErrorNote, Skeleton, subtle } from "./ui";
 
@@ -33,6 +34,7 @@ export function ReshipperPayouts({ mode, username, gbId, fetcher }: ReshipperPay
     <header className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="flex items-center gap-2 text-sm font-bold"><HandCoins className="w-4 h-4" style={{ color: "var(--t-blue)" }} />{isAdmin ? `Payouts to ${username ?? "reshipper"}` : "Your payouts"}</h2>
       {!isAdmin && <span className="text-xs" style={subtle}>Read only · recorded by Admin</span>}
+      {base && <button type="button" className="text-xs underline" style={subtle} disabled={loading} onClick={retry}>Refresh payouts</button>}
     </header>
     {isAdmin && !username && <ErrorNote message="No reshipper selected." />}
     {isAdmin && username && !gbId && <GroupPicker username={username} fetcher={fetcher} value={picked} onChange={setPicked} />}
@@ -41,11 +43,18 @@ export function ReshipperPayouts({ mode, username, gbId, fetcher }: ReshipperPay
     {base && error && <ErrorNote message={error} onRetry={retry} />}
     {data && <>
       <PayoutTotals data={data} />
-      {isAdmin && <WalletCollectionCheck key={`wallets-${base}`} data={data} write={write} />}
-      {isAdmin && <ReviewPanel key={`review-${base}`} orders={data.orders} write={write} />}
+      <PayoutWalletCard key={`destination-${base}`} wallet={data.payoutWallet} canEdit={isAdmin} write={write} />
+      {isAdmin && <p className="text-sm" style={subtle}>Select orders below, send one transfer to the reshipper, then record its TXID. Recording a payout does not send money.</p>}
       <PayoutOrdersTable orders={data.orders} canSelect={isAdmin} selection={selection} onSelectionChange={setSelection} />
-      {isAdmin && <PayoutForm key={`form-${base}`} orders={data.orders} selection={selection} paymentDetails={data.paymentDetails} write={write} onRecorded={() => setSelection({})} />}
+      {isAdmin && <PayoutForm key={`form-${base}`} orders={data.orders} selection={selection} payoutWallet={data.payoutWallet} write={write} onRecorded={() => setSelection({})} />}
       <PayoutHistory payouts={data.payouts} canVoid={isAdmin} write={write} />
+      {isAdmin && <details aria-label="Review & corrections" className="rounded-xl border p-4" style={{ borderColor: "var(--t-border)" }}>
+        <summary className="cursor-pointer text-sm font-semibold">Review & corrections{data.needsReviewCount ? ` · ${data.needsReviewCount} orders need review` : ""}</summary>
+        <div className="mt-4 space-y-4">
+          <WalletCollectionCheck key={`wallets-${base}`} data={data} write={write} />
+          <ReviewPanel key={`review-${base}`} orders={data.orders} write={write} />
+        </div>
+      </details>}
     </>}
   </section>;
 }

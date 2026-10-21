@@ -19,6 +19,7 @@ export interface PayoutAllocation {
 export interface PayoutReceipt {
   id: string; amountMinor: number; currency: string; paidAt: string; method: string;
   reference: string; destination: string; note: string; recordedBy: string; recordedAt: string;
+  network?: string;
   allocations: PayoutAllocation[]; voidedAt: string | null; voidReason: string | null;
 }
 export interface PayoutData {
@@ -26,6 +27,7 @@ export interface PayoutData {
   totals: { currency: string; entitledMinor: number; paidMinor: number; owedMinor: number; onHoldMinor: number }[];
   needsReviewCount: number; sourceNotice: string;
   paymentDetails: Record<string, unknown> | null;
+  payoutWallet?: { address: string; network: string } | null;
   collectionWallets?: CollectionWallet[];
   walletCheckResults?: { orderId: string; code: string; collector: "admin" | "reshipper" | null; reason: string; address?: string }[];
 }

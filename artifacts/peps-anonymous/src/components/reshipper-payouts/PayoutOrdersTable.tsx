@@ -55,7 +55,7 @@ export function PayoutOrdersTable({ orders, canSelect, selection, onSelectionCha
     {canSelect && <div className="flex flex-wrap items-center gap-3 text-xs" style={subtle}>
       <label className="inline-flex items-center gap-2 min-h-[32px]">
         <input type="checkbox" checked={allChecked} disabled={!bulkRows.length} onChange={toggleAll} aria-label="Select all visible eligible orders" />
-        Select all visible eligible{bulkCurrency ? ` (${bulkCurrency.toUpperCase()})` : ""}
+        Select all payable orders shown{bulkCurrency ? ` (${bulkCurrency.toUpperCase()})` : ""}
       </label>
       {selectedIds.length > 0 && <span>{selectedIds.length} selected · {lockCurrency?.toUpperCase()} only</span>}
       {selectedIds.length > 0 && <button type="button" className="underline" onClick={() => onSelectionChange({})}>Clear</button>}
@@ -64,40 +64,36 @@ export function PayoutOrdersTable({ orders, canSelect, selection, onSelectionCha
       ? <div className="rounded-xl border border-dashed p-6 text-center text-sm" style={{ borderColor: "var(--t-border)", color: "var(--t-subtle)" }}>
           {orders.length ? "No orders match this search or filter." : "No orders with admin fees or postage yet."}
         </div>
-      : <ul className="space-y-2" aria-label="Payout orders">
+      : <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "var(--t-border)" }}>
+        <table className="w-full min-w-[720px] text-xs text-left" aria-label="Payout orders">
+          <thead style={{ background: "var(--t-bg)", color: "var(--t-subtle)" }}><tr>
+            {canSelect && <th className="p-3"><span className="sr-only">Select</span></th>}
+            <th className="p-3">Order / member</th><th className="p-3 text-right">Admin fee owed</th>
+            <th className="p-3 text-right">Postage owed</th><th className="p-3 text-right">Total owed</th><th className="p-3">Status / paid</th>
+          </tr></thead><tbody>
         {visible.map(o => {
           const sel = selection[o.orderId];
-          return <li key={o.orderId} className="rounded-xl border p-3" style={{ borderColor: sel ? "var(--t-blue)" : "var(--t-border)", background: "var(--t-surface)" }}>
-            <div className="flex flex-wrap items-start gap-3">
-              {canSelect && <input type="checkbox" className="mt-1" checked={!!sel} disabled={!selectable(o) && !sel}
-                aria-label={`Select order ${o.code}`} onChange={() => toggle(o)} />}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-sm font-semibold">{o.code}</span>
-                  <span className="text-xs" style={subtle}>{o.member}</span>
-                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide" style={{ color: STATUS_TONE[o.status], background: `color-mix(in srgb, ${STATUS_TONE[o.status]} 12%, transparent)` }}>{STATUS_LABEL[o.status]}</span>
-                </div>
-                <dl className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs tabular-nums">
-                  <div><dt style={subtle}>Admin fee owed</dt><dd>{fmt(o.remainingAdminMinor, o.currency)}</dd></div>
-                  <div><dt style={subtle}>Postage owed</dt><dd>{fmt(o.remainingPostageMinor, o.currency)}</dd></div>
-                  <div><dt style={subtle}>Admin fee paid</dt><dd>{fmt(o.paidAdminMinor, o.currency)}</dd></div>
-                  <div><dt style={subtle}>Postage paid</dt><dd>{fmt(o.paidPostageMinor, o.currency)}</dd></div>
-                </dl>
-                {o.reviewReason && <p className="mt-1 text-[11px]" style={subtle}>Review: {o.reviewReason}{o.collector ? ` · held by ${o.collector === "admin" ? "Admin" : "reshipper"}` : ""}</p>}
-                {o.collectionEvidence && <div className="mt-2 text-[11px]" style={subtle}>
-                  <p>Wallet checked · {o.collectionEvidence.network} · {new Date(o.collectionEvidence.checkedAt).toLocaleString()}</p>
-                  <code className="block break-all select-text">{o.collectionEvidence.address}</code>
-                </div>}
-              </div>
-            </div>
-            {sel && <div className="mt-3 grid grid-cols-2 gap-2 sm:max-w-sm">
-              <label className="text-[11px]" style={subtle}>Admin fee to pay
-                <input inputMode="decimal" className={inputCls} style={inputStyle} value={sel.admin} aria-label={`Admin fee for ${o.code}`} onChange={e => edit(o.orderId, "admin", e.target.value)} /></label>
-              <label className="text-[11px]" style={subtle}>Postage to pay
-                <input inputMode="decimal" className={inputCls} style={inputStyle} value={sel.postage} aria-label={`Postage for ${o.code}`} onChange={e => edit(o.orderId, "postage", e.target.value)} /></label>
-            </div>}
-          </li>;
+          return <tr key={o.orderId} className="border-t align-top" style={{ borderColor: "var(--t-border)", background: sel ? "color-mix(in srgb, var(--t-blue) 6%, var(--t-surface))" : "var(--t-surface)" }}>
+            {canSelect && <td className="p-3"><input type="checkbox" checked={!!sel} disabled={!selectable(o) && !sel}
+              aria-label={`Select order ${o.code}`} onChange={() => toggle(o)} /></td>}
+            <td className="p-3"><span className="font-mono font-semibold">{o.code}</span><span className="block mt-1" style={subtle}>{o.member}</span></td>
+            <td className="p-3 text-right tabular-nums">{sel
+              ? <input inputMode="decimal" className={inputCls + " max-w-[110px] text-right"} style={inputStyle} value={sel.admin} aria-label={`Admin fee for ${o.code}`} onChange={e => edit(o.orderId, "admin", e.target.value)} />
+              : fmt(o.remainingAdminMinor, o.currency)}</td>
+            <td className="p-3 text-right tabular-nums">{sel
+              ? <input inputMode="decimal" className={inputCls + " max-w-[110px] text-right"} style={inputStyle} value={sel.postage} aria-label={`Postage for ${o.code}`} onChange={e => edit(o.orderId, "postage", e.target.value)} />
+              : fmt(o.remainingPostageMinor, o.currency)}</td>
+            <td className="p-3 text-right tabular-nums font-semibold whitespace-nowrap">{fmt(o.remainingAdminMinor + o.remainingPostageMinor, o.currency)}</td>
+            <td className="p-3 max-w-[240px]">
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase whitespace-nowrap" style={{ color: STATUS_TONE[o.status], background: `color-mix(in srgb, ${STATUS_TONE[o.status]} 12%, transparent)` }}>{STATUS_LABEL[o.status]}</span>
+              <details className="mt-2 text-[11px]" style={subtle}><summary className="cursor-pointer">Details · paid {fmt(o.paidAdminMinor + o.paidPostageMinor, o.currency)}</summary>
+                <p className="mt-1">Admin fee paid {fmt(o.paidAdminMinor, o.currency)} · Postage paid {fmt(o.paidPostageMinor, o.currency)}</p>
+                {o.reviewReason && <p className="mt-1">Review: {o.reviewReason}{o.collector ? ` · held by ${o.collector === "admin" ? "Admin" : "reshipper"}` : ""}</p>}
+                {o.collectionEvidence && <div className="mt-1"><p>Wallet checked · {o.collectionEvidence.network} · {new Date(o.collectionEvidence.checkedAt).toLocaleString()}</p><code className="block break-all select-text">{o.collectionEvidence.address}</code></div>}
+              </details>
+            </td>
+          </tr>;
         })}
-      </ul>}
+        </tbody></table></div>}
   </div>;
 }
