@@ -107,6 +107,20 @@ describe.skipIf(process.env.RUN_PAYOUT_DB_TESTS !== "1")("automatic payout colle
     expect(memberView.payoutWallet).toEqual({ address: adminAddress, network: "Polygon" });
     expect(memberView.orders.filter(o => [ids[0], ids[4]].includes(o.orderId)).every(o => o.status === "paid" && !o.eligible)).toBe(true);
   });
+  it("lets a reshipper update their wallet without exposing Admin evidence, and rejects disabled assignments", async () => {
+    const wallet = { address: reshipperAddress, network: "ERC-20" };
+    const before = await service.readReshipperPayouts(username, gb);
+    const saved = await service.saveReshipperPayoutWallet(username, gb, wallet, `reshipper:${username}`, false);
+    expect(saved.payoutWallet).toEqual(wallet);
+    expect(saved).not.toHaveProperty("collectionWallets");
+    expect(saved.orders.every(o => !("collectionEvidence" in o) && !("paymentTxids" in o))).toBe(true);
+    expect(saved.payouts).toEqual(before.payouts);
+    expect((await service.readReshipperPayouts(username, gb, true)).payoutWallet).toEqual(wallet);
+    await tables.db.update(tables.gbReshippersTable).set({ enabled: false }).where(eq(tables.gbReshippersTable.gbId, gb2));
+    await expect(service.saveReshipperPayoutWallet(username, gb2, wallet, `reshipper:${username}`, false)).rejects.toMatchObject({ status: 403 });
+    expect((await service.readReshipperPayouts(username, gb2)).canManagePayoutWallet).toBe(false);
+    expect((await service.readReshipperPayouts(username, gb)).payoutWallet).toEqual(wallet);
+  });
   it("rejects changes made while the chain check is in flight", async () => {
     let release!: () => void, started!: () => void;
     const wait = new Promise<void>(resolve => { release = resolve; });

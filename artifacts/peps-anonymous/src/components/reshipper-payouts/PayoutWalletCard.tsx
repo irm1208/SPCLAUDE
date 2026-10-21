@@ -8,8 +8,8 @@ export const PAYOUT_NETWORKS = [
   ["Ethereum", "Ethereum (native ETH)"], ["BSC", "BNB Smart Chain (BEP-20)"],
 ] as const;
 
-export function PayoutWalletCard({ wallet, canEdit, write }: {
-  wallet: PayoutData["payoutWallet"]; canEdit: boolean; write: (path: string, body: unknown) => Promise<PayoutData>;
+export function PayoutWalletCard({ wallet, canEdit, isSelf = false, write }: {
+  wallet: PayoutData["payoutWallet"]; canEdit: boolean; isSelf?: boolean; write: (path: string, body: unknown) => Promise<PayoutData>;
 }) {
   const [address, setAddress] = useState(wallet?.address ?? "");
   const [network, setNetwork] = useState(wallet?.network ?? "ERC-20");
@@ -30,7 +30,7 @@ export function PayoutWalletCard({ wallet, canEdit, write }: {
   };
   return <section aria-label="Reshipper payout wallet" className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--t-border)" }}>
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h3 className="text-sm font-bold">Reshipper’s payout wallet</h3>
+      <h3 className="text-sm font-bold">{isSelf ? "Your payout wallet" : "Reshipper’s payout wallet"}</h3>
       {wallet && <div className="flex gap-2">
         <button type="button" className={ghostBtn} onClick={copy}>{copied ? "Copied" : "Copy address"}</button>
         {canEdit && !editing && <button type="button" className={ghostBtn} onClick={() => setEditing(true)}>Edit wallet</button>}
@@ -50,7 +50,8 @@ export function PayoutWalletCard({ wallet, canEdit, write }: {
       {wallet && <button type="button" className={ghostBtn} disabled={busy} onClick={() => { setAddress(wallet.address); setNetwork(wallet.network); setEditing(false); setError(null); }}>Cancel</button>}
     </>}
     <p className="text-xs" style={subtle}>{canEdit
-      ? "Save once for this reshipper across group buys. Check the address and network before sending. Changes apply to future payouts only."
+      ? isSelf ? "Enter the wallet and network where Admin should send your payouts. Saved across your group buys. Changes apply to future payouts only."
+        : "Save once for this reshipper across group buys. Check the address and network before sending. Changes apply to future payouts only."
       : wallet ? "Admin uses this wallet for payouts to you. Contact Admin if it needs changing." : "No payout wallet saved yet. Ask Admin to add it."}</p>
     {error && <ErrorNote message={error} />}
   </section>;

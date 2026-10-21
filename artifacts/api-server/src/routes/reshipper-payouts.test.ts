@@ -90,4 +90,14 @@ describe("payout route boundaries", () => {
     expect((await request(path, "admin", body)).status).toBe(200);
     expect(mocks.payoutWallet).toHaveBeenCalledWith("kai", "gb-1", body, "treasury-admin");
   });
+  it("lets an authenticated reshipper save only their own wallet and requests a private response", async () => {
+    const path = "/api/reshipper/gb/gb-1/payouts/payout-wallet";
+    const body = { address: `0x${"a".repeat(40)}`, network: "ERC-20", username: "another-reshipper" };
+    expect((await request(path, undefined, body)).status).toBe(401);
+    expect(mocks.payoutWallet).not.toHaveBeenCalled();
+    expect((await request(path, "reshipper", body)).status).toBe(200);
+    expect(mocks.payoutWallet).toHaveBeenCalledWith("authenticated-owner", "gb-1", body, "reshipper:authenticated-owner", false);
+    expect(mocks.record).not.toHaveBeenCalled();
+    expect(mocks.review).not.toHaveBeenCalled();
+  });
 });

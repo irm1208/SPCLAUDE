@@ -31,7 +31,7 @@ async function context(executor: Executor, username: string, gbId: string, lock 
     .from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
   const [group] = await (lock ? groupQuery.for("share") : groupQuery);
   if (!group) throw new PayoutError("Group buy not found.", 404);
-  const assignments = await executor.select({ country: gbReshippersTable.country, paymentDetails: gbReshippersTable.reshipperPaymentDetails })
+  const assignments = await executor.select({ country: gbReshippersTable.country, paymentDetails: gbReshippersTable.reshipperPaymentDetails, enabled: gbReshippersTable.enabled })
     .from(gbReshippersTable).where(and(eq(gbReshippersTable.gbId, gbId), eq(gbReshippersTable.reshipperUsername, username)));
   const key = payoutLedgerKey(gbId);
   const [stored] = await executor.select().from(siteConfigTable).where(eq(siteConfigTable.key, key));
@@ -68,24 +68,28 @@ async function context(executor: Executor, username: string, gbId: string, lock 
   const payoutWallet = walletRow?.value ? parsePayoutWallet(JSON.parse(walletRow.value)) : null;
   if (walletRow?.value && !payoutWallet) throw new PayoutError("Saved payout wallet needs correction. Contact Admin.", 409);
   return {
-    key, ledger, orders, payoutWallet, recipient: { id: account.id, username: account.username },
+    key, ledger, orders, payoutWallet, canManagePayoutWallet: assignments.some(a => a.enabled !== false),
+    recipient: { id: account.id, username: account.username },
     currency: (group.currency || "USD").trim().toUpperCase(),
     paymentDetails: assignments.length ? { referencesOnly: true, assignments } : null,
   };
 }
 function view(ctx: Awaited<ReturnType<typeof context>>, includePaymentTxids = false) {
   return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, includePaymentTxids), paymentDetails: ctx.paymentDetails, payoutWallet: ctx.payoutWallet,
+    canManagePayoutWallet: ctx.canManagePayoutWallet,
     ...(includePaymentTxids ? { collectionWallets: ctx.ledger.collectionWallets.filter(w => w.accountId === ctx.recipient.id) } : {}) };
 }
 export async function readReshipperPayouts(username: string, gbId: string, includePaymentTxids = false) {
   // Repeatable-read prevents a payout committed between the ledger and order reads producing a mixed snapshot.
   return db.transaction(async tx => view(await context(tx, username, gbId), includePaymentTxids), { isolationLevel: "repeatable read" });
 }
-export async function saveReshipperPayoutWallet(username: string, gbId: string, body: unknown, actor: string) {
+export async function saveReshipperPayoutWallet(username: string, gbId: string, body: unknown, actor: string, includePaymentTxids = true) {
   const wallet = parsePayoutWallet(body);
   if (!wallet) throw new PayoutError("Enter a valid wallet address and supported network.");
   return db.transaction(async tx => {
     const ctx = await context(tx, username, gbId, true);
+    if (!includePaymentTxids && !ctx.canManagePayoutWallet)
+      throw new PayoutError("You must have an enabled reshipper assignment in this group buy to change your payout wallet.", 403);
     const key = payoutWalletKey(ctx.recipient.id), at = new Date().toISOString();
     // Stable account identity makes this reusable across group buys and username changes.
     await tx.insert(siteConfigTable).values({ key, value: JSON.stringify(wallet) }).onConflictDoUpdate({
@@ -94,7 +98,7 @@ export async function saveReshipperPayoutWallet(username: string, gbId: string, 
     ctx.ledger.audit.push({ action: "payout_wallet_saved", actor, at, reason: "Saved reshipper payout destination; historical receipts unchanged.",
       details: { previous: ctx.payoutWallet, next: wallet } });
     await tx.update(siteConfigTable).set({ value: JSON.stringify(ctx.ledger), updatedAt: new Date() }).where(eq(siteConfigTable.key, ctx.key));
-    return view({ ...ctx, payoutWallet: wallet }, true);
+    return view({ ...ctx, payoutWallet: wallet }, includePaymentTxids);
   });
 }
 export async function listReshipperPayoutGroups(username: string) {

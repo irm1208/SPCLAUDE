@@ -99,6 +99,29 @@ it("keeps an invalid payout wallet draft visible and does not replace the saved 
   expect(byLabel("Reshipper payout wallet address").value).toBe("incorrect-address");
   expect(btn("Copy address")).toBeUndefined();
 });
+it("allows an assigned reshipper to save and edit their own payout wallet without payout controls", async () => {
+  const d = { ...data(), canManagePayoutWallet: true };
+  const address = `0x${"7".repeat(40)}`;
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => json(init?.method === "POST" ? { ...d, payoutWallet: { address, network: "Polygon" } } : d));
+  await render({ mode: "reshipper", gbId: "g1", fetcher });
+  expect(el.textContent).toContain("Your payout wallet");
+  await act(async () => {
+    type(byLabel("Reshipper payout wallet address"), address);
+    type(byLabel("Reshipper payout wallet network"), "Polygon");
+  });
+  await click(btn("Save payout wallet")); await flush();
+  const post = fetcher.mock.calls.find(c => c[1]?.method === "POST")!;
+  expect(post[0]).toBe("/api/reshipper/gb/g1/payouts/payout-wallet");
+  expect(JSON.parse(String(post[1]!.body))).toEqual({ address, network: "Polygon" });
+  expect(el.textContent).toContain(address);
+  await click(btn("Edit wallet"));
+  expect(byLabel("Reshipper payout wallet address").value).toBe(address);
+  expect(byLabel("Reshipper payout wallet network").value).toBe("Polygon");
+  expect(el.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+  expect(btn("Record payout")).toBeUndefined();
+  expect(btn("Void")).toBeUndefined();
+  expect(q('[aria-label="Review & corrections"]')).toBeNull();
+});
 
 it("invalidates the payout destination confirmation when the saved wallet changes", async () => {
   const d = data();

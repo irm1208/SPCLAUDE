@@ -40,4 +40,8 @@ router.post(admin, adminOnly, handle((req, res) => recordReshipperPayout(param(r
 router.post(`${admin}/:payoutId/void`, adminOnly, handle((req, res) =>
   voidReshipperPayout(param(req, "username"), param(req, "gbId"), param(req, "payoutId"), req.body?.reason, getAdminUsername(res))));
 router.get("/reshipper/gb/:gbId/payouts", requireReshipper, handle(req => readReshipperPayouts(req.reshipper!.telegramUsername, param(req, "gbId"))));
+router.post("/reshipper/gb/:gbId/payouts/payout-wallet", requireReshipper, handle(req => {
+  const username = req.reshipper!.telegramUsername;
+  return saveReshipperPayoutWallet(username, param(req, "gbId"), req.body, `reshipper:${username}`, false);
+}));
 export default router;

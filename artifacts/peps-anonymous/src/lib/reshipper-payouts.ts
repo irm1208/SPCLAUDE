@@ -28,6 +28,7 @@ export interface PayoutData {
   needsReviewCount: number; sourceNotice: string;
   paymentDetails: Record<string, unknown> | null;
   payoutWallet?: { address: string; network: string } | null;
+  canManagePayoutWallet?: boolean;
   collectionWallets?: CollectionWallet[];
   walletCheckResults?: { orderId: string; code: string; collector: "admin" | "reshipper" | null; reason: string; address?: string }[];
 }

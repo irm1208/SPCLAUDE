@@ -28,6 +28,7 @@ The user wants automatic identification of who collected a crypto payment, not a
 **How to apply:** Require confirmed full-payment chain evidence and a single unambiguous dated owner. Leave split/test/balance/credit-adjusted payments, fiat and missing evidence for review. Preserve prior reviews and payouts, revalidate order/ownership snapshots before committing, and hold automatic entitlements if their supporting evidence or ownership declaration changes.
 
 Keep the outgoing reshipper payout wallet concept separate from historical incoming customer-payment wallets. The user wants a simple saved reshipper wallet, selected orders, one transfer and one TXID, with the covered orders visible to the reshipper.
+Reshippers should be able to enter and edit their own outgoing payout destination, not rely on Admin to enter it for them.
 
 **Why:** The user found collection-wallet setup and manual destination/amount entry confusing and approved a simpler bulk-payout flow.
 

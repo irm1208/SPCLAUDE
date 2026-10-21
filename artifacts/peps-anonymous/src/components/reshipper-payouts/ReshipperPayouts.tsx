@@ -33,7 +33,7 @@ export function ReshipperPayouts({ mode, username, gbId, fetcher }: ReshipperPay
   return <section aria-label="Reshipper payouts" className="rounded-2xl border p-4 sm:p-5 space-y-4" style={card}>
     <header className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="flex items-center gap-2 text-sm font-bold"><HandCoins className="w-4 h-4" style={{ color: "var(--t-blue)" }} />{isAdmin ? `Payouts to ${username ?? "reshipper"}` : "Your payouts"}</h2>
-      {!isAdmin && <span className="text-xs" style={subtle}>Read only · recorded by Admin</span>}
+      {!isAdmin && <span className="text-xs" style={subtle}>Payments recorded by Admin</span>}
       {base && <button type="button" className="text-xs underline" style={subtle} disabled={loading} onClick={retry}>Refresh payouts</button>}
     </header>
     {isAdmin && !username && <ErrorNote message="No reshipper selected." />}
@@ -43,7 +43,7 @@ export function ReshipperPayouts({ mode, username, gbId, fetcher }: ReshipperPay
     {base && error && <ErrorNote message={error} onRetry={retry} />}
     {data && <>
       <PayoutTotals data={data} />
-      <PayoutWalletCard key={`destination-${base}`} wallet={data.payoutWallet} canEdit={isAdmin} write={write} />
+      <PayoutWalletCard key={`destination-${base}`} wallet={data.payoutWallet} canEdit={isAdmin || data.canManagePayoutWallet === true} isSelf={!isAdmin} write={write} />
       {isAdmin && <p className="text-sm" style={subtle}>Select orders below, send one transfer to the reshipper, then record its TXID. Recording a payout does not send money.</p>}
       <PayoutOrdersTable orders={data.orders} canSelect={isAdmin} selection={selection} onSelectionChange={setSelection} />
       {isAdmin && <PayoutForm key={`form-${base}`} orders={data.orders} selection={selection} payoutWallet={data.payoutWallet} write={write} onRecorded={() => setSelection({})} />}
