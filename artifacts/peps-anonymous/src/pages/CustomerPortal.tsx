@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { useQueryClient } from "@tanstack/react-query";
 import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
+import { MemberBatchStatus } from "@/components/supplier-batches/MemberBatchStatus";
 import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
 import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
 import { OrderListCompletionButton } from "@/components/OrderListCompletionButton";
@@ -7304,6 +7305,7 @@ export default function CustomerPortal() {
   const [showCompoundForm, setShowCompoundForm] = useState(false);
   const [showCompoundHistory, setShowCompoundHistory] = useState(false);
   const [infoGb, setInfoGb] = useState<GroupBuySummary | null>(null);
+  const [batchGb, setBatchGb] = useState<GroupBuySummary | null>(null);
   const [parcelsGb, setParcelsGb] = useState<GroupBuySummary | null>(null);
   const [parcelsOrders, setParcelsOrders] = useState<Order[]>([]);
   const [portalStockItems, setPortalStockItems] = useState<{ productName: string; qiyunleCode: string; stock: number }[]>([]);
@@ -8729,6 +8731,7 @@ export default function CustomerPortal() {
                 ? [{ label: "Check stock", icon: Boxes, onClick: () => setShowPortalStockModal(true) }]
                 : []),
               { label: "Details", icon: Info, onClick: () => setInfoGb(gb) },
+              ...(gb.showSupplierBatches ? [{ label: "View batches", icon: Boxes, onClick: () => setBatchGb(gb) }] : []),
               {
                 label: gb.archived ? "Restore group buy" : "Mark as completed", icon: gb.archived ? ArchiveRestore : CheckCircle2, loading: pendingArchiveId === gb.id,
                 onClick: async () => {
@@ -9002,6 +9005,7 @@ export default function CustomerPortal() {
         <AnimatePresence>
           {infoGb && <GBInfoModal gb={infoGb} onClose={() => setInfoGb(null)} />}
         </AnimatePresence>
+        {batchGb && <MemberBatchStatus gb={batchGb} onClose={() => setBatchGb(null)} />}
         <AnimatePresence>
           {parcelsGb && <GBParcelsModal gb={parcelsGb} orders={parcelsOrders} onClose={() => setParcelsGb(null)} />}
         </AnimatePresence>

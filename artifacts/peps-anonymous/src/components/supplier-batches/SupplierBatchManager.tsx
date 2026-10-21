@@ -31,8 +31,9 @@ interface Props {
   groupBuyId: string; scope: SupplierScope; headers?: Record<string, string>;
   onViewOrders?: (batchId: string, orderId?: string) => void; onDispatch?: () => void;
 }
-type Draft = { enabled: boolean; telegramAlerts: boolean; regions: { id: string; name: string; countries: string; targetKits: string }[] };
+type Draft = { enabled: boolean; telegramAlerts: boolean; showToMembers: boolean; regions: { id: string; name: string; countries: string; targetKits: string }[] };
 const toDraft = (c: BatchConfig): Draft => ({
+  showToMembers: c.showToMembers === true,
   enabled: c.enabled, telegramAlerts: c.telegramAlerts,
   regions: c.regions.map(r => ({ id: r.id, name: r.name, countries: r.countries.join(" "), targetKits: String(r.targetKits) })),
 });
@@ -73,7 +74,7 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
   };
   const saveReal = async () => {
     const err = validate(); if (err) { setMsg({ err: true, text: err }); return; }
-    const config: BatchConfig = { enabled: draft.enabled, telegramAlerts: draft.telegramAlerts,
+    const config: BatchConfig = { enabled: draft.enabled, telegramAlerts: draft.telegramAlerts, showToMembers: draft.showToMembers,
       regions: draft.regions.map(r => ({ id: r.id, name: r.name.trim(), countries: parseCountries(r.countries), targetKits: Number(r.targetKits) })) };
     try {
       const res = await run(() => putConfig(config, baseVersion));
@@ -102,6 +103,12 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
           Telegram alerts to staff when a region is ready
         </label>
       </div>
+      <label className="flex items-center gap-2 text-xs font-semibold" style={{ color: V.text }}>
+        <input type="checkbox" role="switch" data-testid="checkbox-supplier-members" checked={draft.showToMembers}
+          onChange={e => upd(d => ({ ...d, showToMembers: e.target.checked }))} />
+        Show batch status to members
+      </label>
+      <p className="text-[11px]" style={{ color: V.muted }}>Adds “View batches” to members’ group-buy card menus. Shares batch references, regions, kit counts and statuses only—not customer details or supplier tracking numbers. Save settings to apply.</p>
       <p className="text-[11px]" style={{ color: V.muted }}>Staff alerts only — members never receive supplier batch alerts.</p>
       <p className="text-[11px]" style={{ color: V.muted }}>Only fully paid regional orders count towards the target. Direct Shipping orders are handled separately and do not count.</p>
       <div className="space-y-2">

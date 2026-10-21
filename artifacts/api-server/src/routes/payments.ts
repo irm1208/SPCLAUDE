@@ -1,4 +1,5 @@
 import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import { verifySolanaStablecoinPayment } from "../lib/solana-payment-verify";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { createHash, timingSafeEqual } from "crypto";
 import jwt from "jsonwebtoken";
@@ -12,7 +13,7 @@ import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { isStablecoin, cryptoDecimals, roundCrypto, fetchFiatToUsd, fetchUsdPerCoin } from "../lib/crypto-pricing";
 import { hasOnwardPaymentTransaction, reserveProductPaymentTransaction } from "../lib/gb-onward-payments";
-import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
+import { effectiveStableCurrency, isEthErc20StableRail, ERC20_STABLE_CURRENCIES, SOL_RPC_ENDPOINTS } from "../lib/payment-verify";
 import { resolveSharedOrderPaymentMethods } from "../lib/shared-order-payment-routing";
 import { resolveHalfKitPayments } from "../lib/half-kit-payment-destination";
 export { resolveHalfKitPayments } from "../lib/half-kit-payment-destination";
@@ -420,14 +421,14 @@ export async function getAdminCryptoOptions(
  */
 // The same ordered wholesale destinations must drive public payment details
 // and outstanding-balance quotes; USDC and Solana can have dedicated wallets.
-export async function getWholesaleCryptoOptions() {
+export async function getWholesaleCryptoOptions(database: any = db) {
   const configs = [
     ["wholesale_usdt_wallet", "USDT", "ERC-20"],
     ["wholesale_usdc_erc20_wallet", "USDC", "ERC-20"],
     ["wholesale_usdt_sol_wallet", "USDT", "Solana"],
     ["wholesale_usdc_sol_wallet", "USDC", "Solana"],
   ] as const;
-  const wallets = await Promise.all(configs.map(([key]) => getConfig(key)));
+  const wallets = await Promise.all(configs.map(([key]) => getConfig(key, database)));
   return configs.flatMap(([, currency, network], index) => {
     const walletAddress = wallets[index];
     return walletAddress ? [{ currency, network, walletAddress }] : [];
@@ -435,13 +436,14 @@ export async function getWholesaleCryptoOptions() {
 }
 
 export async function getOrderCryptoOptions(
-  order: { id?: string; groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; reshipperUsername?: string | null; sharedOrderId?: string | null }
+  order: { id?: string; groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; reshipperUsername?: string | null; sharedOrderId?: string | null },
+  database: any = db,
 ): Promise<{ walletAddress: string | null; currency: string; network: string; options: Array<{ currency: string; network: string; walletAddress: string | null }> }> {
-  const base = await resolveOrderCrypto(order);
+  const base = await resolveOrderCrypto(order, database);
 
   // Wholesale shared: expose all organiser leadCryptoOptions so buyer can pick chain/coin
   if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
-    const [share] = await db
+    const [share] = await database
       .select({ leadCryptoOptions: wholesaleSharesTable.leadCryptoOptions })
       .from(wholesaleSharesTable)
       .where(eq(wholesaleSharesTable.id, order.sharedOrderId));
@@ -453,9 +455,9 @@ export async function getOrderCryptoOptions(
   }
 
   if (!order.groupBuyId && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared") {
-    const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled")) !== "false";
+    const paymentRoutingEnabled = (await getConfig("paymentRoutingEnabled", database)) !== "false";
     if (paymentRoutingEnabled) {
-      const chainOpts = await getAdminCryptoOptions();
+      const chainOpts = await getAdminCryptoOptions(database);
       if (chainOpts.length > 0) {
         const first = chainOpts[0];
         return { walletAddress: first.walletAddress, currency: first.currency, network: first.network, options: chainOpts };
@@ -463,6 +465,14 @@ export async function getOrderCryptoOptions(
     }
   }
 
+  if (order.orderType === "wholesale") {
+    const options = await getWholesaleCryptoOptions(database);
+    if (options.length) return { ...options[0], options };
+  }
+  if (/solana/i.test(base.network) && /^(USDT|USDC)$/i.test(base.currency) && base.walletAddress && isValidSolanaAddress(base.walletAddress)) {
+    return { ...base, options: [base.currency.toUpperCase(), base.currency.toUpperCase() === "USDT" ? "USDC" : "USDT"]
+      .map(currency => ({ currency, network: base.network, walletAddress: base.walletAddress })) };
+  }
   if (isEthErc20StableRail(base.currency, base.network, base.walletAddress)) {
     return {
       ...base,
@@ -483,6 +493,15 @@ export async function resolveEffectiveOrderCrypto(
   order: { id?: string; groupBuyId: string | null; orderType?: string | null; shippingCountry?: string | null; reshipperUsername?: string | null; sharedOrderId?: string | null; paymentCryptoCurrency?: string | null; paymentCryptoNetwork?: string | null },
   database: any = db,
 ): Promise<{ walletAddress: string | null; currency: string; network: string }> {
+  // Resolve the selected Solana rail against checkout's server-approved options.
+  // A missing Solana destination must never fall back to an Ethereum wallet.
+  if (/^solana$/i.test(order.paymentCryptoNetwork?.trim() ?? "") && /^(USDT|USDC)$/i.test(order.paymentCryptoCurrency?.trim() ?? "")) {
+    const currency = order.paymentCryptoCurrency!.trim().toUpperCase();
+    const { options } = await getOrderCryptoOptions(order, database);
+    const match = options.find(o => o.currency.toUpperCase() === currency && /^solana$/i.test(o.network.trim()) && o.walletAddress);
+    return match ? { walletAddress: match.walletAddress, currency: match.currency, network: match.network }
+      : { walletAddress: null, currency, network: "Solana" };
+  }
   // Wholesale shared: match persisted currency+network against organiser's leadCryptoOptions
   if (order.orderType === "wholesale_shared" && order.sharedOrderId && order.paymentCryptoCurrency && order.paymentCryptoNetwork) {
     const [share] = await database
@@ -578,10 +597,6 @@ const POLYGON_RPC_ENDPOINTS = [
   "https://1rpc.io/matic",
 ];
 
-const SOL_RPC_ENDPOINTS = [
-  "https://api.mainnet-beta.solana.com",
-  "https://rpc.ankr.com/solana",
-];
 
 async function verifySolanaTokenTransfer(
   signature: string,
@@ -591,49 +606,7 @@ async function verifySolanaTokenTransfer(
   tokenSymbol: string,
   tolerancePct = 0.01,
 ): Promise<VerifyResult> {
-  let txData: any = null;
-  for (const endpoint of SOL_RPC_ENDPOINTS) {
-    try {
-      const r = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0", id: 1, method: "getTransaction",
-          params: [signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }],
-        }),
-        signal: AbortSignal.timeout(12000),
-      });
-      if (!r.ok) continue;
-      const json: any = await r.json();
-      if (json.error || !json.result) continue;
-      txData = json.result;
-      break;
-    } catch { /* try next */ }
-  }
-  if (!txData) {
-    return { verified: false, pending: true, reason: "Solana transaction not found — it may still be propagating. Please wait and try again." };
-  }
-  if (txData.meta?.err !== null && txData.meta?.err !== undefined) {
-    return { verified: false, reason: "Solana transaction failed on-chain." };
-  }
-  const pre: any[] = txData.meta?.preTokenBalances ?? [];
-  const post: any[] = txData.meta?.postTokenBalances ?? [];
-  for (const postBal of post) {
-    if (postBal.mint !== mintAddress) continue;
-    if (postBal.owner !== walletAddress) continue;
-    const preBal = pre.find((p: any) => p.accountIndex === postBal.accountIndex && p.mint === mintAddress);
-    const preAmt = preBal ? parseFloat(preBal.uiTokenAmount?.uiAmount ?? "0") : 0;
-    const postAmt = parseFloat(postBal.uiTokenAmount?.uiAmount ?? "0");
-    const received = postAmt - preAmt;
-    if (received <= 0) continue;
-    const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
-    if (received >= minAccepted) {
-      return { verified: true, amountUsdt: received, blockConfirmations: 1 };
-    }
-    const shortfall = parseFloat((expectedAmount - received).toFixed(2));
-    return { verified: false, reason: `Underpayment: ${received.toFixed(2)} ${tokenSymbol} received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} ${tokenSymbol}.` };
-  }
-  return { verified: false, reason: `No ${tokenSymbol} transfer to the expected wallet found in this Solana transaction.` };
+  return verifySolanaStablecoinPayment(signature, walletAddress, expectedAmount, mintAddress, tokenSymbol, tolerancePct, SOL_RPC_ENDPOINTS);
 }
 
 async function verifyTronUsdtTransfer(

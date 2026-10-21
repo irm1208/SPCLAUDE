@@ -46,6 +46,46 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts:false,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("keeps member batch visibility off by default and persists an explicit choice", async () => {
+    const f = await fixture([100]);
+    const initial = await api.supplierData(f.id, admin);
+    expect(initial.config.showToMembers).toBe(false);
+    const saved = await api.saveSupplierConfig(f.id, admin, { expectedVersion: initial.version, config: { ...initial.config, showToMembers: true } });
+    expect(saved.config.showToMembers).toBe(true);
+    const { showToMembers, ...oldClient } = saved.config;
+    const preserved = await api.saveSupplierConfig(f.id, admin, { expectedVersion: saved.version, config: oldClient });
+    expect(preserved.config.showToMembers).toBe(true);
+  });
+  it("gates member summaries on membership and visibility, and highlights only active allocations", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([100]);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["synthetic-0"] }).where(eq(store.groupBuysTable.id, f.id));
+    await expect(memberSupplierBatches(f.id, "synthetic-0")).rejects.toMatchObject({ status: 403 });
+    const initial = await api.supplierData(f.id, admin);
+    const visible = await api.saveSupplierConfig(f.id, admin, { expectedVersion: initial.version, config: { ...initial.config, showToMembers: true } });
+    await expect(memberSupplierBatches(f.id, "not-a-member")).rejects.toMatchObject({ status: 404 });
+    expect((await memberSupplierBatches(f.id, "synthetic-0")).batches).toEqual([]);
+    const preview = visible.proposals[0];
+    await api.confirmSupplierBatch(f.id, admin, { regionId: preview.region.id, token: preview.token });
+    const summary = await memberSupplierBatches(f.id, "synthetic-0");
+    expect(summary.batches).toHaveLength(1);
+    expect(summary.batches[0]).toMatchObject({ isYourBatch: true, status: "Prepared", kits: 100 });
+    expect(JSON.stringify(summary)).not.toMatch(/synthetic-0|grandTotal|trackingNumber|snapshot|productName|createdBy/);
+    const joined = `batch-view-${f.id}`;
+    await store.db.insert(store.accountsTable).values({ telegramUsername: joined });
+    try {
+      await store.db.insert(store.accountGroupBuysTable).values({ id: randomUUID(), accountId: joined, groupBuyId: f.id });
+      const joinedView = await memberSupplierBatches(f.id, joined);
+      expect(joinedView.batches[0].isYourBatch).toBe(false);
+      expect(joinedView.batches[0].reference).toBe(summary.batches[0].reference);
+    } finally {
+      await store.db.delete(store.accountGroupBuysTable).where(and(eq(store.accountGroupBuysTable.accountId, joined), eq(store.accountGroupBuysTable.groupBuyId, f.id)));
+      await store.db.delete(store.accountsTable).where(eq(store.accountsTable.telegramUsername, joined));
+    }
+    const current = await api.supplierData(f.id, admin);
+    await api.saveSupplierConfig(f.id, admin, { expectedVersion: current.version, config: { ...current.config, showToMembers: false } });
+    await expect(memberSupplierBatches(f.id, "synthetic-0")).rejects.toMatchObject({ status: 403 });
+  });
   it("does not let 30 direct kits make a 70-kit regional queue ready", async () => {
     const f = await fixture([70, 30], [{}, { routingType: "direct", directShippingRequested: true }]);
     const p = f.result.proposals[0];

@@ -1,3 +1,4 @@
+import { verifySolanaStablecoinPayment } from "./solana-payment-verify";
 /**
  * Shared blockchain/payment verification utilities.
  * Used by the payments route and the pool-payment auto-verifier.
@@ -130,7 +131,7 @@ export const POLYGON_RPC_ENDPOINTS = [
 
 export const SOL_RPC_ENDPOINTS = [
   "https://api.mainnet-beta.solana.com",
-  "https://rpc.ankr.com/solana",
+  "https://solana-rpc.publicnode.com",
 ];
 
 export function isValidTxHash(hash: string): boolean {
@@ -396,53 +397,7 @@ async function verifySolanaTokenTransfer(
   tokenSymbol: string,
   tolerancePct = 0.01,
 ): Promise<VerifyResult> {
-  let txData: any = null;
-  for (const endpoint of SOL_RPC_ENDPOINTS) {
-    try {
-      const r = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0", id: 1, method: "getTransaction",
-          params: [signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }],
-        }),
-        signal: AbortSignal.timeout(12000),
-      });
-      if (!r.ok) continue;
-      const json: any = await r.json();
-      if (json.error || !json.result) continue;
-      txData = json.result;
-      break;
-    } catch { /* try next */ }
-  }
-  if (!txData) {
-    return { verified: false, pending: true, reason: "Solana transaction not found — it may still be propagating. Please wait and try again." };
-  }
-  if (txData.meta?.err !== null && txData.meta?.err !== undefined) {
-    return { verified: false, reason: "Solana transaction failed on-chain." };
-  }
-  const pre: any[] = txData.meta?.preTokenBalances ?? [];
-  const post: any[] = txData.meta?.postTokenBalances ?? [];
-  const observedTransfers: ObservedTransfer[] = [];
-  let observedTransfer: { recipientAddress: string; amountUsdt: number } | undefined;
-  for (const postBal of post) {
-    if (postBal.mint !== mintAddress) continue;
-    const preBal = pre.find((p: any) => p.accountIndex === postBal.accountIndex && p.mint === mintAddress);
-    const preAmt = preBal ? parseFloat(preBal.uiTokenAmount?.uiAmount ?? "0") : 0;
-    const postAmt = parseFloat(postBal.uiTokenAmount?.uiAmount ?? "0");
-    const received = postAmt - preAmt;
-    if (received <= 0) continue;
-    observedTransfers.push({ recipientAddress: postBal.owner ?? "", amount: received });
-    observedTransfer ??= { recipientAddress: postBal.owner ?? "", amountUsdt: received };
-    if (postBal.owner !== walletAddress) continue;
-    const minAccepted = expectedAmount - Math.max(expectedAmount * tolerancePct, 0.02);
-    if (received >= minAccepted) {
-      return { verified: true, amountUsdt: received, blockConfirmations: 1, recipientAddress: postBal.owner, observedTransfers };
-    }
-    const shortfall = parseFloat((expectedAmount - received).toFixed(2));
-      return { verified: false, reason: `Underpayment: ${received.toFixed(2)} ${tokenSymbol} received, ${expectedAmount.toFixed(2)} expected. Short by ${shortfall.toFixed(2)} ${tokenSymbol}.`, recipientAddress: postBal.owner, amountUsdt: received, observedTransfers };
-  }
-  return { verified: false, reason: `No ${tokenSymbol} transfer to the expected wallet found in this Solana transaction.`, ...observedTransfer, observedTransfers };
+  return verifySolanaStablecoinPayment(signature, walletAddress, expectedAmount, mintAddress, tokenSymbol, tolerancePct, SOL_RPC_ENDPOINTS);
 }
 
 async function verifyTronUsdtTransfer(

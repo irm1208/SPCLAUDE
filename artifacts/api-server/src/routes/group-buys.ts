@@ -14,6 +14,7 @@ import {
   gbCountryLegsTable,
   gbWaitlistTable,
   siteConfigTable,
+  gbSupplierSettingsTable,
 } from "@workspace/db";
 import { eq, and, asc, desc, not, sql, inArray, isNull } from "drizzle-orm";
 import { requireAccount, getJwtSecret } from "../middleware/account-auth";
@@ -326,6 +327,9 @@ router.get("/group-buys", requireAccount, async (req, res): Promise<void> => {
     return tb - ta; // newest first
   });
 
+  const batchVisibility = allRows.length ? await db.select({ id: gbSupplierSettingsTable.groupBuyId, config: gbSupplierSettingsTable.config })
+    .from(gbSupplierSettingsTable).where(inArray(gbSupplierSettingsTable.groupBuyId, allRows.map(g => g.id))) : [];
+  const memberBatchGroups = new Set(batchVisibility.filter(s => (s.config as { showToMembers?: unknown })?.showToMembers === true).map(s => s.id));
   const result = await Promise.all(
     allRows.map(async gb => {
       const [productCount, kitsOrderedByUser, kitsOrderedTotal] = await Promise.all([
@@ -349,6 +353,7 @@ router.get("/group-buys", requireAccount, async (req, res): Promise<void> => {
         kitsOrderedTotal,
         countryLegId: memberCountryLegIdMap.get(gb.id) ?? null,
         archived: archivedGbSet.has(gb.id),
+        showSupplierBatches: memberBatchGroups.has(gb.id),
       };
     })
   );

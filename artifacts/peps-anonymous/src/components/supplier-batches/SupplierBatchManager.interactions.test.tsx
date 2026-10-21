@@ -53,6 +53,8 @@ after(() => dom.window.close());
 async function mount(scope: "admin" | "organiser") {
   globalThis.fetch = async (input, init) => {
     const url = String(input); const method = init?.method ?? "GET";
+    // Fulfilment now has a separate endpoint and response shape, not SupplierData.
+    if (!url.includes("/supplier-batches")) return Response.json({ groupBuy: { id: "G", name: "Test" }, canManage: true, batches: [], nextCursor: null });
     if (method !== "GET") requests.push({ url, method, body: JSON.parse(String(init!.body)) });
     return Response.json(state);
   };
@@ -70,6 +72,15 @@ const el = <T extends HTMLElement = HTMLElement>(id: string): T => {
 const has = (id: string) => !!document.querySelector(`[data-testid="${id}"]`);
 const tick = () => new Promise(r => setTimeout(r, 10));
 async function click(id: string) { await act(async () => { fireEvent.click(el(id)); await tick(); }); }
+
+for (const scope of ["admin", "organiser"] as const) test(`${scope}: member visibility defaults off and saves the explicit choice`, async () => {
+  state = fresh(); await mount(scope);
+  const toggle = el("checkbox-supplier-members") as HTMLInputElement;
+  assert.equal(toggle.checked, false);
+  await click("checkbox-supplier-members");
+  await click("button-save-supplier-config");
+  assert.equal((requests[0].body as { config: { showToMembers: boolean } }).config.showToMembers, true);
+});
 async function change(id: string, value: string) { await act(async () => { fireEvent.change(el(id), { target: { value } }); }); }
 async function poll() { await act(async () => { await client.refetchQueries(); await tick(); }); }
 

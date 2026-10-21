@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { isValidTxHash } from "./payment-verify";
 import { collectionPaymentKey, walletOwnershipSchema, parsePayoutWallet } from "./payout-wallet-check";
+import { chainIntentSchema, isChainPending } from "./payout-chain-schema";
 
 export class PayoutError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -23,11 +24,13 @@ const receiptSchema = z.object({
   id: z.string(), accountId: z.string(), username: z.string(), operationId: z.string(), requestHash: z.string(),
   amountMinor: minor, currency: z.string(), paidAt: z.string(), method: z.string(), reference: z.string(),
   destination: z.string(), network: z.string().optional(), note: z.string(), recordedBy: z.string(), recordedAt: z.string(),
+  token: z.string().optional(), tokenUnits: z.string().optional(), chainVerified: z.boolean().optional(),
   allocations: z.array(allocationSchema), voidedAt: z.string().nullable(), voidReason: z.string().nullable(),
 });
 const ledgerSchema = z.object({
   version: z.literal(1), entitlements: z.record(z.string(), entitlementSchema),
   collectionWallets: z.array(walletOwnershipSchema).default([]),
+  chainPayments: z.array(chainIntentSchema).default([]),
   payouts: z.array(receiptSchema), audit: z.array(z.object({
     action: z.string(), actor: z.string(), at: z.string(), reason: z.string(),
     details: z.unknown(),
@@ -55,7 +58,7 @@ export function moneyToMinor(raw: unknown): number {
   return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
 }
 export function emptyPayoutLedger(): PayoutLedger {
-  return { version: 1, entitlements: Object.create(null), payouts: [], audit: [], collectionWallets: [] };
+  return { version: 1, entitlements: Object.create(null), payouts: [], audit: [], collectionWallets: [], chainPayments: [] };
 }
 export function parsePayoutLedger(raw: string | undefined): PayoutLedger {
   if (raw === undefined) return emptyPayoutLedger();
@@ -66,6 +69,18 @@ export function parsePayoutLedger(raw: string | undefined): PayoutLedger {
   const ledger = result.data;
   ledger.entitlements = Object.assign(Object.create(null), ledger.entitlements);
   const paidIndex = paymentIndex(ledger);
+  const reserved = new Set<string>();
+  for (const payment of ledger.chainPayments.filter(isChainPending)) {
+    if (!payment.allocations.length || sum(payment.allocations.flatMap(a => [a.adminFeeMinor, a.postageMinor])) !== payment.amountMinor)
+      throw new PayoutError("Pending payout allocations failed validation. No changes were made.", 503);
+    for (const a of payment.allocations) {
+      const entry = ledger.entitlements[a.orderId], paid = paidIndex.get(a.orderId) ?? { admin: 0, postage: 0 };
+      if (reserved.has(a.orderId) || !entry || entry.accountId !== payment.accountId || entry.currency !== payment.currency ||
+        a.adminFeeMinor + paid.admin > entry.adminFeeMinor || a.postageMinor + paid.postage > entry.postageMinor)
+        throw new PayoutError("Pending payout reservations failed validation. No changes were made.", 503);
+      reserved.add(a.orderId);
+    }
+  }
   for (const payout of ledger.payouts.filter(p => !p.voidedAt)) {
     if (sum(payout.allocations.flatMap(a => [a.adminFeeMinor, a.postageMinor])) !== payout.amountMinor ||
       payout.allocations.some(a => ledger.entitlements[a.orderId]?.accountId !== payout.accountId ||
@@ -133,6 +148,8 @@ export function reviewEntitlements(ledger: PayoutLedger, orders: FeeOrder[], cur
   const paidIndex = paymentIndex(ledger);
   const byId = new Map(orders.map(order => [order.id, order]));
   const updates = body.orders.map(item => {
+    if (ledger.chainPayments.some(p => isChainPending(p) && p.allocations.some(a => a.orderId === item.orderId)))
+      throw new PayoutError("This order has a pending blockchain payout. Resolve it before correcting fees.", 409);
     if (seen.has(item.orderId)) throw new PayoutError("An order can be reviewed only once per request.");
     seen.add(item.orderId);
     const order = byId.get(item.orderId);
@@ -215,7 +232,9 @@ export function buildPayoutView(ledger: PayoutLedger, orders: FeeOrder[], curren
       reviewable: !conflict && (!!order || !!entry),
       reviewAdminMinor: Math.max(paid.admin, settled(order) && (!entry || entry.currency === currency) && order ? moneyToMinor(order.adminFee) : 0),
       reviewPostageMinor: Math.max(paid.postage, settled(order) && (!entry || entry.currency === currency) && order ? moneyToMinor(order.deliveryPrice) : 0),
-      eligible: !needsReview && !!entry && settled(order) && remainingAdmin + remainingPostage > 0,
+      pendingPayoutId: ledger.chainPayments.find(p => isChainPending(p) && p.allocations.some(a => a.orderId === id))?.id ?? null,
+      eligible: !needsReview && !!entry && settled(order) && remainingAdmin + remainingPostage > 0 &&
+        !ledger.chainPayments.some(p => isChainPending(p) && p.allocations.some(a => a.orderId === id)),
     };
   });
   const totals = [...new Set(rows.map(row => row.currency))].map(code => {
@@ -231,7 +250,7 @@ export function buildPayoutView(ledger: PayoutLedger, orders: FeeOrder[], curren
   return {
     orders: rows, payouts: ledger.payouts.filter(p => p.accountId === recipient.id).map(({ requestHash, operationId, accountId, username, ...receipt }) => receipt).reverse(),
     totals, needsReviewCount: rows.filter(row => row.status === "needs_review").length,
-    sourceNotice: "Only fees confirmed as collected by Admin are payable here. Vendor shipping and postage paid directly to the reshipper are excluded. Payouts record external transfers; they do not send money or change customer payments.",
+    sourceNotice: "Only fees confirmed as collected by Admin are payable here. Vendor shipping and postage paid directly to the reshipper are excluded. Wallet-approved payouts settle after blockchain confirmation. Manual records do not send money. Neither flow changes customer payments.",
   };
 }
 const payoutSchema = z.object({
@@ -289,6 +308,7 @@ export function reversePayout(ledger: PayoutLedger, accountId: string, payoutId:
   if (typeof reason !== "string" || reason.trim().length < 5 || reason.length > 2000) throw new PayoutError("Give a correction reason of 5–2000 characters.");
   const payout = ledger.payouts.find(p => p.id === payoutId && p.accountId === accountId);
   if (!payout) throw new PayoutError("Payout not found.", 404);
+  if (payout.chainVerified) throw new PayoutError("A confirmed blockchain transfer cannot be undone by voiding its receipt. Record a real returned payment separately.", 409);
   if (payout.voidedAt) return payout;
   payout.voidedAt = now; payout.voidReason = reason.trim();
   ledger.audit.push({ action: "void", actor, at: now, reason: payout.voidReason, details: { payoutId } });

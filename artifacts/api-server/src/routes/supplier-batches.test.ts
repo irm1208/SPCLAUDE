@@ -2,6 +2,11 @@ import express from "express";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { type Server } from "node:http";
 const calls = vi.hoisted(() => ({ admin: vi.fn(), organiser: vi.fn(), data: vi.fn() }));
+vi.mock("../middleware/account-auth", () => ({ requireAccount: (req: any, res: any, next: any) => {
+  if (req.headers["x-test-member"] !== "yes") return res.status(401).json({ error: "Sign in" });
+  req.account = { telegramUsername: "member" }; next();
+} }));
+vi.mock("../lib/member-supplier-batches", () => ({ memberSupplierBatches: vi.fn(async (id, username) => ({ id, username, batches: [] })) }));
 vi.mock("../middleware/require-admin", () => ({ requireAdmin: (req: any, res: any) => {
   calls.admin();
   if (req.headers["x-test-admin"] !== "yes") {res.status(401).json({error:"Admin authentication required"});return false;} return true;
@@ -17,6 +22,12 @@ vi.mock("../lib/supplier-batches", () => ({
 }));
 import router from "./supplier-batches";
 describe("supplier batch HTTP authentication", () => {
+  it("requires member sign-in for the read-only batch summary and marks it private", async () => {
+    expect((await fetch(`${base}/api/group-buys/gb/supplier-batches`)).status).toBe(401);
+    const res = await fetch(`${base}/api/group-buys/gb/supplier-batches`, { headers: { "x-test-member": "yes" } });
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(await res.json()).toEqual({ id: "gb", username: "member", batches: [] });
+  });
   let server: Server, base: string;
   beforeAll(async()=>{
     const app=express();app.use(express.json());app.use("/api",router);

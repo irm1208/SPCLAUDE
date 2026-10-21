@@ -32,7 +32,25 @@ Reshippers should be able to enter and edit their own outgoing payout destinatio
 
 **Why:** The user found collection-wallet setup and manual destination/amount entry confusing and approved a simpler bulk-payout flow.
 
-**How to apply:** Default the main payout screen to selecting payable orders and recording an external transfer. Keep historical checks/corrections secondary, never bypass eligibility, never imply the app sends money, and preserve each receipt's destination/network/order amounts even after the saved wallet changes.
+**How to apply:** Keep historical checks/corrections secondary, never bypass eligibility, and preserve each receipt's destination/network/order amounts even after the saved wallet changes. Distinguish manual external-transfer records from any wallet-approved on-chain payment flow; do not imply a manual record sends money.
+
+For connected-wallet payouts, the reshipper chooses the supported token and network for their payout destination; Admin approves each transfer in their own wallet. Do not require every reshipper to use one Admin-selected token or network.
+
+**Why:** The user selected wallet-approved payouts rather than unattended spending and said the token/network should be “Whichever they choose.”
+
+**How to apply:** Present validated supported token/network pairs, keep private keys out of the app, and only settle the selected order allocations after server-side blockchain confirmation. Preserve an explicit manual route for unsupported combinations rather than silently substituting another token or network.
+
+The user approved supported USDT/USDC payout choices for the connected-wallet version; native ETH and Bitcoin remain manual.
+
+**Why:** The user explicitly chose “Yes—reshippers choose supported USDT/USDC payout options.”
+
+**How to apply:** Do not add arbitrary tokens or unattended signing under this approval. Wallet pairing requires a compatible browser provider; extending to mobile QR pairing is separate work.
+
+Pending wallet-approved payouts must reserve their fee allocations against manual payouts and corrections. A wallet rejection, lost TXID, RPC outage or dropped transaction is not proof that no money can move.
+
+**Why:** EVM wallet requests can broadcast before the browser saves the returned hash, and releasing the fees would permit a second payout.
+
+**How to apply:** Bind EVM retries and replacements to the original sender and nonce, retain previous hashes, and release a stuck approval only after an unsent cancellation or confirmed same-nonce on-chain cancellation. For Solana/Tron, sign without broadcasting in the browser and persist approved signed bytes before server broadcast. Never void a verified receipt as if funds were returned.
 
 The reshipper dashboard should show collected admin fees and member delivery/postage for the selected group buy. Do not include vendor shipping in that shipping total.
 

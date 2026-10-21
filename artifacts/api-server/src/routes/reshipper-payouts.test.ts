@@ -4,6 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 const mocks = vi.hoisted(() => ({
   read: vi.fn(), groups: vi.fn(), record: vi.fn(), review: vi.fn(), reverse: vi.fn(),
   wallets: vi.fn(), check: vi.fn(), payoutWallet: vi.fn(),
+  chainPrepare: vi.fn(), chainApprove: vi.fn(), chainSubmit: vi.fn(), chainCheck: vi.fn(), chainCancel: vi.fn(),
+}));
+vi.mock("../lib/reshipper-chain-payments", () => ({
+  prepareReshipperChainPayment: mocks.chainPrepare, approveReshipperChainPayment: mocks.chainApprove,
+  submitReshipperChainPayment: mocks.chainSubmit, checkReshipperChainPayment: mocks.chainCheck,
+  cancelReshipperChainPayment: mocks.chainCancel,
 }));
 vi.mock("../lib/reshipper-payouts", () => ({
   readReshipperPayouts: mocks.read, listReshipperPayoutGroups: mocks.groups,
@@ -57,7 +63,8 @@ describe("payout route boundaries", () => {
     expect(mocks.reverse).toHaveBeenCalledWith("target", "gb-1", "receipt", "Incorrect receipt", "treasury-admin");
   });
   it("rejects unauthenticated and reshipper callers on every Admin mutation", async () => {
-    for (const suffix of ["", "/review", "/receipt/void", "/wallets", "/wallets/remove", "/check-wallets", "/payout-wallet"]) {
+    for (const suffix of ["", "/review", "/receipt/void", "/wallets", "/wallets/remove", "/check-wallets", "/payout-wallet",
+      "/chain/prepare", "/chain/id/approve", "/chain/id/submit", "/chain/id/check", "/chain/id/cancel"]) {
       for (const role of [undefined, "reshipper"]) expect((await request(`/api/admin/reshippers/target/gb/gb-1/payouts${suffix}`, role, { reason: "test" })).status).toBe(401);
     }
     expect(mocks.record).not.toHaveBeenCalled(); expect(mocks.review).not.toHaveBeenCalled(); expect(mocks.reverse).not.toHaveBeenCalled();
@@ -99,5 +106,16 @@ describe("payout route boundaries", () => {
     expect(mocks.payoutWallet).toHaveBeenCalledWith("authenticated-owner", "gb-1", body, "reshipper:authenticated-owner", false);
     expect(mocks.record).not.toHaveBeenCalled();
     expect(mocks.review).not.toHaveBeenCalled();
+  });
+  it("uses authenticated Admin identity for each connected payment action", async () => {
+    const base = "/api/admin/reshippers/target/gb/gb-1/payouts/chain";
+    const body = { test: true };
+    expect((await request(`${base}/prepare`, "admin", body)).status).toBe(200);
+    expect(mocks.chainPrepare).toHaveBeenCalledWith("target", "gb-1", body, "treasury-admin");
+    for (const [action, mock] of [["approve", mocks.chainApprove], ["submit", mocks.chainSubmit], ["check", mocks.chainCheck], ["cancel", mocks.chainCancel]] as const) {
+      expect((await request(`${base}/payment-id/${action}`, "admin", body)).status).toBe(200);
+      expect(mock).toHaveBeenCalledWith("target", "gb-1", "payment-id", ...(action === "submit" ? [body] : []), "treasury-admin");
+    }
+    expect((await request("/api/reshipper/gb/gb-1/payouts/chain/prepare", "reshipper", body)).status).toBe(404);
   });
 });

@@ -1,6 +1,8 @@
 import { Router, type Request, type Response, type NextFunction, type ErrorRequestHandler } from "express";
 import { requireAdmin } from "../middleware/require-admin";
 import { requireOrganiser } from "../middleware/require-organiser";
+import { requireAccount } from "../middleware/account-auth";
+import { memberSupplierBatches } from "../lib/member-supplier-batches";
 import { SupplierBatchError } from "../lib/supplier-batches-model";
 import { type UpdateActor } from "../lib/group-buy-updates-model";
 import { supplierData, saveSupplierConfig, confirmSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch } from "../lib/supplier-batches";
@@ -17,6 +19,11 @@ async function auth(req: Request, res: Response, next: NextFunction) {
   else await requireOrganiser(req, res, next);
 }
 const paths = (suffix = "") => roots.map(r => r + suffix);
+router.get("/group-buys/:id/supplier-batches", (_req, res, next) => { res.setHeader("Cache-Control", "private, no-store"); next(); },
+  requireAccount, async (req, res) => {
+    try { res.json(await memberSupplierBatches(param(req, "id"), req.account!.telegramUsername)); }
+    catch (error) { errors(error, req, res, () => {}); }
+  });
 router.use(roots, auth, (_req, res, next) => { res.setHeader("Cache-Control", "private, no-store"); next(); });
 router.get(paths(), async (req, res) => { res.json(await supplierData(param(req, "id"), actor(req))); });
 router.put(paths("/config"), async (req, res) => { res.json(await saveSupplierConfig(param(req, "id"), actor(req), req.body)); });

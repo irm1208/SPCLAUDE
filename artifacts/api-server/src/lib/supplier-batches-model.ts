@@ -6,7 +6,7 @@ export class SupplierBatchError extends Error {
   constructor(message: string, public status = 409) { super(message); }
 }
 export interface BatchRegion { id: string; name: string; countries: string[]; targetKits: number }
-export interface SupplierConfig { enabled: boolean; telegramAlerts: boolean; regions: BatchRegion[] }
+export interface SupplierConfig { enabled: boolean; telegramAlerts: boolean; showToMembers?: boolean; regions: BatchRegion[] }
 export interface BatchItem { productId: string; productName: string; quantity: number; unitPrice: string; lineTotal: string }
 export interface BatchOrder {
   id: string; code: string; username: string; country: string; kits: number; paidAt: string | null;

@@ -1,4 +1,5 @@
 import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
+import { MemberBatchMenu } from "@/components/supplier-batches/MemberBatchStatus";
 import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
 import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
 import React, { useEffect, useRef, useState, useMemo } from "react";
@@ -1163,6 +1164,7 @@ function GroupBuyCard({ gb, index, onCta, onInfo, onCompletion, completionPendin
         >
           <Info className="w-3 h-3" style={{ color: "rgba(255,255,255,0.55)" }} />
         </button>
+        <MemberBatchMenu gb={gb} />
       </div>
     </motion.div>
   );

@@ -9,6 +9,7 @@ import { PayoutTotals } from "./PayoutTotals";
 import { ReviewPanel } from "./ReviewPanel";
 import { WalletCollectionCheck } from "./WalletCollectionCheck";
 import { PayoutWalletCard } from "./PayoutWalletCard";
+import { ConnectedPayout } from "./ConnectedPayout";
 import { usePayoutData } from "./usePayoutData";
 import { card, ErrorNote, Skeleton, subtle } from "./ui";
 
@@ -44,9 +45,13 @@ export function ReshipperPayouts({ mode, username, gbId, fetcher }: ReshipperPay
     {data && <>
       <PayoutTotals data={data} />
       <PayoutWalletCard key={`destination-${base}`} wallet={data.payoutWallet} canEdit={isAdmin || data.canManagePayoutWallet === true} isSelf={!isAdmin} write={write} />
-      {isAdmin && <p className="text-sm" style={subtle}>Select orders below, send one transfer to the reshipper, then record its TXID. Recording a payout does not send money.</p>}
+      {isAdmin && <p className="text-sm" style={subtle}>Select payable orders, then pay through your connected wallet or record a transfer you already sent.</p>}
       <PayoutOrdersTable orders={data.orders} canSelect={isAdmin} selection={selection} onSelectionChange={setSelection} />
-      {isAdmin && <PayoutForm key={`form-${base}`} orders={data.orders} selection={selection} payoutWallet={data.payoutWallet} write={write} onRecorded={() => setSelection({})} />}
+      <ConnectedPayout key={`connected-${base}`} data={data} orders={data.orders} selection={selection} write={write} isAdmin={isAdmin} />
+      {isAdmin && <details className="rounded-xl border p-4" style={{ borderColor: "var(--t-border)" }}>
+        <summary className="text-sm font-semibold cursor-pointer">Record a payment sent separately</summary>
+        <div className="mt-3"><PayoutForm key={`form-${base}`} orders={data.orders} selection={selection} payoutWallet={data.payoutWallet} write={write} onRecorded={() => setSelection({})} /></div>
+      </details>}
       <PayoutHistory payouts={data.payouts} canVoid={isAdmin} write={write} />
       {isAdmin && <details aria-label="Review & corrections" className="rounded-xl border p-4" style={{ borderColor: "var(--t-border)" }}>
         <summary className="cursor-pointer text-sm font-semibold">Review & corrections{data.needsReviewCount ? ` · ${data.needsReviewCount} orders need review` : ""}</summary>

@@ -51,6 +51,67 @@ it("reshipper sees read-only totals and history, no mutating controls", async ()
   expect(el.textContent).not.toContain("Record payout");
 });
 
+it("previews a selected bulk payment, gets wallet approval and stays pending until confirmation", async () => {
+  const d = data(), sender = `0x${"a".repeat(40)}`, destination = `0x${"b".repeat(40)}`, txid = `0x${"c".repeat(64)}`;
+  d.payoutWallet = { address: destination, network: "ERC-20", currency: "USDC" };
+  const provider = { request: vi.fn(async ({ method }: { method: string }) => {
+    if (["eth_accounts", "eth_requestAccounts"].includes(method)) return [sender];
+    if (method === "eth_chainId" || method === "eth_getTransactionCount") return "0x1";
+    if (method === "eth_sendTransaction") return txid;
+  }) };
+  Object.defineProperty(dom.window, "ethereum", { value: provider, configurable: true });
+  let latest = d;
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (!init?.method) return json(latest);
+    const payload = JSON.parse(String(init.body));
+    if (url.endsWith("/chain/prepare")) {
+      const p = { id: payload.operationId, state: "prepared" as const, token: "USDC" as const, network: "ERC-20", sender, destination,
+        amountMinor: 3000, usdMinor: 3000, currency: "USD", tokenUnits: "30000000", rate: 1, createdAt: new Date().toISOString(), txid: null, error: null,
+        allocations: d.orders.slice(0, 2).map(o => ({ orderId: o.orderId, code: o.code, member: o.member, adminFeeMinor: 1000, postageMinor: 500 })),
+        transaction: { from: sender, to: destination, nonce: "0x1", data: "frozen", chainId: "0x1", value: "0x0" } };
+      latest = { ...d, orders: d.orders.map(o => ["o1", "o2"].includes(o.orderId) ? { ...o, eligible: false, pendingPayoutId: p.id } : o), chainPayments: [p] };
+    } else if (url.endsWith("/approve")) {
+      latest = { ...latest, chainPayments: latest.chainPayments!.map(p => ({ ...p, state: "signing" })) };
+    } else if (url.endsWith("/submit")) {
+      expect(payload).toEqual({ txid });
+      latest = { ...latest, chainPayments: latest.chainPayments!.map(p => ({ ...p, state: "broadcast", txid, error: "Waiting for confirmations" })) };
+    }
+    return json(latest);
+  });
+  try {
+    await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+    await click(byLabel("Select all visible eligible orders"));
+    await click(btn("Connect wallet & preview")); await flush();
+    expect(el.textContent).toContain("30 USDC");
+    expect(provider.request.mock.calls.some(([q]) => q.method === "eth_sendTransaction")).toBe(false);
+    expect(btn("Approve payment in wallet").disabled).toBe(true);
+    const checked = [...el.querySelectorAll("label")].find(l => l.textContent?.includes("I have checked the token"))!.querySelector("input")!;
+    await click(checked); await click(btn("Approve payment in wallet")); await flush();
+    expect(provider.request.mock.calls.filter(([q]) => q.method === "eth_sendTransaction")).toHaveLength(1);
+    expect(el.textContent).toContain("Payment pending confirmation");
+    expect(el.textContent).toContain(txid);
+    expect(el.textContent).not.toContain("Paid — confirmed on blockchain");
+    expect(byLabel("Select order PA-101").disabled).toBe(true);
+  } finally { delete (dom.window as unknown as { ethereum?: unknown }).ethereum; }
+});
+
+it("lets reshippers choose a supported payout token and shows pending payments read-only", async () => {
+  const d = data(); d.canManagePayoutWallet = true;
+  d.payoutWallet = { address: `0x${"b".repeat(40)}`, network: "ERC-20" };
+  d.chainPayments = [{ id: "pending-1", state: "broadcast", network: "ERC-20", token: "USDT", destination: d.payoutWallet.address,
+    amountMinor: 1500, usdMinor: 1500, currency: "USD", tokenUnits: "15000000", rate: 1, createdAt: "2026-10-21", txid: `0x${"c".repeat(64)}`, error: "Waiting for confirmations", allocations: [] }];
+  const fetcher = vi.fn(async (_p: string, init?: RequestInit) => json(init?.method ? { ...d, payoutWallet: { ...d.payoutWallet, currency: "USDC" } } : d));
+  await render({ mode: "reshipper", gbId: "g1", fetcher });
+  await click(btn("Edit wallet"));
+  await act(async () => type(byLabel("Reshipper payout token"), "USDC"));
+  await click(btn("Save payout wallet")); await flush();
+  const post = fetcher.mock.calls.find(c => c[1]?.method === "POST")!;
+  expect(JSON.parse(String(post[1]!.body))).toMatchObject({ currency: "USDC", network: "ERC-20" });
+  expect(el.textContent).toContain("Payment pending confirmation");
+  expect(btn("Check confirmation")).toBeUndefined();
+  expect(btn("Approve payment")).toBeUndefined();
+});
+
 it("prefills the saved wallet and exact bulk total, then records one TXID covering both orders", async () => {
   const d = data();
   Object.assign(d, { payoutWallet: { address: `0x${"6".repeat(40)}`, network: "ERC-20" } });

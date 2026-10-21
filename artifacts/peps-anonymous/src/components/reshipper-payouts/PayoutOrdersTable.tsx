@@ -86,6 +86,7 @@ export function PayoutOrdersTable({ orders, canSelect, selection, onSelectionCha
             <td className="p-3 text-right tabular-nums font-semibold whitespace-nowrap">{fmt(o.remainingAdminMinor + o.remainingPostageMinor, o.currency)}</td>
             <td className="p-3 max-w-[240px]">
               <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase whitespace-nowrap" style={{ color: STATUS_TONE[o.status], background: `color-mix(in srgb, ${STATUS_TONE[o.status]} 12%, transparent)` }}>{STATUS_LABEL[o.status]}</span>
+              {o.pendingPayoutId && <span className="block mt-1 text-[11px] font-semibold" style={subtle}>Payout pending · reserved</span>}
               <details className="mt-2 text-[11px]" style={subtle}><summary className="cursor-pointer">Details · paid {fmt(o.paidAdminMinor + o.paidPostageMinor, o.currency)}</summary>
                 <p className="mt-1">Admin fee paid {fmt(o.paidAdminMinor, o.currency)} · Postage paid {fmt(o.paidPostageMinor, o.currency)}</p>
                 {o.reviewReason && <p className="mt-1">Review: {o.reviewReason}{o.collector ? ` · held by ${o.collector === "admin" ? "Admin" : "reshipper"}` : ""}</p>}

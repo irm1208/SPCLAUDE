@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { isValidBtcAddress, isValidEthAddress, isValidSolanaAddress, isValidTxHash, verifyTransaction } from "./payment-verify";
 import { normaliseWalletAddress } from "./payment-audit";
 import type { FeeOrder } from "./reshipper-payout-rules";
+import { getPayoutAsset } from "@workspace/payout-assets";
 
 export const walletOwnershipSchema = z.object({
   accountId: z.string().min(1),
@@ -29,7 +30,8 @@ export function parsePayoutWallet(raw: unknown) {
     effectiveFrom: "2000-01-01T00:00:00.000Z", effectiveUntil: null,
   });
   if (!checked.success) return null;
-  return { address: checked.data.address, network: checked.data.network };
+  if (input.currency !== undefined && (typeof input.currency !== "string" || !getPayoutAsset(checked.data.network, input.currency))) return null;
+  return { address: checked.data.address, network: checked.data.network, ...(typeof input.currency === "string" ? { currency: input.currency } : {}) };
 }
 export type CollectionCheck = {
   collector: "admin" | "reshipper" | null; reason: string;

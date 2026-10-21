@@ -12,7 +12,7 @@ import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
 
 type Database = typeof db;
-const emptyConfig: SupplierConfig = { enabled: false, telegramAlerts: false, regions: [] };
+const emptyConfig: SupplierConfig = { enabled: false, telegramAlerts: false, showToMembers: false, regions: [] };
 const asDate = (v: any) => v ? new Date(v).toISOString() : null;
 export async function supplierAccess(tx: any, id: string, actor: UpdateActor) {
   const [group] = await tx.select().from(groupBuysTable).where(eq(groupBuysTable.id, id)).for("update");
@@ -38,7 +38,7 @@ async function audit(tx: any, id: string, actor: string, action: string, detail:
 }
 async function load(tx: any, id: string) {
   const [stored] = await tx.select().from(settings).where(eq(settings.groupBuyId, id));
-  const config = (stored?.config ?? emptyConfig) as SupplierConfig;
+  const config = { ...emptyConfig, ...(stored?.config as SupplierConfig | undefined), showToMembers: (stored?.config as SupplierConfig | undefined)?.showToMembers === true };
   // Do not load labels, proof images or tracking blobs into the recurring queue worker.
   const parents = await tx.select({
     id: ordersTable.id, code: ordersTable.code, telegramUsername: ordersTable.telegramUsername,
@@ -156,11 +156,13 @@ export async function supplierData(id: string, actor: UpdateActor, database = db
 }
 export async function saveSupplierConfig(id: string, actor: UpdateActor, body: any, database = db) {
   if (typeof body?.config?.enabled !== "boolean" || typeof body?.config?.telegramAlerts !== "boolean" || !Number.isInteger(body?.expectedVersion)) throw new SupplierBatchError("Invalid supplier settings.", 400);
+  if (body.config.showToMembers !== undefined && typeof body.config.showToMembers !== "boolean") throw new SupplierBatchError("Invalid member visibility setting.", 400);
   const config: SupplierConfig = { enabled: body.config.enabled, telegramAlerts: body.config.telegramAlerts, regions: validateRegions(body.config.regions) };
   if (config.enabled && !config.regions.length) throw new SupplierBatchError("Add a region before enabling supplier batches.", 400);
   return locked(id, actor, async (tx, group) => {
     const [old] = await tx.select().from(settings).where(eq(settings.groupBuyId, id));
     if ((old?.version ?? 0) !== body.expectedVersion) throw new SupplierBatchError("Settings changed in another session. Reload and review your changes.");
+    config.showToMembers = body.config.showToMembers ?? ((old?.config as SupplierConfig | undefined)?.showToMembers === true);
     await tx.insert(settings).values({ groupBuyId: id, config, version: body.expectedVersion + 1 })
       .onConflictDoUpdate({ target: settings.groupBuyId, set: { config, version: body.expectedVersion + 1 } });
     await audit(tx, id, actor.username, "settings", { config });

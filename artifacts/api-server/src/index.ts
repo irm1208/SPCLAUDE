@@ -1231,6 +1231,8 @@ function startBackgroundServices(): void {
   startPoolPaymentAutoVerify();
   startGbEntryFeeAutoVerify();
   startOrderPaymentAutoVerify();
+  import("./lib/reshipper-chain-payments").then(m => m.startReshipperChainPaymentChecks())
+    .catch(error => console.error("[reshipper-chain] Could not start payout checks", error));
   startOnwardPaymentAutoVerify();
   startWholesaleAccessAutoVerify();
   startWholesaleOrganiserPaymentAutoVerify();

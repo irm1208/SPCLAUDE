@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import type { PayoutData, PayoutReceipt } from "../../lib/reshipper-payouts";
 import { fmt } from "./money";
 import { ErrorNote, inputCls, inputStyle, SectionLabel, subtle } from "./ui";
+import { displayTokenUnits, getPayoutAsset } from "@workspace/payout-assets";
 
 function VoidControl({ id, write }: { id: string; write: (s: string, b: unknown) => Promise<PayoutData> }) {
   const [open, setOpen] = useState(false);
@@ -30,15 +31,16 @@ export function PayoutHistory({ payouts, canVoid, write }: { payouts: PayoutRece
       {payouts.map(p => <li key={p.id} className="rounded-xl border p-3 text-sm" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)", opacity: p.voidedAt ? 0.75 : 1 }}>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <span className={`font-bold tabular-nums ${p.voidedAt ? "line-through" : ""}`}>{fmt(p.amountMinor, p.currency)}</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: p.voidedAt ? "#b91c1c" : "#16a34a" }}>{p.voidedAt ? "Voided" : "Paid — recorded by Admin"}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: p.voidedAt ? "#b91c1c" : "#16a34a" }}>{p.voidedAt ? "Voided" : p.chainVerified ? "Paid — confirmed on blockchain" : "Paid — recorded by Admin"}</span>
         </div>
+        {p.chainVerified && p.token && p.tokenUnits && <p className="text-sm font-semibold mt-1">{displayTokenUnits(p.tokenUnits, getPayoutAsset(p.network ?? "", p.token)?.decimals ?? 6)} {p.token}</p>}
         <p className="text-xs mt-1 break-words" style={subtle}>{p.paidAt.slice(0, 10)} · {p.method}{p.network ? ` · ${p.network}` : ""} · To {p.destination}</p>
         <p className="text-xs mt-1 break-all" style={subtle}>{p.method.trim().toLowerCase() === "crypto" ? "TXID" : "Reference"}: <span className="font-mono select-all">{p.reference}</span></p>
         <p className="text-[11px]" style={subtle}>Recorded by {p.recordedBy} on {p.recordedAt.slice(0, 10)}{p.note ? ` · ${p.note}` : ""}</p>
         {p.voidedAt && <p className="text-xs mt-1" style={{ color: "#b91c1c" }}>Voided {p.voidedAt.slice(0, 10)}: {p.voidReason}</p>}
         <details className="mt-2 text-xs"><summary className="cursor-pointer" style={{ color: "var(--t-blue)" }}>Orders covered by this payment ({p.allocations.length})</summary>
           <ul className="mt-1 space-y-0.5 tabular-nums">{p.allocations.map(a => <li key={a.orderId}><span className="font-mono">{a.code}</span> <span style={subtle}>{a.member}</span> — fee {fmt(a.adminFeeMinor, p.currency)}, postage {fmt(a.postageMinor, p.currency)}</li>)}</ul></details>
-        {canVoid && !p.voidedAt && <VoidControl id={p.id} write={write} />}
+        {canVoid && !p.voidedAt && !p.chainVerified && <VoidControl id={p.id} write={write} />}
       </li>)}
     </ul>
   </section>;

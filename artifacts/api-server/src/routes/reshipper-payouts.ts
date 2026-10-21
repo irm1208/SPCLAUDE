@@ -4,6 +4,7 @@ import { requireReshipper } from "../middleware/require-reshipper";
 import { PayoutError } from "../lib/reshipper-payout-rules";
 import { checkReshipperCollectionWallets, saveCollectionWallet, saveReshipperPayoutWallet } from "../lib/reshipper-payouts";
 import { listReshipperPayoutGroups, readReshipperPayouts, recordReshipperPayout, reviewReshipperFees, voidReshipperPayout } from "../lib/reshipper-payouts";
+import { prepareReshipperChainPayment, approveReshipperChainPayment, submitReshipperChainPayment, checkReshipperChainPayment, cancelReshipperChainPayment } from "../lib/reshipper-chain-payments";
 
 const router = Router();
 const admin = "/admin/reshippers/:username/gb/:gbId/payouts";
@@ -21,7 +22,7 @@ function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
       const code = (error as { code?: string; cause?: { code?: string } })?.code || (error as { cause?: { code?: string } })?.cause?.code;
       if (code === "40001" || code === "40P01") { res.status(409).json({ error: "Another fee update occurred. Refresh and retry; no partial payout was recorded." }); return; }
       console.error("[reshipper-payouts]", error);
-      res.status(503).json({ error: "Payout records are temporarily unavailable. Your payment has not been sent by this website. Refresh before recording again." });
+      res.status(503).json({ error: "Payout records are temporarily unavailable. Check existing pending payments before retrying. Do not send another transfer." });
     }
   };
 }
@@ -29,6 +30,16 @@ router.get("/admin/reshippers/:username/payouts/groups", adminOnly, handle(req =
 router.get(admin, adminOnly, handle(req => readReshipperPayouts(param(req, "username"), param(req, "gbId"), true)));
 router.post(`${admin}/payout-wallet`, adminOnly, handle((req, res) =>
   saveReshipperPayoutWallet(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
+router.post(`${admin}/chain/prepare`, adminOnly, handle((req, res) =>
+  prepareReshipperChainPayment(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
+router.post(`${admin}/chain/:paymentId/approve`, adminOnly, handle((req, res) =>
+  approveReshipperChainPayment(param(req, "username"), param(req, "gbId"), param(req, "paymentId"), getAdminUsername(res))));
+router.post(`${admin}/chain/:paymentId/submit`, adminOnly, handle((req, res) =>
+  submitReshipperChainPayment(param(req, "username"), param(req, "gbId"), param(req, "paymentId"), req.body, getAdminUsername(res))));
+router.post(`${admin}/chain/:paymentId/check`, adminOnly, handle((req, res) =>
+  checkReshipperChainPayment(param(req, "username"), param(req, "gbId"), param(req, "paymentId"), getAdminUsername(res))));
+router.post(`${admin}/chain/:paymentId/cancel`, adminOnly, handle((req, res) =>
+  cancelReshipperChainPayment(param(req, "username"), param(req, "gbId"), param(req, "paymentId"), getAdminUsername(res))));
 router.post(`${admin}/review`, adminOnly, handle((req, res) => reviewReshipperFees(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
 router.post(`${admin}/wallets`, adminOnly, handle((req, res) =>
   saveCollectionWallet(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));

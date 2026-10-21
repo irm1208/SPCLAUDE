@@ -240,6 +240,7 @@ export interface GroupBuySummary {
   adminFeeCountries?: Array<{ country: string; amount: number; enabled: boolean }> | null;
   directShippingPaymentsEnabled?: boolean;
   archived?: boolean;
+  showSupplierBatches?: boolean;
   telegramImageUrl?: string | null;
   createdAt?: string | null;
 }

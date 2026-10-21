@@ -152,3 +152,4 @@
 - [Supplier shipment privacy](supplier-shipment-privacy.md) — private supplier packages must not feed member parcel broadcasts; legacy Direct defaults do not establish a confirmed shipping destination.
 - [Review shipping country](review-shipping-country.md) — collect contact details on review, but change GB destination with postage selection so country-specific rates stay consistent.
 - [Payment country policy](payment-country-policy.md) — country lists restrict joining/ordering, never payments for existing orders; explicit payment pauses and verification remain.
+- [Solana payment validation](solana-payment-validation.md) — indexed RPC restrictions differ from transaction access; mint-history examples may have no positive net receipt.

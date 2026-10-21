@@ -25,7 +25,7 @@ async function accountIdentity(executor: Executor, username: string) {
   if (!account?.id) throw new PayoutError("Reshipper identity changed. Refresh before continuing.", 409);
   return { id: account.id, username: account.username };
 }
-async function context(executor: Executor, username: string, gbId: string, lock = false, orderIds: string[] = []) {
+export async function context(executor: Executor, username: string, gbId: string, lock = false, orderIds: string[] = []) {
   const account = await accountIdentity(executor, username);
   const groupQuery = executor.select({ id: groupBuysTable.id, name: groupBuysTable.name, currency: groupBuysTable.currency })
     .from(groupBuysTable).where(eq(groupBuysTable.id, gbId));
@@ -74,9 +74,13 @@ async function context(executor: Executor, username: string, gbId: string, lock 
     paymentDetails: assignments.length ? { referencesOnly: true, assignments } : null,
   };
 }
-function view(ctx: Awaited<ReturnType<typeof context>>, includePaymentTxids = false) {
+export function view(ctx: Awaited<ReturnType<typeof context>>, includePaymentTxids = false) {
   return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, includePaymentTxids), paymentDetails: ctx.paymentDetails, payoutWallet: ctx.payoutWallet,
     canManagePayoutWallet: ctx.canManagePayoutWallet,
+    chainPayments: ctx.ledger.chainPayments.filter(p => p.accountId === ctx.recipient.id).slice(-100).reverse().map(p => {
+      const { signedRaw, transaction, requestHash, sender, accountId, username, ...publicFields } = p;
+      return { ...publicFields, ...(includePaymentTxids ? { transaction, sender } : {}) };
+    }),
     ...(includePaymentTxids ? { collectionWallets: ctx.ledger.collectionWallets.filter(w => w.accountId === ctx.recipient.id) } : {}) };
 }
 export async function readReshipperPayouts(username: string, gbId: string, includePaymentTxids = false) {
@@ -117,7 +121,7 @@ export async function listReshipperPayoutGroups(username: string) {
     .from(groupBuysTable).where(inArray(groupBuysTable.id, [...ids])).orderBy(groupBuysTable.name) : [];
   return { groups };
 }
-async function lockConfig(executor: Executor, key: string) {
+export async function lockConfig(executor: Executor, key: string) {
   await executor.insert(siteConfigTable).values({ key, value: null }).onConflictDoNothing();
   const [row] = await executor.select().from(siteConfigTable).where(eq(siteConfigTable.key, key)).for("update");
   return row;

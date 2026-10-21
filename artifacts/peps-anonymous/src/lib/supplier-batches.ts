@@ -1,7 +1,7 @@
 export const EU_BATCH_COUNTRIES = "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE".split(" ");
 export type SupplierScope = "admin" | "organiser";
 export interface BatchRegion { id: string; name: string; countries: string[]; targetKits: number }
-export interface BatchConfig { enabled: boolean; telegramAlerts: boolean; regions: BatchRegion[] }
+export interface BatchConfig { enabled: boolean; telegramAlerts: boolean; showToMembers?: boolean; regions: BatchRegion[] }
 export interface BatchItem { productId: string; productName: string; quantity: number; unitPrice: string; lineTotal: string }
 export interface BatchOrder { id: string; code: string; username: string; country: string; kits: number; paidAt: string | null; orderingAt: string; historicalReviewed: boolean; items: BatchItem[] }
 export interface BatchProposal { region: BatchRegion; token: string; orders: BatchOrder[]; kits: number; queuedKits: number; remainingKits: number; ready: boolean; readyAt: string | null; products: {productId: string; productName: string; quantity: number}[] }
