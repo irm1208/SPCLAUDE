@@ -6,6 +6,7 @@ export interface PayoutOrder {
   status: PayoutStatus; reviewReason: string | null; reviewedAt: string | null;
   reviewable: boolean; eligible: boolean; collector: "admin" | "reshipper" | null;
   reviewAdminMinor?: number; reviewPostageMinor?: number;
+  paymentTxids?: string[];
 }
 export interface PayoutAllocation {
   orderId: string; code: string; member: string; adminFeeMinor: number; postageMinor: number;

@@ -53,6 +53,13 @@ export function ReviewPanel({ orders, write }: { orders: PayoutOrder[]; write: (
         <div className="flex flex-wrap gap-2 text-sm"><span className="font-mono font-semibold">{o.code}</span><span style={subtle}>{o.member}</span>
           <span className="text-xs" style={subtle}>Max: {fmt(capAdmin(o), o.currency)} fee, {fmt(capPostage(o), o.currency)} postage</span>
           {o.status !== "needs_review" && <span className="text-xs" style={subtle}>Currently: {o.collector === "admin" ? "Held by Admin" : o.collector === "reshipper" ? "Paid directly to reshipper" : "unset"}</span>}</div>
+        <div className="min-w-0 text-xs space-y-1">
+          <p className="font-semibold">Customer payment TXIDs</p>
+          {o.paymentTxids?.length
+            ? <ul className="space-y-1">{o.paymentTxids.map(txid => <li key={txid}><code className="block break-all select-text" style={subtle}>{txid}</code></li>)}</ul>
+            : <p style={subtle}>No blockchain TXID recorded. Check the payment record before confirming collection.</p>}
+          {!!o.paymentTxids?.length && <p style={subtle}>Incoming customer payments, not payouts to the reshipper. Check the transaction recipient before confirming who collected the fees.</p>}
+        </div>
         <fieldset className="flex flex-wrap gap-3 text-xs"><legend className="sr-only">Who held {o.code}</legend>
           {(["admin", "reshipper"] as const).map(c => <label key={c} className="inline-flex items-center gap-1.5 min-h-[32px]">
             <input type="radio" name={`col-${o.orderId}`} checked={r.collector === c} onChange={() => set(o, { collector: c })} />

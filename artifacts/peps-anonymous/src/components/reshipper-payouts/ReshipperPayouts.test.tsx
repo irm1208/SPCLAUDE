@@ -139,6 +139,21 @@ it("admin reviews needs_review rows with capped fees and audited reason", async 
   expect(JSON.parse(String(call[1]!.body))).toEqual({ reason: "Bank statement", orders: [{ orderId: "o4", collector: "admin", adminFee: "10.00", postage: "5.00" }] });
 });
 
+it("shows full incoming customer TXIDs before reviewing and explains absent chain records", async () => {
+  const d = data();
+  const txid = `0x${"a1".repeat(32)}`;
+  Object.assign(d.orders[3], { paymentTxids: [txid, "b".repeat(64)] });
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher: async () => json(d) });
+  const review = q('section[aria-label="Review historical collections"]');
+  expect(review.textContent).toContain("Customer payment TXIDs");
+  expect(review.textContent).toContain(txid);
+  expect(review.textContent).toContain("b".repeat(64));
+  expect(review.querySelectorAll("code")).toHaveLength(2);
+  d.orders[3] = { ...d.orders[3], paymentTxids: [] };
+  await render({ mode: "admin", username: "kai", gbId: "g2", fetcher: async () => json(d) });
+  expect(q('section[aria-label="Review historical collections"]').textContent).toContain("No blockchain TXID recorded");
+});
+
 it("shows load errors with retry", async () => {
   const fetcher = vi.fn(async () => json({ error: "Not your group buy" }, 403));
   await render({ mode: "reshipper", gbId: "g1", fetcher });

@@ -52,6 +52,7 @@ async function context(executor: Executor, username: string, gbId: string, lock 
     adminFee: ordersTable.adminFee, deliveryPrice: ordersTable.deliveryPrice, status: ordersTable.status,
     deletedAt: ordersTable.deletedAt, refundStatus: ordersTable.refundStatus, routingType: ordersTable.routingType,
     paymentTxHash: ordersTable.paymentTxHash,
+    paymentTxHashes: ordersTable.paymentTxHashes, balanceTxHash: ordersTable.balanceTxHash,
   }).from(ordersTable).leftJoin(accountsTable, eq(accountsTable.telegramUsername, ordersTable.reshipperUsername))
     .where(eq(ordersTable.groupBuyId, gbId)).orderBy(ordersTable.id);
   const orders: FeeOrder[] = await orderQuery;
@@ -61,12 +62,12 @@ async function context(executor: Executor, username: string, gbId: string, lock 
     paymentDetails: assignments.length ? { referencesOnly: true, assignments } : null,
   };
 }
-function view(ctx: Awaited<ReturnType<typeof context>>) {
-  return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient), paymentDetails: ctx.paymentDetails };
+function view(ctx: Awaited<ReturnType<typeof context>>, includePaymentTxids = false) {
+  return { ...buildPayoutView(ctx.ledger, ctx.orders, ctx.currency, ctx.recipient, includePaymentTxids), paymentDetails: ctx.paymentDetails };
 }
-export async function readReshipperPayouts(username: string, gbId: string) {
+export async function readReshipperPayouts(username: string, gbId: string, includePaymentTxids = false) {
   // Repeatable-read prevents a payout committed between the ledger and order reads producing a mixed snapshot.
-  return db.transaction(async tx => view(await context(tx, username, gbId)), { isolationLevel: "repeatable read" });
+  return db.transaction(async tx => view(await context(tx, username, gbId), includePaymentTxids), { isolationLevel: "repeatable read" });
 }
 export async function listReshipperPayoutGroups(username: string) {
   const account = await accountIdentity(db, username);
@@ -129,7 +130,7 @@ export async function reviewReshipperFees(username: string, gbId: string, body: 
       target: siteConfigTable.key, set: { value: sql`excluded.value`, updatedAt: new Date() },
     });
     await tx.update(siteConfigTable).set({ value: JSON.stringify(ctx.ledger), updatedAt: new Date() }).where(eq(siteConfigTable.key, ctx.key));
-    return view(ctx);
+    return view(ctx, true);
   });
 }
 export async function recordReshipperPayout(username: string, gbId: string, body: unknown, actor: string) {
@@ -145,7 +146,7 @@ export async function recordReshipperPayout(username: string, gbId: string, body
         .where(eq(siteConfigTable.key, referenceKey));
       await tx.update(siteConfigTable).set({ value: JSON.stringify(ctx.ledger), updatedAt: new Date() }).where(eq(siteConfigTable.key, ctx.key));
     }
-    return view(ctx);
+    return view(ctx, true);
   });
 }
 export async function voidReshipperPayout(username: string, gbId: string, payoutId: string, reason: string, actor: string) {
@@ -162,6 +163,6 @@ export async function voidReshipperPayout(username: string, gbId: string, payout
       await tx.update(siteConfigTable).set({ value: null, updatedAt: new Date() }).where(eq(siteConfigTable.key, key));
       await tx.update(siteConfigTable).set({ value: JSON.stringify(ctx.ledger), updatedAt: new Date() }).where(eq(siteConfigTable.key, ctx.key));
     }
-    return view(ctx);
+    return view(ctx, true);
   });
 }

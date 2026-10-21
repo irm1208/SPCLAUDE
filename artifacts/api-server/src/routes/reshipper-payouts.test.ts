@@ -44,7 +44,7 @@ describe("payout route boundaries", () => {
   it("allows Admin reads and writes only after the boolean guard succeeds", async () => {
     const result = await request("/api/admin/reshippers/target/gb/gb-1/payouts", "admin");
     expect(result.status).toBe(200);
-    expect(mocks.read).toHaveBeenCalledWith("target", "gb-1");
+    expect(mocks.read).toHaveBeenCalledWith("target", "gb-1", true);
     expect(result.headers.get("cache-control")).toBe("no-store");
     expect((await request("/api/admin/reshippers/target/gb/gb-1/payouts", "admin", { test: true })).status).toBe(200);
     expect(mocks.record).toHaveBeenCalledWith("target", "gb-1", { test: true }, "treasury-admin");

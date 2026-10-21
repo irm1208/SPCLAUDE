@@ -20,6 +20,18 @@ const payout = (extra: Record<string, unknown> = {}) => ({
   confirmedDestination: true, note: "", allocations: [{ orderId: "order-1", adminFee: "10.00", postage: "5.00" }], ...extra,
 });
 describe("reshipper payout integrity", () => {
+  it("shows genuine incoming payment TXIDs to Admin only, including additional and balance payments", () => {
+    const original = `0x${"a".repeat(64)}`, additional = "b".repeat(64), balance = "c".repeat(64);
+    const rows = [order("order-1", {
+      paymentTxHash: original,
+      paymentTxHashes: [original.toUpperCase().replace("0X", ""), additional, "fiat:paypal", "anonpay:123"],
+      balanceTxHash: balance,
+    })];
+    const ledger = emptyPayoutLedger();
+    expect(buildPayoutView(ledger, rows, "USD", recipient, true).orders[0].paymentTxids).toEqual([original, additional, balance]);
+    expect(buildPayoutView(ledger, rows, "USD", recipient).orders[0]).not.toHaveProperty("paymentTxids");
+    expect(buildPayoutView(ledger, [order()], "USD", recipient, true).orders[0].paymentTxids).toEqual([]);
+  });
   it("uses exact integer money and rejects ambiguous or unsafe amounts", () => {
     expect(moneyToMinor("17.30")).toBe(1730);
     for (const invalid of ["NaN", "Infinity", "-1", "1.001", "1e3", "999999999.00", "", 2]) {

@@ -25,7 +25,7 @@ function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
   };
 }
 router.get("/admin/reshippers/:username/payouts/groups", adminOnly, handle(req => listReshipperPayoutGroups(param(req, "username"))));
-router.get(admin, adminOnly, handle(req => readReshipperPayouts(param(req, "username"), param(req, "gbId"))));
+router.get(admin, adminOnly, handle(req => readReshipperPayouts(param(req, "username"), param(req, "gbId"), true)));
 router.post(`${admin}/review`, adminOnly, handle((req, res) => reviewReshipperFees(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
 router.post(admin, adminOnly, handle((req, res) => recordReshipperPayout(param(req, "username"), param(req, "gbId"), req.body, getAdminUsername(res))));
 router.post(`${admin}/:payoutId/void`, adminOnly, handle((req, res) =>

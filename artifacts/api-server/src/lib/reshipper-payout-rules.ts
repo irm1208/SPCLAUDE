@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { isValidTxHash } from "./payment-verify";
 
 export class PayoutError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -32,6 +33,7 @@ export interface FeeOrder {
   id: string; code: string; telegramUsername: string; reshipperAccountId: string | null;
   paymentStatus: string; amountDue: string; adminFee: string; deliveryPrice: string; status: string;
   deletedAt: unknown; refundStatus: string | null; routingType: string | null; paymentTxHash: string | null;
+  paymentTxHashes?: string[] | null; balanceTxHash?: string | null;
 }
 export const payoutLedgerKey = (gbId: string) => `reshipper_payouts:v1:${gbId}`;
 export const payoutReferenceKey = (reference: string) => `reshipper_payout_reference:v1:${digest(reference.trim().toLowerCase())}`;
@@ -153,7 +155,20 @@ export function reviewEntitlements(ledger: PayoutLedger, orders: FeeOrder[], cur
   ledger.audit.push({ action: "review", actor, at: now, reason: body.reason, details: updates });
   return updates;
 }
-export function buildPayoutView(ledger: PayoutLedger, orders: FeeOrder[], currency: string, recipient: PayoutRecipient) {
+function incomingPaymentTxids(order: FeeOrder | undefined): string[] {
+  const seen = new Set<string>();
+  return [order?.paymentTxHash, ...(order?.paymentTxHashes ?? []), order?.balanceTxHash]
+    .flatMap(value => {
+      if (typeof value !== "string" || !isValidTxHash(value.trim())) return [];
+      const txid = value.trim();
+      const key = /^(?:0x)?[0-9a-f]{64}$/i.test(txid) ? txid.replace(/^0x/i, "").toLowerCase() : txid;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [txid];
+    });
+}
+
+export function buildPayoutView(ledger: PayoutLedger, orders: FeeOrder[], currency: string, recipient: PayoutRecipient, includePaymentTxids = false) {
   const orderMap = new Map(orders.map(o => [o.id, o]));
   const paidIndex = paymentIndex(ledger);
   const ids = new Set(orders.filter(o => o.reshipperAccountId === recipient.id && settled(o)).map(o => o.id));
@@ -175,6 +190,8 @@ export function buildPayoutView(ledger: PayoutLedger, orders: FeeOrder[], curren
       remainingAdmin + remainingPostage === 0 ? "paid" : paid.admin + paid.postage > 0 ? "part_paid" : "owed";
     return {
       orderId: id, code: entry?.code ?? order?.code ?? id, member: entry?.member ?? order?.telegramUsername ?? "",
+      // Incoming customer transactions are for Admin collection review, not the reshipper's read-only response.
+      ...(includePaymentTxids ? { paymentTxids: incomingPaymentTxids(order) } : {}),
       currency: entry?.currency ?? currency, adminFeeMinor: admin, postageMinor: postage,
       paidAdminMinor: paid.admin, paidPostageMinor: paid.postage,
       remainingAdminMinor: remainingAdmin, remainingPostageMinor: remainingPostage,

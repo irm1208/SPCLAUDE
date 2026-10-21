@@ -11,6 +11,12 @@ The Admin will owe reshippers the admin fee and onward-shipping fee, and needs t
 
 Historical collection ownership must be explicitly reviewed before those fees become payable by Admin. Current payment-routing settings are not evidence of who received an old payment.
 
+Collection review should show Admin the customer's recorded incoming payment TXIDs, separately from outgoing reshipper-payout TXIDs. Do not expose those incoming transactions in the reshipper payout response.
+
+**Why:** The user wants to check the payment before confirming who held the fees. An incoming transaction is evidence to inspect, not automatic proof that Admin collected the money.
+
+**How to apply:** Include genuine original, additional and balance chain transactions, deduplicate them, and exclude fiat/AnonPay markers. Preserve the explicit ownership review and clearly state when no blockchain TXID is recorded.
+
 **Why:** Existing orders do not reliably snapshot the original receiving wallet/recipient, and reshipper assignments and payment targets can change later. Inferring history from current settings could pay postage twice.
 
 **How to apply:** Keep uncertain fees on review/hold, distinguish Admin-held fees from directly received reshipper payments, and retain the review reason and prior financial snapshots. An external payout record is not an on-chain verification claim.
