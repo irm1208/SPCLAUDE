@@ -21,6 +21,20 @@ resolve a region. Tiering it by the customer country would be incorrect, so it i
 left flat **on purpose** — do not "fix" it to use tiered pricing without a real
 reshipper country.
 
+The batch supplier TXT workflow deliberately retains the FS3 reshipper flat
+package rate even with the newly required saved supplier delivery country.
+Direct supplier downloads retain regional tier pricing. Supplier purchase costs
+use the FS3 catalog with exact product names; missing costs block export rather
+than substituting customer selling prices or guessing across doses.
+
+**Why:** The user requested the existing FS3 supplier ordering format and workflow,
+not a change to supplier commercial rates. Requiring a contact country is not
+permission to change package pricing.
+
+**How to apply:** Keep a supplier-rate change separate from contact collection.
+Supplier addresses belong to reshippers, not the members whose kits are grouped
+in the shipment; never export those members' home addresses in a reshipper block.
+
 **How to apply:** the direct / wholesale / shared blocks resolve the region from
 the order (or shared-order anchor) country and tier-price it. Fallbacks (region
 unmatched, custom/per-kg region, vendor not loaded) use flat $70 but still split

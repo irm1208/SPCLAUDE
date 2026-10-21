@@ -14,6 +14,7 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { DispatchManager, type DispatchCfg } from "@/components/AdminDispatch";
 import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierBatchFulfilment";
+import { SupplierDeliveryDetails } from "@/components/supplier-batches/SupplierDeliveryDetails";
 import { palette, ACCENT, ACCENT_SOFT, FONT } from "@/components/dashboard-theme";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import { useThemeStore } from "@/hooks/use-theme";
@@ -4313,6 +4314,7 @@ export default function ReshipperPage() {
           </div>
         </div>
 
+        <div className="px-4 md:px-7"><SupplierDeliveryDetails request={reshipFetch} /></div>
         {/* ── Personal GB visibility: saved server-side, never changes assignments ── */}
         {assignments.length > 0 && (
           <ReshipperGroupBuyPicker assignments={assignments} hiddenIds={hiddenGbIds}

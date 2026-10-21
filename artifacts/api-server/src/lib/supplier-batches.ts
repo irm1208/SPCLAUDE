@@ -5,7 +5,12 @@ import {
   gbSupplierSettingsTable as settings, gbSupplierBatchesTable as batches,
   gbSupplierAllocationsTable as allocations, gbSupplierEligibilityTable as eligibility,
   gbSupplierEventsTable as events, telegramMessageLogsTable,
+  accountsTable, fs3CostsTable,
 } from "@workspace/db";
+import { supplierTxt, type TxtBlock, type SupplierContact } from "./supplier-txt";
+import { getActiveWholesaleVendor } from "../routes/config";
+import { COUNTRY_CODE_TO_NAME, normalizeToCode } from "./country-utils";
+import { calcPackageShipping, pickRegionForCountry } from "./wholesale-shipping";
 import { SupplierBatchError, validateRegions, eligibleOrder, isDirectSupplierOrder, snapshotOrder, propose, fingerprint, csv, type SupplierConfig, type BatchOrder } from "./supplier-batches-model";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
@@ -250,6 +255,89 @@ export async function exportSupplierBatch(id: string, batchId: string, actor: Up
       [], ["Supplier product totals", "", "", "", "", "Product ID", "Product", "Kits"],
       ...b.snapshot.products.map((p: any) => ["", "", "", "", "", p.productId, p.productName, p.quantity]),
     ]) };
+  }, database);
+}
+function exportableDirect(o: any) {
+  return isDirectSupplierOrder(o) && o.directShippingRequested === true && !o.deletedAt && !o.batchLocked
+    && ["Submitted", "Processing", "Shipped", "Completed"].includes(o.status)
+    && o.paymentStatus === "confirmed" && Number(o.amountDue ?? 0) === 0 && !o.activeRefund
+    && (!o.refundStatus || ["none", "rejected", "cancelled", "canceled"].includes(o.refundStatus));
+}
+/** Supplier costs and delivery contacts are Admin-only; never expose them to member summaries. */
+export async function supplierDirectOrders(id: string, actor: UpdateActor, database = db) {
+  if (!actor.admin) throw new SupplierBatchError("Supplier TXT downloads require Admin access.", 403);
+  return locked(id, actor, async tx => {
+    const data = await load(tx, id);
+    return { orders: data.all.filter(exportableDirect).map((o: any) => ({
+      id: o.id, code: o.code, username: o.telegramUsername, country: o.shippingCountry,
+      kits: o.lineItems.filter((i: any) => !i.isOos).reduce((s: number, i: any) => s + Number(i.quantity), 0),
+    })) };
+  }, database);
+}
+export async function exportSupplierTxt(id: string, actor: UpdateActor, input: { batchId?: string; orderIds?: unknown }, database = db) {
+  if (!actor.admin) throw new SupplierBatchError("Supplier TXT downloads require Admin access.", 403);
+  return locked(id, actor, async (tx, group) => {
+    const data = await load(tx, id);
+    const costs = await tx.select({ productName: fs3CostsTable.productName, unitCost: fs3CostsTable.unitCost }).from(fs3CostsTable);
+    const blocks: TxtBlock[] = [];
+    const packageLimit = Number(group.vendorShippingMaxKitsPerPackage) > 0 ? Number(group.vendorShippingMaxKitsPerPackage) : 25;
+    if (input.batchId) {
+      const current = await state(tx, group);
+      const b = current.batches.find((v: any) => v.id === input.batchId);
+      if (!b) throw new SupplierBatchError("Batch not found.", 404);
+      if (b.state === "released" || b.exceptions.length) throw new SupplierBatchError("Resolve batch exceptions before downloading.");
+      const grouped = new Map<string, BatchOrder[]>();
+      for (const o of b.snapshot.orders as BatchOrder[]) {
+        const live = data.all.find((v: any) => v.id === o.id);
+        const recipient = canonicalUsername(live?.reshipperUsername ?? "");
+        if (!recipient || isDirectSupplierOrder(live)) throw new SupplierBatchError(`Assign order ${o.code} to a reshipper before downloading.`, 400);
+        grouped.set(recipient, [...(grouped.get(recipient) ?? []), o]);
+      }
+      for (const [recipient, orders] of grouped) {
+        const [account] = await tx.select({ settings: accountsTable.reshipperSettings }).from(accountsTable)
+          .where(eq(sql`lower(ltrim(${accountsTable.telegramUsername}, '@'))`, recipient));
+        const kits = orders.reduce((s, o) => s + o.kits, 0);
+        blocks.push({ title: `Batch ${b.reference} — ${b.snapshot.region.name}`, recipient: `@${recipient}`,
+          contact: account?.settings?.supplierDelivery as SupplierContact, orders,
+          packagePrices: Array.from({ length: Math.ceil(kits / packageLimit) }, () => 70),
+          packageNote: "FS3 reshipper rate: $70 per supplier package; excludes member onward postage",
+        });
+      }
+    } else {
+      if (!Array.isArray(input.orderIds) || !input.orderIds.length || input.orderIds.length > 500
+        || input.orderIds.some(v => typeof v !== "string") || new Set(input.orderIds).size !== input.orderIds.length)
+        throw new SupplierBatchError("Select between 1 and 500 distinct direct orders.", 400);
+      const orders = input.orderIds.map(orderId => data.all.find((o: any) => o.id === orderId));
+      if (orders.some(o => !o || !exportableDirect(o))) throw new SupplierBatchError("One or more selected orders are no longer eligible direct orders. Refresh and select again.");
+      const vendor = await getActiveWholesaleVendor();
+      for (const o of orders) {
+        const [address] = await tx.select({
+          name: ordersTable.shippingName, address: ordersTable.shippingAddress, city: ordersTable.shippingCity,
+          postcode: ordersTable.shippingPostcode, country: ordersTable.shippingCountry,
+          email: ordersTable.shippingEmail, phone: ordersTable.shippingPhone,
+        }).from(ordersTable).where(eq(ordersTable.id, o.id));
+        const snap = snapshotOrder(o);
+        const country = normalizeToCode(address.country ?? "");
+        const region = vendor && (pickRegionForCountry(vendor, COUNTRY_CODE_TO_NAME[country]) ?? pickRegionForCountry(vendor, country));
+        const max = vendor && Number(vendor.maxKitsPerPackage) > 0 ? Number(vendor.maxKitsPerPackage) : packageLimit;
+        const prices: number[] = []; let remaining = snap.kits, fallback = false;
+        while (remaining > 0) {
+          const qty = Math.min(remaining, max);
+          const price = vendor && region ? calcPackageShipping(vendor, region.region, qty) : null;
+          if (price === null) fallback = true;
+          prices.push(price ?? 70); remaining -= qty;
+        }
+        blocks.push({ title: `Order no. ${o.code} (${o.telegramUsername}) — Direct`, recipient: o.telegramUsername,
+          contact: { ...address, name: address.name ?? "", address: [address.address, address.city, address.postcode].filter(Boolean).join("\n"),
+            country, email: address.email ?? "", phone: address.phone ?? "" },
+          orders: [snap], packagePrices: prices,
+          packageNote: fallback ? "FS3 fallback: $70 per package (no calculable vendor region)" : "Active wholesale vendor regional tiers",
+        });
+      }
+    }
+    const text = supplierTxt(blocks, costs);
+    await audit(tx, id, actor.username, "txt_exported", { batchId: input.batchId ?? null, orderIds: blocks.flatMap(b => b.orders.map(o => o.id)) });
+    return text;
   }, database);
 }
 /** Used by HTTP/background reconciliation. Network delivery is a separate worker. */

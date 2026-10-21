@@ -93,6 +93,7 @@ export const accountsTable = pgTable("accounts", {
     acceptingPayments?: boolean;
     acceptingOrders?: boolean;
     visible?: boolean;
+    supplierDelivery?: { name: string; address: string; country: string; email: string; phone: string };
   } | null>(),
   country: text("country"),
   addressLine1: text("address_line1"),

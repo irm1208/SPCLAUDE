@@ -30,3 +30,14 @@ export async function downloadSupplierCsv(scope: SupplierScope, id: string, batc
   const url = URL.createObjectURL(await res.blob()); const a = document.createElement("a");
   a.href = url; a.download = `supplier-batch-${batchId}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+export async function downloadSupplierTxt(id: string, selection: { batchId: string } | { orderIds: string[] }, headers?: Record<string, string>) {
+  const suffix = "batchId" in selection ? `/${encodeURIComponent(selection.batchId)}/export-txt` : "/direct-export-txt";
+  const res = await fetch(supplierUrl("admin", id) + suffix, { credentials: "include",
+    headers: { ...headers, ...("orderIds" in selection ? { "Content-Type": "application/json" } : {}) },
+    ...("orderIds" in selection ? { method: "POST", body: JSON.stringify(selection) } : {}),
+  });
+  if (!res.ok) { const data = await res.json(); throw new Error(data.error ?? "Supplier TXT is unavailable."); }
+  const url = URL.createObjectURL(await res.blob()); const a = document.createElement("a");
+  a.href = url; a.download = "batchId" in selection ? `supplier-batch-${selection.batchId}.txt` : `supplier-direct-orders-${id}.txt`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

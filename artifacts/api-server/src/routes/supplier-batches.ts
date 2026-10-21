@@ -5,7 +5,7 @@ import { requireAccount } from "../middleware/account-auth";
 import { memberSupplierBatches } from "../lib/member-supplier-batches";
 import { SupplierBatchError } from "../lib/supplier-batches-model";
 import { type UpdateActor } from "../lib/group-buy-updates-model";
-import { supplierData, saveSupplierConfig, confirmSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch } from "../lib/supplier-batches";
+import { supplierData, saveSupplierConfig, confirmSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch, supplierDirectOrders, exportSupplierTxt } from "../lib/supplier-batches";
 
 const router = Router();
 const roots = ["/admin/group-buys/:id/supplier-batches", "/organiser/group-buys/:id/supplier-batches"];
@@ -26,6 +26,19 @@ router.get("/group-buys/:id/supplier-batches", (_req, res, next) => { res.setHea
   });
 router.use(roots, auth, (_req, res, next) => { res.setHeader("Cache-Control", "private, no-store"); next(); });
 router.get(paths(), async (req, res) => { res.json(await supplierData(param(req, "id"), actor(req))); });
+router.get(paths("/direct-orders"), async (req, res) => {
+  res.json(await supplierDirectOrders(param(req, "id"), actor(req)));
+});
+router.post(paths("/direct-export-txt"), async (req, res) => {
+  const text = await exportSupplierTxt(param(req, "id"), actor(req), { orderIds: req.body.orderIds });
+  res.setHeader("Content-Disposition", 'attachment; filename="supplier-direct-orders.txt"');
+  res.type("text/plain").send(text);
+});
+router.get(paths("/:batchId/export-txt"), async (req, res) => {
+  const text = await exportSupplierTxt(param(req, "id"), actor(req), { batchId: param(req, "batchId") });
+  res.setHeader("Content-Disposition", 'attachment; filename="supplier-batch.txt"');
+  res.type("text/plain").send(text);
+});
 router.put(paths("/config"), async (req, res) => { res.json(await saveSupplierConfig(param(req, "id"), actor(req), req.body)); });
 router.post(paths("/confirm"), async (req, res) => { res.json(await confirmSupplierBatch(param(req, "id"), actor(req), req.body)); });
 router.post(paths("/review/:orderId"), async (req, res) => { res.json(await reviewHistoricalSupplierOrder(param(req, "id"), param(req, "orderId"), actor(req), req.body)); });

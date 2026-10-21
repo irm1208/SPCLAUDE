@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Download, Plus, Trash2 } from "lucide-react";
 import { SupplierBatchFulfilment } from "./SupplierBatchFulfilment";
+import { DirectSupplierDownload } from "./DirectSupplierDownload";
 import {
   EU_BATCH_COUNTRIES, supplierKey, supplierRequest, downloadSupplierCsv,
+  downloadSupplierTxt,
   type SupplierScope, type SupplierData, type BatchConfig, type BatchProposal, type SupplierBatch,
 } from "@/lib/supplier-batches";
 
@@ -207,7 +209,7 @@ function ProposalCard({ p, enabled, busy, onConfirm }: { p: BatchProposal; enabl
   );
 }
 
-function BatchCard({ b, busy, act, exportCsv, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; context: Props }) {
+function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; exportTxt: (id: string) => Promise<void>; context: Props }) {
   const [mode, setMode] = useState<"ordered" | "release" | null>(null);
   const [showFulfilment, setShowFulfilment] = useState(false);
   const [reason, setReason] = useState("");
@@ -242,6 +244,7 @@ function BatchCard({ b, busy, act, exportCsv, context }: { b: SupplierBatch; bus
           <button type="button" data-testid={`button-release-${b.id}`} disabled={busy} onClick={() => setMode("release")} className={ghost} style={{ borderColor: V.border, color: "#b91c1c" }}>Release unsent batch</button>
         </div>
       )}
+      {context.scope === "admin" && b.state !== "released" && <button type="button" disabled={busy || blocked} onClick={() => exportTxt(b.id)} className={ghost} style={{ borderColor: V.border, color: V.text }}><Download className="w-3.5 h-3.5" />Download supplier TXT</button>}
       {b.state === "ordered" && (
         <button type="button" data-testid={`button-export-${b.id}`} disabled={busy || blocked} onClick={() => exportCsv(b.id)} className={ghost} style={{ borderColor: V.border, color: V.text }}><Download className="w-3.5 h-3.5" /> CSV</button>
       )}
@@ -301,6 +304,13 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
     setMsg(null);
     try { await downloadSupplierCsv(scope, groupBuyId, id, headers); } catch (e) { setMsg({ err: true, text: e instanceof Error ? e.message : "Export failed." }); }
   };
+  const exportTxt = async (id: string) => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setMsg(null);
+    try { await downloadSupplierTxt(groupBuyId, { batchId: id }, headers); setMsg({ err: false, text: "Supplier TXT downloaded. Order statuses and payments are unchanged." }); }
+    catch (e) { setMsg({ err: true, text: e instanceof Error ? e.message : "Export failed." }); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
 
   const d = q.data;
   if (q.isLoading) return <div className="space-y-2" aria-label="Loading supplier batches">{[0, 1, 2].map(i => <div key={i} className="h-12 rounded-xl animate-pulse" style={{ background: V.surface2 }} />)}</div>;
@@ -316,6 +326,7 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
       <p className="text-[11px]" style={{ color: V.muted }}>Last checked {fmt(d.checkedAt)}</p>
       <ConfigEditor putConfig={putConfig} data={d} busy={busy} run={run} reload={() => { qc.invalidateQueries({ queryKey: key }); }} />
       <Msg m={msg} id="text-supplier-msg" />
+      {scope === "admin" && <DirectSupplierDownload key={groupBuyId} groupBuyId={groupBuyId} headers={headers} />}
       <section className="space-y-2">
         <p className={label} style={{ color: "#8A9AAA" }}>Proposals</p>
         {!d.config.enabled && <p className="text-xs" style={{ color: V.muted }}>Batching is disabled. History stays available; new batches cannot be confirmed.</p>}
@@ -348,7 +359,7 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
           <summary className="cursor-pointer text-sm font-semibold" style={{ color: V.text }}>Shipping &amp; receipt overview</summary>
           <div className="mt-3"><SupplierBatchFulfilment groupBuyId={groupBuyId} scope={scope} headers={headers} onViewOrders={onViewOrders} onDispatch={onDispatch} /></div>
         </details>
-        {d.batches.map(b => <BatchCard key={b.id} b={b} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}
+        {d.batches.map(b => <BatchCard key={b.id} b={b} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} exportTxt={exportTxt} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}
       </section>
       {d.events.length > 0 && (
         <section className="space-y-1">

@@ -3,6 +3,7 @@ import {
   RefundMutationBlockedError,
   refundMutableOrderWhere,
 } from "../lib/refund-mutation-guard";
+import { validateSupplierContact } from "../lib/supplier-txt";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -69,6 +70,24 @@ function formatGbForReshipper(gb: GroupBuy) {
 }
 
 // ── GET /api/reshipper/me — profile + reshipper status ───────────────────────
+router.get("/reshipper/supplier-delivery", requireReshipper, async (req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "private, no-store");
+  const [a] = await db.select({ settings: accountsTable.reshipperSettings }).from(accountsTable)
+    .where(eq(accountsTable.telegramUsername, req.reshipper!.telegramUsername));
+  res.json({ contact: a?.settings?.supplierDelivery ?? null });
+});
+router.put("/reshipper/supplier-delivery", requireReshipper, async (req, res): Promise<void> => {
+  let contact;
+  try { contact = validateSupplierContact(req.body); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
+  // Atomic JSON update preserves payment settings and concurrent capability toggles.
+  const saved = await db.update(accountsTable).set({
+    reshipperSettings: sql`jsonb_set(coalesce(${accountsTable.reshipperSettings}, '{}'::jsonb), '{supplierDelivery}', ${JSON.stringify(contact)}::jsonb)`,
+  }).where(eq(accountsTable.telegramUsername, req.reshipper!.telegramUsername)).returning({ username: accountsTable.telegramUsername });
+  if (!saved.length) { res.status(404).json({ error: "Reshipper account not found." }); return; }
+  res.setHeader("Cache-Control", "private, no-store");
+  res.json({ contact });
+});
 router.get("/reshipper/me", requireAccount, async (req, res): Promise<void> => {
   const username = req.account!.telegramUsername;
   const [account] = await db

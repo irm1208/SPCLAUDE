@@ -664,14 +664,19 @@ router.patch("/admin/reshippers/:username/settings", async (req, res): Promise<v
 
   if (!acct) { res.status(404).json({ error: "Account not found" }); return; }
 
-  const currentSettings = (acct.reshipperSettings as Record<string, boolean> | null) ?? {};
-  const merged = { ...currentSettings, ...settings };
+  const flags: Record<string, boolean> = {};
+  for (const key of ["acceptingPayments", "acceptingOrders", "visible"] as const) {
+    if (settings[key] !== undefined) {
+      if (typeof settings[key] !== "boolean") { res.status(400).json({ error: `${key} must be a boolean` }); return; }
+      flags[key] = settings[key];
+    }
+  }
+  const [updated] = await db.update(accountsTable)
+    .set({ reshipperSettings: sql`coalesce(${accountsTable.reshipperSettings}, '{}'::jsonb) || ${JSON.stringify(flags)}::jsonb` })
+    .where(eq(accountsTable.telegramUsername, username)).returning({ settings: accountsTable.reshipperSettings });
+  const merged = updated.settings;
 
-  await db.update(accountsTable)
-    .set({ reshipperSettings: merged })
-    .where(eq(accountsTable.telegramUsername, username));
-
-  writeLog("change", "info", "reshipper_settings_updated", `Admin updated reshipper settings for ${username}`, { username, settings: merged }).catch(() => {});
+  writeLog("change", "info", "reshipper_settings_updated", `Admin updated reshipper settings for ${username}`, { username, settings: flags }).catch(() => {});
   res.json({ ok: true, reshipperSettings: merged });
 });
 
