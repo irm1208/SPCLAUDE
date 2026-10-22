@@ -1,6 +1,6 @@
 type Role = "member" | "admin" | "organiser";
 export type HalfKitLegacyPlan = {
-  kind: "order" | "group" | "bulk"; orderId?: string; groupId?: string; role: Role; block: boolean; settings?: boolean; refund?: boolean;
+  kind: "order" | "group" | "bulk"; orderId?: string; groupId?: string; role: Role; block: boolean; settings?: boolean; refund?: boolean; supplierMaterial?: boolean;
 };
 const financialFields = [
   "lineItems", "productSubtotal", "grandTotal", "deliveryMethodId", "deliveryPrice", "customShipping",
@@ -48,6 +48,14 @@ export function halfKitLegacyMutation(method: string, path: string, body: Record
     const financial = financialFields.some(key => Object.prototype.hasOwnProperty.call(body, key))
       || (body.paymentStatus !== undefined && body.paymentStatus !== "confirmed");
     const refund = suffix?.includes("refund") ?? false;
+    // This dedicated organiser endpoint only changes the fulfilment assignment:
+    // no country-leg recalculation, product edits or charge changes. Keep the
+    // money mutex and supplier-snapshot check, but don't reject half-kit claims.
+    if (role === "organiser" && match[2] && suffix === "route" && method === "PATCH"
+      && Object.keys(body).every(key => key === "routingType" || key === "reshipperUsername")) {
+      return { kind: "order", orderId: match[3], groupId: match[2], role,
+        block: false, supplierMaterial: true };
+    }
     // The authorised organiser handler preserves active claims for item-only
     // additions. Other monetary fields must still be rejected here.
     if (role === "organiser" && match[2] && !suffix && method === "PATCH"

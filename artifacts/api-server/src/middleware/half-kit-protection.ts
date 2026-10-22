@@ -98,7 +98,7 @@ export async function halfKitProtection(req: Request, res: Response, next: NextF
     // Unlike half-kit claims, an allocated supplier snapshot cannot accept
     // additive edits. Cancellation/refund/payment/status writes remain possible
     // and become visible exceptions rather than silently requeuing purchases.
-    const material = block || (req.body?.lineItems !== undefined)
+    const material = block || plan.supplierMaterial || (req.body?.lineItems !== undefined)
       || req.body?.shippingCountry !== undefined || req.body?.groupBuyId !== undefined;
     if (material && req.method !== "DELETE" && plan.role !== "member") {
       await assertSupplierOrderEditable(db, (targetOrders ?? await db.select({ id: ordersTable.id }).from(ordersTable)

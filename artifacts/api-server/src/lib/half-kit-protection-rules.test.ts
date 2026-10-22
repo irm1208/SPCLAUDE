@@ -33,6 +33,30 @@ describe("half-kit legacy mutation protection", () => {
     expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1", { vendorShipping: 0 }))
       .toEqual({ kind: "order", orderId: "o1", groupId: "g1", role: "organiser", block: true });
   });
+  it("allows organiser fulfilment routing without allowing financial changes", () => {
+    for (const routingType of ["direct", "reshipper", "unrouted"]) {
+      expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1/route", {
+        routingType, reshipperUsername: routingType === "reshipper" ? "shipper" : null,
+      })).toEqual({
+        kind: "order", orderId: "o1", groupId: "g1", role: "organiser",
+        block: false, supplierMaterial: true,
+      });
+    }
+    for (const extra of [
+      { vendorShipping: 0 }, { lineItems: [] }, { grandTotal: 1 },
+      { countryLegId: "other-leg" }, { paymentStatus: "unpaid" },
+    ]) {
+      expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1/route", {
+        routingType: "reshipper", reshipperUsername: "shipper", ...extra,
+      })?.block).toBe(true);
+    }
+    expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1", {
+      routingType: "direct",
+    })?.block).toBe(true);
+    expect(halfKitLegacyMutation("PATCH", "/admin/orders/o1/routing", {
+      routingType: "direct", countryLegId: "other-leg",
+    })?.block).toBe(true);
+  });
   it("delegates organiser item edits to the claim-preserving handler but still blocks other money edits", () => {
     expect(halfKitLegacyMutation("PATCH", "/organiser/group-buys/g1/orders/o1", {
       lineItems: [{ id: "half", quantity: 0.5 }, { productId: "vial", quantity: 4 }],

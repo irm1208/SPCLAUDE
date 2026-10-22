@@ -3,6 +3,12 @@ name: Group-buy excess half-kit offers
 description: User-defined availability and claiming rules for filling unused halves of whole kits.
 ---
 
+Fulfilment-only shipping assignment changes must remain possible for orders with protected half-kit claims. Do not treat an assignment-only organiser board move as a price edit.
+
+**Why:** Organisers were blocked from moving orders between fulfilment columns by a guard intended to protect reserved half-kit products and charges.
+
+**How to apply:** Keep the organiser ownership checks, monetary mutex and supplier snapshot protection. Exempt only the dedicated assignment-only operation; country-leg recalculation, products, charges and generic order edits remain protected.
+
 Keep inline half-kit offers compact and visually connected to the product picker, but separate from the new-order catalogue.
 
 **Why:** The user disliked tall half-kit cards because they took too much page space, and asked to keep halves separate but visually connected to products.
