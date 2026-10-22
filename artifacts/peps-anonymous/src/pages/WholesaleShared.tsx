@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useRoute } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -3279,7 +3280,7 @@ function formatChatTime(iso: string): string {
 }
 
 // Telegram-style chat thread for the members of a shared wholesale order.
-function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }) {
+export function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }) {
   const cardStyle = { background: "var(--t-surface)", border: "1px solid var(--t-border)" } as const;
   const fieldStyle = { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)", border: "1px solid var(--t-border)" } as const;
   const SEEN_KEY = `wsChat:seen:${shareId}`;
@@ -3288,6 +3289,24 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
   const invalidateMessages = useInvalidateWholesaleShareMessages();
 
   const [open, setOpen] = useState(false);
+  const [viewport, setViewport] = useState<{ height: number; bottom: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const visible = window.visualViewport;
+    const update = () => setViewport({
+      height: visible?.height ?? window.innerHeight,
+      bottom: Math.max(0, window.innerHeight - (visible?.height ?? window.innerHeight) - (visible?.offsetTop ?? 0)),
+    });
+    update();
+    visible?.addEventListener("resize", update);
+    visible?.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    return () => {
+      visible?.removeEventListener("resize", update);
+      visible?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [open]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3372,7 +3391,7 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
         )}
       </button>
 
-      <AnimatePresence>
+      {createPortal(<AnimatePresence>
         {open && (
           <>
             <motion.div
@@ -3381,7 +3400,8 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setOpen(false)}
-              className="fixed inset-0 z-[58] bg-black/30 backdrop-blur-sm md:bg-transparent md:backdrop-blur-0"
+              data-chat-backdrop
+              className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm md:bg-transparent md:backdrop-blur-0"
             />
             <motion.div
               key="chat-panel"
@@ -3389,16 +3409,19 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: "100%" }}
               transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="fixed z-[59] bottom-0 left-0 right-0 rounded-t-3xl flex flex-col overflow-hidden md:bottom-24 md:right-6 md:left-auto md:w-96 md:rounded-2xl md:shadow-2xl"
-              style={cardStyle}
+              role="dialog"
+              aria-label="Group Chat"
+              className="fixed z-[81] bottom-[var(--chat-viewport-bottom,0px)] max-h-[calc(var(--chat-viewport-height,100dvh)-1rem)] left-0 right-0 rounded-t-3xl flex flex-col overflow-hidden md:bottom-[calc(var(--chat-viewport-bottom,0px)+6rem)] md:max-h-[calc(var(--chat-viewport-height,100dvh)-7rem)] md:right-6 md:left-auto md:w-96 md:rounded-2xl md:shadow-2xl"
+              style={{ ...cardStyle, "--chat-viewport-height": viewport ? `${viewport.height}px` : "100dvh",
+                "--chat-viewport-bottom": viewport ? `${viewport.bottom}px` : "0px" } as CSSProperties}
             >
-              <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--t-border)" }}>
+              <div className="shrink-0 flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--t-border)" }}>
                 <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Group Chat</p>
                 <button onClick={() => setOpen(false)} aria-label="Close chat">
                   <X className="w-5 h-5" style={{ color: "var(--t-muted)" }} />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-2.5" style={{ maxHeight: "60vh", minHeight: "12rem" }}>
+              <div data-chat-messages className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 space-y-2.5" style={{ maxHeight: "60dvh" }}>
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--t-muted)" }} />
@@ -3434,11 +3457,11 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
               </div>
 
               {readOnly ? (
-                <div className="px-4 py-3 text-xs text-center" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
+                <div className="shrink-0 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-xs text-center" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-muted)" }}>
                   This shared order has been cancelled — chat is read-only.
                 </div>
               ) : (
-                <div className="p-3 space-y-2" style={{ borderTop: "1px solid var(--t-border)" }}>
+                <div data-chat-composer className="shrink-0 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] space-y-2" style={{ borderTop: "1px solid var(--t-border)" }}>
                   {error && <p className="text-xs px-1" style={{ color: "#b91c1c" }}>{error}</p>}
                   <div className="flex items-end gap-2">
                     <textarea
@@ -3448,7 +3471,7 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
                       placeholder="Message your group…"
                       rows={1}
                       maxLength={2000}
-                      className="flex-1 resize-none rounded-xl px-3 py-2.5 text-sm outline-none"
+                      className="min-w-0 flex-1 resize-none rounded-xl px-3 py-2.5 text-base md:text-sm outline-none"
                       style={{ ...fieldStyle, maxHeight: "7rem" }}
                     />
                     <button
@@ -3466,7 +3489,7 @@ function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: boolean }
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
     </>
   );
 }

@@ -155,3 +155,4 @@
 - [Solana payment validation](solana-payment-validation.md) — indexed RPC restrictions differ from transaction access; mint-history examples may have no positive net receipt.
 - [Reshipper aggregate downloads](reshipper-aggregate-downloads.md) — fulfilment TXT is one combined total order per reshipper, without member names or individual breakdowns.
 - [Member regional batches](member-regional-batches.md) — members see only destination-region queue progress and history, server-filtered and opt-in; paid batch counts differ from MOQ.
+- [Mobile chat overlays](mobile-chat-overlays.md) — chat must clear floating navigation and track the visual viewport; page animation containers can defeat local stacking.
