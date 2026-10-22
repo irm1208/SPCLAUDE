@@ -45,6 +45,9 @@ export interface ApiOrganiserOrder {
   trackingNumber?: string | null;
   adminNotes?: string | null;
   paymentTxHash?: string | null;
+  paymentTxHashes?: string[] | null;
+  testPaymentTxHash?: string | null;
+  balanceTxHash?: string | null;
   paymentMethod?: string | null;
   createdAt?: string | null;
   paymentConfirmedAt?: string | null;
@@ -377,6 +380,12 @@ export function mapApiOrder(value: ApiOrganiserOrder): OrganiserOrder {
     paidAt: typeof value.paymentConfirmedAt === "string" ? value.paymentConfirmedAt : undefined,
     shippingOption: String(value.deliveryMethod ?? "Not selected"),
     paymentProof: txHash ? { type: "txid", value: txHash } : undefined,
+    paymentTxHash: txHash,
+    paymentTxHashes: Array.isArray(value.paymentTxHashes)
+      ? value.paymentTxHashes.filter((item): item is string => typeof item === "string" && !!item.trim())
+      : undefined,
+    testPaymentTxHash: typeof value.testPaymentTxHash === "string" ? value.testPaymentTxHash : undefined,
+    balanceTxHash: typeof value.balanceTxHash === "string" ? value.balanceTxHash : undefined,
     trackingNumber: typeof value.trackingNumber === "string" && value.trackingNumber.trim()
       ? value.trackingNumber.trim()
       : undefined,

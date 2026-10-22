@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Download, ChevronDown, Package, Clock, CheckCircle2, XCircle, X, Edit2, Send, Copy, Plus, Minus, Trash2, Flag, Truck, Upload, SlidersHorizontal } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { PAYMENT_EXPORT_HEADERS, paymentExportCells, encodeCsv } from "@/lib/organiser-export-payments";
 import { V2_CARD_BORDER } from "./theme";
 import { fmtMoney } from "./data";
 import { organiserApi } from "./api/organiser-api";
@@ -354,10 +355,12 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   };
 
   const bulkExportCSV = () => {
-    const selectedOrderData = orders.filter(o => selectedOrders.includes(o.id));
-    const csv = [
+    const selectedOrderData = selectedOrders.length
+      ? orders.filter(o => selectedOrders.includes(o.id))
+      : filteredOrders;
+    const csv = encodeCsv([
       // Header
-      ["Order ID", "Member", "Username", "Status", "Total", "Payment Method", "Country", "Products", "Created At"].join(","),
+      ["Order ID", "Member", "Username", "Status", "Total", "Payment Method", "Country", "Products", "Created At", ...PAYMENT_EXPORT_HEADERS],
       // Rows
       ...selectedOrderData.map(o => [
         o.id,
@@ -369,8 +372,9 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
         o.country,
         o.products.map(p => `${p.name} x${p.quantity}`).join("; "),
         o.createdAt,
-      ].join(","))
-    ].join("\n");
+        ...paymentExportCells(o),
+      ])
+    ]);
 
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -669,7 +673,7 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
           >
             <Upload className="w-4 h-4" /> Import CSV
           </button>
-          <button className="w-full sm:w-auto h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-1.5" style={{ background: "#fff", border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}>
+          <button onClick={bulkExportCSV} className="w-full sm:w-auto h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center justify-center gap-1.5" style={{ background: "#fff", border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-muted)" }}>
             <Download className="w-4 h-4" /> Export CSV
           </button>
         </div>

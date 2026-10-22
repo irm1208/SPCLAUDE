@@ -48,6 +48,10 @@ export interface OrganiserOrder {
   paidAt?: string;
   shippingOption: string;
   paymentProof?: PaymentProof;
+  paymentTxHash?: string;
+  paymentTxHashes?: string[];
+  testPaymentTxHash?: string;
+  balanceTxHash?: string;
   trackingNumber?: string;
   internalNotes?: string;
   flagged?: OrderFlag;
@@ -167,6 +171,12 @@ export function normalizeOrder(value: unknown, fallbackId?: string): OrganiserOr
     paidAt: optionalString(value, "paidAt"),
     shippingOption,
     paymentProof: normalizePaymentProof(value["paymentProof"]),
+    paymentTxHash: optionalString(value, "paymentTxHash"),
+    paymentTxHashes: Array.isArray(value["paymentTxHashes"])
+      ? value["paymentTxHashes"].filter((item): item is string => typeof item === "string" && !!item.trim())
+      : undefined,
+    testPaymentTxHash: optionalString(value, "testPaymentTxHash"),
+    balanceTxHash: optionalString(value, "balanceTxHash"),
     trackingNumber: optionalString(value, "trackingNumber"),
     internalNotes: optionalString(value, "internalNotes"),
     flagged: normalizeFlag(value["flagged"]),
