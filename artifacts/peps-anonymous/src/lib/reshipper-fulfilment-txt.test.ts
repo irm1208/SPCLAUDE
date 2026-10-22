@@ -44,3 +44,29 @@ test("rejects empty or invalid downloads instead of producing misleading totals"
   assert.throws(() => buildReshipperFulfilmentTxt([{ ...orders[0], grandTotal: NaN }], "ajer", "USD"), /total/i);
   assert.throws(() => buildReshipperFulfilmentTxt([{ ...orders[0], lineItems: [{ productName: "Bad", quantity: -1 }] }], "ajer", "USD"), /quantity/i);
 });
+test("flags unmatched product halves without rounding quantities or customer totals", () => {
+  const text = buildReshipperFulfilmentTxt(orders, "ajer", "USD");
+  assert.match(text, /FULL KITS ONLY/);
+  assert.match(text, /REVIEW REQUIRED/);
+  assert.match(text, /Tirzepatide 10mg: 0.5 kits.*unmatched half-kit/);
+  assert.match(text, /Number of kits: 3.5/);
+  assert.match(text, /Total: \$161.00 USD/);
+});
+test("combines matching halves before checking for unmatched halves", () => {
+  const text = buildReshipperFulfilmentTxt([{ ...orders[0], lineItems: [
+    { productName: "Bronchogen 20mg", quantity: 0.5 },
+    { productName: "Bronchogen 20mg", quantity: 0.5 },
+  ] }], "ajer", "USD");
+  assert.match(text, /Bronchogen 20mg × 1/);
+  assert.match(text, /FULL KITS ONLY/);
+  assert.doesNotMatch(text, /REVIEW REQUIRED/);
+});
+test("flags each unmatched product even when the combined kit count is a whole number", () => {
+  const text = buildReshipperFulfilmentTxt([{ ...orders[0], lineItems: [
+    { productName: "Bronchogen 20mg", quantity: 0.5 },
+    { productName: "GLOW", quantity: 0.5 },
+  ] }], "ajer", "USD");
+  assert.match(text, /Number of kits: 1/);
+  assert.match(text, /Bronchogen 20mg: 0.5 kits — unmatched half-kit/);
+  assert.match(text, /GLOW: 0.5 kits — unmatched half-kit/);
+});

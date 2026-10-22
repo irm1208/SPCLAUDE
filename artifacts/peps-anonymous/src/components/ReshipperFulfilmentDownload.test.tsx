@@ -23,11 +23,11 @@ beforeEach(() => {
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:synthetic");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   vi.spyOn(dom.window.HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-  vi.stubGlobal("fetch", vi.fn());
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => orders }));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it("downloads one combined file for the column recipient, with no members or other reshippers", async () => {
-  await act(async () => root.render(h(ReshipperFulfilmentDownload, { orders, reshipperUsername: "@ajer", currency: "USD", groupBuyName: "HGH group buy" })));
+  await act(async () => root.render(h(ReshipperFulfilmentDownload, { orders, groupBuyId: "gb-test", reshipperUsername: "@ajer", currency: "USD", groupBuyName: "HGH group buy" })));
   await act(async () => host.querySelector("button")!.click());
   const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
   const text = await blob.text();
@@ -37,11 +37,64 @@ it("downloads one combined file for the column recipient, with no members or oth
   expect(text).toContain("Number of kits: 1.5");
   expect(text).not.toContain("PRIVATE");
   expect(text).not.toContain("OTHER PRODUCT");
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch).toHaveBeenCalledOnce();
   expect(dom.window.HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
 });
+it("fetches the latest saved items on every download instead of exporting the loaded snapshot", async () => {
+  vi.mocked(fetch).mockResolvedValue({
+    ok: true, json: async () => [{ ...orders[0], grandTotal: 160, lineItems: [
+      ...orders[0].lineItems, { productName: "Manually added Bronchogen", quantity: 0.5 },
+    ] }],
+  } as Response);
+  await act(async () => root.render(h(ReshipperFulfilmentDownload, {
+    orders, groupBuyId: "gb-test", reshipperUsername: "@ajer", currency: "USD", groupBuyName: "Uther October",
+  })));
+  await act(async () => host.querySelector("button")!.click());
+  expect(fetch).toHaveBeenCalledWith("/api/organiser/group-buys/gb-test/orders",
+    expect.objectContaining({ credentials: "include", cache: "no-store" }));
+  const text = await (vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob).text();
+  expect(text).toContain("Manually added Bronchogen × 0.5");
+  expect(text).toContain("Total: $160.00 USD");
+  vi.mocked(fetch).mockResolvedValueOnce({
+    ok: true, json: async () => [{ ...orders[0], grandTotal: 200, lineItems: [{ productName: "GLOW", quantity: 2 }] }],
+  } as Response);
+  await act(async () => host.querySelector("button")!.click());
+  const nextText = await (vi.mocked(URL.createObjectURL).mock.calls[1][0] as Blob).text();
+  expect(nextText).toContain("GLOW × 2");
+  expect(nextText).not.toContain("Manually added Bronchogen");
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+it("does not export stale data if refreshing fails, returns malformed data or the orders were reassigned", async () => {
+  await act(async () => root.render(h(ReshipperFulfilmentDownload, {
+    orders, groupBuyId: "gb-test", reshipperUsername: "ajer", currency: "USD", groupBuyName: "Uther",
+  })));
+  for (const response of [
+    { ok: false, json: async () => ({ error: "Cannot load orders" }) },
+    { ok: true, json: async () => ({ orders }) },
+    { ok: true, json: async () => [{ ...orders[0], reshipperUsername: "other" }] },
+  ]) {
+    vi.mocked(fetch).mockResolvedValueOnce(response as Response);
+    await act(async () => host.querySelector("button")!.click());
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBeTruthy();
+  }
+});
+it("prevents duplicate clicks while the latest orders are loading", async () => {
+  let resolve!: (value: Response) => void;
+  vi.mocked(fetch).mockReturnValue(new Promise<Response>(done => { resolve = done; }));
+  await act(async () => root.render(h(ReshipperFulfilmentDownload, {
+    orders, groupBuyId: "gb-test", reshipperUsername: "ajer", currency: "USD", groupBuyName: "Uther",
+  })));
+  await act(async () => { host.querySelector("button")!.click(); host.querySelector("button")!.click(); });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(host.querySelector("button")!.disabled).toBe(true);
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  await act(async () => resolve({ ok: true, json: async () => orders } as Response));
+  expect(URL.createObjectURL).toHaveBeenCalledOnce();
+  expect(host.querySelector("button")!.disabled).toBe(false);
+});
 it("supports reshipper selection for list view and blocks downloads while routing", async () => {
-  const props = { orders, currency: "GBP", groupBuyName: "HGH" };
+  const props = { orders, groupBuyId: "gb-test", currency: "GBP", groupBuyName: "HGH" };
   await act(async () => root.render(h(ReshipperFulfilmentDownload, props)));
   expect(host.querySelector("button")!.disabled).toBe(true);
   const select = host.querySelector("select")!;
@@ -52,7 +105,7 @@ it("supports reshipper selection for list view and blocks downloads while routin
   expect(select.disabled).toBe(true);
 });
 it("does not download a stale recipient after an assignment changes", async () => {
-  const props = { orders, reshipperUsername: "ajer", currency: "USD", groupBuyName: "HGH" };
+  const props = { orders, groupBuyId: "gb-test", reshipperUsername: "ajer", currency: "USD", groupBuyName: "HGH" };
   await act(async () => root.render(h(ReshipperFulfilmentDownload, props)));
   expect(host.querySelector("button")!.disabled).toBe(false);
   await act(async () => root.render(h(ReshipperFulfilmentDownload, { ...props, orders: orders.filter(o => o.reshipperUsername === "other") })));

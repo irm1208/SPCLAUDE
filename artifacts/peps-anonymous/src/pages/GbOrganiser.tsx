@@ -7448,7 +7448,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
           <button type="button" onClick={() => setReshipperTotalsOpen(true)} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold" style={{ borderColor: "var(--t-border)", color: "var(--t-blue)" }}>
             <BarChart3 className="h-3.5 w-3.5" />Reshipper totals
           </button>
-          <ReshipperFulfilmentDownload key={gb.id} orders={orders} currency={gb.currency} groupBuyName={gb.name} disabled={!!error || !!routingOrderId} />
+          <ReshipperFulfilmentDownload key={gb.id} groupBuyId={gb.id} orders={orders} currency={gb.currency} groupBuyName={gb.name} disabled={!!error || !!routingOrderId} />
           <button onClick={() => void load()} className="flex h-9 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold" style={{ borderColor: "var(--t-border)", color: "var(--t-muted)" }}><RefreshCw className="h-3.5 w-3.5" />Refresh</button>
         </div>
       </div>
@@ -7502,7 +7502,7 @@ function FulfilmentTab({ gb }: { gb: OrganiserGB }) {
                   <p className="text-sm font-black" style={{ color: colors.text }}>{group.label}</p>
                   <p className="mt-0.5 text-[10px]" style={{ color: colors.text }}>{group.orders.length} orders · {group.orders.reduce((sum, o) => sum + kitCount(o), 0)} kits</p>
                   {group.key.startsWith("reshipper:") && <div className="mt-2">
-                    <ReshipperFulfilmentDownload orders={orders} currency={gb.currency} groupBuyName={gb.name}
+                    <ReshipperFulfilmentDownload groupBuyId={gb.id} orders={orders} currency={gb.currency} groupBuyName={gb.name}
                       reshipperUsername={group.label} disabled={!!error || !!routingOrderId} />
                   </div>}
                 </div>

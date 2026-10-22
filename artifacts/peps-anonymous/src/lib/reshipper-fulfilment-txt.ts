@@ -33,9 +33,19 @@ export function buildReshipperFulfilmentTxt(orders: ReshipperTotalOrder[], usern
   const symbol = ["USD", "USDT", "USDC"].includes(code) ? "$" : code === "GBP" ? "£" : code === "EUR" ? "€" : "";
   const amount = (cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const handle = username.trim().replace(/^@/, "").trim().replace(/[\r\n\t]/g, " ");
+  const sorted = [...products.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const unmatched = sorted.filter(product => !Number.isInteger(product.quantity));
   return [
     `@${handle}`, "",
-    ...[...products.values()].sort((a, b) => a.name.localeCompare(b.name)).map(p => `${p.name} × ${p.quantity}`),
+    "FULL KITS ONLY — supplier orders must contain whole kits.",
+    "Quantities below are exact member totals; nothing has been rounded or added.",
+    "",
+    ...sorted.map(p => `${p.name} × ${p.quantity}`),
     "", `Total: ${symbol}${amount} ${code}`, `Number of kits: ${kits}`, "",
+    ...(unmatched.length ? [
+      "REVIEW REQUIRED — unmatched half-kits. Resolve before placing the supplier order:",
+      ...unmatched.map(p => `${p.name}: ${p.quantity} kits — unmatched half-kit`),
+      "Customer quantities and charges have not been changed.", "",
+    ] : ["All product totals are whole kits; no unmatched halves.", ""]),
   ].join("\n");
 }
