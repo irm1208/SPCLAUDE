@@ -118,10 +118,12 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const de = await memberSupplierBatches(f.id, "synthetic-3");
     const uk = await memberSupplierBatches(f.id, "synthetic-1");
     const us = await memberSupplierBatches(f.id, "synthetic-2");
-    expect(eu.regions).toEqual([{ id: "eu", name: "EU", kits: 18.5, targetKits: 100, status: "Filling" }]);
-    expect(de.regions).toEqual(eu.regions);
-    expect(uk.regions).toEqual([{ id: "uk", name: "UK", kits: 34, targetKits: 100, status: "Filling" }]);
-    expect(us.regions).toEqual([{ id: "us", name: "US", kits: 0, targetKits: 100, status: "Filling" }]);
+    expect(eu.regions).toEqual([{ id: "eu", name: "EU", kits: 18.5, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }]);
+    expect(de.regions).toEqual([{ ...eu.regions[0], yourOrderStatus: "included" }]);
+    expect(uk.regions).toEqual([{ id: "uk", name: "UK", kits: 34, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }]);
+    expect(us.regions).toEqual([{ id: "us", name: "US", kits: 0, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }]);
+    const ukWaiting = await memberSupplierBatches(f.id, "synthetic-4");
+    expect(ukWaiting.regions[0]).toMatchObject({ id: "uk", yourOrderStatus: "included" });
     for (const [view, region] of [[eu, "EU"], [uk, "UK"], [us, "US"]] as const) {
       expect(view.batches).toHaveLength(1);
       expect(view.batches[0]).toMatchObject({ region, kits: 100, targetKits: 100, isYourBatch: true, status: "Prepared" });

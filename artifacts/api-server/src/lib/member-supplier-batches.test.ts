@@ -58,11 +58,26 @@ describe("member regional privacy and queue progress", () => {
     const config = { enabled: true, telegramAlerts: false, regions };
     const { queues } = collectSupplierQueues({ all: rows, used: [{ orderId: "allocated" }], elig: [], config });
     const progress = memberRegionalProgress(config, queues, new Set(["IT"]));
-    expect(progress).toEqual([{ id: "eu", name: "EU", kits: 18, targetKits: 100, status: "Filling" }]);
+    expect(progress).toEqual([{ id: "eu", name: "EU", kits: 18, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }]);
     expect(JSON.stringify(progress)).not.toMatch(/private|SECRET|product|uk|United Kingdom/);
     expect(memberRegionalProgress(config, queues, new Set(["UK"]))[0]).toMatchObject({ id: "uk", kits: 34 });
     expect(memberRegionalProgress({ ...config, enabled: false }, queues, new Set(["IT"]))).toEqual([]);
     expect(memberRegionalProgress(config, queues, new Set())).toEqual([]);
+  });
+  it("identifies the member's order in the proposed batch, not just elsewhere in the regional queue", () => {
+    const config = { enabled: true, telegramAlerts: false, regions };
+    const { queues } = collectSupplierQueues({ all: [
+      paid("first", "Italy", 100), paid("later", "Italy", 2),
+      paid("unpaid", "Italy", 3, { paymentStatus: "unpaid" }),
+      paid("direct", "Italy", 30, { routingType: "direct" }),
+    ], used: [], elig: [], config });
+    const view = (id: string) => memberRegionalProgress(config, queues, new Set(["IT"]), new Set([id]))[0];
+    expect(view("first").yourOrderStatus).toBe("included");
+    expect(view("later").yourOrderStatus).toBe("waiting");
+    expect(view("unpaid").yourOrderStatus).toBe("not_included");
+    expect(view("direct").yourOrderStatus).toBe("not_included");
+    expect(view("unknown").yourOrderStatus).toBe("not_included");
+    expect(JSON.stringify(view("first"))).not.toMatch(/SECRET|private|first|later/);
   });
   it("shows an empty regional queue and readiness without splitting a whole order at the threshold", () => {
     const config = { enabled: true, telegramAlerts: false, regions };

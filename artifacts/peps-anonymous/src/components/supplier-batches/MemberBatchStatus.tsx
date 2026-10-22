@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 type Group = { id: string; name: string; showSupplierBatches?: boolean };
 export interface MemberBatchStatusData {
   groupBuy: { id: string; name: string };
-  regions?: { id: string; name: string; kits: number; targetKits: number; status: string }[];
+  regions?: { id: string; name: string; kits: number; targetKits: number; status: string; yourOrderStatus?: "included" | "waiting" | "not_included" }[];
   countryRequired?: boolean;
   batches: { id: string; reference: string; region: string; kits: number; targetKits?: number | null; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null }[];
 }
@@ -24,7 +24,7 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
     <DialogContent className="max-w-3xl max-h-[85dvh] overflow-y-auto" style={{ color: "var(--t-text)", background: "var(--t-surface)" }}>
       <DialogHeader><DialogTitle>Batch status — {gb.name}</DialogTitle>
-        <DialogDescription>Progress and supplier batches for your destination region only. “Your batch” highlights a batch containing your order.</DialogDescription></DialogHeader>
+        <DialogDescription>See your region’s batch progress and which batch includes your order.</DialogDescription></DialogHeader>
       {query.isPending ? <p role="status">Loading batches…</p>
         : query.isError ? <div role="alert"><p>{query.error.message}</p><button type="button" onClick={() => query.refetch()} className="mt-2 underline">Try again</button></div>
         : <>
@@ -33,9 +33,18 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
               {!!query.data.regions?.length && <section aria-label="Regional batch progress" className="space-y-3">
                 {query.data.regions.map(region => <div key={region.id} className="rounded-lg border p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="font-semibold">{region.name} — Next batch</h3>
+                    <h3 className="font-semibold">{region.name} — Current batch</h3>
                     <span className="rounded-full border px-2 py-1 text-xs font-medium" style={{ borderColor: "var(--t-border)" }}>{region.status}</span>
                   </div>
+                  {region.yourOrderStatus === "included" && <div className="rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--t-blue)", background: "color-mix(in srgb, var(--t-blue) 9%, transparent)" }}>
+                    <p className="font-semibold">Your order is in this batch</p>
+                    <p>Your paid order is included here. This batch has not been ordered from the supplier yet.</p>
+                  </div>}
+                  {region.yourOrderStatus === "waiting" && <p className="text-sm">Your order is waiting for a later batch. The current batch has reached its target.</p>}
+                  {region.yourOrderStatus === "not_included" && <p className="text-sm" style={{ color: "var(--t-muted)" }}>
+                    {query.data.batches.some(b => b.isYourBatch) ? "Your assigned supplier batch is listed below."
+                      : "Your order is not included in this filling batch. Only fully paid, eligible orders are included; Direct Shipping orders are separate."}
+                  </p>}
                   <p className="text-lg font-bold tabular-nums">{region.kits.toLocaleString()} / {region.targetKits.toLocaleString()} kits</p>
                   <div role="progressbar" aria-label={`${region.name} batch progress`} aria-valuemin={0} aria-valuemax={region.targetKits}
                     aria-valuenow={Math.min(region.kits, region.targetKits)} aria-valuetext={`${region.kits} of ${region.targetKits} kits`}
@@ -43,11 +52,11 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
                     <div className="h-full rounded-full" style={{ width: `${Math.min(100, region.kits / region.targetKits * 100)}%`, background: "var(--t-blue)" }} />
                   </div>
                 </div>)}
-                <p className="text-xs" style={{ color: "var(--t-muted)" }}>Fully paid orders waiting for the next batch. Direct Shipping orders do not count. Whole orders stay together, so a batch can exceed its target. Ready does not mean ordered from the supplier.</p>
+                <p className="text-xs" style={{ color: "var(--t-muted)" }}>Fully paid kits queued for your region. Orders stay together, so a batch can exceed its target. Contents are finalised when the organiser prepares the batch. Ready means the target is reached, not that the supplier order has been placed.</p>
               </section>}
               {!query.data.regions?.length && !query.data.batches.length && <p>No batch region is available for your destination yet.</p>}
             </>}
-          {!query.data.countryRequired && (!query.data.batches.length ? <p>No supplier batches have been prepared yet for your region.</p> : <>
+          {!query.data.countryRequired && (!query.data.batches.length ? <p>The supplier-order status will appear here once a batch is prepared.</p> : <>
           {!query.data.batches.some(b => b.isYourBatch) && <p className="text-sm" style={{ color: "var(--t-muted)" }}>No orders from your account are currently assigned to a listed batch.</p>}
           <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--t-border)" }}>
             <table className="w-full text-sm text-left"><caption className="sr-only">Supplier batches and current statuses</caption>

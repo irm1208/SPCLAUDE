@@ -24,6 +24,28 @@ afterEach(async () => { await act(async () => root.unmount()); client.clear(); h
 const flush = () => act(async () => { await new Promise(r => setTimeout(r, 20)); });
 async function mount(child: React.ReactNode) { await act(async () => root.render(h(QueryClientProvider, { client }, child))); await flush(); }
 
+it("clearly tells the member that their order is included in the current filling batch", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ groupBuy: group, batches: [],
+    regions: [{ id: "uk", name: "United Kingdom", kits: 34, targetKits: 100, status: "Filling", yourOrderStatus: "included" }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("United Kingdom — Current batch");
+  expect(document.body.textContent).toContain("Your order is in this batch");
+  expect(document.body.textContent).toContain("34 / 100 kits");
+  expect(document.body.textContent).not.toContain("Next batch");
+  expect(document.body.textContent).not.toContain("No supplier batches have been prepared");
+});
+it("does not claim that an unpaid, direct or later queued order is in this batch", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ groupBuy: group, batches: [],
+    regions: [{ id: "uk", name: "United Kingdom", kits: 105, targetKits: 100, status: "Ready", yourOrderStatus: "waiting" }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("Your order is waiting for a later batch");
+  expect(document.body.textContent).not.toContain("Your order is in this batch");
+  vi.mocked(fetch).mockResolvedValue(Response.json({ groupBuy: group, batches: [],
+    regions: [{ id: "uk", name: "United Kingdom", kits: 34, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }] }));
+  await act(async () => { await client.invalidateQueries({ queryKey: ["member-supplier-batches"] }); }); await flush();
+  expect(document.body.textContent).toContain("Your order is not included in this filling batch");
+  expect(document.body.textContent).not.toContain("Your order is in this batch");
+});
 it("renders no batch menu or request when visibility is disabled", async () => {
   await mount(h(MemberBatchMenu, { gb: { ...group, showSupplierBatches: false } }));
   expect(host.textContent).toBe("");
@@ -45,7 +67,7 @@ it("opens a read-only table from the menu and highlights the member's own batch"
 it("shows a real empty state, and removes cached rows when sharing is revoked", async () => {
   vi.mocked(fetch).mockResolvedValueOnce(Response.json({ groupBuy: group, batches: [] }));
   await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
-  expect(document.body.textContent).toContain("No supplier batches have been prepared yet");
+  expect(document.body.textContent).toContain("The supplier-order status will appear here once a batch is prepared.");
   vi.mocked(fetch).mockResolvedValue(Response.json({ error: "Batch status is not shared" }, { status: 403 }));
   await act(async () => { await client.invalidateQueries({ queryKey: ["member-supplier-batches"] }); }); await flush();
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("Batch status is not shared");

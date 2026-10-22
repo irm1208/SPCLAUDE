@@ -26,13 +26,16 @@ export function memberCanViewBatch(batch: MemberBatch, countries: Set<string>) {
   const covered = batch.snapshot.region.countries ?? batch.snapshot.orders.map(o => o.country);
   return covered.some(c => canonical.has(countryCode(c)));
 }
-export function memberRegionalProgress(config: SupplierConfig, queues: Map<string, BatchOrder[]>, countries: Set<string>) {
+export function memberRegionalProgress(config: SupplierConfig, queues: Map<string, BatchOrder[]>, countries: Set<string>, ownOrderIds: Set<string> = new Set()) {
   if (!config.enabled) return [];
   const canonical = new Set([...countries].map(countryCode));
   return config.regions.filter(r => r.countries.some(c => canonical.has(countryCode(c)))).map(region => {
-    const progress = propose(queues.get(region.id) ?? [], region.targetKits);
+    const queue = queues.get(region.id) ?? [];
+    const progress = propose(queue, region.targetKits);
+    const yourOrderStatus = progress.orders.some(o => ownOrderIds.has(o.id)) ? "included"
+      : queue.some(o => ownOrderIds.has(o.id)) ? "waiting" : "not_included";
     return { id: region.id, name: region.name, kits: progress.queuedKits, targetKits: region.targetKits,
-      status: progress.ready ? "Ready" : "Filling" };
+      status: progress.ready ? "Ready" : "Filling", yourOrderStatus };
   });
 }
 
@@ -99,13 +102,13 @@ export async function memberSupplierBatches(id: string, username: string, databa
     const refundIds = new Set(refunds.map(r => r.orderId));
     const all = parents.map(o => ({ ...o, lineItems: byOrder.get(o.id) ?? [], activeRefund: refundIds.has(o.id) }));
     const { queues } = collectSupplierQueues({ all, used, elig: eligibility, config });
-    const regions = memberRegionalProgress(config, queues, countries);
+    const ownOrderIds = new Set(parents.filter(o => o.telegramUsername === username).map(o => o.id));
+    const regions = memberRegionalProgress(config, queues, countries, ownOrderIds);
     if (!batches.length) return { ...empty, regions };
     const ids = batches.map(b => b.id);
     const shipments = await tx.select({ batchId: gbSupplierShipmentsTable.batchId, contents: gbSupplierShipmentsTable.contents, receipt: gbSupplierShipmentsTable.receipt,
         receiptChecked: gbSupplierShipmentsTable.receiptChecked, cancelledAt: gbSupplierShipmentsTable.cancelledAt })
         .from(gbSupplierShipmentsTable).where(inArray(gbSupplierShipmentsTable.batchId, ids));
-    const ownOrderIds = new Set(parents.filter(o => o.telegramUsername === username).map(o => o.id));
     const own = new Set(used.filter(a => ownOrderIds.has(a.orderId)).map(a => a.batchId));
     return { ...empty, regions, batches: batches.map(b => memberBatchSummary(b as MemberBatch, shipments as unknown as MemberShipment[], own)) };
   }, { isolationLevel: "repeatable read" });

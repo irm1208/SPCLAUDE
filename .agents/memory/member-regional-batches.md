@@ -12,3 +12,9 @@ Members may see only their own destination region's batch progress and history: 
 The filling count is the fully paid, unallocated, non-direct supplier queue, not the general group-buy MOQ total (which includes unpaid orders). Viewing progress must not prepare batches, mutate readiness or trigger staff alerts.
 
 **Why:** Paid supplier-batch eligibility and general MOQ serve different purposes; member viewing must remain read-only and consistent with staff batch preparation.
+
+Make personal inclusion explicit on the filling progress card rather than calling it “Next batch.” Only say an order is in that batch if it falls within the proposed whole-order batch, not merely somewhere in the region's queue. Distinguish later queued orders and orders already allocated to a prepared batch.
+
+**Why:** The user reported that members found “Next batch” confusing and requested a clear statement that their order is within the displayed batch. A regional total alone does not establish personal inclusion.
+
+**How to apply:** Determine inclusion server-side using the same proposed order selection as staff preparation. Do not imply that an unpaid/direct order is included or that a filling batch has already been ordered from the supplier.
