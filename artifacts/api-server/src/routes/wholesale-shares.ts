@@ -1,3 +1,4 @@
+import { parseOrganiserFullName, ORGANISER_FULL_NAME_ERROR } from "../lib/shared-organiser-name";
 import {
   assertNoActiveRefunds,
   RefundMutationBlockedError,
@@ -612,6 +613,7 @@ async function buildShareResponse(
     maxMembers: share.maxMembers,
     vendorId: share.vendorId ?? null,
     creatorUsername: share.creatorUsername,
+    organiserFullName: isCreatorViewer ? (share.organiserFullName ?? null) : null,
     isCreator: isCreatorViewer,
     // True when the organiser may manually mark a member's order as paid/unpaid.
     // Available on locked or submitted shares (orders are materialised).
@@ -925,7 +927,11 @@ router.get("/wholesale-shares/public", requireWholesale, async (req, res): Promi
 // POST /api/wholesale-shares — create a new shared order; creator becomes first member
 router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
-  const body = (req.body ?? {}) as { splitMode?: string };
+  const body = (req.body ?? {}) as { splitMode?: string; organiserFullName?: unknown };
+  const organiserFullName = parseOrganiserFullName(body.organiserFullName);
+  if (!organiserFullName) {
+    res.status(400).json({ error: ORGANISER_FULL_NAME_ERROR }); return;
+  }
   const splitMode: WholesaleShareSplitMode =
     body.splitMode && (WHOLESALE_SHARE_SPLIT_MODES as readonly string[]).includes(body.splitMode)
       ? (body.splitMode as WholesaleShareSplitMode)
@@ -937,6 +943,7 @@ router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<voi
   await db.insert(wholesaleSharesTable).values({
     id,
     creatorUsername: me,
+    organiserFullName,
     status: "open",
     splitMode,
     vendorId: vendor?.id ?? null,
@@ -1678,6 +1685,11 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
   }
 
   const body = (req.body ?? {}) as Record<string, unknown>;
+  const organiserFullName = body.organiserFullName === undefined
+    ? undefined : parseOrganiserFullName(body.organiserFullName);
+  if (organiserFullName === null) {
+    res.status(400).json({ error: ORGANISER_FULL_NAME_ERROR }); return;
+  }
 
   // Optional non-negative integer limit. null/"" clears it.
   const parseLimit = (v: unknown, label: string, max = 100000):
@@ -1807,6 +1819,7 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
 
       await tx.update(wholesaleSharesTable)
         .set({
+          ...(organiserFullName !== undefined ? { organiserFullName } : {}),
           maxMembers,
           minKitsPerMember: minVal,
           maxKitsPerMember: maxVal,

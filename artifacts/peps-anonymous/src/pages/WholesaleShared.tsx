@@ -177,6 +177,7 @@ export default function WholesaleShared() {
   // deadline, and an allowed-country list. Seeded from the share once and skipped
   // while the organiser has unsaved edits (so polling can't clobber typing).
   const [settingsForm, setSettingsForm] = useState({
+    organiserFullName: "",
     maxMembers: "", minKitsPerMember: "1", maxKitsPerMember: "", maxTotalKits: "", lockDeadline: "",
     // Max packages + flat per-person organiser fee + per-kit fee live with the rest of the rules.
     maxPackages: "", organiserFlatFee: "", feePerKit: "",
@@ -384,6 +385,7 @@ export default function WholesaleShared() {
     if (!share || !share.settings?.canManage || settingsDirty || settingsSeeded.current) return;
     const s = share.settings;
     setSettingsForm({
+      organiserFullName: share.organiserFullName ?? "",
       maxMembers: s.maxMembers != null ? String(s.maxMembers) : "",
       minKitsPerMember: s.minKitsPerMember != null ? String(s.minKitsPerMember) : "1",
       maxKitsPerMember: s.maxKitsPerMember != null ? String(s.maxKitsPerMember) : "",
@@ -822,6 +824,7 @@ export default function WholesaleShared() {
     setActionError(""); setBusy("settings");
     try {
       await setWholesaleShareSettings(id, {
+        organiserFullName: settingsForm.organiserFullName,
         maxMembers: settingsForm.maxMembers.trim() === "" ? null : Number(settingsForm.maxMembers),
         minKitsPerMember: settingsForm.minKitsPerMember.trim() === "" ? null : Number(settingsForm.minKitsPerMember),
         maxKitsPerMember: settingsForm.maxKitsPerMember.trim() === "" ? null : Number(settingsForm.maxKitsPerMember),
@@ -1966,8 +1969,18 @@ export default function WholesaleShared() {
     >
       <div className="space-y-4">
           <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
-            Set the rules for this shared order. Leave a field blank for no limit.
+            Set your organiser details and the rules for this shared order. Leave a limit blank for no limit.
           </p>
+          <div>
+            <label htmlFor="shared-organiser-full-name" className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>
+              Your real full name <span style={{ color: "var(--t-red)" }}>*</span>
+            </label>
+            <input id="shared-organiser-full-name" type="text" autoComplete="name" required maxLength={100}
+              value={settingsForm.organiserFullName}
+              onChange={e => { setSettingsDirty(true); setSettingsForm(f => ({ ...f, organiserFullName: e.target.value })); }}
+              placeholder="First and last name" className="w-full h-10 px-3 rounded-lg border text-sm outline-none" style={field} />
+            <p className="text-[11px] mt-1" style={{ color: "var(--t-muted)" }}>Use your real name, not your username. This is not shown to other members and does not change the delivery recipient.</p>
+          </div>
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max people</label>
             <input type="number" min="2" step="1" value={settingsForm.maxMembers}

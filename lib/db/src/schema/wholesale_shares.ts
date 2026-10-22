@@ -34,6 +34,9 @@ export type WholesaleOnwardTrackingEvent = { date: string; status: string; locat
 export const wholesaleSharesTable = pgTable("wholesale_shares", {
   id: text("id").primaryKey(), // short uppercase share code, also used as the invite/join code
   creatorUsername: text("creator_username").notNull(),
+  // Self-declared organiser name, separate from recipient details and account identity.
+  // Nullable for pre-existing shares; required by the creation API.
+  organiserFullName: text("organiser_full_name"),
   status: text("status").notNull().default("open"),
   splitMode: text("split_mode").notNull().default("even"),
   maxMembers: integer("max_members"), // null = no limit on group size (organiser-set)

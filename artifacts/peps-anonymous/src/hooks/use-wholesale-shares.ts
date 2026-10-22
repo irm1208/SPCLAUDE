@@ -170,6 +170,7 @@ export interface WholesaleShareDetail {
   maxMembers: number | null;
   vendorId: string | null;
   creatorUsername: string;
+  organiserFullName?: string | null;
   isCreator: boolean;
   currentUsername: string;
   isMember: boolean;
@@ -329,10 +330,10 @@ export function setWholesaleShareHidden(id: string, hidden: boolean) {
   });
 }
 
-export function createWholesaleShare(splitMode: WholesaleSplitMode = "even") {
+export function createWholesaleShare(splitMode: WholesaleSplitMode, organiserFullName: string) {
   return request<WholesaleShareDetail>("/api/wholesale-shares", {
     method: "POST",
-    body: JSON.stringify({ splitMode }),
+    body: JSON.stringify({ splitMode, organiserFullName }),
   });
 }
 
@@ -471,6 +472,7 @@ export function confirmWholesaleShareFee(
 // Organiser sets the order rules (limits, deadline, allowed countries). Any field
 // sent as null/"" clears that rule. Organiser-only and editable while open.
 export interface WholesaleShareSettingsInput {
+  organiserFullName?: string;
   maxMembers?: number | null;
   minKitsPerMember?: number | null;
   maxKitsPerMember?: number | null;
