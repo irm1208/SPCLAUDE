@@ -11,7 +11,7 @@ import { supplierTxt, type TxtBlock, type SupplierContact } from "./supplier-txt
 import { getActiveWholesaleVendor } from "../routes/config";
 import { COUNTRY_CODE_TO_NAME, normalizeToCode } from "./country-utils";
 import { calcPackageShipping, pickRegionForCountry } from "./wholesale-shipping";
-import { SupplierBatchError, validateRegions, eligibleOrder, isDirectSupplierOrder, snapshotOrder, propose, fingerprint, csv, type SupplierConfig, type BatchOrder } from "./supplier-batches-model";
+import { SupplierBatchError, validateRegions, eligibleOrder, isDirectSupplierOrder, snapshotOrder, collectSupplierQueues, propose, fingerprint, csv, type SupplierConfig, type BatchOrder } from "./supplier-batches-model";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
@@ -78,28 +78,12 @@ function mismatch(batch: any, order: any, currentEligibility: any) {
 }
 async function state(tx: any, group: any, reconcile = true) {
   const id = group.id, data = await load(tx, id), now = new Date();
-  const review: any[] = [], queues = new Map<string, BatchOrder[]>();
-  for (const o of data.all) {
-    if (data.used.some((a: any) => a.orderId === o.id)) continue;
-    // Direct orders neither count towards regional targets nor require queue review.
-    if (isDirectSupplierOrder(o)) continue;
-    // Historical fulfilled/processed orders never enter new queues or overwhelm review.
-    if (o.deletedAt || ["Cancelled", "Processing", "Shipped", "Completed", "Draft"].includes(o.status) || o.paymentStatus === "refunded") continue;
-    const e = data.elig.find((v: any) => v.orderId === o.id);
-    let reason = eligibleOrder(o, false, !!e?.reviewedAt);
-    const snap = snapshotOrder(o, asDate(e?.reviewedAt) ?? undefined);
-    const region = data.config.regions.find(r => r.countries.includes(snap.country));
-    if (!reason && !region) reason = "Destination is not assigned to a supplier region";
-    if (reason) {
-      review.push({ id: o.id, code: o.code, username: o.telegramUsername, country: o.shippingCountry ?? "", reason,
-        canReviewHistorical: reason.startsWith("Missing reliable payment date") && !!data.config.enabled });
-      continue;
-    }
+  const { review, queues, eligible } = collectSupplierQueues(data);
+  for (const snap of eligible) {
     if (reconcile && data.config.enabled) {
-      await tx.insert(eligibility).values({ orderId: o.id, firstEligibleAt: now, orderingAt: new Date(snap.orderingAt) })
+      await tx.insert(eligibility).values({ orderId: snap.id, firstEligibleAt: now, orderingAt: new Date(snap.orderingAt) })
         .onConflictDoUpdate({ target: eligibility.orderId, set: { orderingAt: new Date(snap.orderingAt) } });
     }
-    const q = queues.get(region!.id) ?? []; q.push(snap); queues.set(region!.id, q);
   }
   const readiness: Record<string, any> = { ...((data.stored?.readiness ?? {}) as any) };
   const proposals = data.config.regions.map(region => {

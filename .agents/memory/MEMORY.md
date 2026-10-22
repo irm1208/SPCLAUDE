@@ -154,3 +154,4 @@
 - [Payment country policy](payment-country-policy.md) — country lists restrict joining/ordering, never payments for existing orders; explicit payment pauses and verification remain.
 - [Solana payment validation](solana-payment-validation.md) — indexed RPC restrictions differ from transaction access; mint-history examples may have no positive net receipt.
 - [Reshipper aggregate downloads](reshipper-aggregate-downloads.md) — fulfilment TXT is one combined total order per reshipper, without member names or individual breakdowns.
+- [Member regional batches](member-regional-batches.md) — members see only destination-region queue progress and history, server-filtered and opt-in; paid batch counts differ from MOQ.

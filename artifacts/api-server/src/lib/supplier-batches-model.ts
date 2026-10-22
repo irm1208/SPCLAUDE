@@ -71,6 +71,32 @@ export function snapshotOrder(o: any, fallbackAt?: string): BatchOrder {
     money: ["grandTotal", "creditsApplied", "amountDue", "productSubtotal", "vendorShipping", "currency", "groupBuyId"].map(k => String(o[k] ?? "")),
   };
 }
+/** Shared read-only queue calculation: member progress and staff proposals must count the same orders. */
+export function collectSupplierQueues(data: {
+  all: any[]; used: { orderId: string }[]; elig: { orderId: string; reviewedAt?: Date | string | null }[];
+  config: SupplierConfig;
+}) {
+  const queues = new Map<string, BatchOrder[]>(), review: any[] = [], eligible: BatchOrder[] = [];
+  const used = new Set(data.used.map(a => a.orderId)), eligibility = new Map(data.elig.map(e => [e.orderId, e]));
+  for (const o of data.all) {
+    if (used.has(o.id) || isDirectSupplierOrder(o) || o.deletedAt ||
+      ["Cancelled", "Processing", "Shipped", "Completed", "Draft"].includes(o.status) || o.paymentStatus === "refunded") continue;
+    const e = eligibility.get(o.id);
+    let reason = eligibleOrder(o, false, !!e?.reviewedAt);
+    const snap = snapshotOrder(o, iso(e?.reviewedAt) ?? undefined);
+    const region = data.config.regions.find(r => r.countries.includes(snap.country));
+    if (!reason && !region) reason = "Destination is not assigned to a supplier region";
+    if (reason) {
+      review.push({ id: o.id, code: o.code, username: o.telegramUsername, country: o.shippingCountry ?? "", reason,
+        canReviewHistorical: reason.startsWith("Missing reliable payment date") && !!data.config.enabled });
+      continue;
+    }
+    eligible.push(snap);
+    const queue = queues.get(region!.id) ?? [];
+    queue.push(snap); queues.set(region!.id, queue);
+  }
+  return { queues, review, eligible };
+}
 function canonical(v: any): any {
   if (Array.isArray(v)) return v.map(canonical);
   if (v && typeof v === "object") return Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical(v[k])]));

@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+// @ts-expect-error The workspace provides jsdom at runtime without its optional declaration package.
 import { JSDOM } from "jsdom";
 const dom = new JSDOM("<html><body></body></html>", { url: "https://example.test" });
 for (const key of ["window", "document", "navigator", "HTMLElement", "HTMLInputElement", "Element", "DocumentFragment", "Node", "NodeFilter", "MutationObserver", "Event", "CustomEvent", "MouseEvent", "KeyboardEvent"]) {
@@ -49,4 +50,27 @@ it("shows a real empty state, and removes cached rows when sharing is revoked", 
   await act(async () => { await client.invalidateQueries({ queryKey: ["member-supplier-batches"] }); }); await flush();
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("Batch status is not shared");
   expect(document.querySelector("table")).toBeNull();
+});
+it("shows the member's regional progress even before any batch has been prepared", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ groupBuy: group, batches: [],
+    regions: [{ id: "eu", name: "EU", kits: 18, targetKits: 100, status: "Filling" }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("18 / 100 kits");
+  expect(document.body.textContent).toContain("Filling");
+  const progress = document.querySelector('[role="progressbar"]')!;
+  expect(progress.getAttribute("aria-valuenow")).toBe("18");
+  expect(progress.getAttribute("aria-valuemax")).toBe("100");
+  expect(document.body.textContent).not.toContain("United Kingdom");
+});
+it("shows readiness and a country-required message without inventing progress", async () => {
+  vi.mocked(fetch).mockResolvedValueOnce(Response.json({ groupBuy: group, batches: [],
+    regions: [{ id: "uk", name: "UK", kits: 105.5, targetKits: 100, status: "Ready" }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("105.5 / 100 kits");
+  expect(document.body.textContent).toContain("Ready");
+  expect(document.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("100");
+  vi.mocked(fetch).mockResolvedValue(Response.json({ groupBuy: group, batches: [], regions: [], countryRequired: true }));
+  await act(async () => { await client.invalidateQueries({ queryKey: ["member-supplier-batches"] }); }); await flush();
+  expect(document.body.textContent).toContain("Set your country");
+  expect(document.querySelector('[role="progressbar"]')).toBeNull();
 });

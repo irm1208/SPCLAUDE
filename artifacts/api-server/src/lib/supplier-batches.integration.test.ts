@@ -76,8 +76,13 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     try {
       await store.db.insert(store.accountGroupBuysTable).values({ id: randomUUID(), accountId: joined, groupBuyId: f.id });
       const joinedView = await memberSupplierBatches(f.id, joined);
-      expect(joinedView.batches[0].isYourBatch).toBe(false);
-      expect(joinedView.batches[0].reference).toBe(summary.batches[0].reference);
+      expect(joinedView).toMatchObject({ batches: [], regions: [], countryRequired: true });
+      await store.db.update(store.accountsTable).set({ country: "Germany" }).where(eq(store.accountsTable.telegramUsername, joined));
+      const euView = await memberSupplierBatches(f.id, joined);
+      expect(euView.batches[0].isYourBatch).toBe(false);
+      expect(euView.batches[0].reference).toBe(summary.batches[0].reference);
+      await store.db.update(store.accountsTable).set({ country: "United States" }).where(eq(store.accountsTable.telegramUsername, joined));
+      expect((await memberSupplierBatches(f.id, joined)).batches).toEqual([]);
     } finally {
       await store.db.delete(store.accountGroupBuysTable).where(and(eq(store.accountGroupBuysTable.accountId, joined), eq(store.accountGroupBuysTable.groupBuyId, f.id)));
       await store.db.delete(store.accountsTable).where(eq(store.accountsTable.telegramUsername, joined));
@@ -85,6 +90,47 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const current = await api.supplierData(f.id, admin);
     await api.saveSupplierConfig(f.id, admin, { expectedVersion: current.version, config: { ...current.config, showToMembers: false } });
     await expect(memberSupplierBatches(f.id, "synthetic-0")).rejects.toMatchObject({ status: 403 });
+  });
+  it("shares only each destination's queue and historical batches, without altering readiness or orders", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([100, 100, 100, 18.5, 34], [
+      { shippingCountry: "Italy" }, { shippingCountry: "UK" }, { shippingCountry: "United States" },
+      { shippingCountry: "Germany" }, { shippingCountry: "United Kingdom" },
+    ]);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["synthetic-0", "synthetic-1", "synthetic-2", "synthetic-3", "synthetic-4"] })
+      .where(eq(store.groupBuysTable.id, f.id));
+    const initial = await api.supplierData(f.id, admin);
+    await api.saveSupplierConfig(f.id, admin, { expectedVersion: initial.version, config: { ...initial.config, showToMembers: true,
+      regions: [
+        { id: "eu", name: "EU", countries: ["IT", "DE"], targetKits: 100 },
+        { id: "uk", name: "UK", countries: ["GB"], targetKits: 100 },
+        { id: "us", name: "US", countries: ["US"], targetKits: 100 },
+      ] } });
+    for (const regionId of ["eu", "uk", "us"]) {
+      const current = await api.supplierData(f.id, admin);
+      const proposal = current.proposals.find((p: any) => p.region.id === regionId);
+      await api.confirmSupplierBatch(f.id, admin, { regionId, token: proposal.token });
+    }
+    const before = await store.db.select().from(store.gbSupplierSettingsTable).where(eq(store.gbSupplierSettingsTable.groupBuyId, f.id));
+    const statusesBefore = await store.db.select({ id: store.ordersTable.id, status: store.ordersTable.status })
+      .from(store.ordersTable).where(eq(store.ordersTable.groupBuyId, f.id));
+    const eu = await memberSupplierBatches(f.id, "synthetic-0");
+    const de = await memberSupplierBatches(f.id, "synthetic-3");
+    const uk = await memberSupplierBatches(f.id, "synthetic-1");
+    const us = await memberSupplierBatches(f.id, "synthetic-2");
+    expect(eu.regions).toEqual([{ id: "eu", name: "EU", kits: 18.5, targetKits: 100, status: "Filling" }]);
+    expect(de.regions).toEqual(eu.regions);
+    expect(uk.regions).toEqual([{ id: "uk", name: "UK", kits: 34, targetKits: 100, status: "Filling" }]);
+    expect(us.regions).toEqual([{ id: "us", name: "US", kits: 0, targetKits: 100, status: "Filling" }]);
+    for (const [view, region] of [[eu, "EU"], [uk, "UK"], [us, "US"]] as const) {
+      expect(view.batches).toHaveLength(1);
+      expect(view.batches[0]).toMatchObject({ region, kits: 100, targetKits: 100, isYourBatch: true, status: "Prepared" });
+      expect(JSON.stringify(view)).not.toMatch(/synthetic-|snapshot|telegramUsername|trackingNumber|productName|token/);
+    }
+    expect(de.batches[0].isYourBatch).toBe(false);
+    expect(await store.db.select().from(store.gbSupplierSettingsTable).where(eq(store.gbSupplierSettingsTable.groupBuyId, f.id))).toEqual(before);
+    expect(await store.db.select({ id: store.ordersTable.id, status: store.ordersTable.status }).from(store.ordersTable)
+      .where(eq(store.ordersTable.groupBuyId, f.id))).toEqual(statusesBefore);
   });
   it("does not let 30 direct kits make a 70-kit regional queue ready", async () => {
     const f = await fixture([70, 30], [{}, { routingType: "direct", directShippingRequested: true }]);

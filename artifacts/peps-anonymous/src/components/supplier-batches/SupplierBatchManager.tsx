@@ -110,7 +110,7 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
           onChange={e => upd(d => ({ ...d, showToMembers: e.target.checked }))} />
         Show batch status to members
       </label>
-      <p className="text-[11px]" style={{ color: V.muted }}>Adds “View batches” to members’ group-buy card menus. Shares batch references, regions, kit counts and statuses only—not customer details or supplier tracking numbers. Save settings to apply.</p>
+      <p className="text-[11px]" style={{ color: V.muted }}>Adds “View batches” to members’ group-buy card menus. Members see only their destination region’s kit progress, batch references and statuses—not other regions, customer details or supplier tracking numbers. Save settings to apply.</p>
       <p className="text-[11px]" style={{ color: V.muted }}>Staff alerts only — members never receive supplier batch alerts.</p>
       <p className="text-[11px]" style={{ color: V.muted }}>Only fully paid regional orders count towards the target. Direct Shipping orders are handled separately and do not count.</p>
       <div className="space-y-2">

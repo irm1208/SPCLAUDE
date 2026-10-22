@@ -5,7 +5,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 type Group = { id: string; name: string; showSupplierBatches?: boolean };
 export interface MemberBatchStatusData {
   groupBuy: { id: string; name: string };
-  batches: { id: string; reference: string; region: string; kits: number; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null }[];
+  regions?: { id: string; name: string; kits: number; targetKits: number; status: string }[];
+  countryRequired?: boolean;
+  batches: { id: string; reference: string; region: string; kits: number; targetKits?: number | null; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null }[];
 }
 const date = (v: string) => new Date(v).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
@@ -22,11 +24,30 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
     <DialogContent className="max-w-3xl max-h-[85dvh] overflow-y-auto" style={{ color: "var(--t-text)", background: "var(--t-surface)" }}>
       <DialogHeader><DialogTitle>Batch status — {gb.name}</DialogTitle>
-        <DialogDescription>Supplier batches for this group buy. “Your batch” highlights a batch containing your order.</DialogDescription></DialogHeader>
+        <DialogDescription>Progress and supplier batches for your destination region only. “Your batch” highlights a batch containing your order.</DialogDescription></DialogHeader>
       {query.isPending ? <p role="status">Loading batches…</p>
         : query.isError ? <div role="alert"><p>{query.error.message}</p><button type="button" onClick={() => query.refetch()} className="mt-2 underline">Try again</button></div>
-        : !query.data.batches.length ? <p>No supplier batches have been prepared yet.</p>
         : <>
+          {query.data.countryRequired ? <p>Set your country in your account profile to see your region’s batch progress.</p>
+            : <>
+              {!!query.data.regions?.length && <section aria-label="Regional batch progress" className="space-y-3">
+                {query.data.regions.map(region => <div key={region.id} className="rounded-lg border p-4 space-y-3" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-semibold">{region.name} — Next batch</h3>
+                    <span className="rounded-full border px-2 py-1 text-xs font-medium" style={{ borderColor: "var(--t-border)" }}>{region.status}</span>
+                  </div>
+                  <p className="text-lg font-bold tabular-nums">{region.kits.toLocaleString()} / {region.targetKits.toLocaleString()} kits</p>
+                  <div role="progressbar" aria-label={`${region.name} batch progress`} aria-valuemin={0} aria-valuemax={region.targetKits}
+                    aria-valuenow={Math.min(region.kits, region.targetKits)} aria-valuetext={`${region.kits} of ${region.targetKits} kits`}
+                    className="h-2 overflow-hidden rounded-full" style={{ background: "var(--t-border)" }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, region.kits / region.targetKits * 100)}%`, background: "var(--t-blue)" }} />
+                  </div>
+                </div>)}
+                <p className="text-xs" style={{ color: "var(--t-muted)" }}>Fully paid orders waiting for the next batch. Direct Shipping orders do not count. Whole orders stay together, so a batch can exceed its target. Ready does not mean ordered from the supplier.</p>
+              </section>}
+              {!query.data.regions?.length && !query.data.batches.length && <p>No batch region is available for your destination yet.</p>}
+            </>}
+          {!query.data.countryRequired && (!query.data.batches.length ? <p>No supplier batches have been prepared yet for your region.</p> : <>
           {!query.data.batches.some(b => b.isYourBatch) && <p className="text-sm" style={{ color: "var(--t-muted)" }}>No orders from your account are currently assigned to a listed batch.</p>}
           <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--t-border)" }}>
             <table className="w-full text-sm text-left"><caption className="sr-only">Supplier batches and current statuses</caption>
@@ -36,11 +57,12 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
                   {b.isYourBatch && <span className="block text-xs mt-1 text-blue-600">Your batch</span>}
                   <span className="block font-normal text-xs mt-1" style={{ color: "var(--t-muted)" }}>{b.orderedAt ? `Ordered ${date(b.orderedAt)}` : `Prepared ${date(b.createdAt)}`}</span>
                 </th>
-                <td className="px-3 py-3">{b.region}</td><td className="px-3 py-3 tabular-nums">{b.kits.toLocaleString()}</td>
+                <td className="px-3 py-3">{b.region}</td><td className="px-3 py-3 tabular-nums">{b.kits.toLocaleString()}{b.targetKits != null ? ` / ${b.targetKits.toLocaleString()}` : ""}</td>
                 <td className="px-3 py-3"><span className="inline-block rounded-full border px-2 py-1 text-xs font-medium" style={{ borderColor: "var(--t-border)" }}>{b.status}</span></td>
               </tr>)}</tbody>
             </table>
           </div>
+          </>)}
         </>}
       <p className="text-xs" style={{ color: "var(--t-muted)" }}>This tracks the supplier batch, not final delivery to your address. Customer details and supplier tracking numbers are private. Updates refresh automatically while this window is open.</p>
     </DialogContent>
