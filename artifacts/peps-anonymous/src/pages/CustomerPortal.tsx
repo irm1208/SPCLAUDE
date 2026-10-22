@@ -6,6 +6,7 @@ import { MemberBatchStatus } from "@/components/supplier-batches/MemberBatchStat
 import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
 import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
 import { OrderListCompletionButton } from "@/components/OrderListCompletionButton";
+import { OrderReceivedButton, type MemberReceipt } from "@/components/OrderReceivedButton";
 import { filterMemberOrderCards, type MemberOrderSection } from "@/lib/member-order-list";
 import { useHalfKitAvailability } from "@/hooks/use-half-kit-availability";
 import { PoolLeaderDashboard } from "@/components/PoolLeaderDashboard";
@@ -106,6 +107,7 @@ import { InsulinResistanceContent } from "@/pages/InsulinResistanceCalculator";
 type LineItem = { productId?: string; productName: string; quantity: number; unitPrice: number; lineTotal: number };
 type Order = {
   id: string; code: string; telegramUsername: string;
+  memberReceivedAt?: string | null;
   status: string; paymentStatus: string; grandTotal: number;
   productSubtotal: number; lineItems: LineItem[];
   adminMessage: string | null; trackingNumber: string | null;
@@ -311,7 +313,7 @@ const ORDER_KIND_META: Record<OrderCardKind, { label: string; Icon: React.Elemen
 };
 
 function OrderGridCard({
-  order, kind, title, accent, onManage, onReorder, onTracking, onHide, onUnhide, onRemove, isHidden, completionPending,
+  order, kind, title, accent, onManage, onReorder, onTracking, onHide, onUnhide, onRemove, isHidden, completionPending, onReceived,
 }: {
   order: Order;
   kind: OrderCardKind;
@@ -325,6 +327,7 @@ function OrderGridCard({
   onRemove?: () => void;
   isHidden?: boolean;
   completionPending?: boolean;
+  onReceived: (receipt: MemberReceipt) => void;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const sMeta = STATUS_META[order.status] ?? { label: order.status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
@@ -355,7 +358,7 @@ function OrderGridCard({
               <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full"
                 style={{ color: "#fff", background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)" }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: sMeta.color }} />
-                {wholesaleStatusLabel(sMeta.label, order.orderType)}
+                {order.status === "Completed" && order.memberReceivedAt ? "Received" : wholesaleStatusLabel(sMeta.label, order.orderType)}
               </span>
               {/* ⋯ kebab menu */}
               <div className="relative">
@@ -493,7 +496,7 @@ function OrderGridCard({
               style={done
                 ? { color: "#16A34A", background: hexToRgba("#16A34A", 0.08) }
                 : { color: "#DC2626", background: hexToRgba("#DC2626", 0.07) }}>
-              {done ? "Order completed" : "Order cancelled"}
+              {done ? (order.memberReceivedAt ? "Order received" : "Order completed") : "Order cancelled"}
             </div>
             <button onClick={onManage}
               className="flex-1 h-10 rounded-xl text-[12.5px] font-bold flex items-center justify-center gap-1.5"
@@ -521,6 +524,12 @@ function OrderGridCard({
               style={{ background: T.blueDeep }}>
               Manage <ArrowRight className="w-3.5 h-3.5" />
             </button>
+          </div>
+        )}
+        {(order.status === "Shipped" || order.memberReceivedAt) && !order.current && (
+          <div className="mt-2">
+            <OrderReceivedButton key={order.id} compact orderId={order.id} status={order.status}
+              memberReceivedAt={order.memberReceivedAt} onReceived={onReceived} />
           </div>
         )}
         <OrderListCompletionButton completed={!!isHidden} pending={!!completionPending}
@@ -8469,6 +8478,14 @@ export default function CustomerPortal() {
                       isHidden={hiddenOrderIds.has(c.order.id)}
                       completionPending={toggleHiddenOrder.isPending}
                       onManage={() => handleManage(c.order)}
+                      onReceived={receipt => {
+                        // Patch every cached My Orders filter immediately, then
+                        // refresh server state. Receipt is not personal archiving.
+                        qc.setQueriesData<Order[]>({ queryKey: ["account", "orders"] },
+                          previous => previous?.map(order => order.id === c.order.id ? { ...order, ...receipt } : order));
+                        void qc.invalidateQueries({ queryKey: ["account", "orders"] });
+                        void qc.invalidateQueries({ queryKey: ["account", "group-buys"] });
+                      }}
                       onReorder={c.kind === "wholesale" && c.order.orderType === "wholesale" ? () => handleReorder(c.order) : undefined}
                       onTracking={c.kind === "gb" && c.gb && ["confirmed", "test_confirmed"].includes(c.order.paymentStatus)
                         ? () => { setParcelsGb(c.gb); setParcelsOrders(c.gbOrders); }

@@ -6,11 +6,12 @@ export interface MemberReceipt {
   memberReceivedAt: string;
 }
 
-export function OrderReceivedButton({ orderId, status, memberReceivedAt, onReceived }: {
+export function OrderReceivedButton({ orderId, status, memberReceivedAt, onReceived, compact = false }: {
   orderId: string;
   status: string;
   memberReceivedAt?: string | null;
   onReceived: (receipt: MemberReceipt) => void;
+  compact?: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
@@ -34,7 +35,7 @@ export function OrderReceivedButton({ orderId, status, memberReceivedAt, onRecei
   if (memberReceivedAt) {
     return <p role="status" className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--t-text)" }}>
       <PackageCheck className="h-4 w-4 shrink-0" style={{ color: "var(--t-blue)" }} />
-      You confirmed receipt on {new Date(memberReceivedAt).toLocaleString()}.
+      {compact ? "Received" : `You confirmed receipt on ${new Date(memberReceivedAt).toLocaleString()}.`}
     </p>;
   }
   if (status !== "Shipped") return null;
@@ -50,8 +51,12 @@ export function OrderReceivedButton({ orderId, status, memberReceivedAt, onRecei
         </button>
         <button type="button" disabled={pending} onClick={() => { setConfirming(false); setError(null); }} className={primary} style={{ border: "1px solid var(--t-border)", color: "var(--t-text)" }}>Cancel</button>
       </div>
-    </div> : <button type="button" onClick={() => setConfirming(true)} className={`${primary} w-full`} style={{ background: "var(--t-blue)", color: "#fff" }}>
-      <PackageCheck className="h-4 w-4" />Mark as received
+    </div> : <button type="button" onClick={() => setConfirming(true)}
+      className={compact
+        ? "min-h-11 inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        : `${primary} w-full`}
+      style={compact ? { borderColor: "var(--t-border)", color: "var(--t-blue)" } : { background: "var(--t-blue)", color: "#fff" }}>
+      <PackageCheck className="h-4 w-4" />{compact ? "Received" : "Mark as received"}
     </button>}
     {error && <p role="alert" className="text-sm" style={{ color: "var(--t-red, #dc2626)" }}>{error}</p>}
   </div>;

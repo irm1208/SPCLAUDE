@@ -17,6 +17,38 @@ beforeAll(async () => {
 });
 afterAll(() => dom.window.close());
 
+it("provides a compact Received action for order cards and displays the saved receipt", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true, json: async () => ({ status: "Completed", memberReceivedAt: "2026-10-22T10:00:00.000Z" }),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const div = document.createElement("div");
+  document.body.append(div);
+  const root = createRoot(div);
+  function Card() {
+    const [receipt, setReceipt] = React.useState<{ status: string; memberReceivedAt?: string }>({ status: "Shipped" });
+    return <Receipt compact orderId="my-order" {...receipt} onReceived={setReceipt} />;
+  }
+  try {
+    await act(async () => root.render(<Card />));
+    expect(div.querySelector("button")?.textContent).toBe("Received");
+    await act(async () => div.querySelector("button")!.click());
+    expect(fetchMock).not.toHaveBeenCalled();
+    const confirm = [...div.querySelectorAll("button")].find(b => b.textContent?.includes("Yes, I've received it"))!;
+    await act(async () => confirm.click());
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(div.querySelector('[role="status"]')?.textContent).toBe("Received");
+    expect(div.querySelector("button")).toBeNull();
+    for (const status of ["Submitted", "Processing", "Cancelled", "Completed"]) {
+      await act(async () => root.render(<Receipt compact orderId="other-order" status={status} onReceived={vi.fn()} />));
+      expect(div.querySelector("button")).toBeNull();
+    }
+  } finally {
+    await act(async () => root.unmount());
+    div.remove(); vi.unstubAllGlobals();
+  }
+});
+
 it("requires confirmation, handles errors, then reports the persisted receipt", async () => {
   const fetchMock = vi.fn()
     .mockResolvedValueOnce({ ok: false, json: async () => ({ error: "Only shipped orders can be marked as received." }) })

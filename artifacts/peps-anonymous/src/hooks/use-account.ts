@@ -644,6 +644,7 @@ export function useUpdateCountry() {
 }
 
 export interface AccountOrder {
+  memberReceivedAt?: string | null;
   id: string;
   code: string;
   telegramUsername: string;

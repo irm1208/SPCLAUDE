@@ -2356,7 +2356,7 @@ export default function AccountOrderDetail() {
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
                               <span className="inline-flex items-center gap-1.5 rounded-full font-bold" style={{ fontSize: 11.5, padding: "4px 11px", background: "rgba(255,255,255,.16)", border: "1px solid rgba(255,255,255,.28)", color: "#fff" }}>
                                 <span className="rounded-full" style={{ width: 6, height: 6, background: hst.color === "#fff" ? "#fff" : hst.color }} />
-                                {wholesaleStatusLabel(hst.label, order.orderType)}
+                                {order.status === "Completed" && order.memberReceivedAt ? "Received" : wholesaleStatusLabel(hst.label, order.orderType)}
                               </span>
                               {isPaidOrder && (
                                 <span className="inline-flex items-center gap-1 rounded-full font-bold" style={{ fontSize: 11, padding: "4px 10px", background: "rgba(16,185,129,0.22)", border: "1px solid rgba(16,185,129,0.42)", color: "#d1fae5" }}>
