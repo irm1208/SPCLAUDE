@@ -49,6 +49,7 @@ import { createAlert } from "../lib/create-alert";
 import { resolveNewOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { requireAccount } from "../middleware/account-auth";
+import { resolveOrderUsername } from "../lib/order-checkout-identity";
 import { logCustomerActivity } from "../lib/activity-log";
 import { getActiveWholesaleVendor } from "./config";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
@@ -450,7 +451,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     return;
   }
   const {
-    telegramUsername,
+    telegramUsername: submittedUsername,
     deliveryMethodId,
     vendorShipping: clientVendorShipping = 0,
     tip: clientTip = 0,
@@ -475,7 +476,8 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     additionOfOrderId: clientAdditionOfOrderId,
   } = req.body;
 
-  if (!telegramUsername || typeof telegramUsername !== "string") {
+  const tg = resolveOrderUsername(req.account?.telegramUsername, submittedUsername);
+  if (!tg) {
     res.status(400).json({ error: "Missing required fields" });
     return;
   }
@@ -489,7 +491,6 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     return;
   }
 
-  const tg = normalizeTg(telegramUsername);
   const tgError = validateTg(tg);
   if (tgError) { res.status(400).json({ error: tgError }); return; }
 

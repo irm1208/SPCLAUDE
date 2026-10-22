@@ -24,6 +24,7 @@ import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
 import { repairOrder11688InvoiceDamage } from "./lib/order-11688-invoice-damage-repair";
+import { repairApprovedOrderOwner } from "./lib/approved-order-owner-repair";
 import { registerRefundNotificationScheduler } from "./lib/refund-notifications";
 import { registerGroupBuyUpdateNotificationScheduler } from "./lib/group-buy-update-notifications";
 import { registerSupplierBatchScheduler } from "./lib/supplier-batch-worker";
@@ -1265,6 +1266,7 @@ runStartupMigrations()
   .then(() => purgeExpiredDeletedOrders())
   .then(() => runSecurityIncidentRemediation())
   .then(() => repairOrder11688InvoiceDamage())
+  .then(() => repairApprovedOrderOwner())
   .then(() => {
     markApplicationReady();
     startBackgroundServices();

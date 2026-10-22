@@ -75,6 +75,9 @@ export default function Review() {
   const [globalVendorShippingWarning, setGlobalVendorShippingWarning] = useState<boolean | null>(null);
   const [showRulesetModal, setShowRulesetModal] = useState(false);
   const { account, isLoggedIn, isLoading: accountLoading } = useAccount();
+  const checkoutUsername = account?.telegramUsername
+    ? `@${account.telegramUsername.trim().replace(/^@/, "")}`
+    : draft.telegramUsername;
   const useDashChrome = isLoggedIn || accountLoading;
   const Chrome = useDashChrome ? ReviewShell : PageLayout;
   const sidebarExpanded = useSidebarExpanded();
@@ -279,7 +282,7 @@ export default function Review() {
     if (shippingError) { setError(shippingError); return; }
     const payload = {
       halfKitCheckout: draft.halfKitCheckout ?? undefined,
-      telegramUsername: draft.telegramUsername,
+      telegramUsername: checkoutUsername,
       deliveryMethodId: draft.deliveryMethodId,
       deliveryMethod: draft.deliveryMethod,
       deliveryPrice: effectiveDeliveryPrice,
@@ -325,7 +328,7 @@ export default function Review() {
     const existingCode = draft.code;
 
     const onSuccess = (data: {
-      code: string; id?: string;
+      code: string; id?: string; telegramUsername?: string;
       mergedIntoExistingOrder?: boolean;
       amountDue?: number;
       balancePaymentStatus?: string | null;
@@ -384,7 +387,7 @@ export default function Review() {
         : receivedVendorShipping;
       localStorage.setItem("peps:lastReceipt", JSON.stringify({
         code: data.code,
-        telegramUsername: draft.telegramUsername,
+        telegramUsername: data.telegramUsername ?? checkoutUsername,
         deliveryMethod: draft.deliveryMethod,
         deliveryPrice: data.deliveryPrice ?? effectiveDeliveryPrice,
         productSubtotal: data.productSubtotal ?? productSubtotal,
@@ -503,7 +506,7 @@ export default function Review() {
             <div className="rounded-xl p-5 space-y-3 bg-white border border-gray-100 shadow-sm">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-400">Telegram</span>
-                <span className="font-semibold text-gray-800">{draft.telegramUsername}</span>
+                <span className="font-semibold text-gray-800">{checkoutUsername}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-400">Delivery</span>

@@ -402,6 +402,7 @@ export default function WholesaleOrder() {
     : null;
 
   const handleReview = () => {
+    if (!account?.telegramUsername) { showError("Please sign in before placing an order."); return; }
     setError("");
     if (!telegramUsername.trim()) { showError("Please enter your Telegram username."); return; }
     if (!fullName.trim()) { showError("Please enter your full name."); return; }
@@ -421,7 +422,7 @@ export default function WholesaleOrder() {
       code: editCode,
       groupBuyId: null,
       orderType: "wholesale",
-      telegramUsername: `@${telegramUsername.trim().replace(/^@/, "")}`,
+      telegramUsername: `@${account.telegramUsername.trim().replace(/^@/, "")}`,
       deliveryMethodId: null,
       deliveryMethod: "Vendor Shipping",
       deliveryPrice: 0,
@@ -598,12 +599,13 @@ export default function WholesaleOrder() {
                     <input
                       type="text"
                       value={telegramUsername}
-                      onChange={e => setTelegramUsername(e.target.value)}
+                      readOnly
                       placeholder="username"
                       className="flex-1 bg-transparent outline-none"
                       style={{ color: "var(--t-text)" }}
                     />
                   </div>
+                  <p className="mt-1.5 text-xs" style={{ color: "var(--t-muted)" }}>Orders are linked to your signed-in account. Change your username in Profile.</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
