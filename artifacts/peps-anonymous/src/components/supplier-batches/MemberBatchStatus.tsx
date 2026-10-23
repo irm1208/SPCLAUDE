@@ -9,7 +9,7 @@ export interface MemberBatchStatusData {
   countryRequired?: boolean;
   directShipping?: boolean;
   directShippingOnly?: boolean;
-  batches: { id: string; reference: string; region: string; kits: number; targetKits?: number | null; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null }[];
+  batches: { id: string; reference: string; region: string; kits: number; targetKits?: number | null; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null; orders?: { code: string; status: string }[] }[];
 }
 const date = (v: string) => new Date(v).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
@@ -66,11 +66,15 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
           {!query.data.countryRequired && (!ownBatches.length ? <p>Your order has not been assigned to a supplier batch yet.</p> : <>
           <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--t-border)" }}>
             <table className="w-full text-sm text-left"><caption className="sr-only">Supplier batches and current statuses</caption>
-              <thead style={{ background: "var(--t-surface2)" }}><tr>{["Batch", "Country / region", "Kits", "Status"].map(h => <th key={h} scope="col" className="px-3 py-3 font-semibold">{h}</th>)}</tr></thead>
+              <thead style={{ background: "var(--t-surface2)" }}><tr>{["Batch", "Country / region", "Kits", "Batch status"].map(h => <th key={h} scope="col" className="px-3 py-3 font-semibold">{h}</th>)}</tr></thead>
               <tbody>{ownBatches.map(b => <tr key={b.id} className="border-t" style={{ borderColor: "var(--t-border)", background: b.isYourBatch ? "color-mix(in srgb, var(--t-blue, #2D6BCC) 9%, transparent)" : undefined }}>
                 <th scope="row" className="px-3 py-3 font-semibold whitespace-nowrap">{b.reference}
                   {b.isYourBatch && <span className="block text-xs mt-1 text-blue-600">Your batch</span>}
-                  <span className="block font-normal text-xs mt-1" style={{ color: "var(--t-muted)" }}>{b.orderedAt ? `Ordered ${date(b.orderedAt)}` : `Prepared ${date(b.createdAt)}`}</span>
+                  <span className="block font-normal text-xs mt-1" style={{ color: "var(--t-muted)" }}>{b.orderedAt ? `Submitted to vendor ${date(b.orderedAt)}` : `Prepared ${date(b.createdAt)}`}</span>
+                  {b.orders?.map(o => <span key={o.code} className="block font-normal text-xs mt-2">
+                    <span className="block font-medium">Order #{o.code}</span>
+                    <span className="block" style={{ color: "var(--t-muted)" }}>Order status: {o.status}</span>
+                  </span>)}
                 </th>
                 <td className="px-3 py-3">{b.region}</td><td className="px-3 py-3 tabular-nums">{b.kits.toLocaleString()}{b.targetKits != null ? ` / ${b.targetKits.toLocaleString()}` : ""}</td>
                 <td className="px-3 py-3"><span className="inline-block rounded-full border px-2 py-1 text-xs font-medium" style={{ borderColor: "var(--t-border)" }}>{b.status}</span></td>

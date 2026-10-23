@@ -221,6 +221,67 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     await api.saveSupplierConfig(f.id, admin, { expectedVersion: current.version, config: { ...current.config, showToMembers: false } });
     await expect(memberSupplierBatches(f.id, "synthetic-0")).rejects.toMatchObject({ status: 403 });
   });
+  it("matches canonical member identities and shows only their allocated orders through vendor submission", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([50, 50, 100, 15], [
+      { telegramUsername: "@Synthetic-Owner" }, { telegramUsername: "someone-else" },
+      { telegramUsername: "synthetic-owner" }, { telegramUsername: "@SYNTHETIC-OWNER" },
+    ]);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["@Synthetic-Owner", "someone-else", "synthetic-owner-other"] })
+      .where(eq(store.groupBuysTable.id, f.id));
+    let current = await api.saveSupplierConfig(f.id, admin, {
+      expectedVersion: f.result.version, config: { ...f.result.config, showToMembers: true },
+    });
+    for (let i = 0; i < 2; i++) current = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: current.proposals[0].token });
+    const first = current.batches.find((b: any) => b.snapshot.orders.some((o: any) => o.id === f.ids[0]));
+    const before = await memberSupplierBatches(f.id, "synthetic-owner");
+    expect(before.batches).toHaveLength(2);
+    expect(before.batches.flatMap((b: any) => b.orders)).toEqual([
+      { code: "test-0", status: "Submitted" }, { code: "test-2", status: "Submitted" },
+    ]);
+    expect(before.regions).toEqual([expect.objectContaining({ kits: 15, yourOrderStatus: "included" })]);
+    const similarName = await memberSupplierBatches(f.id, "synthetic-owner-other");
+    expect(similarName.batches).toEqual([]);
+    expect(JSON.stringify(similarName)).not.toContain(first.reference);
+    await expect(memberSupplierBatches(f.id, "synthetic-owne")).rejects.toMatchObject({ status: 404 });
+    await expect(memberSupplierBatches(f.id, "")).rejects.toMatchObject({ status: 404 });
+    await api.orderSupplierBatch(f.id, first.id, admin, { confirm: true });
+    const after = await memberSupplierBatches(f.id, "@SYNTHETIC-OWNER");
+    expect(after.batches.find((b: any) => b.id === first.id)).toMatchObject({
+      status: "Submitted to vendor", orders: [{ code: "test-0", status: "Processing" }],
+    });
+    expect(after.batches.find((b: any) => b.id !== first.id)).toMatchObject({
+      status: "Prepared", orders: [{ code: "test-2", status: "Submitted" }],
+    });
+    expect(JSON.stringify(after)).not.toMatch(/someone-else|telegramUsername|snapshot|productName|test-1/);
+    const persisted = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, first.id));
+    expect(persisted[0]).toMatchObject({ state: "ordered", orderedBy: admin.username });
+    expect(persisted[0].orderedAt).toBeInstanceOf(Date);
+    await api.orderSupplierBatch(f.id, first.id, admin, { confirm: true });
+    const [again] = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, first.id));
+    expect(again.orderedAt).toEqual(persisted[0].orderedAt);
+  });
+  it("uses canonical identity for joined membership and profile fallback without bypassing sharing", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([100], [{ telegramUsername: "@SYNTHETIC-0" }]);
+    const account = `Batch-Viewer-${f.id}`;
+    await store.db.insert(store.accountsTable).values({ telegramUsername: account, country: "Germany" });
+    try {
+      await store.db.insert(store.accountGroupBuysTable).values({ id: randomUUID(), accountId: account, groupBuyId: f.id });
+      const session = `@${account.toLowerCase()}`;
+      await expect(memberSupplierBatches(f.id, session)).rejects.toMatchObject({ status: 403 });
+      await api.saveSupplierConfig(f.id, admin, {
+        expectedVersion: f.result.version, config: { ...f.result.config, showToMembers: true },
+      });
+      const view = await memberSupplierBatches(f.id, session);
+      expect(view.countryRequired).toBe(false);
+      expect(view.regions[0]).toMatchObject({ id: "eu" });
+      expect(view.batches).toEqual([]);
+    } finally {
+      await store.db.delete(store.accountGroupBuysTable).where(and(eq(store.accountGroupBuysTable.accountId, account), eq(store.accountGroupBuysTable.groupBuyId, f.id)));
+      await store.db.delete(store.accountsTable).where(eq(store.accountsTable.telegramUsername, account));
+    }
+  });
   it("returns only Direct shipping for a member's active direct order, without requiring a country", async () => {
     const { memberSupplierBatches } = await import("./member-supplier-batches");
     const f = await fixture([30, 100], [{ routingType: "direct", directShippingRequested: true, shippingCountry: null }]);

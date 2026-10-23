@@ -32,3 +32,9 @@ For members whose active orders are all direct shipping, “View batches” shou
 **Why:** The user requested this explicitly after a direct-order member saw an unrelated regional batch and assumed their order was excluded.
 
 **How to apply:** Use the canonical routing decision, where an assigned reshipper overrides stale direct flags. If a member also has reshipper orders, preserve the corresponding regional information for those orders.
+
+Keep batch/vendor-submission status separate from the member's individual order status. A prepared supplier batch is not yet a submitted vendor purchase, and vendor submission is not shipment or receipt.
+
+**Why:** The user requested both their actual batch and their order status, plus an explicit Admin confirmation that the purchase has been submitted to the vendor.
+
+**How to apply:** Reuse the existing supplier-placement transaction and lifecycle. Show only the signed-in member's own current order codes/statuses inside an assigned batch, never all orders in that batch.

@@ -110,7 +110,7 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
           onChange={e => upd(d => ({ ...d, showToMembers: e.target.checked }))} />
         Show batch status to members
       </label>
-      <p className="text-[11px]" style={{ color: V.muted }}>Adds “View batches” to members’ group-buy card menus. Members see only their destination region’s kit progress, batch references and statuses—not other regions, customer details or supplier tracking numbers. Save settings to apply.</p>
+      <p className="text-[11px]" style={{ color: V.muted }}>Adds “View batches” to members’ group-buy card menus. Members see their own assigned batches and order statuses, plus regional progress when waiting for a batch—not other members’ orders or supplier tracking numbers. Save settings to apply.</p>
       <p className="text-[11px]" style={{ color: V.muted }}>Staff alerts only — members never receive supplier batch alerts.</p>
       <p className="text-[11px]" style={{ color: V.muted }}>Only fully paid regional orders count towards the target. Direct Shipping orders are handled separately and do not count.</p>
       <div className="space-y-2">
@@ -255,11 +255,11 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
     <div data-testid={`card-batch-${b.id}`} className="rounded-xl border p-3 space-y-2" style={{ borderColor: V.border }}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-sm font-bold font-mono" style={{ color: V.text }}>{b.reference}</span>
-        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${b.state === "ordered" ? "bg-green-100 text-green-700" : b.state === "released" ? "bg-slate-100 text-slate-500" : "bg-amber-100 text-amber-800"}`}>{b.state}</span>
+        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${b.state === "ordered" ? "bg-green-100 text-green-700" : b.state === "released" ? "bg-slate-100 text-slate-500" : "bg-amber-100 text-amber-800"}`}>{b.state === "ordered" ? "Submitted to vendor" : b.state}</span>
       </div>
       <p className="text-[11px]" style={{ color: V.muted }}>
         {b.snapshot.region.name} · {kits(b.snapshot.kits)} kits · {b.snapshot.orders.length} orders · prepared {fmt(b.createdAt)} by {b.createdBy}
-        {b.orderedAt && ` · ordered ${fmt(b.orderedAt)}`}{b.releasedAt && ` · released ${fmt(b.releasedAt)}`}
+        {b.orderedAt && ` · submitted to vendor ${fmt(b.orderedAt)}`}{b.releasedAt && ` · released ${fmt(b.releasedAt)}`}
       </p>
       {b.releaseReason && <p className="text-xs" style={{ color: V.text }}>Release reason: {b.releaseReason}</p>}
       {blocked && (
@@ -276,7 +276,7 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
       </div>}
       {b.state === "prepared" && !mode && (
         <div className="flex flex-wrap gap-2">
-          <button type="button" data-testid={`button-ordered-${b.id}`} disabled={busy || blocked} onClick={() => setMode("ordered")} className={btn} style={{ background: NAVY }}>Mark ordered from supplier & process these orders</button>
+          <button type="button" data-testid={`button-ordered-${b.id}`} disabled={busy || blocked} onClick={() => setMode("ordered")} className={btn} style={{ background: NAVY }}>Mark submitted to vendor</button>
           <button type="button" data-testid={`button-export-${b.id}`} disabled={busy || blocked} onClick={() => exportCsv(b.id)} className={ghost} style={{ borderColor: V.border, color: V.text }}><Download className="w-3.5 h-3.5" /> CSV</button>
           <button type="button" data-testid={`button-release-${b.id}`} disabled={busy} onClick={() => setMode("release")} className={ghost} style={{ borderColor: V.border, color: "#b91c1c" }}>Release unsent batch</button>
         </div>
@@ -296,9 +296,9 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
       )}
       {mode === "ordered" && (
         <div className="rounded-lg p-3 text-xs space-y-2" style={{ background: "var(--t-blue-08, rgba(45,107,204,0.08))", color: V.text }}>
-          <p>Only these {b.snapshot.orders.length} Submitted orders move to Processing. Payments are unchanged. Confirm you have placed this order with the supplier yourself.</p>
+          <p>Confirm you have actually submitted this batch to the vendor. This records “Submitted to vendor” and moves only these {b.snapshot.orders.length} Submitted orders to Processing. Payments and orders outside this batch are unchanged. No purchase is sent automatically.</p>
           <div className="flex gap-2">
-            <button type="button" data-testid={`button-confirm-ordered-${b.id}`} disabled={busy} onClick={async () => { if (await act(`/${encodeURIComponent(b.id)}/ordered`, { confirm: true })) setMode(null); }} className={btn} style={{ background: NAVY }}>{busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Confirm ordered</button>
+            <button type="button" data-testid={`button-confirm-ordered-${b.id}`} disabled={busy} onClick={async () => { if (await act(`/${encodeURIComponent(b.id)}/ordered`, { confirm: true })) setMode(null); }} className={btn} style={{ background: NAVY }}>{busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Confirm submitted to vendor</button>
             <button type="button" onClick={() => setMode(null)} disabled={busy} className="h-9 px-3 font-semibold" style={{ color: V.muted }}>Cancel</button>
           </div>
         </div>

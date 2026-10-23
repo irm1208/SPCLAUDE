@@ -35,6 +35,34 @@ const existingBatch: SupplierBatch = {
   releasedAt: null, releaseReason: null, snapshot: target, exceptions: [],
 };
 
+test("vendor submission requires confirmation and reuses the existing batch action", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const calls: unknown[] = [];
+  const props = {
+    b: existingBatch, busy: false, act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
+    exportCsv: async () => {}, exportTxt: async () => {},
+    context: { groupBuyId: "gb", scope: "admin" as const },
+  };
+  await act(async () => root.render(createElement(BatchCard, props)));
+  const open = container.querySelector('[data-testid="button-ordered-prepared-uk"]') as HTMLButtonElement;
+  assert.equal(open.textContent, "Mark submitted to vendor");
+  await act(async () => open.click());
+  assert.equal(calls.length, 0);
+  assert.match(container.textContent!, /Submitted orders to Processing/);
+  assert.match(container.textContent!, /orders outside this batch are unchanged/);
+  await act(async () => (container.querySelector('[data-testid="button-confirm-ordered-prepared-uk"]') as HTMLButtonElement).click());
+  assert.deepEqual(calls, [["/prepared-uk/ordered", { confirm: true }]]);
+  await act(async () => root.render(createElement(BatchCard, {
+    ...props, b: { ...existingBatch, state: "ordered", orderedAt: "2026-10-23T13:00:00Z" },
+  })));
+  assert.match(container.textContent!, /Submitted to vendor/);
+  assert.equal(container.querySelector('[data-testid="button-ordered-prepared-uk"]'), null);
+  await act(async () => root.unmount());
+  container.remove();
+});
+
 test("a below-target preview can add to an eligible prepared batch and shows the combined total", async () => {
   const container = document.createElement("div");
   document.body.append(container);

@@ -18,7 +18,7 @@ describe("member supplier batch projection", () => {
     received.receipt[0].good = 2;
     received.receipt[0].damaged = 0;
     expect(memberBatchSummary(batch, [received], new Set()).status).toBe("Received by reshipper");
-    expect(memberBatchSummary(batch, [{ ...received, cancelledAt: new Date() }], new Set()).status).toBe("Ordered from supplier");
+    expect(memberBatchSummary(batch, [{ ...received, cancelledAt: new Date() }], new Set()).status).toBe("Submitted to vendor");
   });
   it("keeps prepared and released states accurate and does not mark a released batch as your active batch", () => {
     expect(memberBatchSummary({ ...batch, state: "prepared" }, [parcel], new Set()).status).toBe("Prepared");

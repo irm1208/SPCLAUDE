@@ -1,8 +1,9 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db, accountsTable, accountGroupBuysTable, gbCountryLegsTable, groupBuysTable, ordersTable, orderLineItemsTable, groupBuyRefundsTable, gbSupplierEligibilityTable, gbSupplierSettingsTable, gbSupplierBatchesTable, gbSupplierAllocationsTable, gbSupplierShipmentsTable } from "@workspace/db";
 import { SupplierBatchError, collectSupplierQueues, isDirectSupplierOrder, propose, type BatchOrder, type SupplierConfig } from "./supplier-batches-model";
 import { orderReadiness, type QuantityShipment } from "./supplier-fulfilment-model";
 import { normalizeToCode } from "./country-utils";
+import { canonicalUsername } from "./group-buy-updates-model";
 
 type MemberBatch = { id: string; reference: string; state: string; createdAt: Date; orderedAt: Date | null;
   snapshot: { region: { name: string; countries?: string[]; targetKits?: number }; kits: number; orders: BatchOrder[] } };
@@ -42,7 +43,7 @@ export function memberRegionalProgress(config: SupplierConfig, queues: Map<strin
 /** Explicit allow-list: never spread staff batch/snapshot/shipment objects into a member response. */
 export function memberBatchSummary(batch: MemberBatch, shipments: MemberShipment[], ownBatchIds: Set<string>) {
   const active = shipments.filter(s => s.batchId === batch.id && !s.cancelledAt);
-  let status = batch.state === "released" ? "Released — not ordered" : batch.state === "prepared" ? "Prepared" : "Ordered from supplier";
+  let status = batch.state === "released" ? "Released — not ordered" : batch.state === "prepared" ? "Prepared" : "Submitted to vendor";
   if (batch.state === "ordered" && active.length) {
     const readiness = batch.snapshot.orders.map(o => orderReadiness(o, active, []));
     const complete = readiness.length > 0 && readiness.every(r => r.ready);
@@ -56,12 +57,15 @@ export function memberBatchSummary(batch: MemberBatch, shipments: MemberShipment
 }
 
 export async function memberSupplierBatches(id: string, username: string, database = db) {
+  const identity = canonicalUsername(username);
+  if (!identity) throw new SupplierBatchError("Group buy not found or you are not a member.", 404);
   return database.transaction(async tx => {
     const [group] = await tx.select({ name: groupBuysTable.name, status: groupBuysTable.status, forced: groupBuysTable.forcedUsernames })
       .from(groupBuysTable).where(eq(groupBuysTable.id, id));
     const [member] = await tx.select({ id: accountGroupBuysTable.id, countryLegId: accountGroupBuysTable.countryLegId }).from(accountGroupBuysTable)
-      .where(and(eq(accountGroupBuysTable.groupBuyId, id), eq(accountGroupBuysTable.accountId, username)));
-    if (!group || group.status === "archived" || (!member && !group.forced?.includes(username)))
+      .where(and(eq(accountGroupBuysTable.groupBuyId, id),
+        sql`lower(regexp_replace(btrim(${accountGroupBuysTable.accountId}), '^@', '')) = ${identity}`));
+    if (!group || group.status === "archived" || (!member && !group.forced?.some(name => canonicalUsername(name) === identity)))
       throw new SupplierBatchError("Group buy not found or you are not a member.", 404);
     const [settings] = await tx.select({ config: gbSupplierSettingsTable.config }).from(gbSupplierSettingsTable)
       .where(eq(gbSupplierSettingsTable.groupBuyId, id));
@@ -76,7 +80,7 @@ export async function memberSupplierBatches(id: string, username: string, databa
       refundStatus: ordersTable.refundStatus, deletedAt: ordersTable.deletedAt, batchLocked: ordersTable.batchLocked,
       routingType: ordersTable.routingType, directShippingRequested: ordersTable.directShippingRequested, reshipperUsername: ordersTable.reshipperUsername,
     }).from(ordersTable).where(eq(ordersTable.groupBuyId, id));
-    const ownActiveOrders = parents.filter(o => o.telegramUsername === username && !o.deletedAt
+    const ownActiveOrders = parents.filter(o => canonicalUsername(o.telegramUsername) === identity && !o.deletedAt
       && o.status !== "Cancelled" && o.paymentStatus !== "refunded");
     const directShipping = ownActiveOrders.some(isDirectSupplierOrder);
     const directShippingOnly = directShipping && ownActiveOrders.every(isDirectSupplierOrder);
@@ -84,7 +88,8 @@ export async function memberSupplierBatches(id: string, username: string, databa
     // Direct orders never belong to the regional supplier queue. Do not require a
     // destination country or expose unrelated regional counts for these members.
     if (directShippingOnly) return { ...base, countryRequired: false };
-    const [profile] = await tx.select({ country: accountsTable.country }).from(accountsTable).where(eq(accountsTable.telegramUsername, username));
+    const [profile] = await tx.select({ country: accountsTable.country }).from(accountsTable)
+      .where(sql`lower(regexp_replace(btrim(${accountsTable.telegramUsername}), '^@', '')) = ${identity}`);
     const [leg] = member?.countryLegId ? await tx.select({ country: gbCountryLegsTable.countryCode }).from(gbCountryLegsTable)
       .where(and(eq(gbCountryLegsTable.id, member.countryLegId), eq(gbCountryLegsTable.gbId, id))) : [];
     const countries = memberDestinationCountries(ownActiveOrders.filter(o => !isDirectSupplierOrder(o)), leg?.country, profile?.country);
@@ -127,6 +132,16 @@ export async function memberSupplierBatches(id: string, username: string, databa
         receiptChecked: gbSupplierShipmentsTable.receiptChecked, cancelledAt: gbSupplierShipmentsTable.cancelledAt })
         .from(gbSupplierShipmentsTable).where(inArray(gbSupplierShipmentsTable.batchId, ids));
     const own = new Set(used.filter(a => ownOrderIds.has(a.orderId)).map(a => a.batchId));
-    return { ...empty, regions, batches: batches.map(b => memberBatchSummary(b as MemberBatch, shipments as unknown as MemberShipment[], own)) };
+    return { ...empty, regions, batches: batches.map(b => ({
+      ...memberBatchSummary(b as MemberBatch, shipments as unknown as MemberShipment[], own),
+      // Read current statuses, not immutable purchase-snapshot statuses. Never
+      // expose another member's order codes, even inside a shared batch.
+      orders: (b.snapshot as MemberBatch["snapshot"]).orders
+        .filter(o => ownOrderIds.has(o.id) && allocations.get(o.id) === b.id)
+        .map(o => {
+          const current = ownActiveOrders.find(row => row.id === o.id)!;
+          return { code: current.code, status: current.status };
+        }),
+    })) };
   }, { isolationLevel: "repeatable read" });
 }
