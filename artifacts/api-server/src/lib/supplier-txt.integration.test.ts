@@ -67,6 +67,30 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("supplier TXT / iso
     const states = await store.db.select({ status: store.ordersTable.status, payment: store.ordersTable.paymentStatus }).from(store.ordersTable).where(eq(store.ordersTable.groupBuyId, f.group));
     expect(states.every((o: any) => o.status === "Submitted" && o.payment === "confirmed")).toBe(true);
   });
+  it("includes newly appended paid orders in the same batch supplier TXT", async () => {
+    const f = await fixture();
+    const id = randomUUID();
+    await store.db.insert(store.ordersTable).values({
+      id, code: "synthetic-appended", telegramUsername: "synthetic-member", groupBuyId: f.group,
+      deliveryMethod: "Synthetic", productSubtotal: "200", grandTotal: "200",
+      shippingCountry: "Italy", paymentStatus: "confirmed", paymentConfirmedAt: new Date(),
+      routingType: "reshipper", reshipperUsername: f.account,
+    });
+    await store.db.insert(store.orderLineItemsTable).values({
+      id: randomUUID(), orderId: id, productId: f.product, productName: f.product,
+      quantity: "2", unitPrice: "100", lineTotal: "200",
+    });
+    const current = await api.supplierData(f.group, admin);
+    await api.appendSupplierBatch(f.group, f.batch.id, admin, {
+      regionId: "eu", token: current.proposals[0].token,
+      expectedBatchToken: current.batches[0].snapshot.token,
+    });
+    const text = await api.exportSupplierTxt(f.group, admin, { batchId: f.batch.id });
+    expect(text).toContain(f.batch.reference);
+    expect(text).toContain("synthetic-appended");
+    expect(text).toContain("Total QTY: 102");
+    expect(text).toContain("Total: $4080.00");
+  });
   it("selects direct orders separately, uses vendor tiers and refuses cross-routing selections", async () => {
     const f = await fixture();
     expect((await api.supplierDirectOrders(f.group, admin)).orders.map((o: any) => o.id)).toEqual([f.ids[2]]);

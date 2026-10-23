@@ -5,7 +5,7 @@ import { requireAccount } from "../middleware/account-auth";
 import { memberSupplierBatches } from "../lib/member-supplier-batches";
 import { SupplierBatchError } from "../lib/supplier-batches-model";
 import { type UpdateActor } from "../lib/group-buy-updates-model";
-import { supplierData, saveSupplierConfig, confirmSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch, supplierDirectOrders, exportSupplierTxt } from "../lib/supplier-batches";
+import { supplierData, saveSupplierConfig, confirmSupplierBatch, appendSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch, supplierDirectOrders, exportSupplierTxt } from "../lib/supplier-batches";
 
 const router = Router();
 const roots = ["/admin/group-buys/:id/supplier-batches", "/organiser/group-buys/:id/supplier-batches"];
@@ -41,6 +41,7 @@ router.get(paths("/:batchId/export-txt"), async (req, res) => {
 });
 router.put(paths("/config"), async (req, res) => { res.json(await saveSupplierConfig(param(req, "id"), actor(req), req.body)); });
 router.post(paths("/confirm"), async (req, res) => { res.json(await confirmSupplierBatch(param(req, "id"), actor(req), req.body)); });
+router.post(paths("/:batchId/append"), async (req, res) => { res.json(await appendSupplierBatch(param(req, "id"), param(req, "batchId"), actor(req), req.body)); });
 router.post(paths("/review/:orderId"), async (req, res) => { res.json(await reviewHistoricalSupplierOrder(param(req, "id"), param(req, "orderId"), actor(req), req.body)); });
 router.post(paths("/:batchId/ordered"), async (req, res) => { res.json(await orderSupplierBatch(param(req, "id"), param(req, "batchId"), actor(req), req.body)); });
 router.post(paths("/:batchId/release"), async (req, res) => { res.json(await releaseSupplierBatch(param(req, "id"), param(req, "batchId"), actor(req), req.body)); });

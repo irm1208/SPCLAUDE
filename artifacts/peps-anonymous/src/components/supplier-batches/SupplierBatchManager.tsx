@@ -42,7 +42,7 @@ const toDraft = (c: BatchConfig): Draft => ({
 
 function Msg({ m, id }: { m: { err: boolean; text: string } | null; id: string }) {
   if (!m) return null;
-  return <p role={m.err ? "alert" : "status"} data-testid={id} className={`text-xs ${m.err ? "text-red-600" : "text-green-700"}`}>{m.text}</p>;
+  return <p role={m.err ? "alert" : "status"} data-testid={id} className={`text-xs whitespace-pre-wrap ${m.err ? "text-red-600" : "text-green-700"}`}>{m.text}</p>;
 }
 
 function ConfigEditor({ data, busy, run, reload, putConfig }: {
@@ -168,10 +168,16 @@ function OrdersDetail({ p }: { p: BatchProposal }) {
   );
 }
 
-function ProposalCard({ p, enabled, busy, onConfirm }: { p: BatchProposal; enabled: boolean; busy: boolean; onConfirm: (p: BatchProposal) => Promise<void> }) {
+export function ProposalCard({ p, enabled, busy, batches = [], onConfirm }: { p: BatchProposal; enabled: boolean; busy: boolean; batches?: SupplierBatch[]; onConfirm: (p: BatchProposal, includeAll: boolean, destination?: SupplierBatch) => Promise<boolean> }) {
   const [preview, setPreview] = useState<BatchProposal | null>(null);
+  const [includeAll, setIncludeAll] = useState(false);
+  const [destination, setDestination] = useState<SupplierBatch | null>(null);
+  const destinations = batches.filter(b => b.state === "prepared" && !b.exceptions.length
+    && b.snapshot.region.id === p.region.id
+    && [...b.snapshot.region.countries].sort().join(",") === [...p.region.countries].sort().join(","));
+  const destinationStale = destination && !destinations.some(b => b.id === destination.id && b.snapshot.token === destination.snapshot.token);
   const pct = Math.min(100, (p.queuedKits / (p.region.targetKits || 1)) * 100);
-  const stale = preview && preview.token !== p.token;
+  const stale = preview && preview.token !== (includeAll ? p.allQueued?.token : p.token);
   return (
     <div data-testid={`card-proposal-${p.region.id}`} className="rounded-xl border p-3 space-y-2" style={{ borderColor: V.border }}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -191,15 +197,45 @@ function ProposalCard({ p, enabled, busy, onConfirm }: { p: BatchProposal; enabl
       {p.products.length > 0 && <p className="text-[11px]" style={{ color: V.muted }}>{p.products.map(x => `${x.productName} ×${x.quantity}`).join(" · ")}</p>}
       {p.orders.length > 0 && <OrdersDetail p={p} />}
       {!preview ? (
-        <button type="button" data-testid={`button-preview-batch-${p.region.id}`} disabled={!enabled || busy || p.orders.length === 0} onClick={() => setPreview(p)} className={btn} style={{ background: NAVY }}>Preview batch</button>
+        <button type="button" data-testid={`button-preview-batch-${p.region.id}`} disabled={!enabled || busy || p.orders.length === 0} onClick={() => { setIncludeAll(false); setDestination(null); setPreview(p); }} className={btn} style={{ background: NAVY }}>Preview batch</button>
       ) : (
         <div data-testid={`preview-batch-${p.region.id}`} className="rounded-lg p-3 space-y-2 text-xs" style={{ background: "var(--t-blue-08, rgba(45,107,204,0.08))", color: V.text }}>
-          <p className="font-semibold">Prepare {kits(preview.kits)} kits from {preview.orders.length} paid orders ({preview.orders.map(o => o.code).join(", ")}).</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Orders to include in this batch">
+            <button type="button" aria-pressed={!includeAll} disabled={busy}
+              onClick={() => { setIncludeAll(false); setPreview(p); }}
+              className={ghost} style={{ borderColor: V.border, color: V.text }}>Target-sized batch · {kits(p.kits)} kits</button>
+            {p.allQueued && <button type="button" aria-pressed={includeAll} disabled={busy}
+              data-testid={`button-all-queued-${p.region.id}`}
+              onClick={() => { setIncludeAll(true); setPreview(p.allQueued!); }}
+              className={ghost} style={{ borderColor: V.border, color: V.text }}>All queued orders · {kits(p.allQueued.kits)} kits ({p.allQueued.orders.length} orders)</button>}
+          </div>
+          <label className="block space-y-1">
+            <span className="font-semibold">Batch destination</span>
+            <select data-testid={`select-batch-destination-${p.region.id}`} value={destination?.id ?? ""} disabled={busy}
+              onChange={e => setDestination(destinations.find(b => b.id === e.target.value) ?? null)}
+              className={inputCls} style={inputStyle}>
+              <option value="">Create a new batch</option>
+              {destinations.map(b => <option key={b.id} value={b.id}>Add to {b.reference} · {kits(b.snapshot.kits)} kits · {b.snapshot.orders.length} orders</option>)}
+              {destination && !destinations.some(b => b.id === destination.id) && <option value={destination.id} disabled>{destination.reference} — no longer available</option>}
+            </select>
+          </label>
+          {destination ? <p className="font-semibold">Add to {destination.reference}: {kits(destination.snapshot.kits)} + {kits(preview.kits)} = {kits(destination.snapshot.kits + preview.kits)} kits · {destination.snapshot.orders.length + preview.orders.length} orders in total.</p>
+            : <p style={{ color: V.muted }}>Only same-region prepared batches without exceptions can receive more orders. Ordered and released batches are protected.</p>}
+          {destination && <p style={{ color: V.muted }}>Existing orders stay in this batch. Only the queued orders listed below are added; the batch reference stays the same. Additions may be below the target.</p>}
+          {destinationStale && <div role="alert" className="space-y-1 text-amber-700">
+            <p>The existing batch changed. Review its latest totals before adding orders, or choose another batch.</p>
+            {destinations.some(b => b.id === destination?.id) && <button type="button" disabled={busy}
+              onClick={() => setDestination(destinations.find(b => b.id === destination?.id) ?? null)}
+              className={ghost} style={{ borderColor: V.border, color: V.text }}>Refresh selected batch</button>}
+          </div>}
+          <p className="font-semibold">{includeAll ? "All queued orders selected" : "Target-sized batch selected"} · Target: {kits(preview.region.targetKits)} kits · Left in queue: {kits(preview.remainingKits)} kits</p>
+          <p className="font-semibold">{destination ? "Add" : "Prepare"} {kits(preview.kits)} kits from {preview.orders.length} paid orders ({preview.orders.map(o => o.code).join(", ")}).</p>
+          <OrdersDetail p={preview} />
           <p style={{ color: V.muted }}>This records a supplier batch only. No supplier order is placed and no member parcel status changes.</p>
           {stale && <p role="alert" className="text-amber-700">The queue changed since this preview. Confirming uses the preview shown above; the server will reject it if it is no longer valid. Close and re-preview to see the latest.</p>}
           <div className="flex gap-2">
-            <button type="button" data-testid={`button-confirm-batch-${p.region.id}`} disabled={!enabled || busy} onClick={async () => { await onConfirm(preview); setPreview(null); }} className={btn} style={{ background: NAVY }}>
-              {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Confirm batch
+            <button type="button" data-testid={`button-confirm-batch-${p.region.id}`} disabled={!enabled || busy || !!stale || !!destinationStale || (!destination && !preview.ready)} onClick={async () => { if (await onConfirm(preview, includeAll, destination ?? undefined)) setPreview(null); }} className={btn} style={{ background: NAVY }}>
+              {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />} {destination ? `Add ${preview.orders.length} orders to batch` : includeAll ? `Confirm all ${preview.orders.length} orders` : "Confirm batch"}
             </button>
             <button type="button" onClick={() => setPreview(null)} disabled={busy} className="h-9 px-3 font-semibold" style={{ color: V.muted }}>Close</button>
           </div>
@@ -209,9 +245,10 @@ function ProposalCard({ p, enabled, busy, onConfirm }: { p: BatchProposal; enabl
   );
 }
 
-function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; exportTxt: (id: string) => Promise<void>; context: Props }) {
+export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; exportTxt: (id: string) => Promise<void>; context: Props }) {
   const [mode, setMode] = useState<"ordered" | "release" | null>(null);
   const [showFulfilment, setShowFulfilment] = useState(false);
+  const [txtMessage, setTxtMessage] = useState<{ err: boolean; text: string } | null>(null);
   const [reason, setReason] = useState("");
   const blocked = b.exceptions.length > 0;
   return (
@@ -244,7 +281,16 @@ function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: Supplie
           <button type="button" data-testid={`button-release-${b.id}`} disabled={busy} onClick={() => setMode("release")} className={ghost} style={{ borderColor: V.border, color: "#b91c1c" }}>Release unsent batch</button>
         </div>
       )}
-      {context.scope === "admin" && b.state !== "released" && <button type="button" disabled={busy || blocked} onClick={() => exportTxt(b.id)} className={ghost} style={{ borderColor: V.border, color: V.text }}><Download className="w-3.5 h-3.5" />Download supplier TXT</button>}
+      {context.scope === "admin" && b.state !== "released" && <button type="button" disabled={busy || blocked} onClick={async () => {
+        setTxtMessage(null);
+        try {
+          await exportTxt(b.id);
+          setTxtMessage({ err: false, text: "Supplier TXT downloaded. Order statuses and payments are unchanged." });
+        } catch (e) {
+          setTxtMessage({ err: true, text: e instanceof Error ? e.message : "Export failed." });
+        }
+      }} className={ghost} style={{ borderColor: V.border, color: V.text }}><Download className="w-3.5 h-3.5" />Download supplier TXT</button>}
+      <Msg m={txtMessage} id={`text-supplier-txt-${b.id}`} />
       {b.state === "ordered" && (
         <button type="button" data-testid={`button-export-${b.id}`} disabled={busy || blocked} onClick={() => exportCsv(b.id)} className={ghost} style={{ borderColor: V.border, color: V.text }}><Download className="w-3.5 h-3.5" /> CSV</button>
       )}
@@ -305,10 +351,9 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
     try { await downloadSupplierCsv(scope, groupBuyId, id, headers); } catch (e) { setMsg({ err: true, text: e instanceof Error ? e.message : "Export failed." }); }
   };
   const exportTxt = async (id: string) => {
-    if (busyRef.current) return;
+    if (busyRef.current) throw new Error("Another supplier action is still running. Try again when it finishes.");
     busyRef.current = true; setBusy(true); setMsg(null);
-    try { await downloadSupplierTxt(groupBuyId, { batchId: id }, headers); setMsg({ err: false, text: "Supplier TXT downloaded. Order statuses and payments are unchanged." }); }
-    catch (e) { setMsg({ err: true, text: e instanceof Error ? e.message : "Export failed." }); }
+    try { await downloadSupplierTxt(groupBuyId, { batchId: id }, headers); }
     finally { busyRef.current = false; setBusy(false); }
   };
 
@@ -332,8 +377,10 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
         {!d.config.enabled && <p className="text-xs" style={{ color: V.muted }}>Batching is disabled. History stays available; new batches cannot be confirmed.</p>}
         {d.proposals.length === 0 && <p className="text-xs" style={{ color: V.muted }}>No regional queues yet.</p>}
         {d.proposals.map(p => (
-          <ProposalCard key={p.region.id} p={p} enabled={d.config.enabled} busy={busy}
-            onConfirm={async snap => { await act("/confirm", { regionId: snap.region.id, token: snap.token }, `Batch prepared for ${snap.region.name}.`); }} />
+          <ProposalCard key={p.region.id} p={p} batches={d.batches} enabled={d.config.enabled} busy={busy}
+            onConfirm={async (snap, includeAll, destination) => destination
+              ? act(`/${encodeURIComponent(destination.id)}/append`, { regionId: snap.region.id, token: snap.token, includeAll, expectedBatchToken: destination.snapshot.token }, `Added ${snap.orders.length} orders (${kits(snap.kits)} kits) to ${destination.reference}.`)
+              : act("/confirm", { regionId: snap.region.id, token: snap.token, includeAll }, `Batch prepared for ${snap.region.name}: ${kits(snap.kits)} kits from ${snap.orders.length} orders.`)} />
         ))}
       </section>
       {d.review.length > 0 && (

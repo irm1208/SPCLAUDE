@@ -104,11 +104,11 @@ function canonical(v: any): any {
 }
 /** JSONB does not preserve insertion order. Hash semantic content, not key order. */
 export const fingerprint = (v: unknown) => createHash("sha256").update(JSON.stringify(canonical(v))).digest("hex");
-export function propose(queue: BatchOrder[], target: number) {
+export function propose(queue: BatchOrder[], target: number, includeAll = false) {
   const sorted = [...queue].sort((a, b) => a.orderingAt.localeCompare(b.orderingAt) || a.id.localeCompare(b.id));
   const total = sorted.reduce((s, o) => s + o.kits, 0);
   const orders: BatchOrder[] = []; let kits = 0;
-  for (const o of sorted) { if (kits >= target) break; orders.push(o); kits += o.kits; }
+  for (const o of sorted) { if (!includeAll && kits >= target) break; orders.push(o); kits += o.kits; }
   const products = new Map<string, { productId: string; productName: string; quantity: number }>();
   for (const o of orders) for (const i of o.items) {
     const key = `${i.productId}:${i.productName}`;

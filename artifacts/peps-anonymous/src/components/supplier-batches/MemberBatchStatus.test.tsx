@@ -15,6 +15,27 @@ let host: HTMLDivElement, root: ReturnType<typeof createRoot>, client: InstanceT
 const group = { id: "gb", name: "Test group buy", showSupplierBatches: true };
 const response = { groupBuy: group, batches: [{ id: "b", reference: "SB-001", region: "EU", kits: 100.5,
   status: "Ordered from supplier", isYourBatch: true, createdAt: "2026-10-01Z", orderedAt: "2026-10-02Z" }] };
+it("shows only Direct shipping for direct-only orders, not regional queues or supplier batches", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ ...response, directShipping: true, directShippingOnly: true,
+    countryRequired: true, regions: [{ id: "eu", name: "EU", kits: 35, targetKits: 50, status: "Filling" }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("Direct shipping");
+  expect(document.querySelector('[role="progressbar"]')).toBeNull();
+  expect(document.querySelector("table")).toBeNull();
+  expect(document.body.textContent).not.toContain("35 / 50");
+  expect(document.body.textContent).not.toContain("Set your country");
+  expect(document.body.textContent).not.toContain("once a batch is prepared");
+  expect(document.body.textContent).not.toContain("This tracks the supplier batch");
+});
+it("keeps regional batches visible when a member has both direct and reshipper orders", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ ...response, directShipping: true, directShippingOnly: false,
+    regions: [{ id: "eu", name: "EU", kits: 35, targetKits: 50, status: "Filling", yourOrderStatus: "included" }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("Direct shipping");
+  expect(document.body.textContent).toContain("35 / 50 kits");
+  expect(document.body.textContent).toContain("Your order is in this batch");
+  expect(document.body.textContent).toContain("SB-001");
+});
 beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -67,10 +88,26 @@ it("opens a read-only table from the menu and highlights the member's own batch"
 it("shows a real empty state, and removes cached rows when sharing is revoked", async () => {
   vi.mocked(fetch).mockResolvedValueOnce(Response.json({ groupBuy: group, batches: [] }));
   await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
-  expect(document.body.textContent).toContain("The supplier-order status will appear here once a batch is prepared.");
+  expect(document.body.textContent).toContain("Your order has not been assigned to a supplier batch yet.");
   vi.mocked(fetch).mockResolvedValue(Response.json({ error: "Batch status is not shared" }, { status: 403 }));
   await act(async () => { await client.invalidateQueries({ queryKey: ["member-supplier-batches"] }); }); await flush();
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("Batch status is not shared");
+  expect(document.querySelector("table")).toBeNull();
+});
+it("never displays unrelated batch references, including stale data from a previous API version", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ ...response,
+    batches: [...response.batches, { ...response.batches[0], id: "other", reference: "GB-OTHER / 002", isYourBatch: false }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("SB-001");
+  expect(document.body.textContent).not.toContain("GB-OTHER");
+  expect(document.querySelectorAll("tbody tr")).toHaveLength(1);
+});
+it("shows an unassigned message instead of any other member's batch", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ ...response,
+    batches: [{ ...response.batches[0], isYourBatch: false }] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("Your order has not been assigned to a supplier batch yet.");
+  expect(document.body.textContent).not.toContain("SB-001");
   expect(document.querySelector("table")).toBeNull();
 });
 it("shows the member's regional progress even before any batch has been prepared", async () => {

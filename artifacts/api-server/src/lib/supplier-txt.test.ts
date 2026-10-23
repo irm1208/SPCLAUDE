@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { supplierTxt, validateSupplierContact } from "./supplier-txt";
+import { supplierTxt, validateSupplierContact, supplierTxtSetupIssues } from "./supplier-txt";
 
 const contact = { name: "Recipient", address: "12 Test Street\nTest City 12345", country: "GB", email: "delivery@example.com", phone: "+441234567890" };
 const order = { id: "o1", code: "123", username: "member", items: [{ productName: "HGH 36IU", quantity: 0.5 }] };
 const block = { title: "BATCH-EU-001", orders: [order], contact, recipient: "reshipper", packagePrices: [70] };
+it("lists every missing supplier setup requirement together", () => {
+  const missing = { ...block, contact: null as any };
+  const issues = supplierTxtSetupIssues([missing], []);
+  expect(issues.some(i => /name, address, country, email, phone/.test(i))).toBe(true);
+  expect(issues.some(i => /HGH 36IU/.test(i) && /FS3 costs/.test(i))).toBe(true);
+  expect(() => supplierTxt([missing], [])).toThrow(/Supplier TXT setup required/);
+});
+
+it("accepts complete setup and reports invalid contact fields and duplicate supplier costs", () => {
+  expect(supplierTxtSetupIssues([block], [{ productName: "HGH 36IU", unitCost: 50 }])).toEqual([]);
+  const issues = supplierTxtSetupIssues([{ ...block, contact: { ...contact, email: "bad", phone: "bad", country: "XX" } }],
+    [{ productName: "HGH 36IU", unitCost: 50 }, { productName: "hgh 36iu", unitCost: 40 }]);
+  expect(issues.join(" ")).toMatch(/country, email, phone/);
+  expect(issues.join(" ")).toMatch(/exact supplier cost/);
+});
 describe("supplier TXT", () => {
   it("aggregates kit quantities and supplier cost, retains order references", () => {
     const text = supplierTxt([{ ...block, orders: [order, { ...order, id: "o2", code: "124" }] }], [{ productName: "hgh 36iu", unitCost: 40 }]);

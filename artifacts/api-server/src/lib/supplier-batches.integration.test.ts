@@ -56,6 +56,135 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const preserved = await api.saveSupplierConfig(f.id, admin, { expectedVersion: saved.version, config: oldClient });
     expect(preserved.config.showToMembers).toBe(true);
   });
+  it("adds below-target queued orders to a prepared batch and updates its exports idempotently", async () => {
+    const f = await fixture([100, 15]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const batch = prepared.batches[0];
+    const queued = prepared.proposals[0];
+    expect(queued.ready).toBe(false);
+    const body = { regionId: "eu", token: queued.token, expectedBatchToken: batch.snapshot.token };
+    const result = await api.appendSupplierBatch(f.id, batch.id, admin, body);
+    const merged = result.batches[0];
+    expect(result.batches).toHaveLength(1);
+    expect(merged.reference).toBe(batch.reference);
+    expect(merged.snapshot.kits).toBe(115);
+    expect(merged.snapshot.orders.map((o: any) => o.id)).toEqual(f.ids);
+    expect(merged.exceptions).toEqual([]);
+    expect(result.proposals[0].queuedKits).toBe(0);
+    const exported = await api.exportSupplierBatch(f.id, batch.id, admin);
+    for (const code of ["test-0", "test-1"]) expect(exported.csv).toContain(code);
+    const replay = await api.appendSupplierBatch(f.id, batch.id, admin, body);
+    expect(replay.batches[0].snapshot.orders).toHaveLength(2);
+    const rows = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.groupBuyId, f.id));
+    expect(rows.every((o: any) => o.status === "Submitted" && o.paymentStatus === "confirmed")).toBe(true);
+    const ordered = await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    expect(ordered.batches[0].state).toBe("ordered");
+    const processed = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.groupBuyId, f.id));
+    expect(processed.every((o: any) => o.status === "Processing")).toBe(true);
+  });
+
+  it("rejects stale target snapshots, wrong regions, released and already ordered batches", async () => {
+    const f = await fixture([100, 15]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const batch = prepared.batches[0];
+    const body = { regionId: "eu", token: prepared.proposals[0].token, expectedBatchToken: batch.snapshot.token };
+    await expect(api.appendSupplierBatch(f.id, batch.id, admin, { ...body, expectedBatchToken: "stale" })).rejects.toThrow(/batch changed/i);
+    await expect(api.appendSupplierBatch(f.id, batch.id, admin, { ...body, regionId: "uk" })).rejects.toThrow(/region|preview/i);
+    await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    await expect(api.appendSupplierBatch(f.id, batch.id, admin, body)).rejects.toThrow(/prepared/i);
+    const other = await fixture([100, 15]);
+    const otherPrepared = await api.confirmSupplierBatch(other.id, admin, { regionId: "eu", token: other.result.proposals[0].token });
+    const otherBatch = otherPrepared.batches[0];
+    await api.releaseSupplierBatch(other.id, otherBatch.id, admin, { confirm: true, reason: "Synthetic release" });
+    await expect(api.appendSupplierBatch(other.id, otherBatch.id, admin, {
+      regionId: "eu", token: otherPrepared.proposals[0].token, expectedBatchToken: otherBatch.snapshot.token,
+    })).rejects.toThrow(/prepared/i);
+  });
+
+  it("does not append an outdated queue or bypass refund flags, permissions or group boundaries", async () => {
+    const f = await fixture([100, 15]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const batch = prepared.batches[0];
+    const body = { regionId: "eu", token: prepared.proposals[0].token, expectedBatchToken: batch.snapshot.token };
+    await expect(api.appendSupplierBatch(f.id, batch.id, { username: "stranger", admin: false }, body)).rejects.toMatchObject({ status: 403 });
+    await expect(api.appendSupplierBatch(f.id, randomUUID(), admin, body)).rejects.toMatchObject({ status: 404 });
+    await store.db.update(store.ordersTable).set({ paymentStatus: "unpaid" }).where(eq(store.ordersTable.id, f.ids[1]));
+    await expect(api.appendSupplierBatch(f.id, batch.id, admin, body)).rejects.toThrow(/preview changed/i);
+    await store.db.update(store.ordersTable).set({ paymentStatus: "confirmed", refundStatus: "requested" })
+      .where(eq(store.ordersTable.id, f.ids[1]));
+    await expect(api.appendSupplierBatch(f.id, batch.id, admin, body)).rejects.toThrow(/preview changed/i);
+    const result = await api.supplierData(f.id, admin);
+    expect(result.batches[0].snapshot.kits).toBe(100);
+    expect(result.batches[0].snapshot.orders).toHaveLength(1);
+  });
+  it("serializes concurrent repeat additions and records the allocation once", async () => {
+    const f = await fixture([100, 15]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const batch = prepared.batches[0];
+    const body = { regionId: "eu", token: prepared.proposals[0].token, expectedBatchToken: batch.snapshot.token };
+    const results = await Promise.all([
+      api.appendSupplierBatch(f.id, batch.id, admin, body),
+      api.appendSupplierBatch(f.id, batch.id, admin, body),
+    ]);
+    expect(results.every(r => r.batches[0].snapshot.kits === 115)).toBe(true);
+    const assigned = await store.db.select().from(store.gbSupplierAllocationsTable)
+      .where(eq(store.gbSupplierAllocationsTable.batchId, batch.id));
+    expect(assigned).toHaveLength(2);
+  });
+  it("rejects additions from a different configured region and destination batch exceptions", async () => {
+    const f = await fixture([100, 15], [{ shippingCountry: "Italy" }, { shippingCountry: "UK" }]);
+    const initial = await api.supplierData(f.id, admin);
+    const configured = await api.saveSupplierConfig(f.id, admin, {
+      expectedVersion: initial.version, config: { ...initial.config, regions: [
+        { id: "eu", name: "EU", countries: ["IT"], targetKits: 100 },
+        { id: "uk", name: "UK", countries: ["GB"], targetKits: 100 },
+      ] },
+    });
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: configured.proposals.find((p: any) => p.region.id === "eu").token });
+    const batch = prepared.batches[0];
+    const uk = prepared.proposals.find((p: any) => p.region.id === "uk");
+    await expect(api.appendSupplierBatch(f.id, batch.id, admin, {
+      regionId: "uk", token: uk.token, expectedBatchToken: batch.snapshot.token,
+    })).rejects.toThrow(/same region/i);
+    await store.db.update(store.ordersTable).set({ amountDue: "10" }).where(eq(store.ordersTable.id, f.ids[0]));
+    await expect(api.appendSupplierBatch(f.id, batch.id, admin, {
+      regionId: "uk", token: uk.token, expectedBatchToken: batch.snapshot.token,
+    })).rejects.toThrow(/exceptions/i);
+  });
+  it("confirms all queued paid orders with its own stale-safe preview token", async () => {
+    const f = await fixture([50, 50, 15]);
+    const current = await api.supplierData(f.id, admin);
+    const preview = current.proposals[0];
+    expect(preview.orders).toHaveLength(2);
+    expect(preview.allQueued.orders).toHaveLength(3);
+    expect(preview.allQueued.kits).toBe(115);
+    expect(preview.allQueued.region.targetKits).toBe(100);
+    expect(preview.allQueued.token).not.toBe(preview.token);
+    await expect(api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: preview.token, includeAll: true,
+    })).rejects.toThrow(/preview changed/);
+    const saved = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: preview.allQueued.token, includeAll: true,
+    });
+    expect(saved.batches).toHaveLength(1);
+    expect(saved.batches[0].snapshot.kits).toBe(115);
+    expect(saved.proposals[0].queuedKits).toBe(0);
+    const replay = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: preview.allQueued.token, includeAll: true,
+    });
+    expect(replay.batches).toHaveLength(1);
+  });
+  it("rejects an all-queue preview if another paid order joins before confirmation", async () => {
+    const f = await fixture([100, 15]);
+    const current = await api.supplierData(f.id, admin);
+    await store.db.update(store.orderLineItemsTable).set({ quantity: "16", lineTotal: "160" })
+      .where(eq(store.orderLineItemsTable.orderId, f.ids[1]));
+    await expect(api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: current.proposals[0].allQueued.token, includeAll: true,
+    })).rejects.toThrow(/preview changed/);
+    const after = await api.supplierData(f.id, admin);
+    expect(after.batches).toHaveLength(0);
+  });
   it("gates member summaries on membership and visibility, and highlights only active allocations", async () => {
     const { memberSupplierBatches } = await import("./member-supplier-batches");
     const f = await fixture([100]);
@@ -79,8 +208,9 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
       expect(joinedView).toMatchObject({ batches: [], regions: [], countryRequired: true });
       await store.db.update(store.accountsTable).set({ country: "Germany" }).where(eq(store.accountsTable.telegramUsername, joined));
       const euView = await memberSupplierBatches(f.id, joined);
-      expect(euView.batches[0].isYourBatch).toBe(false);
-      expect(euView.batches[0].reference).toBe(summary.batches[0].reference);
+      expect(euView.batches).toEqual([]);
+      expect(euView.regions[0].name).toBe("EU");
+      expect(JSON.stringify(euView)).not.toContain(summary.batches[0].reference);
       await store.db.update(store.accountsTable).set({ country: "United States" }).where(eq(store.accountsTable.telegramUsername, joined));
       expect((await memberSupplierBatches(f.id, joined)).batches).toEqual([]);
     } finally {
@@ -90,6 +220,47 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const current = await api.supplierData(f.id, admin);
     await api.saveSupplierConfig(f.id, admin, { expectedVersion: current.version, config: { ...current.config, showToMembers: false } });
     await expect(memberSupplierBatches(f.id, "synthetic-0")).rejects.toMatchObject({ status: 403 });
+  });
+  it("returns only Direct shipping for a member's active direct order, without requiring a country", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([30, 100], [{ routingType: "direct", directShippingRequested: true, shippingCountry: null }]);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["synthetic-0"] }).where(eq(store.groupBuysTable.id, f.id));
+    await expect(memberSupplierBatches(f.id, "synthetic-0")).rejects.toMatchObject({ status: 403 });
+    const enabled = await api.saveSupplierConfig(f.id, admin, {
+      expectedVersion: f.result.version, config: { ...f.result.config, showToMembers: true },
+    });
+    await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: enabled.proposals[0].token });
+    const view = await memberSupplierBatches(f.id, "synthetic-0");
+    expect(view).toMatchObject({ directShipping: true, directShippingOnly: true, countryRequired: false, batches: [], regions: [] });
+    await expect(memberSupplierBatches(f.id, "outsider")).rejects.toMatchObject({ status: 404 });
+  });
+  it("does not mistake stale direct flags or cancelled direct orders for a direct-only member", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([30, 15], [
+      { routingType: "direct", directShippingRequested: true, reshipperUsername: "synthetic-reshipper" },
+      { routingType: "direct", directShippingRequested: true, status: "Cancelled", telegramUsername: "synthetic-0" },
+    ]);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["synthetic-0"] }).where(eq(store.groupBuysTable.id, f.id));
+    await api.saveSupplierConfig(f.id, admin, { expectedVersion: f.result.version, config: { ...f.result.config, showToMembers: true } });
+    const view = await memberSupplierBatches(f.id, "synthetic-0");
+    expect(view).toMatchObject({ directShipping: false, directShippingOnly: false });
+    expect(view.regions[0]).toMatchObject({ kits: 30, yourOrderStatus: "included" });
+  });
+  it("shows mixed-route members only the non-direct order's regional progress", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([30, 15], [
+      { routingType: "direct", directShippingRequested: true, shippingCountry: "UK" },
+      { routingType: "reshipper", telegramUsername: "synthetic-0", shippingCountry: "Italy" },
+    ]);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["synthetic-0"] }).where(eq(store.groupBuysTable.id, f.id));
+    await api.saveSupplierConfig(f.id, admin, {
+      expectedVersion: f.result.version, config: { ...f.result.config, showToMembers: true,
+        regions: [...f.result.config.regions, { id: "uk", name: "UK", countries: ["GB"], targetKits: 100 }] },
+    });
+    const view = await memberSupplierBatches(f.id, "synthetic-0");
+    expect(view).toMatchObject({ directShipping: true, directShippingOnly: false });
+    expect(view.regions.map((r: any) => r.id)).toEqual(["eu"]);
+    expect(view.regions[0].kits).toBe(15);
   });
   it("shares only each destination's queue and historical batches, without altering readiness or orders", async () => {
     const { memberSupplierBatches } = await import("./member-supplier-batches");
@@ -129,7 +300,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
       expect(view.batches[0]).toMatchObject({ region, kits: 100, targetKits: 100, isYourBatch: true, status: "Prepared" });
       expect(JSON.stringify(view)).not.toMatch(/synthetic-|snapshot|telegramUsername|trackingNumber|productName|token/);
     }
-    expect(de.batches[0].isYourBatch).toBe(false);
+    expect(de.batches).toEqual([]);
     expect(await store.db.select().from(store.gbSupplierSettingsTable).where(eq(store.gbSupplierSettingsTable.groupBuyId, f.id))).toEqual(before);
     expect(await store.db.select({ id: store.ordersTable.id, status: store.ordersTable.status }).from(store.ordersTable)
       .where(eq(store.ordersTable.groupBuyId, f.id))).toEqual(statusesBefore);
@@ -144,6 +315,31 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     expect(f.result.review.some((o: any) => o.id === f.ids[1])).toBe(false);
     expect(f.result.events.some((e: any) => e.kind === "ready")).toBe(false);
     await expect(api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token })).rejects.toThrow(/no longer ready/);
+  });
+  it("returns only each member's assigned batches, never other batches in the same region", async () => {
+    const { memberSupplierBatches } = await import("./member-supplier-batches");
+    const f = await fixture([100, 100, 15], [{}, {}, { telegramUsername: "synthetic-0" }]);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["synthetic-0", "synthetic-1"] })
+      .where(eq(store.groupBuysTable.id, f.id));
+    let current = await api.saveSupplierConfig(f.id, admin, {
+      expectedVersion: f.result.version, config: { ...f.result.config, showToMembers: true },
+    });
+    for (let i = 0; i < 2; i++) current = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: current.proposals[0].token });
+    const first = current.batches.find((b: any) => b.snapshot.orders.some((o: any) => o.id === f.ids[0]));
+    const second = current.batches.find((b: any) => b.id !== first.id);
+    const a = await memberSupplierBatches(f.id, "synthetic-0");
+    const b = await memberSupplierBatches(f.id, "synthetic-1");
+    expect(a.batches.map((batch: any) => batch.reference)).toEqual([first.reference]);
+    expect(b.batches.map((batch: any) => batch.reference)).toEqual([second.reference]);
+    expect(JSON.stringify(a)).not.toContain(second.reference);
+    expect(JSON.stringify(b)).not.toContain(first.reference);
+    await api.appendSupplierBatch(f.id, first.id, admin, {
+      regionId: "eu", token: current.proposals[0].token, expectedBatchToken: first.snapshot.token,
+    });
+    expect((await memberSupplierBatches(f.id, "synthetic-0")).batches[0]).toMatchObject({ reference: first.reference, kits: 115 });
+    await api.releaseSupplierBatch(f.id, first.id, admin, { confirm: true, reason: "Synthetic release" });
+    expect((await memberSupplierBatches(f.id, "synthetic-0")).batches).toEqual([]);
+    expect((await memberSupplierBatches(f.id, "synthetic-1")).batches[0].reference).toBe(second.reference);
   });
   it("processes and exports 100 reshipper kits without including the separate direct order", async () => {
     const f = await fixture([70, 30, 30], [{}, { routingType: "direct", directShippingRequested: true }, { routingType: "reshipper" }]);

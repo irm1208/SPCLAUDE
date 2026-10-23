@@ -27,9 +27,36 @@ export interface TxtBlock {
 }
 const line = (s: string) => String(s).replace(/[\r\n\t]/g, " ");
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/** Report all setup blockers before generating any file; never invent prices or contacts. */
+export function supplierTxtSetupIssues(blocks: TxtBlock[], costs: { productName: string; unitCost: number | string }[]): string[] {
+  const issues = new Set<string>();
+  for (const b of blocks) {
+    const invalid: string[] = [];
+    const v = b.contact as Partial<SupplierContact> | null | undefined;
+    for (const key of ["name", "address", "country", "email", "phone"] as const) {
+      const value = v?.[key];
+      if (typeof value !== "string" || !value.trim() || value.length > (key === "address" ? 2000 : 200)
+        || (key !== "address" && /[\r\n]/.test(value))
+        || (key === "country" && !COUNTRY_CODE_TO_NAME[normalizeToCode(value)])
+        || (key === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()))
+        || (key === "phone" && !/^[+\d\s().-]{6,40}$/.test(value.trim()))) invalid.push(key);
+    }
+    if (invalid.length) issues.add(`${b.recipient}: supplier delivery ${invalid.join(", ")} missing or invalid. For reshipper batches, save these in the recipient's Reshipper dashboard → supplier delivery details. Direct orders use the member's shipping details.`);
+    for (const o of b.orders) for (const i of o.items) {
+      const matches = costs.filter(c => c.productName.trim().toLowerCase() === i.productName.trim().toLowerCase());
+      if (matches.length !== 1 || !Number.isFinite(Number(matches[0].unitCost)) || Number(matches[0].unitCost) < 0)
+        issues.add(`Set an exact supplier cost in Admin → FS3 costs for ${i.productName} before downloading.`);
+    }
+  }
+  return [...issues];
+}
+
 /** All blocks validate before returning any file. Never infer supplier cost from retail prices. */
 export function supplierTxt(blocks: TxtBlock[], costs: { productName: string; unitCost: number | string }[]): string {
   if (!blocks.length) throw new SupplierBatchError("No orders selected for export.", 400);
+  const issues = supplierTxtSetupIssues(blocks, costs);
+  if (issues.length) throw new SupplierBatchError(`Supplier TXT setup required:\n${issues.map(issue => `• ${issue}`).join("\n")}\nNo file was generated. Save the missing setup, then retry. Order statuses and payments are unchanged.`, 400);
   return blocks.map(b => {
     let contact: SupplierContact;
     try { contact = validateSupplierContact(b.contact); }

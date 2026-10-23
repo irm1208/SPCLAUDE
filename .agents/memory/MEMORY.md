@@ -8,25 +8,18 @@
 - [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
 - [Discord signup verification policy](discord-signup-verification-policy.md) — successful Discord OAuth replaces email verification and CAPTCHA for new Discord accounts; invite-only signup still applies.
 - [Browser test import order](browser-test-import-order.md) — initialize jsdom before importing browser-only libraries; early Radix/Wouter imports can silently disable portals or history updates.
-- [Lab test extract blob preference](lab-test-extract-blob-preference.md) — CoA re-extract (single+batch) must try stored pdfBlob before external url; Cloudflare-blocked sources always fail otherwise even with a local copy.
+- [Lab imports and reports](lab-import-reference.md) — provider restrictions, extraction pitfalls, bloodwork parsing, certificate compression and blob-free lists.
 - [GB entry-fee join gate](gb-entry-fee-join-gate.md) — membership only inserted after fee confirmed (402 ENTRY_FEE_REQUIRED gate in join handler); any new join path must route through same gate.
 - [GB entry-fee confirm atomicity](gb-entry-fee-confirm-atomicity.md) — confirm status-update + membership-grant must be one transaction w/ idempotent retry, or payment shows confirmed forever with no membership.
 - [Duplicated join-modal entry-fee gap](duplicated-join-modal-entry-fee-gap.md) — Groups.tsx & CustomerPortal.tsx each have their own copy of "Join a Group Buy"; a handler fix ported to one silently missed the other.
 - [PageLayout Portal-nav vs DashboardShell](pagelayout-portal-nav-vs-dashboardshell.md) — /order & /review show Hub/Orders/GB sidebar labels even for guests; only search/bell/credits header row signals real DashboardShell chrome.
-- [Blood test parser ordering rules](blood-test-parser-ordering.md) — NHDL before HDL, VLDL before LDL, ACTB12 before VITB12, CKMB before CK; HDL notWith "non", LDL notWith "vldl", FT3 notWith "total".
-- [Blood test US unit normalization](blood-test-us-units.md) — normalizeUnits() in parsePDF.ts converts ng/dL, pg/mL, mg/dL, g/dL, NGSP% to SI/UK catalog units on import.
 - [Production startup migrations](prod-startup-migrations.md) — How production schema changes work and what goes wrong when columns are missing.
-- [Uzorak bulk import fix](uzorak-import.md) — Uzorak 302-redirects /verify/X.pdf back to SPA hash; bypass via Supabase RPC, not direct download.
 - [protobufjs-blocked](protobufjs-blocked.md) — Replit firewall blocks protobufjs@7.5.4; replaced @google/genai with a local REST shim at lib/google-genai-shim.
 - [Gemini local module](gemini-shim-api-version.md) — pnpm workspace alias for @google/genai is broken; use local src/lib/google-genai.ts (OpenAI-compatible /chat/completions).
 - [Build vs typecheck separation](build-typecheck-separation.md) — build script decoupled from typecheck; recurring zod v4, Express 5 params, and api-zod codegen issues documented.
 - [GitHub push from Replit](github-push-replit.md) — Replit askpass blocks git push; bypass with GIT_ASKPASS="" + token in URL + lfs.locksverify=false. Rebase --continue must go via Project Task.
-- [Lab test preview embeddability](lab-test-preview-embeddability.md) — Janoshik: Cloudflare+SAMEORIGIN → link only. Uzorak: no X-Frame-Options → iframe directly when no snapshot/pdf.
-- [Janoshik import via browser helper](janoshik-cloudflare-import.md) — Janoshik Cloudflare-blocks server fetches (403); import only via admin bookmarklet → receiver → bookmarklet-import; single + bulk (2-tab postMessage worker, same-host only); preview/proxy prefer stored blob.
 - [Testing pool mobile overflow](testing-pool-mobile-overflow.md) — TestingPool/GbTestingPool wrap in overflow-x-hidden (clips, not scrolls); long compound labels get cut off → need min-w-0+break-words; use lg:grid-cols-2 not md:.
 - [Testing pool vial funding semantics](testing-pool-vial-funding.md) — extra-vial pricing increases the shared funding goal once, not each contributor's payment; selected vial count is pool-wide.
-- [Lab certificate compression](lab-cert-compression.md) — all pdfBlob writes funnel through prepareCertificateForStorage (→WebP q85); compress stored bytes only, extract on originals; idempotent via ≤90% keep rule.
-- [Lab-test list endpoints exclude pdfBlob](lab-tests-list-no-blob.md) — list/bulk lab_tests queries must project columns explicitly and omit pdfBlob; bare select() bloats response to ~105MB and silently breaks /tests page. Images load via /proxy.
 - [Wholesale share status races](wholesale-share-status-races.md) — lock/cancel/submit/delivery writes each need conditional status-gated updates (→409); only the chosen recipient sets the address.
 - [Wholesale share max-people cap](wholesale-share-max-members.md) — max_members nullable=no limit; new shares uncapped, existing keep 10 (not migrated); PUT cap min 2 (lock needs ≥2), ≤1000, ≥ current count.
 - [Workflow topology](workflow-topology.md) — only "Start application" + mockup-sandbox are canonical; api-server/web workflows are duplicates that FAIL on port conflict if restarted alongside it. Restart only "Start application" to reload secrets.
@@ -89,8 +82,6 @@
 - [Mockup registry Git churn](mockup-registry-git-churn.md) — sandbox registry discovery must sort paths; unsorted glob output lets duplicate preview servers rewrite a tracked file and blocks Git pulls.
 - [Sage AI model admin override](sage-ai-model-admin-override.md) — explicit model param skips fallback chain; a stale site_config sage_ai_model row can pin a proxy-account-unsupported model, breaking ALL Sage calls with 503 model_not_found.
 - [Embedded app absolute asset paths](embedded-app-absolute-asset-paths.md) — third-party build iframed under a subpath can have runtime fetches hardcoded to site-root paths (base:'./' doesn't cover these); mirror the files at the expected absolute path.
-- [Sage visual extraction format](sage-visual-extraction-format.md) — GPT-5.5 needs OpenAI image_url parts; rasterize PDFs first and strip Zhihuiai think wrappers before JSON parsing.
-- [Lab test field multilayer drop](lab-test-field-multilayer-drop.md) — "field missing" bugs can hide independently in prompt/mapping/payload/backend-insert; trace field name through all 4 layers + backfill existing rows.
 - [Order preview draft isolation](order-preview-draft-isolation.md) — preview/read-only order-form modes must guard EVERY persisted-draft write or they wipe the user's real in-progress draft; hide member-only action prompts too.
 - [Dev JWT auth-endpoint testing](dev-jwt-testing-auth-endpoints.md) — no dev-login route, but account_session routes are curl-testable: sign JWT with the dev fallback secret; DB lookups via executeSql (pg not requirable).
 - [Dashboard logo asset reuse](dashboard-logo-asset-reuse.md) — when matching dashboard branding, reuse its exact icon rail, SaltPepsMark, and /brand wordmark asset; never rebuild the lockup with styled text.
@@ -154,6 +145,7 @@
 - [Payment country policy](payment-country-policy.md) — country lists restrict joining/ordering, never payments for existing orders; explicit payment pauses and verification remain.
 - [Solana payment validation](solana-payment-validation.md) — indexed RPC restrictions differ from transaction access; mint-history examples may have no positive net receipt.
 - [Reshipper aggregate downloads](reshipper-aggregate-downloads.md) — fulfilment TXT is one combined total order per reshipper, without member names or individual breakdowns.
-- [Member regional batches](member-regional-batches.md) — members see only destination-region queue progress and history, server-filtered and opt-in; paid batch counts differ from MOQ.
+- [Member regional batches](member-regional-batches.md) — opt-in regional queue progress; batch codes/statuses only for members' own allocated orders, server-filtered; direct-only shows Direct shipping.
 - [Mobile chat overlays](mobile-chat-overlays.md) — chat must clear floating navigation and track the visual viewport; page animation containers can defeat local stacking.
 - [Shared-order organiser names](shared-order-organiser-name.md) — require a real full name, separate from account ownership and the delivery recipient; do not expose it to other members.
+- [Supplier batch policies](supplier-batch-export-policy.md) — keep full FS3 setup; add orders only to same-region prepared batches, including below-target additions.

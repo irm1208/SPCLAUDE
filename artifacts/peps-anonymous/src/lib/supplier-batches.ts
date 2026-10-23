@@ -4,7 +4,7 @@ export interface BatchRegion { id: string; name: string; countries: string[]; ta
 export interface BatchConfig { enabled: boolean; telegramAlerts: boolean; showToMembers?: boolean; regions: BatchRegion[] }
 export interface BatchItem { productId: string; productName: string; quantity: number; unitPrice: string; lineTotal: string }
 export interface BatchOrder { id: string; code: string; username: string; country: string; kits: number; paidAt: string | null; orderingAt: string; historicalReviewed: boolean; items: BatchItem[] }
-export interface BatchProposal { region: BatchRegion; token: string; orders: BatchOrder[]; kits: number; queuedKits: number; remainingKits: number; ready: boolean; readyAt: string | null; products: {productId: string; productName: string; quantity: number}[] }
+export interface BatchProposal { region: BatchRegion; token: string; orders: BatchOrder[]; kits: number; queuedKits: number; remainingKits: number; ready: boolean; readyAt: string | null; products: {productId: string; productName: string; quantity: number}[]; allQueued?: BatchProposal }
 export interface SupplierBatch { id: string; reference: string; state: "prepared" | "ordered" | "released"; createdAt: string; createdBy: string; orderedAt: string | null; releasedAt: string | null; releaseReason: string | null; snapshot: BatchProposal; exceptions: {orderId: string; code: string; reason: string}[] }
 export interface SupplierData {
   groupBuy: {id: string; name: string}; config: BatchConfig; version: number; checkedAt: string | null;

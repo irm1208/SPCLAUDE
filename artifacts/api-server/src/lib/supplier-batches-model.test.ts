@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { validateRegions, eligibleOrder, propose, snapshotOrder, fingerprint, csv, EU_COUNTRIES } from "./supplier-batches-model";
+it("can include the entire regional queue without changing its target", () => {
+  const queue = [20, 30, 15].map((qty, i) => snapshotOrder(order(`all-${i}`, qty)));
+  const target = propose(queue, 50);
+  const all = propose(queue, 50, true);
+  expect(target.kits).toBe(50);
+  expect(target.remainingKits).toBe(15);
+  expect(all.kits).toBe(65);
+  expect(all.orders).toHaveLength(3);
+  expect(all.remainingKits).toBe(0);
+  expect(all.ready).toBe(true);
+  expect(propose(queue.slice(0, 1), 50, true).ready).toBe(false);
+});
 
 const order = (id: string, quantity = 1, extra: any = {}) => ({
   id, code: id, telegramUsername: id, shippingCountry: "Italy", status: "Submitted",

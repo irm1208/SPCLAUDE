@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db, accountsTable, accountGroupBuysTable, gbCountryLegsTable, groupBuysTable, ordersTable, orderLineItemsTable, groupBuyRefundsTable, gbSupplierEligibilityTable, gbSupplierSettingsTable, gbSupplierBatchesTable, gbSupplierAllocationsTable, gbSupplierShipmentsTable } from "@workspace/db";
-import { SupplierBatchError, collectSupplierQueues, propose, type BatchOrder, type SupplierConfig } from "./supplier-batches-model";
+import { SupplierBatchError, collectSupplierQueues, isDirectSupplierOrder, propose, type BatchOrder, type SupplierConfig } from "./supplier-batches-model";
 import { orderReadiness, type QuantityShipment } from "./supplier-fulfilment-model";
 import { normalizeToCode } from "./country-utils";
 
@@ -76,16 +76,23 @@ export async function memberSupplierBatches(id: string, username: string, databa
       refundStatus: ordersTable.refundStatus, deletedAt: ordersTable.deletedAt, batchLocked: ordersTable.batchLocked,
       routingType: ordersTable.routingType, directShippingRequested: ordersTable.directShippingRequested, reshipperUsername: ordersTable.reshipperUsername,
     }).from(ordersTable).where(eq(ordersTable.groupBuyId, id));
+    const ownActiveOrders = parents.filter(o => o.telegramUsername === username && !o.deletedAt
+      && o.status !== "Cancelled" && o.paymentStatus !== "refunded");
+    const directShipping = ownActiveOrders.some(isDirectSupplierOrder);
+    const directShippingOnly = directShipping && ownActiveOrders.every(isDirectSupplierOrder);
+    const base = { groupBuy: { id, name: group.name }, batches: [], regions: [], directShipping, directShippingOnly };
+    // Direct orders never belong to the regional supplier queue. Do not require a
+    // destination country or expose unrelated regional counts for these members.
+    if (directShippingOnly) return { ...base, countryRequired: false };
     const [profile] = await tx.select({ country: accountsTable.country }).from(accountsTable).where(eq(accountsTable.telegramUsername, username));
     const [leg] = member?.countryLegId ? await tx.select({ country: gbCountryLegsTable.countryCode }).from(gbCountryLegsTable)
       .where(and(eq(gbCountryLegsTable.id, member.countryLegId), eq(gbCountryLegsTable.gbId, id))) : [];
-    const countries = memberDestinationCountries(parents.filter(o => o.telegramUsername === username), leg?.country, profile?.country);
-    const empty = { groupBuy: { id, name: group.name }, batches: [], regions: [], countryRequired: countries.size === 0 };
+    const countries = memberDestinationCountries(ownActiveOrders.filter(o => !isDirectSupplierOrder(o)), leg?.country, profile?.country);
+    const empty = { ...base, countryRequired: countries.size === 0 };
     if (!countries.size) return empty; // No guessed/global region access when country is unknown.
     const allBatches = await tx.select({ id: gbSupplierBatchesTable.id, reference: gbSupplierBatchesTable.reference, state: gbSupplierBatchesTable.state,
       createdAt: gbSupplierBatchesTable.createdAt, orderedAt: gbSupplierBatchesTable.orderedAt, snapshot: gbSupplierBatchesTable.snapshot })
       .from(gbSupplierBatchesTable).where(eq(gbSupplierBatchesTable.groupBuyId, id)).orderBy(asc(gbSupplierBatchesTable.sequence));
-    const batches = allBatches.filter(b => memberCanViewBatch(b as MemberBatch, countries));
     const orderIds = parents.map(o => o.id);
     const [lines, refunds, used, eligibility] = orderIds.length ? await Promise.all([
       tx.select({ orderId: orderLineItemsTable.orderId, productId: orderLineItemsTable.productId, quantity: orderLineItemsTable.quantity,
@@ -102,8 +109,13 @@ export async function memberSupplierBatches(id: string, username: string, databa
     const refundIds = new Set(refunds.map(r => r.orderId));
     const all = parents.map(o => ({ ...o, lineItems: byOrder.get(o.id) ?? [], activeRefund: refundIds.has(o.id) }));
     const { queues } = collectSupplierQueues({ all, used, elig: eligibility, config });
-    const ownOrderIds = new Set(parents.filter(o => o.telegramUsername === username).map(o => o.id));
+    const ownOrderIds = new Set(ownActiveOrders.filter(o => !isDirectSupplierOrder(o)).map(o => o.id));
     const regions = memberRegionalProgress(config, queues, countries, ownOrderIds);
+    const allocations = new Map(used.map(a => [a.orderId, a.batchId]));
+    // Region membership alone does not grant access to another member's batch.
+    // Require an exact current allocation of an owned active order in its snapshot.
+    const batches = allBatches.filter(b => b.state !== "released" && memberCanViewBatch(b as MemberBatch, countries)
+      && (b.snapshot as MemberBatch["snapshot"]).orders.some(o => ownOrderIds.has(o.id) && allocations.get(o.id) === b.id));
     if (!batches.length) return { ...empty, regions };
     const ids = batches.map(b => b.id);
     const shipments = await tx.select({ batchId: gbSupplierShipmentsTable.batchId, contents: gbSupplierShipmentsTable.contents, receipt: gbSupplierShipmentsTable.receipt,

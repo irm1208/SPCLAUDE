@@ -7,6 +7,8 @@ export interface MemberBatchStatusData {
   groupBuy: { id: string; name: string };
   regions?: { id: string; name: string; kits: number; targetKits: number; status: string; yourOrderStatus?: "included" | "waiting" | "not_included" }[];
   countryRequired?: boolean;
+  directShipping?: boolean;
+  directShippingOnly?: boolean;
   batches: { id: string; reference: string; region: string; kits: number; targetKits?: number | null; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null }[];
 }
 const date = (v: string) => new Date(v).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
@@ -21,13 +23,18 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
       return data;
     },
   });
+  const ownBatches = query.data?.batches.filter(b => b.isYourBatch) ?? [];
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
     <DialogContent className="max-w-3xl max-h-[85dvh] overflow-y-auto" style={{ color: "var(--t-text)", background: "var(--t-surface)" }}>
       <DialogHeader><DialogTitle>Batch status — {gb.name}</DialogTitle>
-        <DialogDescription>See your region’s batch progress and which batch includes your order.</DialogDescription></DialogHeader>
+        <DialogDescription className={query.data?.directShippingOnly ? "sr-only" : undefined}>{query.data?.directShippingOnly ? "Your order uses direct shipping." : "See your region’s batch progress and which batch includes your order."}</DialogDescription></DialogHeader>
       {query.isPending ? <p role="status">Loading batches…</p>
         : query.isError ? <div role="alert"><p>{query.error.message}</p><button type="button" onClick={() => query.refetch()} className="mt-2 underline">Try again</button></div>
         : <>
+          {query.data.directShipping && <div className="rounded-lg border p-4" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)" }}>
+            <h3 className="font-semibold">Direct shipping</h3>
+          </div>}
+          {!query.data.directShippingOnly && <>
           {query.data.countryRequired ? <p>Set your country in your account profile to see your region’s batch progress.</p>
             : <>
               {!!query.data.regions?.length && <section aria-label="Regional batch progress" className="space-y-3">
@@ -42,7 +49,7 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
                   </div>}
                   {region.yourOrderStatus === "waiting" && <p className="text-sm">Your order is waiting for a later batch. The current batch has reached its target.</p>}
                   {region.yourOrderStatus === "not_included" && <p className="text-sm" style={{ color: "var(--t-muted)" }}>
-                    {query.data.batches.some(b => b.isYourBatch) ? "Your assigned supplier batch is listed below."
+                    {ownBatches.length ? "Your assigned supplier batch is listed below."
                       : "Your order is not included in this filling batch. Only fully paid, eligible orders are included; Direct Shipping orders are separate."}
                   </p>}
                   <p className="text-lg font-bold tabular-nums">{region.kits.toLocaleString()} / {region.targetKits.toLocaleString()} kits</p>
@@ -54,14 +61,13 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
                 </div>)}
                 <p className="text-xs" style={{ color: "var(--t-muted)" }}>Fully paid kits queued for your region. Orders stay together, so a batch can exceed its target. Contents are finalised when the organiser prepares the batch. Ready means the target is reached, not that the supplier order has been placed.</p>
               </section>}
-              {!query.data.regions?.length && !query.data.batches.length && <p>No batch region is available for your destination yet.</p>}
+              {!query.data.regions?.length && !ownBatches.length && <p>No batch region is available for your destination yet.</p>}
             </>}
-          {!query.data.countryRequired && (!query.data.batches.length ? <p>The supplier-order status will appear here once a batch is prepared.</p> : <>
-          {!query.data.batches.some(b => b.isYourBatch) && <p className="text-sm" style={{ color: "var(--t-muted)" }}>No orders from your account are currently assigned to a listed batch.</p>}
+          {!query.data.countryRequired && (!ownBatches.length ? <p>Your order has not been assigned to a supplier batch yet.</p> : <>
           <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--t-border)" }}>
             <table className="w-full text-sm text-left"><caption className="sr-only">Supplier batches and current statuses</caption>
               <thead style={{ background: "var(--t-surface2)" }}><tr>{["Batch", "Country / region", "Kits", "Status"].map(h => <th key={h} scope="col" className="px-3 py-3 font-semibold">{h}</th>)}</tr></thead>
-              <tbody>{query.data.batches.map(b => <tr key={b.id} className="border-t" style={{ borderColor: "var(--t-border)", background: b.isYourBatch ? "color-mix(in srgb, var(--t-blue, #2D6BCC) 9%, transparent)" : undefined }}>
+              <tbody>{ownBatches.map(b => <tr key={b.id} className="border-t" style={{ borderColor: "var(--t-border)", background: b.isYourBatch ? "color-mix(in srgb, var(--t-blue, #2D6BCC) 9%, transparent)" : undefined }}>
                 <th scope="row" className="px-3 py-3 font-semibold whitespace-nowrap">{b.reference}
                   {b.isYourBatch && <span className="block text-xs mt-1 text-blue-600">Your batch</span>}
                   <span className="block font-normal text-xs mt-1" style={{ color: "var(--t-muted)" }}>{b.orderedAt ? `Ordered ${date(b.orderedAt)}` : `Prepared ${date(b.createdAt)}`}</span>
@@ -72,8 +78,9 @@ export function MemberBatchStatus({ gb, onClose }: { gb: Group; onClose: () => v
             </table>
           </div>
           </>)}
+          </>}
         </>}
-      <p className="text-xs" style={{ color: "var(--t-muted)" }}>This tracks the supplier batch, not final delivery to your address. Customer details and supplier tracking numbers are private. Updates refresh automatically while this window is open.</p>
+      {!query.data?.directShippingOnly && <p className="text-xs" style={{ color: "var(--t-muted)" }}>This tracks the supplier batch, not final delivery to your address. Customer details and supplier tracking numbers are private. Updates refresh automatically while this window is open.</p>}
     </DialogContent>
   </Dialog>;
 }

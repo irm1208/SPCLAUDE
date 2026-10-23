@@ -106,7 +106,11 @@ async function state(tx: any, group: any, reconcile = true) {
         }
       } else { delete readiness[region.id]; readyAt = null; }
     }
-    return { ...p, region, token, readyAt };
+    const all = propose(queues.get(region.id) ?? [], region.targetKits, true);
+    return { ...p, region, token, readyAt, allQueued: {
+      ...all, region, readyAt,
+      token: fingerprint({ version: data.stored?.version ?? 0, region, orders: all.orders, includeAll: true }),
+    } };
   });
   if (reconcile && data.stored) {
     for (const p of proposals) {
@@ -160,13 +164,17 @@ export async function saveSupplierConfig(id: string, actor: UpdateActor, body: a
 }
 export async function confirmSupplierBatch(id: string, actor: UpdateActor, body: any, database = db) {
   if (typeof body?.regionId !== "string" || typeof body?.token !== "string") throw new SupplierBatchError("Select a displayed batch preview.", 400);
+  if (body.includeAll !== undefined && typeof body.includeAll !== "boolean") throw new SupplierBatchError("Choose target-sized or all queued orders.", 400);
   return locked(id, actor, async (tx, group) => {
     const [existing] = await tx.select().from(batches).where(and(eq(batches.groupBuyId, id), eq(batches.previewToken, body.token)));
     // Only replay a still-active exact preparation; released proposals must be refreshed.
     if (existing && existing.state !== "released") return state(tx, group);
     const current = await state(tx, group);
     if (!current.config.enabled) throw new SupplierBatchError("Supplier batching is disabled.");
-    const p = current.proposals.find(p => p.region.id === body.regionId);
+    const regionProposal = current.proposals.find(p => p.region.id === body.regionId);
+    if (!regionProposal) throw new SupplierBatchError("This preview changed or is no longer ready. Reload and review the latest orders before confirming.");
+    const { allQueued, ...targetProposal } = regionProposal;
+    const p = body.includeAll === true ? allQueued : targetProposal;
     if (!p || !p.ready || p.token !== body.token || existing) throw new SupplierBatchError("This preview changed or is no longer ready. Reload and review the latest orders before confirming.");
     await assertNoActiveRefunds(tx, p.orders.map(o => o.id));
     const sequence = Math.max(0, ...current.batches.map((b: any) => b.sequence)) + 1;
@@ -174,6 +182,52 @@ export async function confirmSupplierBatch(id: string, actor: UpdateActor, body:
     await tx.insert(batches).values({ id: batchId, groupBuyId: id, sequence, reference, previewToken: p.token, snapshot: p, createdBy: actor.username });
     await tx.insert(allocations).values(p.orders.map(o => ({ orderId: o.id, batchId })));
     await audit(tx, id, actor.username, "prepared", { batchId, reference, orderIds: p.orders.map(o => o.id), kits: p.kits });
+    return state(tx, group);
+  }, database);
+}
+export async function appendSupplierBatch(id: string, batchId: string, actor: UpdateActor, body: any, database = db) {
+  if (typeof body?.regionId !== "string" || typeof body?.token !== "string"
+    || typeof body?.expectedBatchToken !== "string"
+    || (body.includeAll !== undefined && typeof body.includeAll !== "boolean"))
+    throw new SupplierBatchError("Select a displayed preview and an existing prepared batch.", 400);
+  const requestKey = fingerprint({ batchId, regionId: body.regionId, token: body.token,
+    expectedBatchToken: body.expectedBatchToken, includeAll: body.includeAll === true });
+  return locked(id, actor, async (tx, group) => {
+    // Durable replay protection survives later additions, placement and page reloads.
+    const [replay] = await tx.select({ id: events.id }).from(events).where(and(
+      eq(events.groupBuyId, id), eq(events.kind, "appended"),
+      sql`${events.detail}->>'requestKey' = ${requestKey}`,
+    ));
+    if (replay) return state(tx, group);
+    const current = await state(tx, group);
+    if (!current.config.enabled) throw new SupplierBatchError("Supplier batching is disabled.");
+    const batch = current.batches.find((b: any) => b.id === batchId);
+    if (!batch) throw new SupplierBatchError("Batch not found.", 404);
+    if (batch.state !== "prepared") throw new SupplierBatchError("Orders can only be added to a prepared batch, before supplier placement.");
+    if (batch.exceptions.length) throw new SupplierBatchError("Resolve the existing batch's order/payment exceptions before adding orders.");
+    if (batch.snapshot.token !== body.expectedBatchToken) throw new SupplierBatchError("The existing batch changed. Reload and review its latest totals before adding orders.");
+    const regionProposal = current.proposals.find(p => p.region.id === body.regionId);
+    if (!regionProposal) throw new SupplierBatchError("This region preview changed. Reload and review the latest orders.");
+    const { allQueued, ...targetProposal } = regionProposal;
+    const p = body.includeAll === true ? allQueued : targetProposal;
+    if (p.token !== body.token || !p.orders.length) throw new SupplierBatchError("This preview changed. Reload and review the latest orders before adding them.");
+    if (batch.snapshot.region.id !== p.region.id
+      || fingerprint([...batch.snapshot.region.countries].sort()) !== fingerprint([...p.region.countries].sort()))
+      throw new SupplierBatchError("Choose a prepared batch for the same region and countries.");
+    await assertNoActiveRefunds(tx, p.orders.map(o => o.id));
+    const combined = propose([...batch.snapshot.orders, ...p.orders], batch.snapshot.region.targetKits, true);
+    const snapshot = { ...batch.snapshot, ...combined, queuedKits: combined.kits, remainingKits: 0,
+      token: fingerprint({ previous: batch.snapshot.token, requestKey, orders: combined.orders }) };
+    const updated = await tx.update(batches).set({ snapshot }).where(and(
+      eq(batches.id, batchId), eq(batches.groupBuyId, id), eq(batches.state, "prepared"),
+      sql`${batches.snapshot}->>'token' = ${body.expectedBatchToken}`,
+    )).returning({ id: batches.id });
+    if (!updated.length) throw new SupplierBatchError("The existing batch changed. Reload and review it before retrying.");
+    await tx.insert(allocations).values(p.orders.map(o => ({ orderId: o.id, batchId })));
+    await audit(tx, id, actor.username, "appended", {
+      requestKey, batchId, reference: batch.reference, orderIds: p.orders.map(o => o.id),
+      addedKits: p.kits, totalKits: snapshot.kits,
+    });
     return state(tx, group);
   }, database);
 }
