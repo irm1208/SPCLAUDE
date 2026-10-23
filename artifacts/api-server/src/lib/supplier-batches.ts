@@ -116,12 +116,19 @@ async function state(tx: any, group: any, reconcile = true) {
     for (const p of proposals) {
       const ready = readiness[p.region.id];
       if (!ready?.eventId) continue;
-      const text = `${group.name}: ${p.region.name} supplier batch ready — ${p.kits} kits / target ${p.region.targetKits}. Review and prepare the batch in your organiser dashboard. No supplier order has been placed.`;
+      const text = `${group.name}: ${p.region.name} supplier batch ready — ${p.kits} kits / target ${p.region.targetKits}. Review and prepare the batch in the group-buy supplier batches panel. No supplier order has been placed.`;
       const inserted = await tx.insert(events).values({
         id: ready.eventId, groupBuyId: id, kind: "ready",
         detail: { region: p.region.name, kits: p.kits, target: p.region.targetKits, readyAt: ready.readyAt, thresholdPaidAt: ready.thresholdPaidAt, text },
         recipient: group.organiserId, telegram: data.config.telegramAlerts && group.organiserId ? "pending" : "disabled",
       }).onConflictDoNothing().returning({ id: events.id });
+      // Separate durable deliveries: one recipient's failure must not resend
+      // the other's message. Also supports groups without an organiser.
+      await tx.insert(events).values({
+        id: `${ready.eventId}:admin`, groupBuyId: id, kind: "ready_admin",
+        detail: { region: p.region.name, kits: p.kits, target: p.region.targetKits, readyAt: ready.readyAt, thresholdPaidAt: ready.thresholdPaidAt, text },
+        recipient: null, telegram: data.config.telegramAlerts ? "pending" : "disabled",
+      }).onConflictDoNothing();
       if (inserted.length && group.organiserId) {
         // Website feed insertion is in the same transaction and deduped by the durable event.
         await tx.insert(telegramMessageLogsTable).values({

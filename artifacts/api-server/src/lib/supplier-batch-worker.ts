@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { db, gbSupplierSettingsTable as settings, gbSupplierEventsTable as events } from "@workspace/db";
 import { reconcileSupplierGroup } from "./supplier-batches";
-import { notifyUserFull } from "./telegram";
+import { notifyUserFull, sendAdminMessageFull } from "./telegram";
 import { registerScheduler } from "./scheduler-registry";
 
 let cursor = "", pending: ReturnType<typeof setTimeout> | null = null, running = false;
@@ -43,9 +43,10 @@ export function requestSupplierReconciliation() {
   pending.unref();
 }
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-export async function drainSupplierAlerts() {
+export async function drainSupplierAlerts(groupBuyId?: string) {
   const now = new Date();
-  const rows = await db.select().from(events).where(and(inArray(events.telegram, ["pending", "retry", "sending"]), lte(events.availableAt, now))).orderBy(asc(events.availableAt)).limit(10);
+  const rows = await db.select().from(events).where(and(inArray(events.telegram, ["pending", "retry", "sending"]), lte(events.availableAt, now),
+    groupBuyId ? eq(events.groupBuyId, groupBuyId) : undefined)).orderBy(asc(events.availableAt)).limit(10);
   for (const row of rows) {
     const lease = new Date(Date.now() + 120_000);
     const [claimed] = await db.update(events).set({ telegram: "sending", availableAt: lease, attempts: row.attempts + 1 })
@@ -60,11 +61,17 @@ export async function drainSupplierAlerts() {
       continue;
     }
     try {
-      const result = await notifyUserFull(row.recipient!, "status", escape(String((row.detail as any).text)), undefined,
-        { eventKey: `supplier-ready:${row.id}`, websiteAlreadyRecorded: true });
+      const text = escape(String((row.detail as any).text));
+      const result = row.kind === "ready_admin"
+        ? await sendAdminMessageFull(text)
+        : await notifyUserFull(row.recipient!, "status", text, undefined,
+          { eventKey: `supplier-ready:${row.id}`, websiteAlreadyRecorded: true });
+      const skipped = "skipped" in result && result.skipped;
+      const missingAdminChat = row.kind === "ready_admin" && "chatId" in result && !result.chatId;
       await db.update(events).set({
-        telegram: result.ok ? "delivered" : result.skipped ? "skipped" : "retry",
-        lastError: result.ok ? null : result.skipped ? "Telegram disabled by preferences, not linked, or unavailable. Website alert remains visible." : "Telegram delivery failed; retry scheduled.",
+        telegram: result.ok ? "delivered" : skipped ? "skipped" : "retry",
+        lastError: result.ok ? null : missingAdminChat ? "Admin Telegram chat is not configured; retry scheduled."
+          : skipped ? "Telegram disabled by preferences, not linked, or unavailable. Website alert remains visible." : "Telegram delivery failed; retry scheduled.",
         availableAt: new Date(Date.now() + Math.min(3_600_000, 30_000 * 2 ** Math.min(row.attempts, 7))),
       }).where(and(eq(events.id, row.id), eq(events.availableAt, lease)));
     } catch (error) {
@@ -76,7 +83,7 @@ export async function drainSupplierAlerts() {
 export function registerSupplierBatchScheduler() {
   registerScheduler({
     name: "supplier-batches", label: "Regional supplier batches",
-    description: "Reconcile paid regional queues and deliver private organiser readiness alerts.",
+    description: "Reconcile paid regional queues and deliver private Admin and organiser readiness alerts.",
     defaultIntervalMs: 30_000, minIntervalMs: 15_000, maxIntervalMs: 300_000, initialDelayMs: 20_000,
     run: async () => { await reconcileSupplierBatches(); await drainSupplierAlerts(); },
     channelStatus: () => ({ reconciliationError: lastFailure, reconciliationRunning: running }),

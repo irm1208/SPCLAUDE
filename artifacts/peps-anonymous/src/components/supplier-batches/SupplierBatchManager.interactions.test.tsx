@@ -75,6 +75,7 @@ async function click(id: string) { await act(async () => { fireEvent.click(el(id
 
 for (const scope of ["admin", "organiser"] as const) test(`${scope}: member visibility defaults off and saves the explicit choice`, async () => {
   state = fresh(); await mount(scope);
+  assert.ok(document.body.textContent?.includes("Telegram alerts to Admin and organiser when a batch reaches its target"));
   const toggle = el("checkbox-supplier-members") as HTMLInputElement;
   assert.equal(toggle.checked, false);
   await click("checkbox-supplier-members");

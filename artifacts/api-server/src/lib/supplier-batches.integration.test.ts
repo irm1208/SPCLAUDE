@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray, sql } from "drizzle-orm";
-vi.mock("./telegram", () => ({ notifyUserFull: vi.fn(async () => ({ok:true})) }));
+vi.mock("./telegram", () => ({
+  notifyUserFull: vi.fn(async () => ({ok:true})),
+  sendAdminMessageFull: vi.fn(async () => ({ok:true,chatId:"synthetic-admin-chat"})),
+}));
 
 // Only synthetic, isolated fixtures; never mutate a real member's orders.
 describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier batches / PostgreSQL transactions", () => {
@@ -26,7 +29,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
       });
     }
   });
-  async function fixture(qtys = [95, 10, 20], routes: Record<string, unknown>[] = []) {
+  async function fixture(qtys = [95, 10, 20], routes: Record<string, unknown>[] = [], telegramAlerts = false) {
     const id = randomUUID(); fixtures.push(id);
     await store.db.insert(store.groupBuysTable).values({ id, name: "Synthetic regional batching test", status: "draft", currency: "USD", organiserId: "synthetic-organiser", organiserCanEditStatus: true });
     const ids: string[] = [];
@@ -43,7 +46,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
         quantity: String(qtys[k]), unitPrice: "10", lineTotal: String(qtys[k] * 10),
       });
     }
-    const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts:false,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
+    const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
   it("keeps member batch visibility off by default and persists an explicit choice", async () => {
@@ -537,6 +540,67 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     await expect(api.supplierData(f.id,{...admin,adminGbId:"other"})).rejects.toMatchObject({status:403});
     expect((await api.supplierData(f.id,{username:"@synthetic-organiser"})).groupBuy.id).toBe(f.id);
   });
+  it("queues independent Admin and organiser alerts once when the enabled region fills", async () => {
+    const f=await fixture([100],[],true);
+    await api.reconcileSupplierGroup(f.id); await api.reconcileSupplierGroup(f.id);
+    const s=await api.supplierData(f.id,admin);
+    expect(s.events.filter((e:any)=>e.kind==="ready")).toHaveLength(1);
+    const admins=s.events.filter((e:any)=>e.kind==="ready_admin");
+    expect(admins).toHaveLength(1);
+    expect(admins[0]).toMatchObject({telegram:"pending",recipient:null,detail:{
+      region:"EU",kits:100,target:100,
+    }});
+    const {drainSupplierAlerts}=await import("./supplier-batch-worker");
+    const {notifyUserFull,sendAdminMessageFull}=await import("./telegram");
+    vi.mocked(notifyUserFull).mockClear();vi.mocked(sendAdminMessageFull).mockClear();
+    await Promise.all([drainSupplierAlerts(f.id),drainSupplierAlerts(f.id)]);
+    await drainSupplierAlerts(f.id);
+    expect(notifyUserFull).toHaveBeenCalledTimes(1);
+    expect(sendAdminMessageFull).toHaveBeenCalledTimes(1);
+    expect(sendAdminMessageFull).toHaveBeenCalledWith(expect.stringContaining("100 kits / target 100"));
+  });
+  it("notifies Admin even when no organiser is assigned, but not below target", async () => {
+    const f=await fixture([99],[],true);
+    await store.db.update(store.groupBuysTable).set({organiserId:null}).where(eq(store.groupBuysTable.id,f.id));
+    await api.reconcileSupplierGroup(f.id);
+    expect((await api.supplierData(f.id,admin)).events.filter((e:any)=>e.kind.startsWith("ready"))).toHaveLength(0);
+    await store.db.update(store.orderLineItemsTable).set({quantity:"100",lineTotal:"1000"}).where(eq(store.orderLineItemsTable.orderId,f.ids[0]));
+    await store.db.update(store.ordersTable).set({productSubtotal:"1000",grandTotal:"1000"}).where(eq(store.ordersTable.id,f.ids[0]));
+    await api.reconcileSupplierGroup(f.id);
+    const s=await api.supplierData(f.id,admin);
+    expect(s.events.find((e:any)=>e.kind==="ready_admin").telegram).toBe("pending");
+    expect(s.events.find((e:any)=>e.kind==="ready").telegram).toBe("disabled");
+  });
+  it("respects the Telegram alert opt-out for both recipients", async () => {
+    const f=await fixture([100]);
+    const s=await api.supplierData(f.id,admin);
+    expect(s.events.find((e:any)=>e.kind==="ready_admin").telegram).toBe("disabled");
+    expect(s.events.find((e:any)=>e.kind==="ready").telegram).toBe("disabled");
+  });
+  it("retries a missing Admin destination independently without resending the organiser alert", async () => {
+    const f=await fixture([100],[],true);
+    const {drainSupplierAlerts}=await import("./supplier-batch-worker");
+    const {notifyUserFull,sendAdminMessageFull}=await import("./telegram");
+    vi.mocked(notifyUserFull).mockClear();vi.mocked(sendAdminMessageFull).mockClear();
+    vi.mocked(sendAdminMessageFull).mockResolvedValueOnce({ok:false,chatId:""});
+    await drainSupplierAlerts(f.id);
+    const s=await api.supplierData(f.id,admin);
+    const event=s.events.find((e:any)=>e.kind==="ready_admin");
+    expect(event).toMatchObject({telegram:"retry",lastError:expect.stringContaining("not configured")});
+    expect(s.events.find((e:any)=>e.kind==="ready").telegram).toBe("delivered");
+    await store.db.update(store.gbSupplierEventsTable).set({availableAt:new Date(0)}).where(eq(store.gbSupplierEventsTable.id,event.id));
+    await drainSupplierAlerts(f.id);
+    expect(sendAdminMessageFull).toHaveBeenCalledTimes(2);
+    expect(notifyUserFull).toHaveBeenCalledTimes(1);
+    expect((await api.supplierData(f.id,admin)).events.find((e:any)=>e.kind==="ready_admin").telegram).toBe("delivered");
+  });
+  it("does not alert when supplier batching is disabled even if its queue is full", async () => {
+    const f=await fixture([99],[],true);
+    await api.saveSupplierConfig(f.id,admin,{expectedVersion:f.result.version,config:{...f.result.config,enabled:false}});
+    await store.db.update(store.orderLineItemsTable).set({quantity:"100",lineTotal:"1000"}).where(eq(store.orderLineItemsTable.orderId,f.ids[0]));
+    await api.reconcileSupplierGroup(f.id);
+    expect((await api.supplierData(f.id,admin)).events.filter((e:any)=>e.kind.startsWith("ready"))).toHaveLength(0);
+  });
   it("leases private readiness alerts across two workers without duplicate website or Telegram delivery", async () => {
     const f=await fixture();
     const event=f.result.events.find((e:any)=>e.kind==="ready");
@@ -544,7 +608,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const {drainSupplierAlerts}=await import("./supplier-batch-worker");
     const {notifyUserFull}=await import("./telegram");
     vi.mocked(notifyUserFull).mockClear();
-    await Promise.all([drainSupplierAlerts(),drainSupplierAlerts()]);
+    await Promise.all([drainSupplierAlerts(f.id),drainSupplierAlerts(f.id)]);
     expect(notifyUserFull).toHaveBeenCalledTimes(1);
     expect(notifyUserFull).toHaveBeenCalledWith("synthetic-organiser","status",expect.any(String),undefined,
       expect.objectContaining({websiteAlreadyRecorded:true,eventKey:`supplier-ready:${event.id}`}));
@@ -557,7 +621,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const {drainSupplierAlerts}=await import("./supplier-batch-worker");
     const {notifyUserFull}=await import("./telegram");
     vi.mocked(notifyUserFull).mockClear();
-    await drainSupplierAlerts();
+    await drainSupplierAlerts(f.id);
     expect(notifyUserFull).not.toHaveBeenCalled();
     const [stored]=await store.db.select().from(store.gbSupplierEventsTable).where(eq(store.gbSupplierEventsTable.id,event.id));
     expect(stored.telegram).toBe("delivery_uncertain");

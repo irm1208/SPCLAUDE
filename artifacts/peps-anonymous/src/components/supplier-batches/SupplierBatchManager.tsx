@@ -102,7 +102,7 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
         </label>
         <label className="flex items-center gap-2 text-xs" style={{ color: V.text }}>
           <input type="checkbox" data-testid="checkbox-supplier-telegram" checked={draft.telegramAlerts} onChange={e => upd(d => ({ ...d, telegramAlerts: e.target.checked }))} />
-          Telegram alerts to staff when a region is ready
+           Telegram alerts to Admin and organiser when a batch reaches its target
         </label>
       </div>
       <label className="flex items-center gap-2 text-xs font-semibold" style={{ color: V.text }}>
@@ -413,7 +413,7 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
           <p className={label} style={{ color: "#8A9AAA" }}>Staff notifications</p>
           {d.events.map(e => (
             <p key={e.id} className="text-[11px]" style={{ color: V.text }}>
-              {fmt(e.createdAt)} · {e.kind} · Telegram: <span className="font-semibold">{e.telegram}</span>
+               {fmt(e.createdAt)} · {e.kind === "ready_admin" ? "Batch ready — Admin" : e.kind === "ready" ? "Batch ready — organiser" : e.kind} · Telegram: <span className="font-semibold">{e.telegram}</span>
               {e.lastError && <span className="text-red-600"> · {e.lastError}</span>}
               {e.detail && (e.detail.region || e.detail.text) && (
                 <span data-testid={`text-event-detail-${e.id}`} className="block pl-3" style={{ color: V.muted }}>
