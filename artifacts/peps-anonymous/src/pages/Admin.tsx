@@ -33,6 +33,8 @@ import AdminAiChatbot from "@/components/AdminAiChatbot";
 import AdminBtChat from "@/components/AdminBtChat";
 import AdminSageSettings from "@/components/AdminSageSettings";
 import { AdminWholesaleUpdates } from "@/components/AdminWholesaleUpdates";
+import { Fs3PastedList } from "@/components/admin/Fs3PastedList";
+import { loadFs3Costs } from "@/lib/fs3-cost-catalogue";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
@@ -7528,6 +7530,11 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
 
   // Cost prices (fetched from server — never in the JS bundle)
   const [costs, setCosts] = useState<Fs3CostEntry[]>([]);
+  const [costsLoading, setCostsLoading] = useState(true);
+  const [costsError, setCostsError] = useState("");
+  const [showPastedList, setShowPastedList] = useState(false);
+  const costRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => { costRequest.current?.abort(); }, [secret]);
   const getCost = useMemo(() => makeCostLookup(costs), [costs]);
 
   // Product stock levels (so the order sheet shows what's on hand).
@@ -7630,13 +7637,21 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [showPnl, setShowPnl] = useState(false);
 
   const fetchCosts = useCallback(async () => {
+    costRequest.current?.abort();
+    const request = new AbortController();
+    costRequest.current = request;
+    setCostsLoading(true);
+    setCostsError("");
     try {
-      const res = await fetch(apiUrl("/admin/fs3-costs"), {
-        headers: { "x-admin-secret": secret },
-        credentials: "omit",
-      });
-      if (res.ok) setCosts(await res.json());
-    } catch { /* non-fatal */ }
+      const entries = await loadFs3Costs(secret, request.signal);
+      if (!request.signal.aborted) setCosts(entries);
+    } catch (error) {
+      if (!request.signal.aborted) {
+        setCostsError(error instanceof Error ? error.message : "Unable to load saved prices. Try refreshing.");
+      }
+    } finally {
+      if (costRequest.current === request && !request.signal.aborted) setCostsLoading(false);
+    }
   }, [secret]);
 
   const fetchPnl = useCallback(async () => {
@@ -7827,14 +7842,19 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
 
   const handleDeleteCost = async (id: number) => {
     if (!confirm("Remove this cost entry?")) return;
+    setCostSaving(true);
     try {
-      await fetch(apiUrl(`/admin/fs3-costs/${id}`), {
+      const response = await fetch(apiUrl(`/admin/fs3-costs/${id}`), {
         method: "DELETE",
         headers: { "x-admin-secret": secret },
         credentials: "omit",
       });
+      if (!response.ok) throw new Error("Could not remove saved price. Try again.");
       setCosts(prev => prev.filter(c => c.id !== id));
-    } catch { /* ignore */ }
+      await fetchCosts();
+    } catch (error) {
+      setCostMsg(error instanceof Error ? error.message : "Could not remove saved price.");
+    } finally { setCostSaving(false); }
   };
 
   // ── Inline cost save (shared by unknown rows + known row pencil) ──
@@ -8647,12 +8667,17 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-lg">FS3 — Profit Overview</h2>
           <p className="text-xs text-muted-foreground">{totals?.orderCount ?? 0} active orders · product costs vs. revenue</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+            aria-expanded={showPastedList}
+            onClick={() => { if (!showPastedList) void fetchCosts(); setShowPastedList(v => !v); }}>
+            <FileText className="w-3.5 h-3.5" />{showPastedList ? "Hide pasted list" : "Price a pasted list"}
+          </Button>
           <Button variant="outline" size="sm" className="gap-1.5 text-xs"
             onClick={() => { setShowImport(v => !v); setImportMsg(""); }}>
             <Upload className="w-3.5 h-3.5" />{showImport ? "Hide Import" : "Import"}
@@ -8667,6 +8692,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           </Button>
         </div>
       </div>
+
+      {showPastedList && (
+        <Fs3PastedList costs={costs} loading={costsLoading || costSaving} error={costsError} onRefresh={fetchCosts} />
+      )}
 
       {/* Import prices panel */}
       {showImport && (
