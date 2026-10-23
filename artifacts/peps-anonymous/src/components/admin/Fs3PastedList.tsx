@@ -7,6 +7,8 @@ import {
   parseSupplierList,
   reviewSupplierList,
   supplierListTxt,
+  reviewSupplierDelivery,
+  type SupplierDelivery,
   type SupplierCost,
   type SupplierDraftRow,
 } from "@/lib/fs3-pasted-list";
@@ -22,6 +24,7 @@ const usd = (cents: bigint | null) => (cents === null ? "—" : `$${centsToMoney
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const fieldCls =
   "h-8 w-full rounded-md border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary";
+const emptyDelivery: SupplierDelivery = { shipping: "", name: "", address: "", country: "", phone: "" };
 
 export function Fs3PastedList({ costs, loading, error, onRefresh }: Fs3PastedListProps) {
   const [text, setText] = useState("");
@@ -31,6 +34,7 @@ export function Fs3PastedList({ costs, loading, error, onRefresh }: Fs3PastedLis
   const [copyMsg, setCopyMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [delivery, setDelivery] = useState<SupplierDelivery>(emptyDelivery);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
@@ -40,7 +44,8 @@ export function Fs3PastedList({ costs, loading, error, onRefresh }: Fs3PastedLis
   const stale = rows !== null && reviewedText !== text;
   const priceError = error || refreshError;
   const pricesBlocked = loading || refreshing || !!priceError;
-  const canExport = !!review && review.ready && !pricesBlocked && !stale && review.lines.length > 0;
+  const deliveryReview = reviewSupplierDelivery(delivery, review?.totalCents ?? 0n);
+  const canExport = !!review && review.ready && deliveryReview.ready && !pricesBlocked && !stale && review.lines.length > 0;
   const partialCents = useMemo(
     () => (review ? review.lines.reduce((s, l) => s + (l.lineCents ?? 0n), 0n) : 0n),
     [review],
@@ -69,6 +74,7 @@ export function Fs3PastedList({ costs, loading, error, onRefresh }: Fs3PastedLis
 
   const handleReset = () => {
     setText(""); setRows(null); setReviewedText(null); setParseError(""); setCopyMsg(null);
+    setDelivery(emptyDelivery);
   };
 
   const updateRow = (id: number, patch: Partial<SupplierDraftRow>) => {
@@ -82,7 +88,7 @@ export function Fs3PastedList({ costs, loading, error, onRefresh }: Fs3PastedLis
 
   const buildTxt = (): string | null => {
     if (!review || !canExport) return null;
-    try { return supplierListTxt(review); }
+    try { return supplierListTxt(review, delivery); }
     catch (e) { flash(false, `Export blocked: ${errText(e)}`); return null; }
   };
 
@@ -258,11 +264,43 @@ export function Fs3PastedList({ costs, loading, error, onRefresh }: Fs3PastedLis
             </table>
           </div>
 
+          <fieldset className="min-w-0 space-y-3 rounded-lg border border-border p-3">
+            <legend className="px-1 text-xs font-semibold">Wholesale TXT — delivery details</legend>
+            <p className="text-xs text-muted-foreground">USD shipping is added once to the product total. Enter 0 for free shipping. These details are used only for this list; no order is placed or changed.</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {([
+                ["shipping", "Package / shipping (USD)", "e.g. 70.00"],
+                ["name", "Recipient name", "Full name"],
+                ["address", "Delivery address", "Street, city and postcode"],
+                ["country", "Country", "Destination country"],
+                ["phone", "Phone number", "Include country code"],
+              ] as const).map(([key, label, placeholder]) => (
+                <label key={key} className={`min-w-0 space-y-1 text-xs ${key === "address" ? "sm:col-span-2" : ""}`}>
+                  <span>{label} *</span>
+                  {key === "address" ? (
+                    <textarea className={`${fieldCls} h-20 py-2`} required maxLength={1000}
+                      placeholder={placeholder} value={delivery[key]} data-testid={`input-delivery-${key}`}
+                      onChange={e => { setDelivery(prev => ({ ...prev, [key]: e.target.value })); setCopyMsg(null); }} />
+                  ) : (
+                    <input className={fieldCls} required type={key === "phone" ? "tel" : "text"}
+                      inputMode={key === "shipping" ? "decimal" : undefined}
+                      maxLength={key === "phone" ? 80 : 200}
+                      placeholder={placeholder} value={delivery[key]} data-testid={`input-delivery-${key}`}
+                      onChange={e => { setDelivery(prev => ({ ...prev, [key]: e.target.value })); setCopyMsg(null); }} />
+                  )}
+                </label>
+              ))}
+            </div>
+            {!deliveryReview.ready && <p role="status" data-testid="status-delivery" className="text-xs text-muted-foreground">{deliveryReview.errors.join(" ")}</p>}
+            <p className="text-sm font-semibold" data-testid="text-grand-total">
+              {review.ready && deliveryReview.ready ? `Grand Total: ${usd(deliveryReview.grandTotalCents)}` : "Complete the items and delivery details to calculate the grand total."}
+            </p>
+          </fieldset>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div data-testid="text-total">
               {review.ready ? (
                 <>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Grand total (USD)</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Product total (USD, before shipping)</p>
                   <p className="text-lg font-bold tabular-nums" style={{ color: "var(--brand-navy)" }}>${centsToMoneyString(review.totalCents)}</p>
                 </>
               ) : (

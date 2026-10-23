@@ -96,21 +96,57 @@ export function reviewSupplierList(rows: SupplierDraftRow[], costs: SupplierCost
   return { lines, totalCents, issueCount, ready: rows.length > 0 && issueCount === 0 };
 }
 
-export function supplierListTxt(review: SupplierReview): string {
+export interface SupplierDelivery {
+  shipping: string;
+  name: string;
+  address: string;
+  country: string;
+  phone: string;
+}
+
+export function reviewSupplierDelivery(delivery: SupplierDelivery | undefined, productCents: bigint) {
+  const errors: string[] = [];
+  const shippingCents = safeMoneyToCents(delivery?.shipping.trim() ?? "");
+  if (shippingCents === null) errors.push("Enter shipping in USD with up to 2 decimals (enter 0 for free shipping).");
+  for (const [key, label, limit] of [
+    ["name", "recipient name", 200], ["address", "delivery address", 1000],
+    ["country", "country", 200], ["phone", "phone number", 80],
+  ] as const) {
+    const value = delivery?.[key].trim() ?? "";
+    const invalidControl = key === "address" ? /[\u0000-\u0009\u000b-\u001f\u007f]/ : /[\u0000-\u001f\u007f]/;
+    if (!value || value.length > limit || invalidControl.test(value)) errors.push(`Enter a valid ${label}.`);
+  }
+  const grandTotalCents = shippingCents === null ? null : productCents + shippingCents;
+  if (grandTotalCents !== null && grandTotalCents > MAX_CENTS) errors.push("Grand total is too large.");
+  return { errors, shippingCents, grandTotalCents, ready: errors.length === 0 };
+}
+
+const formatQuantity = (scaled: bigint) =>
+  `${scaled / SCALE}${scaled % SCALE ? `.${String(scaled % SCALE).padStart(6, "0").replace(/0+$/, "")}` : ""}`;
+
+export function supplierListTxt(review: SupplierReview, delivery?: SupplierDelivery): string {
   if (!review.ready || !review.lines.length || review.lines.some(line => line.errors.length || !line.cost || line.lineCents === null || line.unitCents === null)) {
     throw new Error("Resolve every product, quantity and saved-price issue before exporting.");
   }
+  const shipping = reviewSupplierDelivery(delivery, review.totalCents);
+  if (!shipping.ready || !delivery) throw new Error(shipping.errors.join(" "));
+  const totalQuantity = review.lines.reduce((total, line) => total + quantityScaled(line.draft.quantity)!, 0n);
   return [
-    "SUPPLIER ORDER LIST — USD",
-    "Prices: saved FS3 supplier costs",
-    "Quantity uses each product's FS3 price unit (usually one kit, not one vial).",
-    "Line totals are rounded half-up to the nearest cent.",
+    "New Order:",
     "",
-    "Product | Quantity | Unit price | Line total",
-    ...review.lines.map(({ draft, cost, unitCents, lineCents }) =>
-      `${cost!.productName} | ${Number(draft.quantity.trim())} | USD ${centsToMoneyString(unitCents!)} | USD ${centsToMoneyString(lineCents!)}`),
+    ...review.lines.map(({ draft, cost, lineCents }) =>
+      `${cost!.productName} x${formatQuantity(quantityScaled(draft.quantity)!)} = $${centsToMoneyString(lineCents!)}`),
     "",
-    `Grand total: USD ${centsToMoneyString(review.totalCents)}`,
+    `Total QTY: ${formatQuantity(totalQuantity)}`,
+    `Total: $${centsToMoneyString(review.totalCents)}`,
+    `Package: $${centsToMoneyString(shipping.shippingCents!)}`,
+    `Grand Total: $${centsToMoneyString(shipping.grandTotalCents!)}`,
+    "",
+    "Address:",
+    delivery.name.trim(),
+    delivery.address.trim(),
+    delivery.country.trim(),
+    `Phone: ${delivery.phone.trim()}`,
     "",
   ].join("\n");
 }

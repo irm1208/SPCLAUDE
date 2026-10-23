@@ -31,6 +31,9 @@ async function render(patch: Partial<Parameters<typeof Fs3PastedList>[0]> = {}) 
 }
 async function review(text = "HGH 36IU x 2") {
   await input("input-pasted-list", text); await click("button-review-list");
+  for (const [field, value] of Object.entries({ shipping: "0", name: "Test Recipient", address: "Example street\nExample city", country: "Test country", phone: "+1 000 000 0000" })) {
+    await input(`input-delivery-${field}`, value);
+  }
 }
 beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
@@ -44,8 +47,8 @@ it("shows saved costs, copies and downloads the exact same reviewed supplier lis
   expect(element("text-total").textContent).toContain("$430.50");
   await click("button-copy-list");
   const copied = writeText.mock.calls[0][0];
-  expect(copied).toContain("HGH 36IU | 2 | USD 95.25 | USD 190.50");
-  expect(copied).toContain("Grand total: USD 430.50");
+  expect(copied).toContain("HGH 36IU x2 = $190.50");
+  expect(copied).toContain("Grand Total: $430.50");
   expect(element("status-copy").textContent).toContain("copied");
   let downloaded: Blob | undefined;
   const createUrl = vi.fn((blob: Blob) => { downloaded = blob; return "blob:synthetic"; });
@@ -97,7 +100,7 @@ it("blocks export for loading/errors and reprices from refreshed costs without r
   await render({ costs: [{ ...costs[0], unitCost: 100 }] });
   expect(element("text-total").textContent).toContain("$200.00");
   await click("button-copy-list");
-  expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Grand total: USD 200.00"));
+  expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Grand Total: $200.00"));
   await render({ costs: [] });
   expect(host.textContent).toContain("No saved prices");
   expect(element<HTMLButtonElement>("button-copy-list").disabled).toBe(true);
@@ -111,6 +114,27 @@ it("keeps export blocked throughout a local refresh even if the caller has not s
   expect(element<HTMLButtonElement>("button-copy-list").disabled).toBe(true);
   await act(async () => resolve());
   expect(element<HTMLButtonElement>("button-copy-list").disabled).toBe(false);
+});
+
+it("requires delivery details, adds shipping once, exports the address and clears details on reset", async () => {
+  await render();
+  await input("input-pasted-list", "HGH 36IU x 2");
+  await click("button-review-list");
+  expect(element<HTMLButtonElement>("button-copy-list").disabled).toBe(true);
+  await review();
+  await input("input-delivery-shipping", "12.50");
+  expect(element("text-grand-total").textContent).toContain("$203.00");
+  await click("button-copy-list");
+  expect(writeText.mock.calls[0][0]).toContain("Package: $12.50\nGrand Total: $203.00");
+  expect(writeText.mock.calls[0][0]).toContain("Address:\nTest Recipient\nExample street\nExample city\nTest country\nPhone: +1 000 000 0000");
+  await input("input-delivery-phone", "");
+  expect(element<HTMLButtonElement>("button-download-txt").disabled).toBe(true);
+  await input("input-delivery-shipping", "-1");
+  expect(element("status-delivery").textContent).toContain("shipping");
+  await click("button-reset-list");
+  await input("input-pasted-list", "HGH 36IU x 2"); await click("button-review-list");
+  expect(element<HTMLInputElement>("input-delivery-name").value).toBe("");
+  expect(element<HTMLInputElement>("input-delivery-shipping").value).toBe("");
 });
 
 it("reports clipboard failures with a working download alternative", async () => {

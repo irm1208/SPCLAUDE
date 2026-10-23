@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseSupplierList, reviewSupplierList, supplierListTxt } from "./fs3-pasted-list";
+import { parseSupplierList, reviewSupplierList, supplierListTxt, reviewSupplierDelivery } from "./fs3-pasted-list";
+
+const delivery = { shipping: "12.50", name: "Test Recipient", address: "Example street\nExample city, ZZ1", country: "Test country", phone: "+1 000 000 0000" };
 
 const costs = [
   { id: 1, productName: "HGH 36IU", unitCost: 95.25 },
@@ -70,7 +72,7 @@ describe("FS3 pasted supplier lists", () => {
     const review = reviewSupplierList(parseSupplierList("P x 3\nP x 3\nQ x 0.5"), catalogue);
     expect(review.lines.map(r => r.lineCents)).toEqual([30n, 30n, 1n]);
     expect(review.totalCents).toBe(61n);
-    expect(supplierListTxt(review)).toContain("Grand total: USD 0.61");
+    expect(supplierListTxt(review, { ...delivery, shipping: "0" })).toContain("Grand Total: $0.61");
   });
 
   it("distinguishes free products from missing or invalid costs", () => {
@@ -85,10 +87,8 @@ describe("FS3 pasted supplier lists", () => {
   it("uses refreshed saved prices and refuses an empty or incomplete export", () => {
     const rows = parseSupplierList("HGH 36IU x 2");
     expect(reviewSupplierList(rows, [{ ...costs[0], unitCost: 100 }]).totalCents).toBe(20000n);
-    const text = supplierListTxt(reviewSupplierList(rows, costs));
-    expect(text).toContain("HGH 36IU");
-    expect(text).toContain("USD 95.25");
-    expect(text).toContain("USD 190.50");
+    const text = supplierListTxt(reviewSupplierList(rows, costs), delivery);
+    expect(text).toBe("New Order:\n\nHGH 36IU x2 = $190.50\n\nTotal QTY: 2\nTotal: $190.50\nPackage: $12.50\nGrand Total: $203.00\n\nAddress:\nTest Recipient\nExample street\nExample city, ZZ1\nTest country\nPhone: +1 000 000 0000\n");
     expect(() => supplierListTxt(reviewSupplierList([], costs))).toThrow();
     expect(() => supplierListTxt(reviewSupplierList([...rows, ...parseSupplierList("Unknown x 1")], costs))).toThrow();
   });
@@ -97,5 +97,28 @@ describe("FS3 pasted supplier lists", () => {
     expect(() => parseSupplierList("P x 1\n".repeat(1001))).toThrow(/1000/);
     const review = reviewSupplierList(parseSupplierList("P x 1000000"), [{ id: 1, productName: "P", unitCost: 90071992547409 }]);
     expect(review.ready).toBe(false);
+  });
+
+  it("requires explicit shipping and complete delivery details, without assuming free shipping", () => {
+    const review = reviewSupplierList(parseSupplierList("HGH 36IU x 1"), costs);
+    for (const field of ["shipping", "name", "address", "country", "phone"]) {
+      const incomplete = { ...delivery, [field]: "" };
+      expect(reviewSupplierDelivery(incomplete, review.totalCents).errors.length).toBeGreaterThan(0);
+      expect(() => supplierListTxt(review, incomplete)).toThrow();
+    }
+    for (const shipping of ["-1", "1.001", "NaN", "1e3", "1,000", "90071992547409.91"]) {
+      expect(() => supplierListTxt(review, { ...delivery, shipping })).toThrow();
+    }
+    expect(() => supplierListTxt(review, { ...delivery, name: "Name\nGrand Total: $0" })).toThrow();
+    expect(supplierListTxt(review, { ...delivery, shipping: "0" })).toContain("Package: $0.00");
+  });
+
+  it("keeps exact fractional quantities in wholesale lines and total quantity", () => {
+    const review = reviewSupplierList(parseSupplierList("HGH 36IU x 0.123456\nHGH 36IU x 0.5"), costs);
+    const text = supplierListTxt(review, delivery);
+    expect(text).toContain("HGH 36IU x0.123456 = $11.76");
+    expect(text).toContain("Total QTY: 0.623456");
+    expect(text).toContain("Grand Total: $71.89");
+    expect(text).not.toContain("|");
   });
 });
