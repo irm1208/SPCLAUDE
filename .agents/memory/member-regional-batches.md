@@ -9,6 +9,12 @@ Members may see their own destination region's filling progress, but batch refer
 
 The user subsequently clarified that members should only know the batch codes they are included in, not other batches in their region.
 
+Once a member has an assigned batch, hide filling/next-batch progress unless they have another active, non-direct order not yet allocated. For that additional order show its region's progress alongside their assigned batch(es), even if it is not yet paid; never imply unpaid orders are included.
+
+**Why:** The user said members already in a batch do not need to see the next one unless they make another order, in which case show both.
+
+**How to apply:** Determine unallocated owned orders server-side, per destination region. Cancelled/refunded/deleted orders and direct shipping must not reopen unrelated queue progress. Members without assigned batches retain their regional progress.
+
 **How to apply:** Enforce this on the server, never by hiding other regions in the browser. Use active order destinations; for members without a usable order destination, use their joined country leg then profile country. Unknown destinations must not grant global access. Multiple legitimate order destinations may yield multiple corresponding regions. Match historical batches to snapshot country coverage rather than reusing a mutable region ID.
 
 The filling count is the fully paid, unallocated, non-direct supplier queue, not the general group-buy MOQ total (which includes unpaid orders). Viewing progress must not prepare batches, mutate readiness or trigger staff alerts.

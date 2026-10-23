@@ -289,10 +289,10 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const de = await memberSupplierBatches(f.id, "synthetic-3");
     const uk = await memberSupplierBatches(f.id, "synthetic-1");
     const us = await memberSupplierBatches(f.id, "synthetic-2");
-    expect(eu.regions).toEqual([{ id: "eu", name: "EU", kits: 18.5, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }]);
-    expect(de.regions).toEqual([{ ...eu.regions[0], yourOrderStatus: "included" }]);
-    expect(uk.regions).toEqual([{ id: "uk", name: "UK", kits: 34, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }]);
-    expect(us.regions).toEqual([{ id: "us", name: "US", kits: 0, targetKits: 100, status: "Filling", yourOrderStatus: "not_included" }]);
+    expect(eu.regions).toEqual([]);
+    expect(de.regions).toEqual([{ id: "eu", name: "EU", kits: 18.5, targetKits: 100, status: "Filling", yourOrderStatus: "included" }]);
+    expect(uk.regions).toEqual([]);
+    expect(us.regions).toEqual([]);
     const ukWaiting = await memberSupplierBatches(f.id, "synthetic-4");
     expect(ukWaiting.regions[0]).toMatchObject({ id: "uk", yourOrderStatus: "included" });
     for (const [view, region] of [[eu, "EU"], [uk, "UK"], [us, "US"]] as const) {
@@ -331,15 +331,29 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const b = await memberSupplierBatches(f.id, "synthetic-1");
     expect(a.batches.map((batch: any) => batch.reference)).toEqual([first.reference]);
     expect(b.batches.map((batch: any) => batch.reference)).toEqual([second.reference]);
+    // Only the member with another unallocated order sees the filling queue.
+    expect(a.regions).toEqual([expect.objectContaining({ id: "eu", kits: 15, yourOrderStatus: "included" })]);
+    expect(b.regions).toEqual([]);
     expect(JSON.stringify(a)).not.toContain(second.reference);
     expect(JSON.stringify(b)).not.toContain(first.reference);
     await api.appendSupplierBatch(f.id, first.id, admin, {
       regionId: "eu", token: current.proposals[0].token, expectedBatchToken: first.snapshot.token,
     });
-    expect((await memberSupplierBatches(f.id, "synthetic-0")).batches[0]).toMatchObject({ reference: first.reference, kits: 115 });
+    const appended = await memberSupplierBatches(f.id, "synthetic-0");
+    expect(appended.batches[0]).toMatchObject({ reference: first.reference, kits: 115 });
+    expect(appended.regions).toEqual([]);
+    // A new unpaid order still warrants progress, without claiming inclusion.
+    await store.db.update(store.ordersTable).set({ telegramUsername: "synthetic-0", paymentStatus: "unpaid" })
+      .where(eq(store.ordersTable.id, f.ids[1]));
+    await api.releaseSupplierBatch(f.id, second.id, admin, { confirm: true, reason: "Synthetic new-order scenario" });
+    const additional = await memberSupplierBatches(f.id, "synthetic-0");
+    expect(additional.batches.map((batch: any) => batch.reference)).toEqual([first.reference]);
+    expect(additional.regions).toEqual([expect.objectContaining({ id: "eu", yourOrderStatus: "not_included" })]);
+    await store.db.update(store.ordersTable).set({ status: "Cancelled" }).where(eq(store.ordersTable.id, f.ids[1]));
+    expect((await memberSupplierBatches(f.id, "synthetic-0")).regions).toEqual([]);
     await api.releaseSupplierBatch(f.id, first.id, admin, { confirm: true, reason: "Synthetic release" });
     expect((await memberSupplierBatches(f.id, "synthetic-0")).batches).toEqual([]);
-    expect((await memberSupplierBatches(f.id, "synthetic-1")).batches[0].reference).toBe(second.reference);
+    expect((await memberSupplierBatches(f.id, "synthetic-0")).regions).toHaveLength(1);
   });
   it("processes and exports 100 reshipper kits without including the separate direct order", async () => {
     const f = await fixture([70, 30, 30], [{}, { routingType: "direct", directShippingRequested: true }, { routingType: "reshipper" }]);

@@ -102,6 +102,20 @@ it("never displays unrelated batch references, including stale data from a previ
   expect(document.body.textContent).not.toContain("GB-OTHER");
   expect(document.querySelectorAll("tbody tr")).toHaveLength(1);
 });
+it("shows only the assigned batch, then also shows progress when another order is placed", async () => {
+  vi.mocked(fetch).mockResolvedValue(Response.json({ ...response, regions: [] }));
+  await mount(h(MemberBatchStatus, { gb: group, onClose: vi.fn() }));
+  expect(document.body.textContent).toContain("SB-001");
+  expect(document.querySelector('[aria-label="Regional batch progress"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Fully paid kits queued");
+  expect(document.body.textContent).not.toContain("No batch region");
+  vi.mocked(fetch).mockResolvedValue(Response.json({ ...response,
+    regions: [{ id: "eu", name: "EU", kits: 15, targetKits: 100, status: "Filling", yourOrderStatus: "included" }] }));
+  await act(async () => { await client.invalidateQueries({ queryKey: ["member-supplier-batches"] }); }); await flush();
+  expect(document.body.textContent).toContain("SB-001");
+  expect(document.body.textContent).toContain("15 / 100 kits");
+  expect(document.body.textContent).toContain("Your order is in this batch");
+});
 it("shows an unassigned message instead of any other member's batch", async () => {
   vi.mocked(fetch).mockResolvedValue(Response.json({ ...response,
     batches: [{ ...response.batches[0], isYourBatch: false }] }));

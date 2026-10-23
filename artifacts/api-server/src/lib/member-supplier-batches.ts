@@ -110,12 +110,17 @@ export async function memberSupplierBatches(id: string, username: string, databa
     const all = parents.map(o => ({ ...o, lineItems: byOrder.get(o.id) ?? [], activeRefund: refundIds.has(o.id) }));
     const { queues } = collectSupplierQueues({ all, used, elig: eligibility, config });
     const ownOrderIds = new Set(ownActiveOrders.filter(o => !isDirectSupplierOrder(o)).map(o => o.id));
-    const regions = memberRegionalProgress(config, queues, countries, ownOrderIds);
     const allocations = new Map(used.map(a => [a.orderId, a.batchId]));
     // Region membership alone does not grant access to another member's batch.
     // Require an exact current allocation of an owned active order in its snapshot.
     const batches = allBatches.filter(b => b.state !== "released" && memberCanViewBatch(b as MemberBatch, countries)
       && (b.snapshot as MemberBatch["snapshot"]).orders.some(o => ownOrderIds.has(o.id) && allocations.get(o.id) === b.id));
+    // Once assigned, the next queue is relevant only for another owned order.
+    // Include unpaid new orders without claiming they are eligible/in the queue.
+    const pendingCountries = new Set(ownActiveOrders
+      .filter(o => ownOrderIds.has(o.id) && !allocations.has(o.id))
+      .map(o => countryCode(o.shippingCountry)).filter(Boolean));
+    const regions = memberRegionalProgress(config, queues, batches.length ? pendingCountries : countries, ownOrderIds);
     if (!batches.length) return { ...empty, regions };
     const ids = batches.map(b => b.id);
     const shipments = await tx.select({ batchId: gbSupplierShipmentsTable.batchId, contents: gbSupplierShipmentsTable.contents, receipt: gbSupplierShipmentsTable.receipt,
