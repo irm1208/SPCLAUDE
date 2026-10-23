@@ -6,15 +6,15 @@ import { assertNoActiveRefunds, refundMutableOrderWhere } from "./refund-mutatio
  * - USDT ERC-20 / crypto orders: verifies the stored tx hash on-chain and confirms
  *   when the transfer to the correct wallet matches the expected amount.
  *
- * Runs every 5 minutes. Only picks up orders in "pending_confirmation" that have a
- * paymentTxHash already stored (i.e. the customer has already submitted their hash).
+ * Runs every 5 minutes. Includes unpaid orders with a saved AnonPay session:
+ * the customer does not need to return from the provider to trigger verification.
  */
 import {
   db,
   ordersTable,
   groupBuysTable,
 } from "@workspace/db";
-import { and, eq, isNotNull, ne, or } from "drizzle-orm";
+import { and, eq, isNotNull, ne } from "drizzle-orm";
 import {
   verifyTransaction,
 } from "./payment-verify";
@@ -25,10 +25,10 @@ import { logCustomerActivity } from "./activity-log";
 import { writeLog } from "./audit-log";
 import { notifyUserFromTemplate, sendAdminFromTemplate } from "./telegram";
 import { centsToUsdString, usdToCents } from "./refund-money";
+import { anonPayAmountMatches, confirmAnonPayOrder, parseAnonPayStatus, pendingPaymentStatusWhere } from "./anonpay-order";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const ANONPAY_PREFIX = "anonpay:";
-const ANONPAY_DONE = new Set(["anonpayfinished", "finished", "complete", "completed"]);
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -82,6 +82,7 @@ async function checkAnonPay(order: PendingOrder): Promise<void> {
 
   let trocStatus = "";
   let trocOutgoingHash = "";
+  let amountMatches = false;
   try {
     const res = await fetch(
       `https://trocador.app/anonpay/status/${encodeURIComponent(paymentId)}?format=json`,
@@ -89,33 +90,33 @@ async function checkAnonPay(order: PendingOrder): Promise<void> {
     );
     if (!res.ok) return;
     const data: any = await res.json();
-    trocStatus = String(data["Status"] ?? data["status"] ?? data["payment_status"] ?? "").toLowerCase();
-    trocOutgoingHash = String(
-      data["Hash"] ?? data["hash"] ?? data["tx_hash"] ?? data["txhash"] ?? data["HashTo"] ?? data["hash_to"] ?? ""
-    ).trim();
+    const result = parseAnonPayStatus(data);
+    trocStatus = result.status;
+    trocOutgoingHash = result.outgoingHash;
+    if (result.finished) {
+      const { toUsdIfGbp } = await import("../routes/payments");
+      const grossUsd = order.paymentUsdAmount ?? (await toUsdIfGbp(Number(order.grandTotal), order.groupBuyId)).toFixed(2);
+      amountMatches = anonPayAmountMatches(data, grossUsd, order.creditsApplied);
+    }
     console.log(`[order-auto-verify] AnonPay ${order.code}: Trocador status=${trocStatus} hash=${trocOutgoingHash || "(none)"}`);
   } catch (err: any) {
     console.warn(`[order-auto-verify] AnonPay fetch error for order ${order.code}:`, err?.message);
     return;
   }
 
-  if (!ANONPAY_DONE.has(trocStatus)) return;
+  if (!parseAnonPayStatus({ Status: trocStatus }).finished) return;
+  if (!amountMatches) {
+    console.warn(`[order-auto-verify] AnonPay amount does not match current order ${order.code}; left unconfirmed for review`);
+    return;
+  }
 
   const newTxHash = trocOutgoingHash
     ? `${ANONPAY_PREFIX}${paymentId}|${trocOutgoingHash}`
-    : `${ANONPAY_PREFIX}${paymentId}`;
+    : raw;
 
-  const [savedAnonPayOrder] = await db.transaction(async tx => {
-    await assertNoActiveRefunds(tx, [order.id]);
-    return tx.update(ordersTable)
-      // amountDue is an independent post-payment balance. Preserve any balance
-      // added while this primary payment was awaiting auto-verification.
-      .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
-      .where(refundMutableOrderWhere(eq(ordersTable.id, order.id)))
-      .returning({ id: ordersTable.id });
-  });
+  const savedAnonPayOrder = await confirmAnonPayOrder(order, newTxHash);
   if (!savedAnonPayOrder) {
-    console.log(`[order-auto-verify] Skipped AnonPay confirmation for ${order.code}: refund_active`);
+    console.log(`[order-auto-verify] Skipped stale or unavailable AnonPay confirmation for ${order.code}`);
     return;
   }
 
@@ -305,7 +306,7 @@ async function fireConfirmNotification(
 
 // ── Main run loop ──────────────────────────────────────────────
 
-async function runOrderPaymentAutoVerify(): Promise<void> {
+export async function runOrderPaymentAutoVerify(): Promise<void> {
   try {
     const pending = await db
       .select({
@@ -331,15 +332,7 @@ async function runOrderPaymentAutoVerify(): Promise<void> {
       .from(ordersTable)
       .where(
         and(
-          or(
-            eq(ordersTable.paymentStatus, "pending_confirmation"),
-            // Also catch orders where the customer submitted a hash but verification
-            // failed transiently (RPC error / empty logs) — status stays awaiting_payment
-            // until the auto-verifier confirms or rejects it.
-            eq(ordersTable.paymentStatus, "awaiting_payment"),
-            // test_confirmed orders where the full-payment hash has been submitted
-            eq(ordersTable.paymentStatus, "test_confirmed"),
-          ),
+          pendingPaymentStatusWhere(),
           isNotNull(ordersTable.paymentTxHash),
           ne(ordersTable.paymentTxHash, ""),
         )

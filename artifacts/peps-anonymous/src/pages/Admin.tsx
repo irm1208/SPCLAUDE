@@ -25,6 +25,7 @@ import { AdminTelegramTemplates } from "@/components/AdminTelegramTemplates";
 import { IntlShippingTab } from "@/components/IntlShippingTab";
 import { TrackingLinksTab } from "@/components/AdminTrackingLinks";
 import AdminTestingPools from "@/components/AdminTestingPools";
+import { AnonPayPaymentDetails } from "@/components/AnonPayPaymentDetails";
 import AdminSiteConfig from "@/components/AdminSiteConfig";
 import AdminSchedulers from "@/components/AdminSchedulers";
 import AdminAuditLog from "@/components/AdminAuditLog";
@@ -3729,7 +3730,7 @@ function OrdersTab({ secret }: { secret: string }) {
                             >{anonPayId}</a>
                             {anonPayOutgoingHash && (
                               <>
-                                <p className="text-[10px] text-muted-foreground mt-1">Outgoing TX:</p>
+                                <p className="text-[10px] text-muted-foreground mt-1">Blockchain TXID (outgoing):</p>
                                 <a
                                   href={blockExplorerUrl(anonPayOutgoingHash)}
                                   target="_blank"
@@ -7219,13 +7220,14 @@ function PaymentsTab({ secret }: { secret: string }) {
               {o.paymentTxHash && (
                 <div className="bg-muted/40 rounded-lg p-2">
                   <p className="text-[10px] text-muted-foreground mb-0.5">Full Payment TX</p>
-                  <p className="font-mono text-xs break-all">{o.paymentTxHash}</p>
                   {o.paymentTxHash.startsWith("anonpay:") ? (
-                    <a href={`https://trocador.app/anonpay/${encodeURIComponent(o.paymentTxHash.slice("anonpay:".length))}`} target="_blank" rel="noopener noreferrer"
-                      className="text-xs text-primary mt-1 inline-block hover:underline">View on Trocador →</a>
+                    <AnonPayPaymentDetails value={o.paymentTxHash} />
                   ) : (
+                    <>
+                    <p className="font-mono text-xs break-all">{o.paymentTxHash}</p>
                     <a href={`https://etherscan.io/tx/${o.paymentTxHash}`} target="_blank" rel="noopener noreferrer"
                       className="text-xs text-primary mt-1 inline-block hover:underline">View on Etherscan →</a>
+                    </>
                   )}
                 </div>
               )}

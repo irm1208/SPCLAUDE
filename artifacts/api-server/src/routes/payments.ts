@@ -5,7 +5,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import jwt from "jsonwebtoken";
 import { db } from "@workspace/db";
 import { siteConfigTable, ordersTable, groupBuysTable, gbReshippersTable, gbCountryLegsTable, accountsTable, wholesaleSharesTable } from "@workspace/db";
-import { eq, ne, or, and, sql } from "drizzle-orm";
+import { eq, ne, or, and, sql, isNull } from "drizzle-orm";
 import { logCustomerActivity } from "../lib/activity-log";
 import { writeLog } from "../lib/audit-log";
 import { getJwtSecret, type AccountJwtPayload } from "../middleware/account-auth";
@@ -22,6 +22,7 @@ import { centsToUsdString, usdToCents } from "../lib/refund-money";
 import { requireAdmin, requireAdminStepUp } from "../middleware/require-admin";
 import { consumeAdminActionAssertion } from "./admin-auth";
 import { setAdminMutationSummary } from "../middleware/require-admin";
+import { anonPayAmountMatches, confirmAnonPayOrder, parseAnonPayStatus } from "../lib/anonpay-order";
 
 // Silently populates req.account if a valid account session cookie is present —
 // does NOT reject the request if missing or invalid.
@@ -1737,9 +1738,14 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
     const existingIframeUrl = `https://trocador.app/en/anonpay/${encodeURIComponent(existingId)}?embed=1`;
     // Upgrade status to pending_confirmation so the auto-poll activates immediately
     if (order.paymentStatus !== "pending_confirmation" && order.paymentStatus !== "confirmed") {
-      await db.update(ordersTable)
+      const [restored] = await db.update(ordersTable)
         .set({ paymentStatus: "pending_confirmation" })
-        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
+        .where(refundMutableOrderWhere(and(
+          eq(ordersTable.id, order.id), eq(ordersTable.paymentStatus, order.paymentStatus),
+          eq(ordersTable.paymentTxHash, order.paymentTxHash),
+        )))
+        .returning({ id: ordersTable.id });
+      if (!restored) { res.status(409).json({ error: "Payment changed. Refresh and check its status." }); return; }
       writeLog("payment", "info", "anonpay_session_restored", `Restored AnonPay session for order ${order.code} after page refresh`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId: existingId }, req.ip).catch(() => {});
     }
     res.json({ iframeUrl: existingIframeUrl, paymentId: existingId, existing: true }); return;
@@ -1855,11 +1861,21 @@ router.post("/orders/:id/init-anonpay", async (req, res): Promise<void> => {
   // from blockchain tx hashes (ETH/BTC/BSC use 64-char hex, no prefix).
   const storedId = `anonpay:${paymentId}`;
 
-  // Store payment ID only — status stays as-is until customer confirms initiation
-  await db
+  // Bind this session to the gross USD quote used above. Do not attach it to an
+  // order whose amount, method or status changed during the provider request.
+  const [savedSession] = await db
     .update(ordersTable)
-    .set({ paymentTxHash: storedId })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
+    .set({ paymentTxHash: storedId, paymentUsdAmount: grandTotalUsd.toFixed(2) })
+    .where(refundMutableOrderWhere(and(
+      eq(ordersTable.id, order.id), eq(ordersTable.paymentStatus, order.paymentStatus),
+      eq(ordersTable.grandTotal, order.grandTotal), eq(ordersTable.creditsApplied, order.creditsApplied),
+      order.paymentTxHash === null ? isNull(ordersTable.paymentTxHash) : eq(ordersTable.paymentTxHash, order.paymentTxHash),
+      isNull(ordersTable.deletedAt),
+    )))
+    .returning({ id: ordersTable.id });
+  if (!savedSession) {
+    res.status(409).json({ error: "The order changed while creating AnonPay. Refresh and try again." }); return;
+  }
 
   writeLog("payment", "info", "anonpay_initiated", `AnonPay session created for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId, anonPayTicker, anonPayNetwork }, req.ip).catch(() => {});
 
@@ -1883,12 +1899,17 @@ router.post("/orders/:id/confirm-anonpay-initiation", async (req, res): Promise<
     res.status(400).json({ error: "No AnonPay payment session found. Please re-initialise." }); return;
   }
 
-  const paymentId = order.paymentTxHash.slice(ANON_PAY_PREFIX.length);
+  const paymentId = order.paymentTxHash.slice(ANON_PAY_PREFIX.length).split("|")[0];
 
-  await db
+  const [submitted] = await db
     .update(ordersTable)
     .set({ paymentStatus: "pending_confirmation" })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
+    .where(refundMutableOrderWhere(and(
+      eq(ordersTable.id, order.id), eq(ordersTable.paymentStatus, order.paymentStatus),
+      eq(ordersTable.paymentTxHash, order.paymentTxHash),
+    )))
+    .returning({ id: ordersTable.id });
+  if (!submitted) { res.status(409).json({ error: "Payment changed. Refresh and check its status." }); return; }
 
   writeLog("payment", "info", "anonpay_initiation_confirmed", `Customer confirmed AnonPay initiation for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId, grandTotal: order.grandTotal }, req.ip).catch(() => {});
   await logCustomerActivity({
@@ -1920,10 +1941,15 @@ router.post("/orders/:id/cancel-anonpay", async (req, res): Promise<void> => {
     res.status(400).json({ error: "No active AnonPay session found." }); return;
   }
 
-  await db
+  const [cancelled] = await db
     .update(ordersTable)
     .set({ paymentTxHash: null, paymentStatus: "unpaid" })
-    .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
+    .where(refundMutableOrderWhere(and(
+      eq(ordersTable.id, order.id), eq(ordersTable.paymentStatus, order.paymentStatus),
+      eq(ordersTable.paymentTxHash, order.paymentTxHash),
+    )))
+    .returning({ id: ordersTable.id });
+  if (!cancelled) { res.status(409).json({ error: "Payment changed. Refresh and check its status." }); return; }
 
   writeLog("payment", "info", "anonpay_cancelled", `Customer cancelled AnonPay session for order ${order.code}`, { orderId: order.id, code: order.code, username: order.telegramUsername }, req.ip).catch(() => {});
 
@@ -1939,7 +1965,7 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
 
   // If already confirmed, return early without hitting Trocador
   if (order.paymentStatus === "confirmed") {
-    res.json({ status: "confirmed", paymentStatus: "confirmed" }); return;
+    res.json({ status: "confirmed", paymentStatus: "confirmed", paymentTxHash: order.paymentTxHash }); return;
   }
 
   // The prefix "anonpay:" is written exclusively by /init-anonpay, making it a reliable
@@ -1949,21 +1975,13 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
     res.status(409).json({ error: "This order was not initiated via AnonPay." }); return;
   }
 
-  // Only poll Trocador once the customer has submitted the order. We also accept "unpaid"
-  // when there is already an AnonPay session stored — this covers the edge case where the
-  // page was refreshed after /init-anonpay wrote the ID but before /confirm-anonpay-initiation
-  // ran. In that case we upgrade the status here as a failsafe so polling keeps working.
-  if (order.paymentStatus !== "pending_confirmation") {
-    if (order.paymentStatus === "unpaid") {
-      await db.update(ordersTable)
-        .set({ paymentStatus: "pending_confirmation" })
-        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
-    } else {
-      res.status(400).json({ error: "Order has not been submitted for AnonPay confirmation yet." }); return;
-    }
+  // A saved session can be paid even if the browser never submitted initiation.
+  // Do not mutate status until the provider actually confirms.
+  if (!["pending_confirmation", "unpaid", "awaiting_payment", "test_confirmed"].includes(order.paymentStatus)) {
+    res.status(400).json({ error: "This order is not awaiting AnonPay confirmation." }); return;
   }
 
-  const paymentId = order.paymentTxHash.slice(ANON_PAY_PREFIX.length);
+  const paymentId = order.paymentTxHash.slice(ANON_PAY_PREFIX.length).split("|")[0];
   if (!paymentId) {
     res.status(400).json({ error: "No AnonPay payment ID on this order." }); return;
   }
@@ -1972,6 +1990,7 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
   const statusUrl = `https://trocador.app/anonpay/status/${encodeURIComponent(paymentId)}?format=json`;
   let trocStatus = "";
   let trocOutgoingHash = "";
+  let amountMatches = false;
   try {
     const trocRes = await fetch(statusUrl, {
       headers: { "Accept": "application/json" },
@@ -1979,9 +1998,13 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
     });
     if (trocRes.ok) {
       const data = await trocRes.json() as Record<string, unknown>;
-      trocStatus = String(data["Status"] ?? data["status"] ?? data["payment_status"] ?? "").toLowerCase();
-      // Capture the outgoing blockchain tx hash Trocador includes when the swap is complete
-      trocOutgoingHash = String(data["Hash"] ?? data["hash"] ?? data["tx_hash"] ?? data["txhash"] ?? data["HashTo"] ?? data["hash_to"] ?? "").trim();
+      const result = parseAnonPayStatus(data);
+      trocStatus = result.status;
+      trocOutgoingHash = result.outgoingHash;
+      if (result.finished) {
+        const grossUsd = order.paymentUsdAmount ?? (await toUsdIfGbp(Number(order.grandTotal), order.groupBuyId)).toFixed(2);
+        amountMatches = anonPayAmountMatches(data, grossUsd, order.creditsApplied);
+      }
       console.log("[anonpay-status] Trocador raw status:", data["Status"] ?? data["status"], "hash:", trocOutgoingHash || "(none)");
     } else {
       console.warn("[anonpay-status] Trocador returned", trocRes.status);
@@ -1993,19 +2016,20 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
   let paymentStatus = order.paymentStatus as string;
 
   // Trocador AnonPay statuses: anonpaynew → anonpayfound → anonpayfinished
-  if (trocStatus === "anonpayfinished" || trocStatus === "finished" || trocStatus === "complete" || trocStatus === "completed") {
+  if (parseAnonPayStatus({ Status: trocStatus }).finished) {
+    if (!amountMatches) {
+      res.status(409).json({ error: "The completed AnonPay amount does not match this order. Please contact support.", paymentStatus }); return;
+    }
     if (paymentStatus !== "confirmed") {
       // If Trocador returned the outgoing blockchain tx hash, append it to the stored ID
       // so admins can look it up on-chain: stored as "anonpay:{sessionId}|{txHash}"
       const newTxHash = trocOutgoingHash
         ? `anonpay:${paymentId}|${trocOutgoingHash}`
-        : `anonpay:${paymentId}`;
-      await db
-        .update(ordersTable)
-        // amountDue is an independent post-payment balance. Do not erase one
-        // that was added after this primary payment was initiated.
-        .set({ paymentStatus: "confirmed", paymentConfirmedAt: new Date(), paymentTxHash: newTxHash })
-        .where(refundMutableOrderWhere(eq(ordersTable.id, req.params.id)));
+        : order.paymentTxHash;
+      const saved = await confirmAnonPayOrder(order, newTxHash);
+      if (!saved) {
+        res.status(409).json({ error: "The order or payment changed during verification. Refresh and check again." }); return;
+      }
       paymentStatus = "confirmed";
 
       writeLog("payment", "info", "anonpay_confirmed", `AnonPay auto-confirmed for order ${order.code} (Trocador: ${trocStatus})`, { orderId: order.id, code: order.code, username: order.telegramUsername, paymentId, trocStatus, trocOutgoingHash: trocOutgoingHash || null }).catch(() => {});
@@ -2023,7 +2047,11 @@ router.get("/orders/:id/anonpay-status", async (req, res): Promise<void> => {
     }
   }
 
-  res.json({ status: trocStatus, paymentStatus });
+  res.json({
+    status: trocStatus, paymentStatus, outgoingTxHash: trocOutgoingHash || null,
+    paymentTxHash: paymentStatus === "confirmed" && trocOutgoingHash
+      ? `anonpay:${paymentId}|${trocOutgoingHash}` : order.paymentTxHash,
+  });
 });
 
 // ─── ADMIN: Get payments config ────────────────────────────────

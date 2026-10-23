@@ -97,7 +97,7 @@
 - [Shared-order organiser credit offset](shared-order-organiser-credit-offset.md) — organiser forwards products+shipping less persisted member credits; tips and organiser fees stay excluded.
 - [Shared organiser payment confirmation](shared-organiser-payment-confirmation.md) — full no-credit stablecoin payments auto-confirm; partial, credited, or unsupported payments require Admin confirmation.
 - [Shared-order confirmation commitment](shared-order-confirmation-commitment.md) — confirmation binds a current draft; mutations and reopening invalidate it, while lock/removal must serialize it.
-- [AnonPay pages cannot be embedded](anonpay-no-iframe.md) — Trocador sends X-Frame-Options: DENY; launch AnonPay as a top-level page and restore only genuinely pending sessions.
+- [AnonPay external checkout](anonpay-no-iframe.md) — no iframes; reconcile primary payments independently of browser acknowledgement; preserve receive-amount denominations.
 - [Publish image size and local backups](publish-image-size-backups.md) — `.gitignore` does not keep local SQL/backups out of Repl layers; mirror dev-only bulk in `.replitignore`.
 - [Publish schema-pull spinner](publish-schema-pull-spinner.md) — spinner-only failed build logs do not identify a code failure; compare successful builds and a read-only schema diff before changing code or data.
 - [Google Drive database backups](google-drive-database-backups.md) — production stores full plain .SQL in Drive; gzip is transport-only; dev skips backups and startup waits 10 minutes.

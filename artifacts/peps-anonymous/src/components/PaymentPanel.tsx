@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Copy, Check, Loader2, Send, AlertCircle, ShieldCheck, Clock, FlaskConical, Zap, RefreshCw, ChevronRight, Wallet, ExternalLink, ArrowLeft, ImagePlus, X, Upload, CheckCircle2, Info, Lock } from "lucide-react";
 import QRCode from "react-qr-code";
+import { AnonPayPaymentDetails } from "@/components/AnonPayPaymentDetails";
 import { Card, Button, Input } from "@/components/ui";
 import { currSym } from "@/lib/currency";
 import { safeSubtractMoneyClamped } from "@/lib/exact-money";
@@ -672,6 +673,8 @@ export default function PaymentPanel({
         if (!r.ok) return; // e.g. 400 if not a pending AnonPay order — silent
         const d = await r.json();
         if (d.paymentStatus === "confirmed" || d.status === "finished") {
+          if (cancelled) return;
+          if (d.paymentTxHash) setTxHash(d.paymentTxHash);
           updateStatus("confirmed");
           setAnonPayStatusMsg("✓ Payment confirmed! Thank you.");
         }
@@ -794,20 +797,21 @@ export default function PaymentPanel({
             <p className="text-xs text-green-700">Your payment was confirmed. Thank you!</p>
             {txHash && (
               <div className="mt-2">
+                {txHash.startsWith("anonpay:") ? (
+                  <AnonPayPaymentDetails value={txHash}
+                    explorerUrl={hash => getTxExplorerUrl(hash, cryptoCurrency, cryptoNetwork)} />
+                ) : <>
                 <p className="text-[10px] text-green-600 font-semibold mb-0.5">Transaction ID</p>
                 <a
-                  href={
-                    txHash.startsWith("anonpay:")
-                      ? `https://trocador.app/anonpay/${encodeURIComponent(txHash.slice("anonpay:".length))}`
-                      : getTxExplorerUrl(txHash, cryptoCurrency, cryptoNetwork)
-                  }
+                  href={getTxExplorerUrl(txHash, cryptoCurrency, cryptoNetwork)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-[10px] text-green-600 break-all hover:underline flex items-center gap-1"
                 >
-                  {txHash.startsWith("anonpay:") ? txHash.slice("anonpay:".length) : txHash}
+                  {txHash}
                   <ExternalLink className="w-3 h-3 shrink-0" />
                 </a>
+                </>}
               </div>
             )}
             {confirmations !== null && confirmations > 0 && (
@@ -1655,6 +1659,7 @@ export default function PaymentPanel({
                       const d = await r.json();
                       const s: string = (d.status ?? "").toLowerCase();
                       if (d.paymentStatus === "confirmed" || s === "anonpayfinished" || s === "finished" || s === "complete" || s === "completed") {
+                        if (d.paymentTxHash) setTxHash(d.paymentTxHash);
                         updateStatus("confirmed");
                         setAnonPayStatusMsg("✓ Payment confirmed! Thank you.");
                       } else if (s === "anonpayfound") {
