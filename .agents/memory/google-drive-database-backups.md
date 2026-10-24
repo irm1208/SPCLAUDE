@@ -52,3 +52,11 @@ The connectors SDK's `proxy()` does not forward `AbortSignal`; its `createProxyF
 **Why:** an apparent transport timeout is not effective if the underlying request can still start later, especially for retention mutations.
 
 **How to apply:** use the signal-aware transport for bounded retention work; never replace cancellation with only a race against a timeout that leaves an uncancelled write able to start after the lock is released.
+
+## Drive search and capacity-read constraints
+
+Drive `name contains` matches prefixes, not filename suffixes. The connected Drive API rejects key-only `appProperties has` searches with HTTP 400; private-property searches need an exact key/value pair.
+
+**Why:** live read-only checks confirmed these restrictions. A suffix query can quietly return no backups, while a property-presence query fails outright. The recent legacy archive also contains tens of thousands of objects, so a seemingly small capacity inventory can exceed a short timeout.
+
+**How to apply:** use valid capture-time prefixes and full receipt validation, and bound/drain concurrent inventory work. Do not equate a failed or incomplete inventory with an empty archive or healthy capacity. A future fixed-value receipt search tag needs compatibility with previously verified backups; never silently exclude them.

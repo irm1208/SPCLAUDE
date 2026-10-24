@@ -2,26 +2,13 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
 import { DRIVE_BACKUP_FOLDER_NAME, type DriveBackupFile } from "./google-drive-backup";
 import type { RetentionStore } from "./google-drive-backup-retention";
 import { performance } from "node:perf_hooks";
+import { BACKUP_RETENTION_MS } from "./google-drive-backup-policy";
 
-async function drained<T>(work: Promise<T>[]): Promise<T[]> {
-  const results = await Promise.allSettled(work);
-  return results.map(result => {
-    if (result.status === "rejected") throw result.reason;
-    return result.value;
-  });
-}
+type DriveReadOptions = { requestTimeoutMs?: number; deadline?: number };
 
-/** No folder creation or mutations during inventory/dry runs. */
-export async function createDriveRetentionStore(
-  folderId?: string, captureHour?: Date,
-  options: { requestTimeoutMs?: number; deadline?: number; parallelInventory?: boolean } = {},
-): Promise<RetentionStore> {
-  const client = new ReplitConnectors();
-  // Unlike proxy(), createProxyFetch forwards AbortSignal, including to its
-  // authentication retry. An expired identity lookup cannot later send a write.
-  const proxyFetch = client.createProxyFetch("google-drive");
-  const measurements = { requests: 0, requestMs: 0, maxRequestMs: 0 };
-  const request = async (path: string, init?: { method: "PATCH" | "DELETE"; headers?: Record<string, string>; body?: string }) => {
+function boundedDriveRequest(options: DriveReadOptions, measurements = { requests: 0, requestMs: 0, maxRequestMs: 0 }) {
+  const proxyFetch = new ReplitConnectors().createProxyFetch("google-drive");
+  return async (path: string, init?: { method: "PATCH" | "DELETE"; headers?: Record<string, string>; body?: string }) => {
     const remaining = (options.deadline ?? Infinity) - Date.now();
     if (remaining <= 0) throw new Error("Drive backup retention budget exhausted");
     const signal = AbortSignal.timeout(Math.max(1, Math.floor(Math.min(options.requestTimeoutMs ?? 30_000, remaining))));
@@ -40,6 +27,32 @@ export async function createDriveRetentionStore(
       measurements.maxRequestMs = Math.max(measurements.maxRequestMs, elapsed);
     }
   };
+}
+
+/** Account-wide usage includes trash and non-backup storage; request no private user/file data. */
+export async function getDriveBackupStorageQuota(options: DriveReadOptions = {}): Promise<unknown> {
+  const response = await boundedDriveRequest(options)("/drive/v3/about?fields=storageQuota(limit,usage)");
+  if (!response.ok) throw new Error(`Drive backup quota request failed (HTTP ${response.status})`);
+  return (await response.json() as { storageQuota?: unknown }).storageQuota;
+}
+
+async function drained<T>(work: Promise<T>[]): Promise<T[]> {
+  const results = await Promise.allSettled(work);
+  return results.map(result => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  });
+}
+
+/** No folder creation or mutations during inventory/dry runs. */
+export async function createDriveRetentionStore(
+  folderId?: string, captureHour?: Date,
+  options: DriveReadOptions & { parallelInventory?: boolean; capacityInventory?: boolean } = {},
+): Promise<RetentionStore> {
+  // Unlike proxy(), createProxyFetch forwards AbortSignal, including to its
+  // authentication retry. An expired identity lookup cannot later send a write.
+  const measurements = { requests: 0, requestMs: 0, maxRequestMs: 0 };
+  const request = boundedDriveRequest(options, measurements);
   const check = (response: Response) => {
     if (!response.ok) throw new Error(`Drive backup retention request failed (HTTP ${response.status})`);
   };
@@ -86,6 +99,22 @@ export async function createDriveRetentionStore(
     metrics: () => ({ ...measurements }),
     get,
     list: async () => {
+      if (options.capacityInventory) {
+        // Drive name contains is PREFIX-only. Capture-day prefixes bound the
+        // capacity read without scanning the entire historical multipart archive.
+        // This is a superset of the rolling window; receipts and exact capture
+        // times are checked by the capacity assessor, never inferred from names.
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+        const dates: string[] = [];
+        for (let day = Math.floor((now - BACKUP_RETENTION_MS) / dayMs); day <= Math.floor(now / dayMs); day++) {
+          dates.push(`name contains 'S&PBACKUP-${new Date(day * dayMs).toISOString().slice(0, 10)}'`);
+        }
+        // At most four disjoint capture days. Drain all started reads on error
+        // before releasing the backup lock; a partial inventory is never used.
+        return (await drained(dates.map(date => listRange(`${folderQuery} and ${date}`,
+          "id,name,size,md5Checksum,parents,trashed,appProperties")))).flat();
+      }
       const prefix = captureHour
         ? `S&PBACKUP-${captureHour.toISOString().slice(0, 13).replace("T", "_")}-` : undefined;
       if (prefix || !options.parallelInventory) {

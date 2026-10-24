@@ -32,6 +32,7 @@ import { encryptBackupStream, parseBackupEncryptionKey } from "./backup-encrypti
 import { writeLog } from "./audit-log";
 import { createAlert } from "./create-alert";
 import { sendAdminMessage } from "./telegram";
+import { checkDriveBackupCapacity } from "./google-drive-backup-capacity-monitor";
 
 const BACKUP_DIR = join(tmpdir(), "salt-and-peps-db-backups");
 const KEEP_DAYS = 3;
@@ -522,6 +523,7 @@ export async function runDbBackup(): Promise<DbBackupResult> {
       | "failed_new_backup_after_recovery" = "failed";
     const acquired = await withBackupLock(async () => {
       try {
+        if (process.env.NODE_ENV === "production") await checkDriveBackupCapacity();
         await promisify(mkdir)(BACKUP_DIR, { recursive: true });
         const failureDependencies = backupFailureDependencies();
         let recoveredRetained = false;
@@ -588,6 +590,7 @@ export async function runDbBackupRecovery(): Promise<DbBackupRecoveryResult> {
     let result: DbBackupRecoveryResult = "failed";
     const acquired = await withBackupLock(async () => {
       try {
+        if (process.env.NODE_ENV === "production") await checkDriveBackupCapacity();
         result = await runRetainedBackupRecovery(reconcileRetainedPlainBackups);
       } finally {
         await pruneOldBackups();

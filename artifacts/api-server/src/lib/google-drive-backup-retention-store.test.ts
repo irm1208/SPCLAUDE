@@ -3,12 +3,48 @@ const { proxy } = vi.hoisted(() => ({ proxy: vi.fn() }));
 vi.mock("@replit/connectors-sdk", () => ({ ReplitConnectors: class {
   createProxyFetch = () => (path: string, init: RequestInit) => proxy("google-drive", path, init);
 } }));
-import { createDriveRetentionStore } from "./google-drive-backup-retention-store";
+import { createDriveRetentionStore, getDriveBackupStorageQuota } from "./google-drive-backup-retention-store";
 const manifestTimes = () => ({ files: [1, 2, 3, 4].map(day => ({
   name: `backup-${day}.SQL.manifest.json`, createdTime: `2026-10-0${day}T00:00:00Z`,
 })) });
 
 beforeEach(() => { proxy.mockReset(); });
+it("requests only aggregate quota via the existing signal-aware connector", async () => {
+  proxy.mockResolvedValue(Response.json({ storageQuota: { limit: "100", usage: "50" } }));
+  expect(await getDriveBackupStorageQuota()).toEqual({ limit: "100", usage: "50" });
+  expect(proxy).toHaveBeenCalledWith("google-drive", "/drive/v3/about?fields=storageQuota(limit,usage)",
+    expect.objectContaining({ signal: expect.any(AbortSignal) }));
+});
+it("does not expose quota provider error bodies or invent a missing limit", async () => {
+  proxy.mockResolvedValueOnce(new Response("private", { status: 403 }))
+    .mockResolvedValueOnce(Response.json({ storageQuota: { usage: "50" } }));
+  await expect(getDriveBackupStorageQuota()).rejects.toThrow(/^Drive backup quota request failed \(HTTP 403\)$/);
+  expect(await getDriveBackupStorageQuota()).toEqual({ usage: "50" });
+});
+it("bounds capacity inventory by capture-day prefixes without changing retention listings", async () => {
+  proxy.mockImplementation(async () => Response.json({ files: [] }));
+  await (await createDriveRetentionStore("folder", undefined, { capacityInventory: true })).list();
+  const queries = proxy.mock.calls.map(call => new URL(call[1], "https://example.test").searchParams.get("q")!);
+  expect(queries).toHaveLength(4);
+  expect(new Set(queries).size).toBe(4);
+  expect(queries.every(q => q.startsWith("'folder' in parents and trashed = false and name contains 'S&PBACKUP-"))).toBe(true);
+  expect(queries.at(-1)).toContain(`name contains 'S&PBACKUP-${new Date().toISOString().slice(0, 10)}'`);
+});
+it("drains every capacity partition and rejects the whole inventory when one day fails", async () => {
+  let active = 0, peak = 0;
+  proxy.mockImplementation(async (_connector, path: string) => {
+    const q = new URL(path, "https://example.test").searchParams.get("q")!;
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 5)); active--;
+    return q.includes(new Date().toISOString().slice(0, 10))
+      ? Response.json({ incompleteSearch: true, files: [] })
+      : Response.json({ files: [] });
+  });
+  const store = await createDriveRetentionStore("folder", undefined, { capacityInventory: true });
+  await expect(store.list()).rejects.toThrow(/Incomplete/);
+  expect(peak).toBe(4);
+  expect(active).toBe(0);
+});
 it("reads every page in the configured folder with verification properties", async () => {
   proxy.mockResolvedValueOnce(Response.json({ files: [{ id: "one" }], nextPageToken: "two" }))
     .mockResolvedValueOnce(Response.json({ files: [{ id: "two" }] }));

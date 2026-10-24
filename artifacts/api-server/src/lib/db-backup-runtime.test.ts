@@ -6,13 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 const mocks = vi.hoisted(() => ({
   upload: vi.fn(), list: vi.fn(), cleanup: vi.fn(), query: vi.fn(), spawn: vi.fn(),
-  audit: vi.fn(), alert: vi.fn(), notify: vi.fn(),
+  audit: vi.fn(), alert: vi.fn(), notify: vi.fn(), capacity: vi.fn(),
   names: [] as string[],
 }));
 vi.mock("@workspace/db", () => ({ pool: { connect: async () => ({ query: mocks.query, release: vi.fn() }) } }));
 vi.mock("./audit-log", () => ({ writeLog: mocks.audit }));
 vi.mock("./create-alert", () => ({ createAlert: mocks.alert }));
 vi.mock("./telegram", () => ({ sendAdminMessage: mocks.notify }));
+vi.mock("./google-drive-backup-capacity-monitor", () => ({ checkDriveBackupCapacity: mocks.capacity }));
 vi.mock("child_process", () => ({ spawn: mocks.spawn }));
 vi.mock("fs", async original => {
   const actual = await original<typeof import("fs")>();
@@ -56,6 +57,10 @@ it("runs retention only after a successful verified upload under the database lo
   expect(mocks.query.mock.calls[0][0]).toContain("pg_try_advisory_lock");
   expect(mocks.upload.mock.invocationCallOrder[0]).toBeLessThan(mocks.cleanup.mock.invocationCallOrder[0]);
   expect(mocks.cleanup.mock.invocationCallOrder[0]).toBeLessThan(mocks.query.mock.invocationCallOrder.at(-1)!);
+  expect(mocks.capacity).toHaveBeenCalledOnce();
+  expect(mocks.query.mock.invocationCallOrder[0]).toBeLessThan(mocks.capacity.mock.invocationCallOrder[0]);
+  expect(mocks.capacity.mock.invocationCallOrder[0]).toBeLessThan(mocks.upload.mock.invocationCallOrder[0]);
+  expect(mocks.capacity.mock.invocationCallOrder[0]).toBeLessThan(mocks.query.mock.invocationCallOrder.at(-1)!);
 });
 it("uses the paced writer for the production dump without changing uploaded SQL", async () => {
   const sql = "x".repeat(2 * 1024 * 1024);
@@ -76,6 +81,7 @@ it("does not delete any backup after upload failure", async () => {
   mocks.upload.mockRejectedValue(new Error("upload failed"));
   await expect(runDbBackup()).resolves.toBe("failed_new_backup");
   expect(mocks.cleanup).not.toHaveBeenCalled();
+  expect(mocks.capacity).toHaveBeenCalledOnce();
 });
 it("does not turn a successful verified upload into a backup failure when cleanup fails", async () => {
   mocks.cleanup.mockRejectedValue(new Error("delete unavailable"));
@@ -93,6 +99,7 @@ it("never checks Drive or dumps data if another instance holds the advisory lock
   mocks.query.mockResolvedValue({ rows: [{ locked: false }] });
   await expect(runDbBackup()).resolves.toBe("lock_contended");
   expect(mocks.list).not.toHaveBeenCalled(); expect(mocks.spawn).not.toHaveBeenCalled();
+  expect(mocks.capacity).not.toHaveBeenCalled();
 });
 it("runs verified retention for recovered files without spawning another dump", async () => {
   await mkdir(join(tmpdir(), "salt-and-peps-db-backups"), { recursive: true });
@@ -101,6 +108,7 @@ it("runs verified retention for recovered files without spawning another dump", 
   await expect(runDbBackupRecovery()).resolves.toBe("completed");
   expect(mocks.cleanup).toHaveBeenCalledOnce();
   expect(mocks.spawn).not.toHaveBeenCalled();
+  expect(mocks.capacity).toHaveBeenCalledOnce();
 });
 it("prevents overlapping dumps in the same process", async () => {
   let finish!: (file: { id: string }) => void;
