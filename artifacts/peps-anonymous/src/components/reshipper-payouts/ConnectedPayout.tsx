@@ -1,34 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { displayTokenUnits, getPayoutAsset } from "@workspace/payout-assets";
-import type { ChainPayment, PayoutData, PayoutOrder } from "../../lib/reshipper-payouts";
+import type { ChainPayment, PayoutData } from "../../lib/reshipper-payouts";
 import { approvePayoutTransfer, approvePayoutCancellation, connectPayoutWallet, type ConnectedPayoutWallet } from "../../lib/payout-wallet-provider";
-import type { Draft } from "./PayoutOrdersTable";
-import { fmt, toMinor } from "./money";
+import { fmt } from "./money";
 import { ErrorNote, ghostBtn, inputCls, inputStyle, primaryBtn, primaryStyle, subtle } from "./ui";
 
 type Write = (path: string, body: unknown) => Promise<PayoutData>;
-export function ConnectedPayout({ data, orders, selection, write, isAdmin }: {
-  data: PayoutData; orders: PayoutOrder[]; selection: Record<string, Draft>; write: Write; isAdmin: boolean;
+// Retain recovery and confirmation controls for previously created chain payments.
+// New payouts use the separate TXID recording form, not wallet connection.
+export function ExistingChainPayouts({ data, write, isAdmin }: {
+  data: PayoutData; write: Write; isAdmin: boolean;
 }) {
-  const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
-  const connection = useRef<ConnectedPayoutWallet | null>(null), operation = useRef<{ key: string; id: string } | null>(null);
+  const connection = useRef<ConnectedPayoutWallet | null>(null);
   const pending = (data.chainPayments ?? []).filter(p => ["prepared", "signing", "broadcast", "failed"].includes(p.state));
-  const asset = data.payoutWallet?.currency ? getPayoutAsset(data.payoutWallet.network, data.payoutWallet.currency) : null;
-  const rows = orders.filter(o => selection[o.orderId]);
-  const prepare = async () => {
-    if (!asset) return; setBusy(true); setError(null);
-    try {
-      const allocations = rows.map(o => ({ orderId: o.orderId, adminFee: selection[o.orderId].admin, postage: selection[o.orderId].postage }));
-      if (allocations.some(a => toMinor(a.adminFee) === null || toMinor(a.postage) === null)) throw new Error("Enter valid fee and postage amounts before preparing payment.");
-      const wallet = await connectPayoutWallet(asset); connection.current = wallet;
-      const payload = { currency: rows[0].currency, sender: wallet.address, allocations };
-      const key = JSON.stringify(payload);
-      if (operation.current?.key !== key) operation.current = { key, id: crypto.randomUUID() };
-      await write("/chain/prepare", { ...payload, operationId: operation.current!.id });
-      operation.current = null;
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not prepare payment."); }
-    finally { setBusy(false); }
-  };
   const checking = useRef(false), writeRef = useRef(write); writeRef.current = write;
   const ids = pending.filter(p => p.state === "broadcast").map(p => p.id).join(",");
   useEffect(() => {
@@ -42,16 +26,6 @@ export function ConnectedPayout({ data, orders, selection, write, isAdmin }: {
     return () => clearInterval(timer);
   }, [ids, isAdmin]);
   return <div className="space-y-3">
-    {isAdmin && <section aria-label="Pay with connected wallet" className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--t-border)" }}>
-      <h3 className="text-sm font-bold">Pay selected orders with your wallet</h3>
-      <p className="text-xs" style={subtle}>One transfer for the selected admin fees and postage. Review the exact amount and recipient, then approve in your wallet. Orders are marked paid only after blockchain confirmation. Network fees are extra.</p>
-      {!asset ? <p className="text-sm" style={subtle}>The reshipper needs to save a supported USDT/USDC token with their payout wallet above before connected payments are available.</p>
-        : <><p className="text-sm font-semibold">{asset.currency} · {asset.network}</p>
-          <button type="button" className={primaryBtn} style={primaryStyle} disabled={busy || !rows.length} onClick={prepare}>
-            {busy ? "Connecting / preparing…" : "Connect wallet & preview payment"}</button>
-          {!rows.length && <p className="text-xs" style={subtle}>Select payable orders above first.</p>}</>}
-      {error && <ErrorNote message={error} />}
-    </section>}
     {pending.map(p => <PendingPayment key={p.id} payment={p} isAdmin={isAdmin} write={write} connection={connection} />)}
   </div>;
 }

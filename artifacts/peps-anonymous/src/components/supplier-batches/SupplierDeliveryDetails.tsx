@@ -17,7 +17,7 @@ export function SupplierDeliveryDetails({ request }: { request: Fetcher }) {
     try {
       const r = await request("/api/reshipper/supplier-delivery", { credentials: "include" });
       const data = await r.json(); if (!r.ok) throw new Error(data.error ?? "Could not load delivery details.");
-      setDraft(data.contact ?? empty); setLoaded(true);
+      setDraft(data.contact ?? empty); setSaved(!!data.contact); setLoaded(true);
     } catch (e) { setError((e as Error).message); }
     finally { setLoading(false); }
   };
@@ -42,7 +42,7 @@ export function SupplierDeliveryDetails({ request }: { request: Fetcher }) {
   });
   return <details className="rounded-xl border p-4 mb-4" style={{ borderColor: "var(--t-border)", color: "var(--t-text)", background: "var(--t-surface)" }} open={expanded} onToggle={e => setExpanded(e.currentTarget.open)}>
     <summary className="font-semibold cursor-pointer">Supplier delivery details — required for supplier downloads</summary>
-    <p className="text-xs my-3" style={{ color: "var(--t-muted)" }}>Where the supplier sends your group-buy parcels. Admin uses these details in supplier TXT downloads. They do not change your login email or members’ delivery addresses.</p>
+    <p className="text-xs my-3" style={{ color: "var(--t-muted)" }}>Where the supplier sends your group-buy parcels. Save once to your reshipper account and reuse these details across your group buys. Admin uses them in supplier TXT downloads. They do not change your login email or members’ delivery addresses.</p>
     {loading ? <p role="status">Loading delivery details…</p> : loaded && <form onSubmit={save} className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs">Recipient name *<input {...field("name")} maxLength={200} /></label>

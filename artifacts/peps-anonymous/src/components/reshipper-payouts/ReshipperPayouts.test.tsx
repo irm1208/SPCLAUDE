@@ -51,48 +51,36 @@ it("reshipper sees read-only totals and history, no mutating controls", async ()
   expect(el.textContent).not.toContain("Record payout");
 });
 
-it("previews a selected bulk payment, gets wallet approval and stays pending until confirmation", async () => {
-  const d = data(), sender = `0x${"a".repeat(40)}`, destination = `0x${"b".repeat(40)}`, txid = `0x${"c".repeat(64)}`;
-  d.payoutWallet = { address: destination, network: "ERC-20", currency: "USDC" };
-  const provider = { request: vi.fn(async ({ method }: { method: string }) => {
-    if (["eth_accounts", "eth_requestAccounts"].includes(method)) return [sender];
-    if (method === "eth_chainId" || method === "eth_getTransactionCount") return "0x1";
-    if (method === "eth_sendTransaction") return txid;
-  }) };
-  Object.defineProperty(dom.window, "ethereum", { value: provider, configurable: true });
-  let latest = d;
-  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-    if (!init?.method) return json(latest);
-    const payload = JSON.parse(String(init.body));
-    if (url.endsWith("/chain/prepare")) {
-      const p = { id: payload.operationId, state: "prepared" as const, token: "USDC" as const, network: "ERC-20", sender, destination,
-        amountMinor: 3000, usdMinor: 3000, currency: "USD", tokenUnits: "30000000", rate: 1, createdAt: new Date().toISOString(), txid: null, error: null,
-        allocations: d.orders.slice(0, 2).map(o => ({ orderId: o.orderId, code: o.code, member: o.member, adminFeeMinor: 1000, postageMinor: 500 })),
-        transaction: { from: sender, to: destination, nonce: "0x1", data: "frozen", chainId: "0x1", value: "0x0" } };
-      latest = { ...d, orders: d.orders.map(o => ["o1", "o2"].includes(o.orderId) ? { ...o, eligible: false, pendingPayoutId: p.id } : o), chainPayments: [p] };
-    } else if (url.endsWith("/approve")) {
-      latest = { ...latest, chainPayments: latest.chainPayments!.map(p => ({ ...p, state: "signing" })) };
-    } else if (url.endsWith("/submit")) {
-      expect(payload).toEqual({ txid });
-      latest = { ...latest, chainPayments: latest.chainPayments!.map(p => ({ ...p, state: "broadcast", txid, error: "Waiting for confirmations" })) };
-    }
-    return json(latest);
-  });
-  try {
-    await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
-    await click(byLabel("Select all visible eligible orders"));
-    await click(btn("Connect wallet & preview")); await flush();
-    expect(el.textContent).toContain("30 USDC");
-    expect(provider.request.mock.calls.some(([q]) => q.method === "eth_sendTransaction")).toBe(false);
-    expect(btn("Approve payment in wallet").disabled).toBe(true);
-    const checked = [...el.querySelectorAll("label")].find(l => l.textContent?.includes("I have checked the token"))!.querySelector("input")!;
-    await click(checked); await click(btn("Approve payment in wallet")); await flush();
-    expect(provider.request.mock.calls.filter(([q]) => q.method === "eth_sendTransaction")).toHaveLength(1);
-    expect(el.textContent).toContain("Payment pending confirmation");
-    expect(el.textContent).toContain(txid);
-    expect(el.textContent).not.toContain("Paid — confirmed on blockchain");
-    expect(byLabel("Select order PA-101").disabled).toBe(true);
-  } finally { delete (dom.window as unknown as { ethereum?: unknown }).ethereum; }
+it("uses the TXID recording form as the main flow without a wallet connection", async () => {
+  const d = data();
+  d.payoutWallet = { address: `0x${"b".repeat(40)}`, network: "ERC-20", currency: "USDC" };
+  const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => json(d));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  expect(btn("Connect wallet")).toBeUndefined();
+  expect(el.textContent).not.toContain("pay through your connected wallet");
+  await click(byLabel("Select all visible eligible orders"));
+  const form = el.querySelector('section[aria-label="Record payout"]')!;
+  expect(form).not.toBeNull();
+  expect(form.closest("details")).toBeNull();
+  expect(inputByLabelText("TXID").placeholder).toBe("Paste the payout transaction hash");
+  expect(fetcher.mock.calls.some(([url]) => url.includes("/chain/"))).toBe(false);
+});
+
+it("keeps existing pending chain payments visible and checkable without preparing another transfer", async () => {
+  const d = data(), txid = `0x${"c".repeat(64)}`;
+  d.chainPayments = [{ id: "previous-payment", state: "broadcast", network: "ERC-20", token: "USDC",
+    destination: `0x${"b".repeat(40)}`, amountMinor: 3000, usdMinor: 3000, currency: "USD",
+    tokenUnits: "30000000", rate: 1, createdAt: "2026-10-21", txid, error: null, allocations: [] }];
+  d.orders = d.orders.map(o => ({ ...o, eligible: false, pendingPayoutId: "previous-payment" }));
+  const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => json(d));
+  await render({ mode: "admin", username: "kai", gbId: "g1", fetcher });
+  expect(el.textContent).toContain("Payment pending confirmation");
+  expect(el.textContent).toContain(txid);
+  expect(byLabel("Select order PA-101").disabled).toBe(true);
+  expect(btn("Connect wallet")).toBeUndefined();
+  await click(btn("Check confirmation")); await flush();
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([url]) => url))
+    .toEqual(["/api/admin/reshippers/kai/gb/g1/payouts/chain/previous-payment/check"]);
 });
 
 it("lets reshippers choose a supported payout token and shows pending payments read-only", async () => {
@@ -128,8 +116,9 @@ it("prefills the saved wallet and exact bulk total, then records one TXID coveri
   await click(btn("Preview payment"));
   await click(btn("Record payout")); await flush();
   const body = JSON.parse(String(fetcher.mock.calls.find(c => c[1]?.method === "POST")![1]!.body));
-  expect(body).toMatchObject({ amount: "30.00", network: "ERC-20", destination: `0x${"6".repeat(40)}`, method: "crypto" });
+  expect(body).toMatchObject({ amount: "30.00", network: "ERC-20", destination: `0x${"6".repeat(40)}`, method: "crypto", reference: `0x${"c".repeat(64)}` });
   expect(body.allocations).toHaveLength(2);
+  expect(fetcher.mock.calls.find(c => c[1]?.method === "POST")![0]).toBe("/api/admin/reshippers/kai/gb/g1/payouts");
 });
 
 it("saves a reshipper payout wallet separately from customer collection wallets", async () => {

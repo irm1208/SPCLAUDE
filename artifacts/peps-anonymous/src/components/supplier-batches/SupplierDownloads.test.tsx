@@ -46,6 +46,31 @@ it("does not allow saving over a failed contact load and exposes retry", async (
   await act(async () => { host.querySelector("button")!.click(); await pause(); });
   expect(host.querySelector("form")).not.toBeNull();
 });
+it("reloads saved contact details after leaving and returning to settings", async () => {
+  let stored = { ...contact };
+  const request = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method === "PUT") stored = JSON.parse(String(init.body));
+    return Response.json({ contact: stored });
+  });
+  await mount(h(SupplierDeliveryDetails, { request }));
+  await act(async () => {
+    const address = host.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!.call(address, "Updated supplier delivery address");
+    address.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await pause();
+  });
+  expect(stored).toEqual({ ...contact, address: "Updated supplier delivery address" });
+  await mount(null);
+  await mount(h(SupplierDeliveryDetails, { request }));
+  expect(host.querySelector("textarea")?.value).toBe(stored.address);
+  expect([...host.querySelectorAll("input")].map(input => input.value)).toEqual([contact.name, contact.email, contact.phone]);
+  expect(host.querySelector("select")?.value).toBe(contact.country);
+  expect(host.textContent).toContain("Supplier delivery details saved.");
+  expect(request.mock.calls.filter(([, init]) => !init?.method)).toHaveLength(2);
+});
 it("selects specific direct orders and downloads only those IDs", async () => {
   vi.mocked(fetch).mockResolvedValueOnce(Response.json({ orders: [
     { id: "a", code: "100", username: "one", country: "Italy", kits: 30 },

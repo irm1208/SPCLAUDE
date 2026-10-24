@@ -3869,9 +3869,10 @@ function UnclaimedTab({ gbId, unclaimedOrders, loading, error, onRefresh, onClai
   );
 }
 
-type RTab = "overview" | "fulfilment" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "supplier" | "dispatch" | "payments" | "broadcast";
+type RTab = "overview" | "fulfilment" | "orders" | "unclaimed" | "qr" | "shipping" | "parcels" | "supplier" | "dispatch" | "payments" | "broadcast" | "settings";
 
 const TAB_HELP: Record<RTab, string> = {
+  settings: "Your saved supplier delivery address, recipient name, email and phone. These details are saved to your reshipper account and reused for supplier downloads across your group buys.",
   supplier: "Supplier batches assigned to you. Check each box against its expected contents and enter usable, damaged and missing quantities. Carrier delivery does not confirm contents or ship any member order. Use Member dispatch only after the goods are ready.",
   overview: "A quick snapshot of this group buy: how many orders you have, totals at a glance, and your progress. Start here to see where things stand.",
   fulfilment: "A complete manifest of every item currently assigned to you for this Group Buy. Expand a product to see the member orders it belongs to.",
@@ -3936,6 +3937,7 @@ const TABS: { id: RTab; label: string; icon: React.ElementType }[] = [
   { id: "dispatch",  label: "Dispatch & Packaging Slips", icon: FileText },
   { id: "payments",  label: "Payments",  icon: CreditCard },
   { id: "broadcast", label: "Broadcast", icon: MessageSquare },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 /**
@@ -4314,7 +4316,6 @@ export default function ReshipperPage() {
           </div>
         </div>
 
-        <div className="px-4 md:px-7"><SupplierDeliveryDetails request={reshipFetch} /></div>
         {/* ── Personal GB visibility: saved server-side, never changes assignments ── */}
         {assignments.length > 0 && (
           <ReshipperGroupBuyPicker assignments={assignments} hiddenIds={hiddenGbIds}
@@ -4376,7 +4377,12 @@ export default function ReshipperPage() {
 
         {/* ── Content ── */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-7 py-6" style={{ paddingBottom: "calc(40px + env(safe-area-inset-bottom))" }}>
-          {currentAssignment ? (
+          {activeTab === "settings" ? (
+            <>
+              <TabHelp tab="settings" />
+              <SupplierDeliveryDetails request={reshipFetch} />
+            </>
+          ) : currentAssignment ? (
             <>
               <TabHelp tab={activeTab} />
               {activeTab === "overview" && (

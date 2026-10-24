@@ -19,6 +19,6 @@ export function PayoutTotals({ data }: { data: PayoutData }) {
         <strong>{data.needsReviewCount} {data.needsReviewCount === 1 ? "order needs" : "orders need"} review.</strong>{" "}
          These orders cannot be paid out yet. Admin can resolve them under Review & corrections.
       </div>}
-    <p className="text-[11px]" style={subtle}>Admin fees and member postage only. Vendor shipping and amounts already paid directly to the reshipper are excluded. Wallet-approved payouts settle after blockchain confirmation; manually recorded transfers are labelled separately.</p>
+    <p className="text-[11px]" style={subtle}>Admin fees and member postage only. Vendor shipping and amounts already paid directly to the reshipper are excluded. Manually recorded payouts document transfers sent outside this website and are not verified on-chain.</p>
   </div>;
 }
