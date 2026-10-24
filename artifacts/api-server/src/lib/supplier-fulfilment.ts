@@ -7,7 +7,7 @@ import {
 } from "@workspace/db";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
-import { SupplierBatchError, fingerprint, snapshotOrder, csv, type BatchOrder } from "./supplier-batches-model";
+import { SupplierBatchError, fingerprint, snapshotOrder, csv, regionalBatchReference, type BatchOrder } from "./supplier-batches-model";
 import { allocateContents, validateReceipt, orderReadiness, routeOf, type ShipmentLine, type ReceiptLine } from "./supplier-fulfilment-model";
 
 export type FulfilmentActor = UpdateActor & { reshipper?: boolean };
@@ -57,7 +57,7 @@ async function loadBatch(tx: any, id: string, batchId: string, actor: Fulfilment
   const owned = actor.reshipper ? eq(shipments.recipientUsername, canonicalUsername(actor.username)) : undefined;
   const packages = await tx.select().from(shipments).where(and(eq(shipments.batchId, batchId), owned)).orderBy(asc(shipments.createdAt));
   if (actor.reshipper && !packages.length) return bad("Batch not found.", 404);
-  const snapshot = batch.snapshot as { region: { name: string }; kits: number; orders: BatchOrder[] };
+  const snapshot = batch.snapshot as { region: { name: string; countries?: string[] }; kits: number; orders: BatchOrder[] };
   const visible = new Set(packages.flatMap((s: any) => (s.contents as ShipmentLine[]).map(l => l.orderId)));
   const purchased = actor.reshipper ? snapshot.orders.filter(o => visible.has(o.id)) : snapshot.orders;
   const ids = purchased.map(o => o.id);
@@ -114,7 +114,7 @@ async function loadBatch(tx: any, id: string, batchId: string, actor: Fulfilment
   const active = packages.filter(live);
   const items = orders.flatMap(o => o.items);
   const summary = {
-    id: batch.id, reference: batch.reference, region: snapshot.region.name, state: batch.state,
+    id: batch.id, reference: regionalBatchReference(batch.reference, snapshot.region), region: snapshot.region.name, state: batch.state,
     kits: items.reduce((sum, i) => sum + i.quantity, 0), orderCount: orders.length,
     shipmentCount: active.length, untracked: active.filter((s: any) => !s.trackingNumber).length,
     allocatedKits: items.reduce((sum, i) => sum + i.allocated, 0),

@@ -20,3 +20,9 @@ When an enabled supplier region reaches its kit target and Telegram alerts are e
 **Why:** The user explicitly chose Admin and the organiser as recipients; organiser-only alerts do not notify the Admin who manages supplier purchasing.
 
 **How to apply:** Keep a separate durable delivery for each recipient so retrying one does not resend the other's alert. Deduplicate within each readiness transition and include the group buy, region and kit count against its target, without member details.
+
+Batch references start with **EU** for EU batches and **US** for US batches. UK batches keep **GB**, not UK.
+
+**Why:** The user explicitly requested regional prefixes to distinguish batches at a glance.
+
+**How to apply:** Use the batch's saved destination region, not the organiser's location or mutable region label. Keep batch numbers and allocations unchanged and show consistent references to staff, members and in downloads.

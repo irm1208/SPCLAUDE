@@ -37,6 +37,7 @@ export function reshipperClaimWhere(gbId: string, assignment: Assignment, option
   )))`;
   return and(eq(ordersTable.groupBuyId, gbId), isNull(ordersTable.reshipperUsername), isNull(ordersTable.deletedAt),
     sql`(${ordersTable.directShippingRequested} IS NOT TRUE)`,
+    sql`(${ordersTable.routingType} IS DISTINCT FROM ${"direct"})`,
     sql`${ordersTable.status} NOT IN (${"Cancelled"}, ${"Shipped"}, ${"Delivered"})`,
     values.size ? sql`${destination} IN (${sql.join([...values].map(value => sql`${value}`), sql`, `)})` : sql`FALSE`,
     reservedElsewhere.length ? sql`coalesce(${ordersTable.deliveryMethodId}, '') NOT IN (${sql.join(reservedElsewhere.map(id => sql`${id}`), sql`, `)})` : undefined)!;

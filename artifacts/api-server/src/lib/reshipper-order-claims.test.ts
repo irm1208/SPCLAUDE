@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
-const mocks = vi.hoisted(() => ({ returning: vi.fn(), set: vi.fn(), guard: vi.fn() }));
+const mocks = vi.hoisted(() => ({ returning: vi.fn(), set: vi.fn(), guard: vi.fn(), where: vi.fn() }));
 vi.mock("@workspace/db", async () => ({
   ...(await import("@workspace/db/schema")),
   db: { update: () => ({ set: mocks.set }) },
@@ -13,7 +13,8 @@ import { claimReshipperOrders, reshipperClaimWhere } from "./reshipper-order-cla
 const us = { country: "US", countries: ["US"], reshipperUsername: "us-a" };
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.set.mockReturnValue({ where: () => ({ returning: mocks.returning }) });
+  mocks.where.mockReturnValue({ returning: mocks.returning });
+  mocks.set.mockReturnValue({ where: mocks.where });
 });
 it("matches country snapshots without requiring a country leg and excludes ineligible orders", () => {
   const query = new PgDialect().sqlToQuery(reshipperClaimWhere("group", us, []));
@@ -24,6 +25,8 @@ it("matches country snapshots without requiring a country leg and excludes ineli
   expect(query.sql).toContain('"reshipper_username" is null');
   expect(query.sql).toContain('"deleted_at" is null');
   expect(query.sql).toContain('"direct_shipping_requested" IS NOT TRUE');
+  expect(query.sql).toContain('"routing_type" IS DISTINCT FROM');
+  expect(query.params).toContain("direct");
   expect(query.params).toEqual(expect.arrayContaining(["Cancelled", "Shipped", "Delivered"]));
 });
 it("supports UK/GB and honours postage explicitly reserved for a different reshipper", () => {
@@ -41,4 +44,7 @@ it("updates ownership and route together, and only reports rows actually claimed
   expect(lost).toEqual([]);
   expect(mocks.set).toHaveBeenCalledWith({ reshipperUsername: "us-a", routingType: "reshipper" });
   expect(mocks.guard.mock.calls[0][0]).toEqual(["order"]);
+  const update = new PgDialect().sqlToQuery(mocks.where.mock.calls[0][0]);
+  expect(update.sql).toContain('"routing_type" IS DISTINCT FROM');
+  expect(update.params).toContain("direct");
 });

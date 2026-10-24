@@ -31,4 +31,4 @@ Multiple reshippers assigned to the same country share automatically routed, una
 
 **Why:** The user clarified that both US reshippers must be able to claim orders, superseding the earlier request to send all US postage to one recipient.
 
-**How to apply:** Keep automatic postage routing unassigned when more than one reshipper covers the destination. A country-leg setup must not be required for the shared pool. Claims must never steal existing assignments or include supplier Direct Shipping. An explicitly reserved Admin postage option remains reserved unless Admin changes it to automatic routing.
+**How to apply:** Keep automatic postage routing unassigned when more than one reshipper covers the destination. A country-leg setup must not be required for the shared pool. Claims must never steal existing assignments. Supplier Direct Shipping must not appear in Unclaimed or be claimable individually or in bulk, even when its postage label says ordinary home delivery. An explicitly reserved Admin postage option remains reserved unless Admin changes it to automatic routing.

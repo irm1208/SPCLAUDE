@@ -45,7 +45,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("supplier shipment 
     }
     const bid = randomUUID(), region = { id: "eu", name: "EU", countries: ["IT"], targetKits: 5 };
     await s.db.insert(s.gbSupplierBatchesTable).values({
-      id: bid, groupBuyId: id, sequence: 1, reference: `Synthetic ${id}`, previewToken: randomUUID(), state: "ordered", createdBy: admin.username,
+      id: bid, groupBuyId: id, sequence: 1, reference: `GB-${id} / 001`, previewToken: randomUUID(), state: "ordered", createdBy: admin.username,
       orderedAt: new Date(), snapshot: { region, kits: 5, orders: purchased, products: [] },
     });
     await s.db.insert(s.gbSupplierAllocationsTable).values(ids.map(orderId => ({ orderId, batchId: bid })));
@@ -59,6 +59,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("supplier shipment 
     const f = await fixture(), body = f.body(0, 1.5);
     const before = await s.db.select().from(s.ordersTable).where(inArray(s.ordersTable.id, f.ids));
     let d = await api.createSupplierShipment(f.id, f.bid, admin, body);
+    expect(d.batch.reference).toBe(`EU-${f.id} / 001`);
     expect(d.orders[0].exceptions).toEqual([]);
     expect((await api.createSupplierShipment(f.id, f.bid, admin, body)).shipments).toHaveLength(1);
     await expect(api.createSupplierShipment(f.id, f.bid, admin, { ...body, label: "different" })).rejects.toThrow(/request key/);

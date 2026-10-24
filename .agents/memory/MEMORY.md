@@ -149,4 +149,4 @@
 - [Member regional batches](member-regional-batches.md) — opt-in regional queue progress; batch codes/statuses only for members' own allocated orders, server-filtered; direct-only shows Direct shipping.
 - [Mobile chat overlays](mobile-chat-overlays.md) — chat must clear floating navigation and track the visual viewport; page animation containers can defeat local stacking.
 - [Shared-order organiser names](shared-order-organiser-name.md) — require a real full name, separate from account ownership and the delivery recipient; do not expose it to other members.
-- [Supplier batch policies](supplier-batch-export-policy.md) — keep full FS3 setup; add orders only to same-region prepared batches, including below-target additions.
+- [Supplier batch policies](supplier-batch-export-policy.md) — full FS3 exports, same-region prepared additions, staff readiness alerts and EU/US/GB reference prefixes.

@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db, accountsTable, accountGroupBuysTable, gbCountryLegsTable, groupBuysTable, ordersTable, orderLineItemsTable, groupBuyRefundsTable, gbSupplierEligibilityTable, gbSupplierSettingsTable, gbSupplierBatchesTable, gbSupplierAllocationsTable, gbSupplierShipmentsTable } from "@workspace/db";
-import { SupplierBatchError, collectSupplierQueues, isDirectSupplierOrder, propose, type BatchOrder, type SupplierConfig } from "./supplier-batches-model";
+import { SupplierBatchError, collectSupplierQueues, isDirectSupplierOrder, propose, regionalBatchReference, type BatchOrder, type SupplierConfig } from "./supplier-batches-model";
 import { orderReadiness, type QuantityShipment } from "./supplier-fulfilment-model";
 import { normalizeToCode } from "./country-utils";
 import { canonicalUsername } from "./group-buy-updates-model";
@@ -50,7 +50,7 @@ export function memberBatchSummary(batch: MemberBatch, shipments: MemberShipment
     const anyReceived = readiness.some(r => r.items.some(i => i.received > 0));
     status = complete ? "Received by reshipper" : anyReceived ? "Part received by reshipper" : "Supplier packages arranged";
   }
-  return { id: batch.id, reference: batch.reference, region: batch.snapshot.region.name, kits: batch.snapshot.kits,
+  return { id: batch.id, reference: regionalBatchReference(batch.reference, batch.snapshot.region), region: batch.snapshot.region.name, kits: batch.snapshot.kits,
     targetKits: batch.snapshot.region.targetKits ?? null,
     status, createdAt: batch.createdAt.toISOString(), orderedAt: batch.orderedAt?.toISOString() ?? null,
     isYourBatch: batch.state !== "released" && ownBatchIds.has(batch.id) };

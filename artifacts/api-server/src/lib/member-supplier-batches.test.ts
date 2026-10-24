@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@workspace/db", async () => import("../../../../lib/db/src/schema"));
 import { memberBatchSummary, memberDestinationCountries, memberRegionalProgress, memberCanViewBatch } from "./member-supplier-batches";
 import { collectSupplierQueues } from "./supplier-batches-model";
+it.each([["EU", ["DE", "IT"]], ["US", ["US"]], ["GB", ["GB"]]] as [string, string[]][])(
+  "shows existing %s batch references consistently to members", (prefix, countries) => {
+    const old = { ...batch, reference: "GB-TEST / 003",
+      snapshot: { ...batch.snapshot, region: { ...batch.snapshot.region, countries } } };
+    expect(memberBatchSummary(old, [], new Set(["b"])).reference).toBe(`${prefix}-TEST / 003`);
+  });
 const order: any = { id: "order", code: "SECRET-CODE", username: "private-member", items: [{ productId: "p", productName: "Private product", quantity: 2 }] };
 const batch: any = { id: "b", reference: "SB-001", state: "ordered", createdAt: new Date("2026-10-01Z"), orderedAt: new Date("2026-10-02Z"),
   snapshot: { region: { name: "EU" }, kits: 2, orders: [order], private: "do not expose" }, createdBy: "private-staff" };

@@ -49,6 +49,25 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it.each([
+    ["EU", ["IT", "DE"], "Italy"],
+    ["US", ["US"], "United States"],
+    ["GB", ["GB"], "United Kingdom"],
+  ] as [string, string[], string][])("uses %s references for new and existing batches and CSV downloads", async (prefix, countries, country) => {
+    const f = await fixture([100], [{ shippingCountry: country }]);
+    const configured = await api.saveSupplierConfig(f.id, admin, { expectedVersion: f.result.version, config: {
+      ...f.result.config, regions: [{ ...f.result.config.regions[0], countries, name: prefix }],
+    } });
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: configured.proposals[0].token });
+    const batch = prepared.batches[0], expected = `${prefix}-${f.id.slice(0, 8)} / 001`;
+    expect(batch.reference).toBe(expected);
+    await store.db.update(store.gbSupplierBatchesTable).set({ reference: `GB-${f.id.slice(0, 8)} / 001` })
+      .where(eq(store.gbSupplierBatchesTable.id, batch.id));
+    expect((await api.supplierData(f.id, admin)).batches[0]).toMatchObject({ id: batch.id, reference: expected });
+    const exported = await api.exportSupplierBatch(f.id, batch.id, admin);
+    expect(exported.reference).toBe(expected);
+    expect(exported.csv).toContain(expected);
+  });
   it("keeps member batch visibility off by default and persists an explicit choice", async () => {
     const f = await fixture([100]);
     const initial = await api.supplierData(f.id, admin);

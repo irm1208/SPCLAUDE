@@ -6,6 +6,13 @@ export class SupplierBatchError extends Error {
   constructor(message: string, public status = 409) { super(message); }
 }
 export interface BatchRegion { id: string; name: string; countries: string[]; targetKits: number }
+/** Preserve batch identity/sequence while correcting legacy all-GB references. */
+export function regionalBatchReference(reference: string, region?: { countries?: readonly string[] }): string {
+  const countries = (region?.countries ?? []).map(normalizeToCode);
+  const prefix = countries.length && countries.every(code => EU_COUNTRIES.includes(code)) ? "EU"
+    : countries.length && countries.every(code => code === "US") ? "US" : "GB";
+  return reference.replace(/^GB-/, `${prefix}-`);
+}
 export interface SupplierConfig { enabled: boolean; telegramAlerts: boolean; showToMembers?: boolean; regions: BatchRegion[] }
 export interface BatchItem { productId: string; productName: string; quantity: number; unitPrice: string; lineTotal: string }
 export interface BatchOrder {

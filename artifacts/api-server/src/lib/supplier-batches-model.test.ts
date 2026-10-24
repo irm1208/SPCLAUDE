@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { validateRegions, eligibleOrder, propose, snapshotOrder, fingerprint, csv, EU_COUNTRIES } from "./supplier-batches-model";
+import { validateRegions, eligibleOrder, propose, snapshotOrder, fingerprint, csv, EU_COUNTRIES, regionalBatchReference } from "./supplier-batches-model";
+describe("regional batch references", () => {
+  it.each([
+    [EU_COUNTRIES, "EU"], [["IT", "DE"], "EU"], [["US"], "US"],
+    [["GB"], "GB"], [["UK"], "GB"], [["US", "GB"], "GB"], [[], "GB"],
+  ] as [string[], string][])("uses %j countries without changing the group or sequence", (countries, prefix) => {
+    expect(regionalBatchReference("GB-TEST / 003", { countries })).toBe(`${prefix}-TEST / 003`);
+  });
+  it("preserves already-correct and custom references", () => {
+    expect(regionalBatchReference("EU-TEST / 003", { countries: EU_COUNTRIES })).toBe("EU-TEST / 003");
+    expect(regionalBatchReference("US-TEST / 003", { countries: ["US"] })).toBe("US-TEST / 003");
+    expect(regionalBatchReference("Custom-001", { countries: EU_COUNTRIES })).toBe("Custom-001");
+    expect(regionalBatchReference("GB-TEST / 003", undefined)).toBe("GB-TEST / 003");
+  });
+});
 it("can include the entire regional queue without changing its target", () => {
   const queue = [20, 30, 15].map((qty, i) => snapshotOrder(order(`all-${i}`, qty)));
   const target = propose(queue, 50);

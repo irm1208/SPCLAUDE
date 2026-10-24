@@ -11,7 +11,7 @@ import { supplierTxt, type TxtBlock, type SupplierContact } from "./supplier-txt
 import { getActiveWholesaleVendor } from "../routes/config";
 import { COUNTRY_CODE_TO_NAME, normalizeToCode } from "./country-utils";
 import { calcPackageShipping, pickRegionForCountry } from "./wholesale-shipping";
-import { SupplierBatchError, validateRegions, eligibleOrder, isDirectSupplierOrder, snapshotOrder, collectSupplierQueues, propose, fingerprint, csv, type SupplierConfig, type BatchOrder } from "./supplier-batches-model";
+import { SupplierBatchError, validateRegions, eligibleOrder, isDirectSupplierOrder, snapshotOrder, collectSupplierQueues, propose, fingerprint, csv, regionalBatchReference, type SupplierConfig, type BatchOrder } from "./supplier-batches-model";
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
@@ -61,7 +61,8 @@ async function load(tx: any, id: string) {
   const refunds = ids.length ? await tx.select({ orderId: groupBuyRefundsTable.orderId }).from(groupBuyRefundsTable)
     .where(and(inArray(groupBuyRefundsTable.orderId, ids), inArray(groupBuyRefundsTable.status, ["requested", "verifying", "verification_failed", "completed"]))) : [];
   const all = parents.map((o: any) => ({ ...o, activeRefund: refunds.some((r: any) => r.orderId === o.id), lineItems: lines.filter((i: any) => i.orderId === o.id) }));
-  const history = await tx.select().from(batches).where(eq(batches.groupBuyId, id)).orderBy(asc(batches.sequence));
+  const history = (await tx.select().from(batches).where(eq(batches.groupBuyId, id)).orderBy(asc(batches.sequence)))
+    .map((batch: any) => ({ ...batch, reference: regionalBatchReference(batch.reference, batch.snapshot.region) }));
   const used = ids.length ? await tx.select().from(allocations).where(inArray(allocations.orderId, ids)) : [];
   const elig = ids.length ? await tx.select().from(eligibility).where(inArray(eligibility.orderId, ids)) : [];
   return { stored, config, all, history, used, elig };
@@ -185,7 +186,7 @@ export async function confirmSupplierBatch(id: string, actor: UpdateActor, body:
     if (!p || !p.ready || p.token !== body.token || existing) throw new SupplierBatchError("This preview changed or is no longer ready. Reload and review the latest orders before confirming.");
     await assertNoActiveRefunds(tx, p.orders.map(o => o.id));
     const sequence = Math.max(0, ...current.batches.map((b: any) => b.sequence)) + 1;
-    const batchId = randomUUID(), reference = `GB-${id.slice(0, 8)} / ${String(sequence).padStart(3, "0")}`;
+    const batchId = randomUUID(), reference = regionalBatchReference(`GB-${id.slice(0, 8)} / ${String(sequence).padStart(3, "0")}`, p.region);
     await tx.insert(batches).values({ id: batchId, groupBuyId: id, sequence, reference, previewToken: p.token, snapshot: p, createdBy: actor.username });
     await tx.insert(allocations).values(p.orders.map(o => ({ orderId: o.id, batchId })));
     await audit(tx, id, actor.username, "prepared", { batchId, reference, orderIds: p.orders.map(o => o.id), kits: p.kits });
