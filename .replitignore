@@ -4,6 +4,7 @@
 
 # Dev-time uploaded screenshots / debug assets (470 MB)
 attached_assets/
+/generated-artifacts/
 
 # Database backups created by the dev scheduler — NOT for production (can exceed tens of GB)
 artifacts/api-server/db-backups/

@@ -21,6 +21,18 @@ The user selected backups every hour and keeping every backup from the last thre
 
 ## Scheduling and historical backup safety
 
+Mutual exclusion alone does not guarantee one backup per hourly capture window.
+
+**Why:** separate instances or restarts can acquire the same advisory lock successively and still create redundant dumps.
+
+**How to apply:** require durable evidence of a fully size/checksum-verified capture before considering an hour backed up. A filename, modified time, or unverified upload is not enough.
+
+Interrupted legacy cleanup must remain distinguishable from an untrusted incomplete backup.
+
+**Why:** a missing part can mean either an earlier successful deletion or data corruption; treating those as equivalent either risks deletion or permanently prevents cleanup.
+
+**How to apply:** validate the complete reference graph before starting, retain explicit trusted resume provenance, and keep reference information until its children are processed. Stop on uncertainty. Bound cleanup work so a large legacy archive cannot prevent the next scheduled backup.
+
 Do not run heavy full dumps during application startup. Preserve the ten-minute startup delay, cross-instance locking, coalesced retries, and bounded recovery of retained SQL without creating extra dumps. The six-hour upload-recovery budget is a separate safeguard from the requested hourly backup cadence. Historical multipart backups require complete manifests and verification of segments, compressed parts, decoded data, and whole SQL during restoration.
 
 **Why:** immediate full dumps during application startup took nearly six minutes, pushed normal API requests into 30–289 second waits, and accumulated tens of gigabytes inside the project. A whole-file gzip PUT hit Cloudflare's 413 request-body limit. Subsequent real connector tests showed Cloudflare returns 403 Forbidden for *any* partial resumable PUT, even 290-byte gzip or raw bytes, while complete file PUTs succeed. Shrinking partial ranges cannot fix this transport.

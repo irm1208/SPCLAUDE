@@ -1,7 +1,7 @@
 /**
  * Scheduled database backup.
  *
- * Streams a full plain SQL pg_dump every six hours in production.
+ * Streams a full plain SQL pg_dump hourly in production.
  * Uploads completed dumps to Google Drive and removes the local temporary file.
  * Complete local SQL files are retained until upload verification succeeds.
  * Incomplete plain files and legacy encrypted artifacts are pruned after 3 days.
@@ -21,7 +21,11 @@ import { pool } from "@workspace/db";
 import {
   buildPlainDriveBackupFileName,
   uploadBackupToGoogleDrive,
+  getGoogleDriveBackupFolderId,
 } from "./google-drive-backup";
+import { BACKUP_HOUR_MS, hasBackupInCurrentHour } from "./google-drive-backup-policy";
+import { createDriveRetentionStore } from "./google-drive-backup-retention-store";
+import { executeBackupRetention } from "./google-drive-backup-retention";
 import { buildPgDumpArgs } from "./db-backup-command";
 import { encryptBackupStream, parseBackupEncryptionKey } from "./backup-encryption";
 import { writeLog } from "./audit-log";
@@ -30,7 +34,7 @@ import { sendAdminMessage } from "./telegram";
 
 const BACKUP_DIR = join(tmpdir(), "salt-and-peps-db-backups");
 const KEEP_DAYS = 3;
-export const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+export const INTERVAL_MS = BACKUP_HOUR_MS;
 export const FIRST_BACKUP_DELAY_MS = 10 * 60 * 1000; // Do not compete with application startup.
 export const BACKUP_RETRY_DELAY_MS = 5 * 60 * 1000; // Retry lock contention without busy-looping.
 export const BACKUP_UPLOAD_RETRY_DELAY_MS = 10 * 60 * 1000;
@@ -314,9 +318,31 @@ async function reconcileRetainedPlainBackups(): Promise<number> {
   return uploadRetainedPlainBackups({
     backupDir: BACKUP_DIR,
     fileNames: await promisify(readdir)(BACKUP_DIR),
-    upload: uploadBackupToGoogleDrive,
+    upload: uploadVerifiedBackupAndRetain,
     unlink: (path) => promisify(unlink)(path),
   });
+}
+
+/** Called only from backup/recovery orchestration inside the shared advisory lock. */
+async function uploadVerifiedBackupAndRetain(filePath: string, fileName: string) {
+  const verified = await uploadBackupToGoogleDrive(filePath, fileName);
+  if (process.env.NODE_ENV === "production") {
+    try {
+      const folderId = await getGoogleDriveBackupFolderId();
+      const result = await executeBackupRetention(await createDriveRetentionStore(folderId), verified);
+      console.log(`[db-backup] Retention: deleted ${result.deletedFiles} expired file(s); ${result.failures} failure(s); legacy safety skips=${result.skippedLegacy}; more queued=${result.deferred}`);
+      if (result.failures || result.skippedLegacy) throw new Error("Backup retention incomplete");
+    } catch {
+      console.warn("[db-backup] Upload verified, but Drive retention needs attention; protected backups preserved");
+      await Promise.all([
+        attemptFailureChannel(() => writeLog("error", "error", "database_backup_retention_failed",
+          "Backup uploaded and verified; Drive retention needs attention", {})),
+        attemptFailureChannel(() => createAlert("system", "high", "Backup cleanup needs attention",
+          "The database backup is verified, but expired Google Drive backups could not all be removed.")),
+      ]);
+    }
+  }
+  return verified;
 }
 
 export async function runRetainedBackupRecovery(
@@ -475,8 +501,6 @@ export async function runDbBackup(): Promise<DbBackupResult> {
       | "failed_new_backup"
       | "failed_new_backup_after_recovery" = "failed";
     const acquired = await withBackupLock(async () => {
-      const fileName = buildPlainDriveBackupFileName();
-      const outputPath = join(BACKUP_DIR, fileName);
       try {
         await promisify(mkdir)(BACKUP_DIR, { recursive: true });
         const failureDependencies = backupFailureDependencies();
@@ -491,6 +515,17 @@ export async function runDbBackup(): Promise<DbBackupResult> {
           attemptResult = await reportBackupFailure(failureDependencies);
           return;
         }
+        // Advisory locking serializes instances; durable Drive receipts also prevent
+        // another instance/restart from creating a second dump after the lock is released.
+        const folderId = await getGoogleDriveBackupFolderId();
+        const inventory = await (await createDriveRetentionStore(folderId, new Date())).list();
+        if (hasBackupInCurrentHour(inventory, folderId)) {
+          console.log("[db-backup] Current UTC hour already has a verified backup — no new dump");
+          attemptResult = "completed";
+          return;
+        }
+        const fileName = buildPlainDriveBackupFileName();
+        const outputPath = join(BACKUP_DIR, fileName);
         attemptResult = await runPlainBackupAttempt({
           fileName,
           outputPath,
@@ -500,7 +535,7 @@ export async function runDbBackup(): Promise<DbBackupResult> {
             source,
             createWriteStream(destinationPath, { flags: "wx", mode: 0o600 }),
           ),
-          upload: uploadBackupToGoogleDrive,
+          upload: uploadVerifiedBackupAndRetain,
           rename: renameFile,
           unlink: (path) => promisify(unlink)(path),
           ...failureDependencies,
@@ -725,11 +760,11 @@ export function createDbBackupScheduler(
       stopped = false;
       firstBackupTimer = setTimeout(() => {
         firstBackupTimer = undefined;
+        intervalTimer = setInterval(() => {
+          void execute("scheduled");
+        }, INTERVAL_MS);
         void execute("scheduled");
       }, FIRST_BACKUP_DELAY_MS);
-      intervalTimer = setInterval(() => {
-        void execute("scheduled");
-      }, INTERVAL_MS);
     },
     stop: () => {
       if (stopped) return;
@@ -754,7 +789,7 @@ export function createDbBackupScheduler(
 /**
  * Kicks off the backup schedule.
  * Development servers do not create backups. Production waits for startup
- * traffic to settle, then runs every 6 hours thereafter.
+ * traffic to settle, then runs hourly.
  */
 export function startDbBackupSchedule(): void {
   if (process.env.NODE_ENV === "development") {
@@ -762,7 +797,7 @@ export function startDbBackupSchedule(): void {
     return;
   }
   console.log(
-    "[db-backup] Schedule started — first run in 10 min, then every 6 h (full SQL backups in Google Drive; lock contention is retried)",
+    "[db-backup] Schedule started — first run in 10 min, then hourly (full SQL; verified Drive backups retained for 72 h; lock contention is retried)",
   );
   createDbBackupScheduler(runDbBackup, {
     runRecovery: runDbBackupRecovery,

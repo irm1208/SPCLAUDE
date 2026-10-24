@@ -8,6 +8,7 @@ import { pipeline } from "stream/promises";
 import { createGunzip, createGzip } from "zlib";
 import { ReplitConnectors } from "@replit/connectors-sdk";
 import { uploadSingleSqlBackup } from "./google-drive-single-sql";
+import { hasVerifiedBackupReceipt, verificationProperties } from "./google-drive-backup-policy";
 import {
   buildSqlBackupManifestName,
   buildSqlBackupManifestSegmentName,
@@ -47,6 +48,7 @@ export interface DriveBackupFile {
   modifiedTime?: string;
   parents?: string[];
   trashed?: boolean;
+  appProperties?: Record<string, string>;
   /** Google Drive API returns md5Checksum as 32 lowercase hexadecimal characters. */
   md5Checksum?: string;
 }
@@ -347,7 +349,7 @@ class GoogleDriveBackupStorage {
           `name = '${escapeDriveQueryValue(fileName)}'`,
           "trashed = false",
         ].join(" and "),
-        fields: "nextPageToken,files(id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed)",
+        fields: "nextPageToken,files(id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed,appProperties)",
         pageSize: "100",
       });
       if (pageToken) params.set("pageToken", pageToken);
@@ -367,8 +369,8 @@ class GoogleDriveBackupStorage {
     do {
       const params = new URLSearchParams({
         q: [`'${escapeDriveQueryValue(folderId)}' in parents`, "trashed = false"].join(" and "),
-        fields: "nextPageToken,files(id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed)",
-        pageSize: "100",
+        fields: "nextPageToken,files(id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed,appProperties)",
+        pageSize: "1000",
         orderBy: "modifiedTime desc",
       });
       if (pageToken) params.set("pageToken", pageToken);
@@ -386,7 +388,7 @@ class GoogleDriveBackupStorage {
 
   async getFile(fileId: string): Promise<DriveBackupFile> {
     const params = new URLSearchParams({
-      fields: "id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed",
+      fields: "id,name,size,md5Checksum,mimeType,modifiedTime,parents,trashed,appProperties",
     });
     const response = await this.connectors.proxy(
       DRIVE_CONNECTOR,
@@ -1202,5 +1204,19 @@ export async function uploadBackupToGoogleDrive(
   filePath: string,
   fileName: string,
 ): Promise<DriveBackupFile> {
-  return storage.upload(filePath, fileName);
+  const verified = await storage.upload(filePath, fileName);
+  if (!fileName.endsWith(".SQL")) return verified;
+  // Persist only after transport has verified local bytes against Drive's full size/MD5.
+  const response = await new ReplitConnectors().proxy(
+    DRIVE_CONNECTOR, `/drive/v3/files/${encodeURIComponent(verified.id)}`,
+    { method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appProperties: verificationProperties(verified) }) },
+  );
+  if (!response.ok) throw new Error(`Recording SQL backup verification failed (HTTP ${response.status})`);
+  const fresh = await storage.getFile(verified.id);
+  if (fresh.name !== verified.name || fresh.size !== verified.size ||
+      fresh.md5Checksum !== verified.md5Checksum || !hasVerifiedBackupReceipt(fresh)) {
+    throw new Error("SQL backup verification receipt mismatch");
+  }
+  return fresh;
 }

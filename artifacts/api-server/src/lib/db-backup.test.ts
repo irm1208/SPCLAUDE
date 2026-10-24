@@ -26,8 +26,8 @@ describe("database backup scheduler", () => {
     vi.useRealTimers();
   });
 
-  it("uses a six-hour recurring interval", () => {
-    expect(INTERVAL_MS).toBe(6 * 60 * 60 * 1000);
+  it("uses an hourly recurring interval", () => {
+    expect(INTERVAL_MS).toBe(60 * 60 * 1000);
   });
 
   it("never reports an acquired failed attempt as completed", () => {
@@ -48,14 +48,16 @@ describe("database backup scheduler", () => {
     expect(runBackup).toHaveBeenCalledTimes(1);
   });
 
-  it("runs recurring attempts every six hours", async () => {
+  it("runs recurring attempts every hour", async () => {
     vi.useFakeTimers();
     const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("completed");
     const scheduler = createDbBackupScheduler(runBackup);
     scheduler.start();
 
     await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS);
-    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS - 1);
+    expect(runBackup).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(runBackup).toHaveBeenCalledTimes(2);
   });
 
@@ -160,7 +162,7 @@ describe("database backup scheduler", () => {
     scheduler.start();
 
     await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS);
-    await vi.advanceTimersByTimeAsync(INTERVAL_MS - FIRST_BACKUP_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
     expect(runBackup).toHaveBeenCalledTimes(2);
     expect(onRecovered).toHaveBeenCalledOnce();
     const recoveryCalls = runRecovery.mock.calls.length;
@@ -168,7 +170,7 @@ describe("database backup scheduler", () => {
     expect(runRecovery).toHaveBeenCalledTimes(recoveryCalls);
   });
 
-  it("does not drop a normal six-hour run while recovery is in flight", async () => {
+  it("does not drop a normal hourly run while recovery is in flight", async () => {
     vi.useFakeTimers();
     let finishRecovery!: (result: DbBackupResult) => void;
     const runBackup = vi.fn<() => Promise<DbBackupResult>>().mockResolvedValue("failed");
@@ -180,7 +182,7 @@ describe("database backup scheduler", () => {
 
     await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS + BACKUP_UPLOAD_RETRY_DELAY_MS);
     expect(runRecovery).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(INTERVAL_MS - FIRST_BACKUP_DELAY_MS - BACKUP_UPLOAD_RETRY_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS - BACKUP_UPLOAD_RETRY_DELAY_MS);
     expect(runBackup).toHaveBeenCalledOnce();
     finishRecovery("failed");
     await vi.advanceTimersByTimeAsync(0);
@@ -203,7 +205,7 @@ describe("database backup scheduler", () => {
     });
     scheduler.start();
 
-    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS + INTERVAL_MS);
     expect(runBackup).toHaveBeenCalledTimes(2);
     expect(onRecoveryExpired).not.toHaveBeenCalled();
     finishNormal("completed");
@@ -280,7 +282,7 @@ describe("database backup scheduler", () => {
     });
     scheduler.start();
 
-    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS + INTERVAL_MS);
     expect(onRecovered).toHaveBeenCalledOnce();
     expect(onRecoveryStarted).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(BACKUP_UPLOAD_RETRY_DELAY_MS);
@@ -301,7 +303,7 @@ describe("database backup scheduler", () => {
     scheduler.start();
 
     await vi.advanceTimersByTimeAsync(FIRST_BACKUP_DELAY_MS);
-    await vi.advanceTimersByTimeAsync(INTERVAL_MS - FIRST_BACKUP_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
     finishFirst("lock_contended");
     await vi.advanceTimersByTimeAsync(0);
     expect(runBackup).toHaveBeenCalledTimes(2);

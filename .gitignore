@@ -3,6 +3,7 @@ peps_dump_*.sql
 
 # Build output
 dist/
+/generated-artifacts/
 artifacts/*/dist/
 .worktrees/
 node_modules/
