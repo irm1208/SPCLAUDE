@@ -10,6 +10,7 @@ test("My Orders cards use the shared receipt action with the actual order ID and
   assert.match(card, /<OrderReceivedButton key=\{order\.id\} compact orderId=\{order\.id\} status=\{order\.status\}/);
   assert.match(card, /memberReceivedAt=\{order\.memberReceivedAt\} onReceived=\{onReceived\}/);
   assert.match(card, /!order\.current/);
+  assert.doesNotMatch(card, /<OrderListCompletionButton/);
 });
 test("confirmed receipt shows Received without relabelling unrelated completed orders", () => {
   assert.match(card, /order\.status === "Completed" && order\.memberReceivedAt \? "Received"/);

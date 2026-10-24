@@ -56,7 +56,7 @@ export function OrderReceivedButton({ orderId, status, memberReceivedAt, onRecei
         ? "min-h-11 inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         : `${primary} w-full`}
       style={compact ? { borderColor: "var(--t-border)", color: "var(--t-blue)" } : { background: "var(--t-blue)", color: "#fff" }}>
-      <PackageCheck className="h-4 w-4" />{compact ? "Received" : "Mark as received"}
+      <PackageCheck className="h-4 w-4" />{compact ? "Received / Completed" : "Mark as received"}
     </button>}
     {error && <p role="alert" className="text-sm" style={{ color: "var(--t-red, #dc2626)" }}>{error}</p>}
   </div>;

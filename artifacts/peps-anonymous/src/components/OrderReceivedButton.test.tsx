@@ -31,7 +31,7 @@ it("provides a compact Received action for order cards and displays the saved re
   }
   try {
     await act(async () => root.render(<Card />));
-    expect(div.querySelector("button")?.textContent).toBe("Received");
+    expect(div.querySelector("button")?.textContent).toBe("Received / Completed");
     await act(async () => div.querySelector("button")!.click());
     expect(fetchMock).not.toHaveBeenCalled();
     const confirm = [...div.querySelectorAll("button")].find(b => b.textContent?.includes("Yes, I've received it"))!;

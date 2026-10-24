@@ -5,7 +5,6 @@ import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStage
 import { MemberBatchStatus } from "@/components/supplier-batches/MemberBatchStatus";
 import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
 import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
-import { OrderListCompletionButton } from "@/components/OrderListCompletionButton";
 import { OrderReceivedButton, type MemberReceipt } from "@/components/OrderReceivedButton";
 import { filterMemberOrderCards, type MemberOrderSection } from "@/lib/member-order-list";
 import { useHalfKitAvailability } from "@/hooks/use-half-kit-availability";
@@ -532,8 +531,6 @@ function OrderGridCard({
               memberReceivedAt={order.memberReceivedAt} onReceived={onReceived} />
           </div>
         )}
-        <OrderListCompletionButton completed={!!isHidden} pending={!!completionPending}
-          onClick={() => isHidden ? onUnhide?.() : onHide?.()} />
       </div>
       </div>
     </div>
@@ -8449,7 +8446,7 @@ export default function CustomerPortal() {
               </p>
               <p className="text-xs mb-5" style={{ color: T.subtle }}>
                 {sectionCards.length === 0
-                  ? orderSection === "completed" ? "Use Mark as completed on an order to move it here." : "Your completed orders are available in the Completed section."
+                  ? orderSection === "completed" ? "Use the order’s three-dot menu to manage your completed-order list." : "Your completed orders are available in the Completed section."
                   : "Try adjusting your search or filters"}
               </p>
               <button onClick={clearFilters}
