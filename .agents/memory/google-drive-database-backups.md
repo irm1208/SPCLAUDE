@@ -3,6 +3,14 @@ name: Google Drive database backups
 description: Production backup destination, lifecycle, and scheduling rules that prevent database and project-storage contention.
 ---
 
+## Single-file upload alternative
+
+Google resumable uploads can bypass the connector's partial-range restriction: initialize the authorized upload through the existing connector, then send raw SQL chunks directly to the returned Google upload-session URL using Node's HTTPS client. A small non-sensitive live probe returned 308 for the first chunk and 200 for the final chunk; the resulting single file's size and MD5 matched, and the probe file was removed. This transport was investigated successfully, but has not been enabled for scheduled backups or validated with a full-size database dump.
+
+**Why:** the observed partial-range failures are on the connector upload route, not a limitation of Google Drive's single-file uploads.
+
+**How to apply:** treat this as an alternative to the proxy-based manifest path below, not a reason to re-enable its disabled partial-range implementation. Keep chunk sizes aligned to Google's 256 KiB requirement, interpret 308 as upload progress rather than following it as a redirect, validate the HTTPS Google upload destination, and keep the session URL server-side and out of logs because it grants upload access. Verify the complete remote size/checksum before deleting local SQL. Preserve existing backup copies and manifest restore support when implementing or testing a switch.
+
 Production database backups use `pg_dump --no-owner --no-privileges` and have the logical name `S&PBACKUP-YYYY-MM-DD_HH-MM-SS.SQL`. Drive stores numbered complete gzip objects and bounded manifest segments, with a root manifest committed last; the restore command reconstructs and hash-verifies the exact plain SQL. Development servers do not run scheduled backups. Each production instance waits 10 minutes after startup, then attempts every 6 hours; a PostgreSQL advisory lock prevents simultaneous backups, and a locked-out attempt retries every 5 minutes until it runs. Each instance keeps at most one pending retry, so retries cannot fan out locally; concurrent instances may still produce an additional backup after the lock holder finishes. A complete SQL file whose Drive upload fails is retried every 10 minutes for one six-hour episode; expiry does not rearm for the same retained failure, while a genuinely new failed dump starts a fresh episode.
 
 **Why:** immediate full dumps during application startup took nearly six minutes, pushed normal API requests into 30–289 second waits, and accumulated tens of gigabytes inside the project. A whole-file gzip PUT hit Cloudflare's 413 request-body limit. Subsequent real connector tests showed Cloudflare returns 403 Forbidden for *any* partial resumable PUT, even 290-byte gzip or raw bytes, while complete file PUTs succeed. Shrinking partial ranges cannot fix this transport.

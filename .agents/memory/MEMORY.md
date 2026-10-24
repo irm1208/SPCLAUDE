@@ -100,7 +100,7 @@
 - [AnonPay external checkout](anonpay-no-iframe.md) — no iframes; reconcile primary payments independently of browser acknowledgement; preserve receive-amount denominations.
 - [Publish image size and local backups](publish-image-size-backups.md) — `.gitignore` does not keep local SQL/backups out of Repl layers; mirror dev-only bulk in `.replitignore`.
 - [Publish schema-pull spinner](publish-schema-pull-spinner.md) — spinner-only failed build logs do not identify a code failure; compare successful builds and a read-only schema diff before changing code or data.
-- [Google Drive database backups](google-drive-database-backups.md) — production stores full plain .SQL in Drive; gzip is transport-only; dev skips backups and startup waits 10 minutes.
+- [Google Drive database backups](google-drive-database-backups.md) — current backups use compressed parts; direct Google resumable HTTPS supports a single SQL file without proxy chunk limits.
 - [GB vendor-shipping payment integrity](gb-vendor-shipping-payment-integrity.md) — paid-order shipping increases become amountDue; decreases and edits during balance verification are blocked.
 - [Wholesale access split payment verification](wholesale-access-split-payment-verification.md) — verify the test tx before storing it; final sync and scheduled checks must verify fee minus verified test amount.
 - [Qiyunle batch freshness](qiyunle-batch-freshness.md) — new dated codes inherit an unambiguous base-code mapping; wholesale display prefers the most recent positive-stock batch, not the largest stock.
