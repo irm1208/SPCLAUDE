@@ -59,6 +59,75 @@ describe("backup capture and durable verification policy", () => {
   });
 });
 describe("three-day Drive retention", () => {
+  it("validates all 83 legacy roots with bounded parallel reads before any deletion", async () => {
+    const ctx = fixture();
+    for (let i = 0; i < 83; i++) legacy(ctx, `legacy-${i}`, new Date(now - (100 + i) * 3600_000).toISOString().replace(".000", ""));
+    let active = 0, peak = 0, reads = 0;
+    const read = ctx.store.read;
+    ctx.store.read = async f => {
+      active++; peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      reads++; active--; return read(f);
+    };
+    ctx.store.remove = vi.fn(async id => {
+      expect(reads).toBe(83);
+      ctx.files.delete(id);
+    });
+    await executeBackupRetention(ctx.store, anchor, now);
+    expect(reads).toBe(83);
+    expect(peak).toBe(4);
+    expect(ctx.store.remove).toHaveBeenCalledTimes(166);
+  });
+  it("counts planning against the cleanup budget and never deletes from a partial graph", async () => {
+    const ctx = fixture(); legacy(ctx, "old");
+    const read = ctx.store.read;
+    ctx.store.read = async f => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return read(f);
+    };
+    const result = await executeBackupRetention(ctx.store, anchor, now, { maxDurationMs: 5 });
+    expect(result.deferred).toBe(true);
+    expect(ctx.store.remove).not.toHaveBeenCalled();
+    expect(ctx.store.markDeleting).not.toHaveBeenCalled();
+  });
+  it("keeps segmented generations within the same four-read limit", async () => {
+    const ctx = fixture();
+    for (let i = 0; i < 9; i++) legacy(ctx, `seg-${i}`, new Date(now - (100 + i) * 3600_000).toISOString().replace(".000", ""), true);
+    let active = 0, peak = 0, reads = 0;
+    const read = ctx.store.read;
+    ctx.store.read = async f => {
+      active++; peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      reads++; active--; return read(f);
+    };
+    const result = await executeBackupRetention(ctx.store, anchor, now);
+    expect(peak).toBe(4); expect(reads).toBe(18);
+    expect(result.deletedFiles).toBe(27);
+  });
+  it("drains in-flight planning reads on budget exhaustion without scheduling more", async () => {
+    const ctx = fixture();
+    for (let i = 0; i < 9; i++) legacy(ctx, `old-${i}`, new Date(now - (100 + i) * 3600_000).toISOString().replace(".000", ""));
+    let active = 0, reads = 0;
+    const read = ctx.store.read;
+    ctx.store.read = async f => {
+      active++; reads++;
+      await new Promise(resolve => setTimeout(resolve, 30));
+      active--; return read(f);
+    };
+    const result = await executeBackupRetention(ctx.store, anchor, now, { maxDurationMs: 10 });
+    expect(result.deferred).toBe(true); expect(active).toBe(0);
+    expect(reads).toBeLessThanOrEqual(4);
+    expect(ctx.store.remove).not.toHaveBeenCalled();
+  });
+  it("does not delete from a graph with an unreadable manifest in the last parallel batch", async () => {
+    const ctx = fixture();
+    for (let i = 0; i < 9; i++) legacy(ctx, `old-${i}`, new Date(now - (100 + i) * 3600_000).toISOString().replace(".000", ""));
+    ctx.content.set("old-8", Buffer.from("{}"));
+    const result = await executeBackupRetention(ctx.store, anchor, now);
+    expect(result.skippedLegacy).toBe(true);
+    expect(ctx.store.remove).not.toHaveBeenCalled();
+    expect(ctx.store.markDeleting).not.toHaveBeenCalled();
+  });
   it("keeps the exact 72-hour boundary and ignores metadata modification dates", async () => {
     const expired = { ...file("old", "2026-10-21T13:29:59Z"), modifiedTime: new Date(now).toISOString() };
     const { store } = fixture([expired, file("boundary", "2026-10-21T13:30:00Z"), file("recent", "2026-10-22T00:00:00Z")]);

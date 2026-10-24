@@ -26,7 +26,7 @@ vi.mock("./google-drive-backup", () => ({
 vi.mock("./google-drive-backup-retention-store", () => ({
   createDriveRetentionStore: async () => ({ folderId: "folder", list: mocks.list }),
 }));
-vi.mock("./google-drive-backup-retention", () => ({ executeBackupRetention: mocks.cleanup }));
+vi.mock("./google-drive-backup-retention", () => ({ executeBackupRetention: mocks.cleanup, RETENTION_MAX_DURATION_MS: 180_000 }));
 import { runDbBackup, runDbBackupRecovery } from "./db-backup";
 import { verificationProperties } from "./google-drive-backup-policy";
 const filePath = join(tmpdir(), "salt-and-peps-db-backups", "S&PBACKUP-2000-01-01_00-00-00.SQL");
@@ -56,6 +56,21 @@ it("runs retention only after a successful verified upload under the database lo
   expect(mocks.query.mock.calls[0][0]).toContain("pg_try_advisory_lock");
   expect(mocks.upload.mock.invocationCallOrder[0]).toBeLessThan(mocks.cleanup.mock.invocationCallOrder[0]);
   expect(mocks.cleanup.mock.invocationCallOrder[0]).toBeLessThan(mocks.query.mock.invocationCallOrder.at(-1)!);
+});
+it("uses the paced writer for the production dump without changing uploaded SQL", async () => {
+  const sql = "x".repeat(2 * 1024 * 1024);
+  mocks.spawn.mockImplementationOnce(() => {
+    const child = Object.assign(new EventEmitter(), { stdout: Readable.from([sql]), stderr: Readable.from([]), kill: vi.fn() });
+    setImmediate(() => child.emit("close", 0)); return child;
+  });
+  const { readFile } = await import("node:fs/promises");
+  mocks.upload.mockImplementationOnce(async () => {
+    expect(await readFile(filePath, "utf8")).toBe(sql);
+    return { id: "verified" };
+  });
+  const started = performance.now();
+  await expect(runDbBackup()).resolves.toBe("completed");
+  expect(performance.now() - started).toBeGreaterThanOrEqual(120);
 });
 it("does not delete any backup after upload failure", async () => {
   mocks.upload.mockRejectedValue(new Error("upload failed"));

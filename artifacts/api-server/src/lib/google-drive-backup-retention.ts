@@ -10,7 +10,14 @@ export interface RetentionStore {
   read(file: DriveBackupFile): Promise<Buffer>;
   remove(id: string): Promise<void>;
   markDeleting(id: string): Promise<void>;
+  metrics?(): { requests: number; requestMs: number; maxRequestMs: number };
 }
+export const RETENTION_READ_CONCURRENCY = 4;
+export const RETENTION_MAX_DURATION_MS = 180_000;
+class RetentionDeferred extends Error {}
+const checkDeadline = (deadline: number) => {
+  if (Date.now() >= deadline) throw new RetentionDeferred("Retention planning budget exhausted");
+};
 interface Generation {
   root: DriveBackupFile;
   parts: DriveBackupFile[];
@@ -88,8 +95,12 @@ async function legacyGeneration(
 }
 
 /** Read-only planning; an unreceipted anchor is allowed for prospective dry-run inventories only. */
-export async function planBackupRetention(store: RetentionStore, verified: DriveBackupFile, now = Date.now()): Promise<RetentionPlan> {
+export async function planBackupRetention(
+  store: RetentionStore, verified: DriveBackupFile, now = Date.now(), deadline = Infinity,
+): Promise<RetentionPlan> {
+  checkDeadline(deadline);
   const inventory = await store.list();
+  checkDeadline(deadline);
   const files = new Map(inventory.map(file => [file.id, file]));
   if (files.size !== inventory.length || !files.get(verified.id) ||
       !same(files.get(verified.id)!, verified, store.folderId)) throw new Error("Verified backup is missing or changed");
@@ -102,16 +113,37 @@ export async function planBackupRetention(store: RetentionStore, verified: Drive
   const cutoff = now - BACKUP_RETENTION_MS;
   const parsed: Generation[] = [];
   let skippedLegacy = false;
-  for (const file of inventory) {
-    if (!inBackupFolder(file, store.folderId) || backupCaptureTime(file.name) === null) continue;
-    if (file.name.endsWith(".SQL.manifest.json")) {
-      try {
-        if (names.get(file.name) !== 1) throw new Error("Ambiguous backup generation");
-        parsed.push(await legacyGeneration(store, file, files, names));
-      } catch { skippedLegacy = true; }
-    } else if (names.get(file.name) === 1 && /^[1-9]\d*$/.test(file.size ?? "") &&
-        /^[0-9a-f]{32}$/.test(file.md5Checksum ?? "")) {
-      parsed.push({ root: file, parts: [], segments: [], legacy: false });
+  const candidates = inventory.filter(file =>
+    inBackupFolder(file, store.folderId) && backupCaptureTime(file.name) !== null);
+  // Bound entire generation walks, so segmented roots cannot multiply the limit.
+  // Drain every started read before releasing the caller's shared backup lock.
+  const boundedStore: RetentionStore = { ...store, read: async file => {
+    checkDeadline(deadline);
+    const bytes = await store.read(file);
+    checkDeadline(deadline);
+    return bytes;
+  } };
+  for (let start = 0; start < candidates.length; start += RETENTION_READ_CONCURRENCY) {
+    checkDeadline(deadline);
+    const results = await Promise.allSettled(candidates.slice(start, start + RETENTION_READ_CONCURRENCY).map(async file => {
+      if (file.name.endsWith(".SQL.manifest.json")) {
+        try {
+          if (names.get(file.name) !== 1) throw new Error("Ambiguous backup generation");
+          return await legacyGeneration(boundedStore, file, files, names);
+        } catch (error) {
+          if (error instanceof RetentionDeferred) throw error;
+          skippedLegacy = true;
+        }
+      } else if (names.get(file.name) === 1 && /^[1-9]\d*$/.test(file.size ?? "") &&
+          /^[0-9a-f]{32}$/.test(file.md5Checksum ?? "")) {
+        return { root: file, parts: [], segments: [], legacy: false };
+      }
+      return undefined;
+    }));
+    checkDeadline(deadline);
+    for (const result of results) {
+      if (result.status === "rejected") throw result.reason;
+      if (result.value) parsed.push(result.value);
     }
   }
   const members = (g: Generation) => [...g.parts, ...g.segments, g.root];
@@ -142,16 +174,26 @@ export async function executeBackupRetention(
   store: RetentionStore, verified: DriveBackupFile, now = Date.now(),
   limits: { maxFiles?: number; maxDurationMs?: number } = {},
 ) {
+  const started = Date.now();
+  const deadline = started + (limits.maxDurationMs ?? RETENTION_MAX_DURATION_MS);
   const current = await store.get(verified.id);
   if (!current || !same(current, verified, store.folderId) || !hasVerifiedBackupReceipt(current)) {
     throw new Error("Retention requires a current verified SQL upload receipt");
   }
-  const plan = await planBackupRetention(store, current, now);
+  let plan: RetentionPlan;
+  try {
+    plan = await planBackupRetention(store, current, now, deadline);
+  } catch (error) {
+    if (!(error instanceof RetentionDeferred)) throw error;
+    return { deletedFiles: 0, failures: 0, deferred: true, skippedLegacy: false,
+      expiredGenerations: 0, planningMs: Date.now() - started, durationMs: Date.now() - started };
+  }
+  const planningMs = Date.now() - started;
   let deletedFiles = 0, failures = 0;
-  const deadline = Date.now() + (limits.maxDurationMs ?? 180_000);
   const maxFiles = limits.maxFiles ?? 1000;
   const result = (deferred: boolean) => ({
     deletedFiles, failures, deferred, skippedLegacy: plan.skippedLegacy, expiredGenerations: plan.generations.length,
+    planningMs, durationMs: Date.now() - started,
   });
   for (const generation of plan.generations) {
     if (deletedFiles >= maxFiles || Date.now() >= deadline) return result(true);

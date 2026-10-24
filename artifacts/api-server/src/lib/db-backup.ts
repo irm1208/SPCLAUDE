@@ -25,8 +25,9 @@ import {
 } from "./google-drive-backup";
 import { BACKUP_HOUR_MS, hasBackupInCurrentHour } from "./google-drive-backup-policy";
 import { createDriveRetentionStore } from "./google-drive-backup-retention-store";
-import { executeBackupRetention } from "./google-drive-backup-retention";
+import { executeBackupRetention, RETENTION_MAX_DURATION_MS } from "./google-drive-backup-retention";
 import { buildPgDumpArgs } from "./db-backup-command";
+import { pacedBackupStream } from "./db-backup-throughput";
 import { encryptBackupStream, parseBackupEncryptionKey } from "./backup-encryption";
 import { writeLog } from "./audit-log";
 import { createAlert } from "./create-alert";
@@ -325,11 +326,17 @@ async function reconcileRetainedPlainBackups(): Promise<number> {
 
 /** Called only from backup/recovery orchestration inside the shared advisory lock. */
 async function uploadVerifiedBackupAndRetain(filePath: string, fileName: string) {
+  const uploadStarted = Date.now();
   const verified = await uploadBackupToGoogleDrive(filePath, fileName);
+  console.log(`[db-backup] Verified upload durationMs=${Date.now() - uploadStarted}`);
   if (process.env.NODE_ENV === "production") {
     try {
       const folderId = await getGoogleDriveBackupFolderId();
-      const result = await executeBackupRetention(await createDriveRetentionStore(folderId), verified);
+      const store = await createDriveRetentionStore(folderId, undefined, {
+        deadline: Date.now() + RETENTION_MAX_DURATION_MS, parallelInventory: true,
+      });
+      const result = await executeBackupRetention(store, verified);
+      console.log("[db-backup] Retention timing", { planningMs: result.planningMs, durationMs: result.durationMs, drive: store.metrics?.() });
       console.log(`[db-backup] Retention: deleted ${result.deletedFiles} expired file(s); ${result.failures} failure(s); legacy safety skips=${result.skippedLegacy}; more queued=${result.deferred}`);
       if (result.failures || result.skippedLegacy) throw new Error("Backup retention incomplete");
     } catch {
@@ -448,6 +455,7 @@ function backupFailureDependencies(): Pick<
 }
 
 function spawnPgDump(databaseUrl: string): PgDumpProcess {
+  const started = Date.now();
   const pgDump = spawn(
     "pg_dump",
     buildPgDumpArgs(databaseUrl),
@@ -456,16 +464,26 @@ function spawnPgDump(databaseUrl: string): PgDumpProcess {
   if (!pgDump.stdout || !pgDump.stderr) {
     throw new Error("pg_dump did not provide stdout and stderr streams");
   }
+  pgDump.once("close", () => console.log(`[db-backup] Dump durationMs=${Date.now() - started}`));
   return pgDump as PgDumpProcess;
 }
 
 async function withBackupLock(task: () => Promise<void>): Promise<boolean> {
+  const waitingSince = Date.now();
   const client = await pool.connect();
+  const acquiredAt = Date.now();
   try {
     const result = await client.query<{ locked: boolean }>(
       "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
       [BACKUP_LOCK_NAME],
     );
+    console.log("[db-backup] Database latency", {
+      poolWaitMs: acquiredAt - waitingSince,
+      lockQueryMs: Date.now() - acquiredAt,
+      foregroundWaiting: pool.waitingCount,
+      poolTotal: pool.totalCount,
+      poolIdle: pool.idleCount,
+    });
     if (!result.rows[0]?.locked) {
       console.log("[db-backup] Another instance is already running — skipping");
       return false;
@@ -474,7 +492,9 @@ async function withBackupLock(task: () => Promise<void>): Promise<boolean> {
     try {
       await task();
     } finally {
+      const unlockStarted = Date.now();
       await client.query("SELECT pg_advisory_unlock(hashtext($1))", [BACKUP_LOCK_NAME]);
+      console.log(`[db-backup] Database unlockQueryMs=${Date.now() - unlockStarted}; lockHeldMs=${Date.now() - acquiredAt}`);
     }
     return true;
   } finally {
@@ -532,7 +552,7 @@ export async function runDbBackup(): Promise<DbBackupResult> {
           environment: process.env,
           spawnPgDump,
           write: (source, destinationPath) => pipeline(
-            source,
+            Readable.from(pacedBackupStream(source)),
             createWriteStream(destinationPath, { flags: "wx", mode: 0o600 }),
           ),
           upload: uploadVerifiedBackupAndRetain,
