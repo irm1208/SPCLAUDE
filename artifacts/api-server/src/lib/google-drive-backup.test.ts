@@ -30,7 +30,7 @@ import {
   listGoogleDriveBackups,
   migrationAction,
   selectNewestBackup,
-  uploadBackupToGoogleDrive,
+  uploadLegacyGoogleDriveBackup as uploadBackupToGoogleDrive,
 } from "./google-drive-backup";
 import { sha256Hex } from "./google-drive-backup-manifest";
 import { buildPgDumpArgs } from "./db-backup-command";
@@ -1180,6 +1180,37 @@ describe("Google Drive database backup helpers", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("restores a single plain SQL backup with checksum verification", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-plain-restore-test-"));
+    const destination = join(directory, "restored.SQL");
+    const sql = "-- PostgreSQL database dump\nSELECT 1;\n";
+    proxy.mockReset();
+    proxy.mockResolvedValueOnce(new Response(sql));
+    try {
+      await downloadGoogleDriveSqlBackup({
+        id: "plain-sql", name: "backup.SQL", size: String(Buffer.byteLength(sql)),
+        md5Checksum: createHash("md5").update(sql).digest("hex"),
+      }, destination);
+      expect(await readFile(destination, "utf8")).toBe(sql);
+      expect(await readdir(directory)).toEqual(["restored.SQL"]);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("rejects a corrupt plain SQL download without replacing an existing file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "drive-plain-restore-test-"));
+    const destination = join(directory, "restored.SQL");
+    await writeFile(destination, "existing file");
+    proxy.mockReset();
+    proxy.mockResolvedValueOnce(new Response("corrupt SQL"));
+    try {
+      await expect(downloadGoogleDriveSqlBackup({
+        id: "plain-sql", name: "backup.SQL", size: "11", md5Checksum: "wrong",
+      }, destination)).rejects.toThrow(/verification/i);
+      expect(await readFile(destination, "utf8")).toBe("existing file");
+      expect(await readdir(directory)).toEqual(["restored.SQL"]);
+    } finally { await rm(directory, { recursive: true, force: true }); }
   });
 
   it("retries only temporary connector and Drive upload failures", () => {

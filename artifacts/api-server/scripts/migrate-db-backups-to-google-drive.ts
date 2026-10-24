@@ -82,9 +82,9 @@ async function main(): Promise<void> {
       }
 
       const uploaded = await uploadBackupToGoogleDrive(filePath, fileName);
-      if (uploaded.name !== `${fileName}.manifest.json`) {
+      if (uploaded.name !== fileName || Number(uploaded.size) !== expectedSize) {
         throw new Error(
-          `post-upload verification mismatch: expected committed manifest, got ${uploaded.name}`,
+          `post-upload verification mismatch: expected complete SQL file, got ${uploaded.name}`,
         );
       }
       await unlink(filePath);

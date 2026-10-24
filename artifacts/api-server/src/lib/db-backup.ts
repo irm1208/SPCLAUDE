@@ -3,7 +3,8 @@
  *
  * Streams a full plain SQL pg_dump every six hours in production.
  * Uploads completed dumps to Google Drive and removes the local temporary file.
- * Complete local files are retained only when an upload fails, then pruned after 3 days.
+ * Complete local SQL files are retained until upload verification succeeds.
+ * Incomplete plain files and legacy encrypted artifacts are pruned after 3 days.
  * Encrypted backup helpers remain available for restoring historical encrypted files.
  */
 
@@ -74,7 +75,7 @@ export function isPrunableEncryptedBackupArtifact(fileName: string): boolean {
 
 export function isPrunableBackupArtifact(fileName: string): boolean {
   return (
-    PRUNABLE_PLAIN_BACKUP_ARTIFACT.test(fileName) ||
+    (PRUNABLE_PLAIN_BACKUP_ARTIFACT.test(fileName) && fileName.endsWith(".partial")) ||
     isPrunableEncryptedBackupArtifact(fileName)
   );
 }
@@ -300,8 +301,7 @@ export async function uploadRetainedPlainBackups(
     .sort();
   for (const fileName of retained) {
     const filePath = join(options.backupDir, fileName);
-    // Upload owns part/manifest verification and safely resumes matching parts.
-    // Size-only matches to legacy raw SQL objects are not backup commits.
+    // Upload verifies the full remote size and checksum before a local file is removed.
     await options.upload(filePath, fileName);
     await options.unlink(filePath);
     recovered += 1;

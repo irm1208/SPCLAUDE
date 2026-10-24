@@ -385,8 +385,8 @@ describe("plain SQL database backup production orchestration", () => {
     expect(reconcile).toHaveBeenCalledOnce();
   });
 
-  it("recognizes constrained plain and encrypted artifacts for stale pruning", () => {
-    expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.SQL")).toBe(true);
+  it("prunes incomplete plain artifacts but never expires complete SQL awaiting verified upload", () => {
+    expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.SQL")).toBe(false);
     expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.SQL.partial")).toBe(true);
     expect(isPrunableBackupArtifact("S&PBACKUP-2026-09-02_10-40-11.sql.gz.enc")).toBe(true);
     expect(isPrunableBackupArtifact("unrelated.SQL")).toBe(false);

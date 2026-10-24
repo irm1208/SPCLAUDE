@@ -7,6 +7,7 @@ import { Readable, Transform } from "stream";
 import { pipeline } from "stream/promises";
 import { createGunzip, createGzip } from "zlib";
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import { uploadSingleSqlBackup } from "./google-drive-single-sql";
 import {
   buildSqlBackupManifestName,
   buildSqlBackupManifestSegmentName,
@@ -488,7 +489,7 @@ class GoogleDriveBackupStorage {
     throw new Error(`Google Drive complete-object upload did not finish after retries: ${fileName}`);
   }
 
-  private async uploadSqlManifest(filePath: string, sqlFileName: string): Promise<DriveBackupFile> {
+  async uploadSqlManifest(filePath: string, sqlFileName: string): Promise<DriveBackupFile> {
     const sourceStats = await stat(filePath);
     const originalSha256 = await hashFile(filePath, "sha256");
     const segmentedSqlHash = createHash("sha256");
@@ -856,7 +857,32 @@ class GoogleDriveBackupStorage {
 
   async upload(filePath: string, fileName: string): Promise<DriveBackupFile> {
     if (fileName.toLowerCase().endsWith(".sql")) {
-      return this.uploadSqlManifest(filePath, fileName);
+      return uploadSingleSqlBackup(filePath, fileName, {
+        findExisting: () => this.findFilesByName(fileName),
+        getFile: id => this.getFile(id),
+        startUpload: async size => {
+          const folderId = await this.getFolderId();
+          let response: Response;
+          try {
+            response = await this.connectors.proxy(DRIVE_CONNECTOR,
+              "/upload/drive/v3/files?uploadType=resumable&fields=id", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Upload-Content-Type": PLAIN_SQL_MIME_TYPE,
+                  "X-Upload-Content-Length": String(size),
+                },
+                body: JSON.stringify({ name: fileName, mimeType: PLAIN_SQL_MIME_TYPE, parents: [folderId] }),
+              });
+          } catch {
+            throw new Error("Starting single-file Google Drive backup upload failed");
+          }
+          if (!response.ok) throw new Error(`Starting single-file Google Drive backup upload failed (HTTP ${response.status})`);
+          const session = response.headers.get("location");
+          if (!session) throw new Error("Google Drive did not return an upload session");
+          return session;
+        },
+      });
     }
     const folderId = await this.getFolderId();
     const fileStats = await stat(filePath);
@@ -1115,6 +1141,13 @@ class GoogleDriveBackupStorage {
 
 const storage = new GoogleDriveBackupStorage();
 
+/** Retained for compatibility and validation of older multipart backup tooling. */
+export async function uploadLegacyGoogleDriveBackup(filePath: string, fileName: string): Promise<DriveBackupFile> {
+  return fileName.toLowerCase().endsWith(".sql")
+    ? storage.uploadSqlManifest(filePath, fileName)
+    : storage.upload(filePath, fileName);
+}
+
 export async function getGoogleDriveBackupFolderId(): Promise<string> {
   return storage.getFolderId();
 }
@@ -1140,6 +1173,24 @@ export async function downloadGoogleDriveSqlBackup(
   manifestFile: DriveBackupFile,
   destinationPath: string,
 ): Promise<void> {
+  if (/\.sql$/i.test(manifestFile.name)) {
+    const stage = join(dirname(destinationPath), `.${basename(destinationPath)}.${randomUUID()}.verified`);
+    try {
+      await storage.download(manifestFile.id, stage);
+      const downloadedSize = (await stat(stage)).size;
+      if (!manifestFile.md5Checksum || Number(manifestFile.size) !== downloadedSize ||
+          await hashFile(stage, "md5") !== manifestFile.md5Checksum) {
+        throw new Error("Google Drive SQL backup download verification failed");
+      }
+      await rename(stage, destinationPath);
+    } finally {
+      await unlink(stage).catch(() => undefined);
+    }
+    return;
+  }
+  if (!manifestFile.name.endsWith(".SQL.manifest.json")) {
+    throw new Error("The selected Drive file is not a supported SQL backup");
+  }
   return storage.downloadSqlManifest(manifestFile, destinationPath);
 }
 

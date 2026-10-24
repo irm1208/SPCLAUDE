@@ -41,8 +41,8 @@ async function main(): Promise<void> {
   const temporaryPath = joinOutputTemporary(outputPath);
   try {
     const manifest = await getGoogleDriveBackupFile(manifestId);
-    if (!manifest.name.endsWith(".SQL.manifest.json")) {
-      throw new Error("The selected Drive file is not a SQL backup manifest");
+    if (!/\.sql$/i.test(manifest.name) && !manifest.name.endsWith(".SQL.manifest.json")) {
+      throw new Error("The selected Drive file is not a SQL backup or backup manifest");
     }
     await downloadGoogleDriveSqlBackup(manifest, temporaryPath);
     // link() is exclusive: a path created concurrently is never replaced.
