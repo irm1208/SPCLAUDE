@@ -25,6 +25,21 @@ describe("automatic collection wallet checks", () => {
     expect(result).toMatchObject({ collector, address, network: "ERC-20", txid });
     expect(verify).toHaveBeenCalledWith(txid, address, 135, "USDT", "ERC-20", 0.01);
   });
+  it.each(["USDT", "USDC"])("checks older %s payments without a stored rate against their recorded USD amount", async currency => {
+    const verify = verified();
+    expect(await checkCollectionWallet(order({ paymentCryptoCurrency: currency, paymentCryptoRate: null }), [owner], verify))
+      .toMatchObject({ collector: "admin", address, txid });
+    expect(verify).toHaveBeenCalledWith(txid, address, 135, currency, "ERC-20", 0.01);
+  });
+  it("still requires verified full receipt at the declared wallet for a legacy stablecoin payment", async () => {
+    const legacy = order({ paymentCryptoCurrency: "USDC", paymentCryptoRate: null });
+    const underpaid = vi.fn(async () => ({ verified: false as const, reason: "Underpaid" }));
+    expect(await checkCollectionWallet(legacy, [owner], underpaid)).toMatchObject({ collector: null });
+    expect(underpaid).toHaveBeenCalledOnce();
+    const wrongWallet = vi.fn(async () => ({ verified: true as const, amountUsdt: 135, blockConfirmations: 8, recipientAddress: `0x${"5".repeat(40)}` }));
+    expect(await checkCollectionWallet(legacy, [owner], wrongWallet)).toMatchObject({ collector: null });
+    expect(wrongWallet).toHaveBeenCalledOnce();
+  });
   it("does not guess from current settings when historical ownership is missing", async () => {
     const verify = verified();
     expect(await checkCollectionWallet(order(), [], verify)).toMatchObject({ collector: null });
@@ -40,7 +55,10 @@ describe("automatic collection wallet checks", () => {
     { creditsApplied: "5.00" },
     { paymentConfirmedAt: null },
     { paymentUsdAmount: null },
-    { paymentCryptoRate: null },
+    { paymentCryptoCurrency: "ETH", paymentCryptoRate: null },
+    { paymentCryptoCurrency: "USD", paymentCryptoRate: null },
+    { paymentCryptoRate: "0" },
+    { paymentCryptoRate: "-1" },
     { amountDue: "1.00" },
     { paymentStatus: "test_confirmed" },
     { routingType: "direct" },

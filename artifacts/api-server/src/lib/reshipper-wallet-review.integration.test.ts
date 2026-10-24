@@ -36,8 +36,8 @@ describe.skipIf(process.env.RUN_PAYOUT_DB_TESTS !== "1")("automatic payout colle
       productSubtotal: "100.00", grandTotal: "135.00", paymentStatus: "confirmed", amountDue: "0.00",
       routingType: "reshipper", status: "Submitted", paymentTxHash: hashes[i],
       paymentTxHashes: i === 2 ? [`0x${"5".repeat(64)}`] : null,
-      paymentCryptoNetwork: "ERC-20", paymentCryptoCurrency: "USDT", paymentUsdAmount: "135.00",
-      paymentCryptoRate: "1.00", paymentConfirmedAt: new Date("2026-10-01"),
+      paymentCryptoNetwork: "ERC-20", paymentCryptoCurrency: i === 0 ? "USDC" : "USDT", paymentUsdAmount: "135.00",
+      paymentCryptoRate: i === 0 ? null : "1.00", paymentConfirmedAt: new Date("2026-10-01"),
     })));
     initialOrders = await db.select().from(ordersTable).where(inArray(ordersTable.id, ids)).orderBy(ordersTable.id);
     chain.verify.mockImplementation(async (txid: string, address: string) => {

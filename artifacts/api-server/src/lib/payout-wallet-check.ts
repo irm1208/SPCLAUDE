@@ -76,7 +76,12 @@ export async function checkCollectionWallet(
   const txid = order.paymentTxHash?.trim();
   if (!txid || !isValidTxHash(txid)) return hold("No single blockchain payment TXID is recorded.");
   const currency = order.paymentCryptoCurrency, network = order.paymentCryptoNetwork;
-  const usd = Number(order.paymentUsdAmount), rate = Number(order.paymentCryptoRate);
+  // Legacy USDT/USDC payments stored the USD amount without a rate: these
+  // tokens are priced 1:1 by checkout. Still verify that full amount on-chain.
+  // Never guess a volatile coin's historical rate or replace an invalid saved rate.
+  const usd = Number(order.paymentUsdAmount);
+  const rate = order.paymentCryptoRate == null && (currency === "USDT" || currency === "USDC")
+    ? 1 : Number(order.paymentCryptoRate);
   const paidAt = order.paymentConfirmedAt ? new Date(order.paymentConfirmedAt).getTime() : NaN;
   if (!currency || !network || !Number.isFinite(usd) || usd <= 0 || !Number.isFinite(rate) || rate <= 0 || !Number.isFinite(paidAt))
     return hold("The original payment date, network or locked amount is missing.");
