@@ -264,6 +264,7 @@ export function HubBottomNav({
 
       {/* Backdrop */}
       <div
+        data-hub-navigation
         className={`fixed inset-0 z-[55] ${hiddenCls}`}
         style={{
           background: "rgba(3,45,96,0.35)",
@@ -278,6 +279,7 @@ export function HubBottomNav({
 
       {/* ── Floating popover menu ── */}
       <div
+        data-hub-navigation
         className={`fixed z-[60] ${hiddenCls}`}
         style={{
           left: 16, right: 16,
@@ -398,6 +400,7 @@ export function HubBottomNav({
 
       {/* ── Floating pill bottom bar (above the backdrop, like the reference FAB) ── */}
       <div
+        data-hub-navigation
         className={`fixed z-[65] ${hiddenCls}`}
         style={{
           left: 16, right: 16,

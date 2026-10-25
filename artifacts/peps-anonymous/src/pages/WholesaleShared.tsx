@@ -3424,6 +3424,7 @@ export function ShareChat({ shareId, readOnly }: { shareId: string; readOnly: bo
               transition={{ type: "spring", damping: 30, stiffness: 300 }}
               role="dialog"
               aria-label="Group Chat"
+              data-mobile-chat-panel
               className="fixed z-[81] bottom-[var(--chat-viewport-bottom,0px)] max-h-[calc(var(--chat-viewport-height,100dvh)-1rem)] left-0 right-0 rounded-t-3xl flex flex-col overflow-hidden md:bottom-[calc(var(--chat-viewport-bottom,0px)+6rem)] md:max-h-[calc(var(--chat-viewport-height,100dvh)-7rem)] md:right-6 md:left-auto md:w-96 md:rounded-2xl md:shadow-2xl"
               style={{ ...cardStyle, "--chat-viewport-height": viewport ? `${viewport.height}px` : "100dvh",
                 "--chat-viewport-bottom": viewport ? `${viewport.bottom}px` : "0px" } as CSSProperties}

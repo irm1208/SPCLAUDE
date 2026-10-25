@@ -4,6 +4,13 @@
 @import "./components/onward-delivery/onward-estimate.css";
 @plugin "@tailwindcss/typography";
 
+/* Keep the floating menu out of the chat composer on iOS Safari.
+   The portal marker also covers the closing animation; removal restores navigation. */
+body:has([data-mobile-chat-panel]) [data-hub-navigation] {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 @theme {
   --color-orange-50:  #EEF3FB;
   --color-orange-100: #D5E2F5;

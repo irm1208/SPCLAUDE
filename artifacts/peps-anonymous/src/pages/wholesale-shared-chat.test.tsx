@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 // @ts-expect-error Optional jsdom declarations are not installed in this workspace.
 import { JSDOM } from "jsdom";
 const dom = new JSDOM("<html><body></body></html>", { url: "https://example.test" });
@@ -77,4 +78,46 @@ it("preserves read-only cancelled chats and closes when the backdrop is tapped",
   expect(document.body.textContent).toContain("chat is read-only");
   await act(async () => document.querySelector<HTMLElement>("[data-chat-backdrop]")!.click());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+it("suppresses every floating navigation layer only while the chat panel exists", async () => {
+  await open();
+  expect(document.querySelector('[data-mobile-chat-panel]')).not.toBeNull();
+  const css = readFileSync(new URL("../index.css", import.meta.url), "utf8");
+  expect(css).toMatch(/body:has\(\[data-mobile-chat-panel\]\)\s+\[data-hub-navigation\]\s*\{[^}]*visibility:\s*hidden/s);
+  expect(css).toMatch(/body:has\(\[data-mobile-chat-panel\]\)\s+\[data-hub-navigation\]\s*\{[^}]*pointer-events:\s*none/s);
+  const navigation = readFileSync(new URL("../components/HubBottomNav.tsx", import.meta.url), "utf8");
+  expect(navigation.match(/data-hub-navigation/g)).toHaveLength(3);
+  const rule = document.createElement("style");
+  rule.textContent = css.match(/body:has\(\[data-mobile-chat-panel\]\)\s+\[data-hub-navigation\]\s*\{[^}]*\}/s)![0];
+  const menu = document.createElement("nav");
+  menu.setAttribute("data-hub-navigation", "");
+  document.head.append(rule);
+  document.body.append(menu);
+  try {
+    expect(window.getComputedStyle(menu).visibility).toBe("hidden");
+    expect(window.getComputedStyle(menu).pointerEvents).toBe("none");
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Close chat"]')!.click());
+    expect(document.querySelector('[data-mobile-chat-panel]')).toBeNull();
+    expect(window.getComputedStyle(menu).visibility).toBe("visible");
+    expect(window.getComputedStyle(menu).pointerEvents).toBe("auto");
+  } finally {
+    rule.remove();
+    menu.remove();
+  }
+});
+it("repositions on Safari viewport scroll and restores the composer after the keyboard closes", async () => {
+  await open();
+  await act(async () => {
+    viewport.height = 340; viewport.offsetTop = 60;
+    viewport.dispatchEvent(new Event("scroll"));
+  });
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.style.getPropertyValue("--chat-viewport-bottom")).toBe("400px");
+  await act(async () => {
+    viewport.height = 740; viewport.offsetTop = 0;
+    viewport.dispatchEvent(new Event("resize"));
+  });
+  expect(dialog.style.getPropertyValue("--chat-viewport-height")).toBe("740px");
+  expect(dialog.style.getPropertyValue("--chat-viewport-bottom")).toBe("60px");
+  expect(document.querySelector('[aria-label="Send message"]')).not.toBeNull();
 });
