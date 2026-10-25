@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useVialCart } from "@/hooks/use-vial-cart";
 import { T } from "@/lib/theme";
+import { formatVialMoney } from "@/lib/vial-money";
 
 const NAVY = "var(--t-blue-deep)";
 const BLUE = "var(--t-blue)";
@@ -14,6 +15,8 @@ export function CartDrawer() {
   const [, setLocation] = useLocation();
   const { items, updateQty, removeItem, total, itemCount, cartOpen, setCartOpen } = useVialCart();
   const subtotal = total();
+  const currency = items[0]?.currency;
+  const currencyReady = items.every(item => !!item.currency && item.currency === currency);
   const count = itemCount();
 
   const onClose = () => setCartOpen(false);
@@ -75,7 +78,7 @@ export function CartDrawer() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: T.text }}>{item.productName}</p>
-                      <p className="text-xs font-bold mt-0.5" style={{ color: BLUE }}>${item.price.toFixed(2)} / vial</p>
+                      <p className="text-xs font-bold mt-0.5" style={{ color: BLUE }}>{formatVialMoney(item.price, item.currency)} / vial</p>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
@@ -97,7 +100,7 @@ export function CartDrawer() {
                         <Plus className="w-3 h-3" style={{ color: T.muted }} />
                       </button>
                     </div>
-                    <p className="text-sm font-black shrink-0 w-14 text-right" style={{ color: T.text }}>${(item.price * item.quantity).toFixed(2)}</p>
+                    <p className="text-sm font-black shrink-0 text-right" style={{ color: T.text }}>{formatVialMoney(item.price * item.quantity, item.currency)}</p>
                   </div>
                 ))
               )}
@@ -108,13 +111,14 @@ export function CartDrawer() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: T.muted }}>Subtotal ({count} item{count !== 1 ? "s" : ""})</span>
                   <span className="text-xl font-black" style={{ color: T.text }}>
-                    ${subtotal.toFixed(2)} <span className="text-sm font-semibold" style={{ color: T.subtle }}>USDT</span>
+                    {currencyReady ? formatVialMoney(subtotal, currency) : "Order currencies separately"}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs" style={{ color: T.subtle }}>
                   <Shield className="w-3 h-3" /> Secure &amp; anonymous checkout
                 </div>
                 <button
+                  disabled={!currencyReady}
                   onClick={() => { onClose(); setLocation("/shop/checkout"); }}
                   className="w-full rounded-xl font-bold text-base flex items-center justify-between px-5 text-white"
                   style={{

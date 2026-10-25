@@ -6,6 +6,7 @@ import {
   ShoppingCart, ToggleLeft, ToggleRight, ChevronRight,
 } from "lucide-react";
 import { Button, Card, cn } from "@/components/ui";
+import { formatVialMoney } from "@/lib/vial-money";
 
 // ─── Types ────────────────────────────────────────────────────
 interface VialManufacturer {
@@ -18,6 +19,7 @@ interface VialProduct {
   mgSize: string | null; price: number; stock: number; manufacturer: string | null; batchNumber: string | null;
   labReportUrl: string | null; active: boolean; sortOrder: number | null;
   vendorId: string | null; vendorName: string | null; createdAt: string;
+  currency: string;
 }
 
 const VIAL_CATEGORIES = ["Peptides", "Supplies", "Filters", "Other"];
@@ -27,6 +29,7 @@ interface VialOrder {
   shippingAddress: string; email: string | null; notes: string | null;
   status: string; subtotal: number; discountAmount: number; total: number;
   discountCodeUsed: string | null; paymentStatus: string;
+  currency: string | null;
   paymentTxHash: string | null; adminNotes: string | null;
   createdAt: string;
   items: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
@@ -282,7 +285,7 @@ function ProductsSubTab({ secret }: { secret: string }) {
                 {p.category && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-orange-500">{p.category}</span>}
               </div>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
-                <span className="text-xs font-bold text-orange-500">{fmt(p.price)}</span>
+                <span className="text-xs font-bold text-orange-500">{formatVialMoney(p.price, p.currency)}</span>
                 <span className={cn("text-xs font-semibold", p.stock <= 0 ? "text-red-600" : p.stock <= 5 ? "text-amber-600" : "text-emerald-600")}>
                   {p.stock <= 0 ? "Out of stock" : `${p.stock} in stock`}
                 </span>
@@ -388,7 +391,7 @@ function OrdersSubTab({ secret }: { secret: string }) {
                 </span>
               </div>
               <p className="text-xs mt-0.5 text-muted-foreground">
-                @{order.telegramUsername} · {fmt(order.total)} · {new Date(order.createdAt).toLocaleDateString()}
+                @{order.telegramUsername} · {formatVialMoney(order.total, order.currency)} · {new Date(order.createdAt).toLocaleDateString()}
               </p>
             </div>
             <ChevronDown className={cn("w-4 h-4 text-muted-foreground shrink-0 transition-transform mt-0.5", expandedId === order.id && "rotate-180")} />
@@ -400,18 +403,18 @@ function OrdersSubTab({ secret }: { secret: string }) {
                 {order.items.map((item, i) => (
                   <div key={i} className="flex justify-between px-3 py-2 text-xs border-b last:border-0 border-border">
                     <span className="text-muted-foreground">{item.productName} × {item.quantity}</span>
-                    <span className="text-foreground font-semibold">{fmt(item.lineTotal)}</span>
+                    <span className="text-foreground font-semibold">{formatVialMoney(item.lineTotal, order.currency)}</span>
                   </div>
                 ))}
                 {order.discountAmount > 0 && (
                   <div className="flex justify-between px-3 py-2 text-xs text-emerald-700">
                     <span>Discount ({order.discountCodeUsed})</span>
-                    <span>−{fmt(order.discountAmount)}</span>
+                    <span>−{formatVialMoney(order.discountAmount, order.currency)}</span>
                   </div>
                 )}
                 <div className="flex justify-between px-3 py-2 text-xs font-bold border-t border-border">
                   <span className="text-foreground">Total</span>
-                  <span className="text-orange-500">{fmt(order.total)}</span>
+                  <span className="text-orange-500">{formatVialMoney(order.total, order.currency)}</span>
                 </div>
               </div>
 
@@ -1260,7 +1263,7 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
                       {p.category && <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">{p.category}</span>}
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 text-[10px] text-muted-foreground">
-                      <span className="font-semibold text-orange-500">{fmt(p.price)}</span>
+                      <span className="font-semibold text-orange-500">{formatVialMoney(p.price, p.currency)}</span>
                       <span>Stock: {p.stock}</span>
                       {p.mgSize && <span>{p.mgSize}</span>}
                     </div>
@@ -1280,7 +1283,7 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
                       <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded", ORDER_STATUS_COLORS[o.status] ?? "bg-muted text-muted-foreground")}>{o.status}</span>
                       <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded", PAY_STATUS_COLORS[o.paymentStatus] ?? "bg-muted text-muted-foreground")}>{o.paymentStatus}</span>
                     </div>
-                    <span className="text-xs font-bold text-foreground shrink-0">{fmt(o.total)}</span>
+                    <span className="text-xs font-bold text-foreground shrink-0">{formatVialMoney(o.total, o.currency)}</span>
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
                     <span>@{o.telegramUsername}</span>
@@ -1290,7 +1293,7 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
                     {o.items.map((item, i) => (
                       <div key={i} className="flex justify-between text-[10px] text-muted-foreground">
                         <span>{item.productName} ×{item.quantity}</span>
-                        <span>{fmt(item.lineTotal)}</span>
+                        <span>{formatVialMoney(item.lineTotal, o.currency)}</span>
                       </div>
                     ))}
                   </div>

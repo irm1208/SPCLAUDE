@@ -151,3 +151,4 @@
 - [Shared-order organiser names](shared-order-organiser-name.md) — require a real full name, separate from account ownership and the delivery recipient; do not expose it to other members.
 - [Supplier batch policies](supplier-batch-export-policy.md) — full FS3 exports, same-region prepared additions, staff readiness alerts and EU/US/GB reference prefixes.
 - [Reshipper payout method](reshipper-payout-method.md) — Admin records external transfers by TXID; no wallet connection for new payouts.
+- [Single-vial pricing](vial-shop-currency-policy.md) — keep seller-currency prices throughout checkout; show locked crypto settlement separately; never add unlike currencies.

@@ -8,7 +8,7 @@ import {
   Globe, Store, Send, FileText, Tag, CreditCard, Star, Lock,
 } from "lucide-react";
 import { useVialCart } from "@/hooks/use-vial-cart";
-import { useCurrency } from "@/hooks/use-currency";
+import { formatVialMoney } from "@/lib/vial-money";
 import { PageLayout } from "@/components/PageLayout";
 import { T } from "@/lib/theme";
 
@@ -265,7 +265,7 @@ function MetaField({ label, children }: { label: string; children: React.ReactNo
 
 function ProductCard({ product, onAdd, onBuyNow }: { product: VialProduct; onAdd: () => void; onBuyNow: () => void }) {
   const { items, updateQty, removeItem } = useVialCart();
-  const { format } = useCurrency();
+  const format = (amount: number) => formatVialMoney(amount, product.currency);
   const cartItem = items.find(i => i.productId === product.id);
   const inCart = !!cartItem;
   const outOfStock = product.stock <= 0;
@@ -446,7 +446,7 @@ function ProductCard({ product, onAdd, onBuyNow }: { product: VialProduct; onAdd
               </button>
             </div>
             <span className="text-sm font-bold shrink-0" style={{ color: BLUE }}>
-              ${(product.price * cartItem.quantity).toFixed(2)}
+              {format(product.price * cartItem.quantity)}
             </span>
           </div>
         ) : (
@@ -522,7 +522,7 @@ export default function Shop() {
   const [selectedPayment, setSelectedPayment] = useState("");
   const [selectedManufacturer, setSelectedManufacturer] = useState("");
   const [inStockOnly, setInStockOnly] = useState(false);
-  const { cartOpen, setCartOpen, addItem, clearCart, itemCount } = useVialCart();
+  const { cartOpen, setCartOpen, addItem, clearCart, itemCount, error: cartError } = useVialCart();
   const [toast, setToast] = useState<{ name: string } | null>(null);
   const count = itemCount();
 
@@ -532,7 +532,14 @@ export default function Shop() {
         if (r.status === 401) { setMembersOnly(true); setLoading(false); return null; }
         return r.json();
       })
-      .then(data => { if (data) { setProducts(Array.isArray(data) ? data : []); setLoading(false); } })
+      .then(data => {
+        if (data) {
+          const products = Array.isArray(data) ? data : [];
+          setProducts(products);
+          useVialCart.getState().hydrateCurrencies(products);
+          setLoading(false);
+        }
+      })
       .catch(() => setLoading(false));
     fetch("/api/vial/vendors")
       .then(r => { if (r.status === 401) return null; return r.json(); })
@@ -574,13 +581,14 @@ export default function Shop() {
   };
 
   const handleAdd = useCallback((p: VialProduct) => {
-    addItem({ id: p.id, name: p.name, price: p.price, stock: p.stock });
-    setToast({ name: p.name });
+    if (addItem({ id: p.id, name: p.name, price: p.price, stock: p.stock, currency: p.currency })) {
+      setToast({ name: p.name });
+    }
   }, [addItem]);
 
   const handleBuyNow = useCallback((p: VialProduct) => {
     clearCart();
-    addItem({ id: p.id, name: p.name, price: p.price, stock: p.stock });
+    addItem({ id: p.id, name: p.name, price: p.price, stock: p.stock, currency: p.currency });
     setLocation("/shop/checkout");
   }, [addItem, clearCart, setLocation]);
 
@@ -612,6 +620,7 @@ export default function Shop() {
   return (
     <PageLayout>
       <div className="flex flex-col" style={{ background: T.bg, minHeight: "100%" }}>
+        {cartError && <p role="alert" className="m-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-700">{cartError}</p>}
         <AnimatePresence>
           {toast && (
             <AddedToast

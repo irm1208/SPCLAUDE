@@ -13,7 +13,8 @@ import {
   vialManufacturersTable, auditLogsTable,
 } from "@workspace/db";
 import { eq, desc, sql, inArray, and } from "drizzle-orm";
-import { isStablecoin, fetchFiatToUsd } from "../lib/crypto-pricing";
+import { priceVialOrder, vialPricingCurrency, formatVialPrice } from "../lib/vial-pricing";
+import { notifyVialSellers, validateSellerTelegramChatId } from "../lib/vial-seller-notifications";
 import { verifyTransaction, effectiveStableCurrency } from "../lib/payment-verify";
 import { isBlockedAutomatedRegistrationName } from "../lib/registration-abuse";
 import { verifyTurnstile } from "../lib/turnstile";
@@ -128,6 +129,7 @@ function fmtOrder(o: any, items: any[] = [], { revealWallet = true } = {}, vendo
     orderStatus: o.orderStatus ?? "accepted",
     subtotal: parseFloat(o.subtotal), discountAmount: parseFloat(o.discountAmount),
     total: parseFloat(o.total), discountCodeUsed: o.discountCodeUsed,
+    currency: o.currency ?? null,
     // USDT amount the buyer must send (fiat total converted to USD ≈ USDT).
     // Falls back to the fiat total for legacy orders created before conversion.
     paymentUsdAmount: o.paymentUsdAmount != null ? parseFloat(o.paymentUsdAmount) : parseFloat(o.total),
@@ -188,7 +190,7 @@ router.get("/vial/products/:id", async (req, res): Promise<void> => {
 });
 
 router.post("/vial/validate-code", async (req, res): Promise<void> => {
-  const { code, subtotal } = req.body;
+  const { code, subtotal, currency } = req.body;
   if (!code || typeof code !== "string") { res.status(400).json({ error: "code required" }); return; }
   const sub = parseFloat(subtotal) || 0;
 
@@ -200,7 +202,7 @@ router.post("/vial/validate-code", async (req, res): Promise<void> => {
   if (dc.expiresAt && new Date(dc.expiresAt) < new Date()) { res.status(400).json({ error: "Discount code has expired" }); return; }
   if (dc.maxUses !== null && dc.usesCount >= dc.maxUses) { res.status(400).json({ error: "Discount code has reached its usage limit" }); return; }
   if (dc.minOrderAmount && sub < parseFloat(dc.minOrderAmount)) {
-    res.status(400).json({ error: `Minimum order of $${parseFloat(dc.minOrderAmount).toFixed(2)} required` });
+    res.status(400).json({ error: `Minimum order of ${formatVialPrice(parseFloat(dc.minOrderAmount), currency)} required` });
     return;
   }
 
@@ -215,7 +217,7 @@ router.post("/vial/validate-code", async (req, res): Promise<void> => {
   res.json({
     id: dc.id, code: dc.code, discountType: dc.discountType,
     discountValue: value, discountAmount,
-    description: dc.discountType === "percent" ? `${value}% off` : `$${value.toFixed(2)} off`,
+    description: dc.discountType === "percent" ? `${value}% off` : `${formatVialPrice(value, currency)} off`,
   });
 });
 
@@ -225,21 +227,23 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
   if (!Array.isArray(items) || items.length === 0) { res.status(400).json({ error: "No items in order" }); return; }
   if (!telegramUsername || typeof telegramUsername !== "string") { res.status(400).json({ error: "Telegram username required" }); return; }
 
-  const validatedItems: { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number }[] = [];
-  let orderCurrency = "USDT";
+  const validatedItems: { productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number; currency: string }[] = [];
   for (const item of items) {
-    const qty = parseInt(item.quantity);
-    if (!item.productId || isNaN(qty) || qty <= 0) { res.status(400).json({ error: "Invalid item" }); return; }
+    const qty = Number(item.quantity);
+    if (!item.productId || !Number.isSafeInteger(qty) || qty <= 0) { res.status(400).json({ error: "Invalid item" }); return; }
     const [p] = await db.select().from(vialProductsTable).where(eq(vialProductsTable.id, String(item.productId)));
     if (!p || !p.active) { res.status(400).json({ error: `Product ${item.productId} not found` }); return; }
     if (p.stock < qty) { res.status(400).json({ error: `Insufficient stock for ${p.name}` }); return; }
-    if (validatedItems.length === 0) orderCurrency = (p.currency ?? "USDT").toUpperCase();
     const unitPrice = parseFloat(p.price);
     validatedItems.push({
       productId: p.id, productName: p.name, quantity: qty,
+      currency: (p.currency ?? "USDT").trim().toUpperCase(),
       unitPrice, lineTotal: parseFloat((unitPrice * qty).toFixed(2)),
     });
   }
+  let orderCurrency: string;
+  try { orderCurrency = vialPricingCurrency(validatedItems); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
 
   const subtotal = parseFloat(validatedItems.reduce((s, i) => s + i.lineTotal, 0).toFixed(2));
 
@@ -267,9 +271,13 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
   // The vial shop is paid in USDT (≈1 USD). Convert the fiat total to USD so the
   // buyer is shown — and verified against — the correct USDT amount. Stablecoin-
   // priced products need no conversion.
-  const usdTotal = isStablecoin(orderCurrency)
-    ? total
-    : parseFloat((total * await fetchFiatToUsd(orderCurrency)).toFixed(2));
+  let usdTotal: number;
+  try {
+    usdTotal = (await priceVialOrder(validatedItems, discountAmount)).paymentUsdAmount;
+  } catch {
+    res.status(503).json({ error: "Unable to get a live exchange rate. Your order has not been placed. Please try again shortly." });
+    return;
+  }
 
   // Resolve the wallet address: prefer the vendor's own wallet (if all items
   // belong to a single vendor that has one set), then fall back to the admin wallet.
@@ -308,6 +316,7 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
     subtotal: subtotal.toFixed(2),
     discountAmount: discountAmount.toFixed(2),
     total: total.toFixed(2),
+    currency: orderCurrency,
     discountCodeId, discountCodeUsed,
     paymentStatus: "unpaid",
     walletAddress: walletAddress || null,
@@ -341,27 +350,17 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
     const vendorIds2 = [...new Set(products2.map(p => p.vendorId).filter(Boolean))] as string[];
     if (vendorIds2.length > 0) {
       const vendors2 = await db.select().from(vialVendorsTable).where(inArray(vialVendorsTable.id, vendorIds2));
-      const itemsList2 = validatedItems.map(i => `• ${i.productName} ×${i.quantity} — $${i.lineTotal.toFixed(2)} USDT`).join("\n");
-      for (const vendor2 of vendors2) {
-        if (!vendor2.telegramChatId) continue;
-        if (vendor2.notifyVendor === false) continue;
-        const msg2 =
-          `📦 <b>New Order — Awaiting Your Approval</b>\n\n` +
-          `Order: <code>${code}</code>\n` +
-          `Total: <b>$${total.toFixed(2)} USDT</b>\n\n` +
-          `<b>Items:</b>\n${itemsList2}` +
-          (notes ? `\n\n<b>Buyer's Note:</b>\n${notes}` : "") +
-          `\n\n⚠️ Log into your seller dashboard to <b>accept or reject</b> this order.\n` +
-          `The buyer is waiting for your response.`;
-        await sendTelegramMessage(vendor2.telegramChatId, msg2);
-      }
+      await notifyVialSellers(vendors2, { code, total, currency: orderCurrency, items: validatedItems, notes });
     }
-  } catch { /* best-effort */ }
+  } catch {
+    await writeLog("seller", "warn", "vial_seller_notification_failed",
+      "Unable to resolve seller order alerts", { orderCode: code, reason: "seller_lookup_failed" }).catch(() => {});
+  }
 
   // ─── Notify admin of new order ────────────────────────────────
   // Resolve sellers for both Telegram message and DB alert
   let adminSellerNames = "Unknown";
-  let adminItemsSummary = validatedItems.map(i => `${i.productName} ×${i.quantity} ($${i.lineTotal.toFixed(2)})`).join(", ");
+  let adminItemsSummary = validatedItems.map(i => `${i.productName} ×${i.quantity} (${formatVialPrice(i.lineTotal, orderCurrency)})`).join(", ");
   try {
     const productIds3 = validatedItems.map(i => i.productId);
     const products3 = await db.select().from(vialProductsTable).where(inArray(vialProductsTable.id, productIds3));
@@ -376,13 +375,13 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
   try {
     const adminChatId = await getConfig("telegramAdminChatId") || process.env["TELEGRAM_ADMIN_CHAT_ID"];
     if (adminChatId) {
-      const itemsList3 = validatedItems.map(i => `• ${i.productName} ×${i.quantity} — $${i.lineTotal.toFixed(2)} USDT`).join("\n");
+      const itemsList3 = validatedItems.map(i => `• ${i.productName} ×${i.quantity} — ${formatVialPrice(i.lineTotal, orderCurrency)}`).join("\n");
       const adminMsg =
         `🛒 <b>New Lonely Vial Order</b>\n\n` +
         `Order: <code>${code}</code>\n` +
         `Seller(s): <b>${adminSellerNames}</b>\n` +
         `Buyer: @${telegramUsername}\n` +
-        `Total: <b>$${total.toFixed(2)} USDT</b>\n\n` +
+        `Total: <b>${formatVialPrice(total, orderCurrency)}</b>\n\n` +
         `<b>Items:</b>\n${itemsList3}` +
         (notes ? `\n\n<b>Buyer's Note:</b>\n${notes}` : "");
       await sendTelegramMessage(adminChatId, adminMsg);
@@ -395,7 +394,7 @@ router.post("/vial/checkout", async (req, res): Promise<void> => {
       `Seller(s): ${adminSellerNames}`,
       `Buyer: @${telegramUsername}`,
       `Items: ${adminItemsSummary}`,
-      `Total: $${total.toFixed(2)} USDT`,
+      `Total: ${formatVialPrice(total, orderCurrency)}`,
       ...(notes ? [`Notes: ${notes}`] : []),
     ].join(" · ");
     await createAlert("order", "medium", `New Lonely Vial Order — ${code}`, alertBody);
@@ -507,7 +506,8 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
           const msg =
             `🎉 <b>New Order Confirmed!</b>\n\n` +
             `Order: <code>${order.code}</code>\n` +
-            `Amount: <b>$${parseFloat(order.total).toFixed(2)} ${payCurrency}</b>\n\n` +
+            `Order total: <b>${formatVialPrice(parseFloat(order.total), order.currency)}</b>\n` +
+            `Crypto payment: <b>${expectedAmount.toFixed(2)} ${payCurrency}</b>\n\n` +
             `<b>Ship to:</b>\n${updated.shippingName}\n${updated.shippingAddress}\n` +
             (order.telegramUsername ? `<b>Telegram:</b> @${order.telegramUsername}\n` : "") +
             (order.email ? `<b>Email:</b> ${order.email}\n` : "") +
@@ -808,7 +808,14 @@ router.patch("/vial/seller/shop-config", async (req, res): Promise<void> => {
 router.put("/vial/seller/profile", async (req, res): Promise<void> => {
   const vendor = await requireSeller(req, res);
   if (!vendor) return;
-  const { tagline, description, shipsTo, country, walletAddress, revolutLink, paypalLink } = req.body;
+  const { tagline, description, shipsTo, country, walletAddress, revolutLink, paypalLink, telegramChatId, notifyVendor } = req.body;
+  let chatId = vendor.telegramChatId;
+  try {
+    if (telegramChatId !== undefined) chatId = validateSellerTelegramChatId(telegramChatId);
+  } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
+  if (notifyVendor !== undefined && typeof notifyVendor !== "boolean") {
+    res.status(400).json({ error: "notifyVendor must be a boolean" }); return;
+  }
   const [updated] = await db.update(vialVendorsTable)
     .set({
       tagline: tagline !== undefined ? (tagline?.trim() || null) : vendor.tagline,
@@ -818,10 +825,30 @@ router.put("/vial/seller/profile", async (req, res): Promise<void> => {
       walletAddress: walletAddress !== undefined ? (walletAddress?.trim() || null) : vendor.walletAddress,
       revolutLink: revolutLink !== undefined ? (revolutLink?.trim() || null) : vendor.revolutLink,
       paypalLink: paypalLink !== undefined ? (paypalLink?.trim() || null) : vendor.paypalLink,
+      telegramChatId: chatId,
+      notifyVendor: notifyVendor !== undefined ? notifyVendor : vendor.notifyVendor,
     })
     .where(eq(vialVendorsTable.id, vendor.id))
     .returning();
   res.json(fmtVendor(updated, 0));
+});
+
+router.post("/vial/seller/telegram/test", async (req, res): Promise<void> => {
+  const vendor = await requireSeller(req, res);
+  if (!vendor) return;
+  if (!vendor.telegramChatId) {
+    res.status(422).json({ error: "Save your private Telegram chat ID first, and start @SaltPepsBot." }); return;
+  }
+  try {
+    const sent = await sendTelegramMessage(vendor.telegramChatId,
+      "✅ Seller notifications are connected. New orders will be sent here when order alerts are enabled.", "HTML");
+    if (!sent) {
+      res.status(422).json({ error: "Telegram could not deliver the test. Start @SaltPepsBot, unblock it, and check your numeric chat ID." }); return;
+    }
+    res.json({ ok: true });
+  } catch {
+    res.status(502).json({ error: "Telegram is unavailable. Your settings are saved; please try the test again." });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════

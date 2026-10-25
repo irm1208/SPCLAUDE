@@ -10,6 +10,7 @@ import { useVialCart } from "@/hooks/use-vial-cart";
 import { useAccount } from "@/hooks/use-account";
 import { PageLayout } from "@/components/PageLayout";
 import { T } from "@/lib/theme";
+import { formatVialMoney } from "@/lib/vial-money";
 
 const ACCENT = "var(--t-blue)";
 
@@ -27,6 +28,7 @@ interface DiscountResult {
 
 interface VialOrder {
   id: string; code: string; total: number; subtotal: number;
+  currency: string | null;
   paymentUsdAmount: number;
   discountAmount: number; discountCodeUsed: string | null;
   orderStatus: string; paymentStatus: string; walletAddress: string | null;
@@ -86,12 +88,12 @@ const cardStyle: React.CSSProperties = {
   boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
 };
 
-function SummaryStrip({ total, count, discountCode }: { total: number; count: number; discountCode?: string | null }) {
+function SummaryStrip({ total, currency, count, discountCode }: { total: number; currency: string; count: number; discountCode?: string | null }) {
   return (
     <div className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: "rgba(27,58,122,0.07)", border: "1px solid rgba(27,58,122,0.15)" }}>
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: T.subtle }}>Order total</p>
-        <p className="text-xl font-black" style={{ color: ACCENT }}>${total.toFixed(2)} <span className="text-sm font-semibold" style={{ color: T.subtle }}>USDT</span></p>
+        <p className="text-xl font-black" style={{ color: ACCENT }}>{formatVialMoney(total, currency)}</p>
       </div>
       <div className="text-right">
         <p className="text-xs font-semibold" style={{ color: T.muted }}>{count} item{count !== 1 ? "s" : ""}</p>
@@ -106,6 +108,25 @@ export default function ShopCheckout() {
   const { items, total, itemCount, clearCart } = useVialCart();
   const cartTotal = total();
   const cartCount = itemCount();
+  const cartCurrency = items[0]?.currency ?? "";
+  const currencyReady = items.every(item => !!item.currency && item.currency === cartCurrency);
+  const missingCurrencies = items.some(item => !item.currency);
+  const [currencyError, setCurrencyError] = useState("");
+  useEffect(() => {
+    if (!missingCurrencies) return;
+    const controller = new AbortController();
+    fetch("/api/vial/products", { signal: controller.signal })
+      .then(async r => {
+        if (!r.ok) throw new Error();
+        const products = await r.json();
+        if (!Array.isArray(products)) throw new Error();
+        useVialCart.getState().hydrateCurrencies(products);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCurrencyError("Could not refresh your basket's currencies. Please return to the shop and try again.");
+      });
+    return () => controller.abort();
+  }, [missingCurrencies]);
   const { account } = useAccount();
 
   const [step, setStep] = useState(1);
@@ -179,7 +200,7 @@ export default function ShopCheckout() {
       const res = await fetch("/api/vial/validate-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: codeInput.trim(), subtotal: cartTotal }),
+        body: JSON.stringify({ code: codeInput.trim(), subtotal: cartTotal, currency: cartCurrency }),
       });
       const data = await res.json();
       if (!res.ok) { setDiscountError(data.error || "Invalid code"); setDiscount(null); }
@@ -206,6 +227,7 @@ export default function ShopCheckout() {
   };
 
   const placeOrder = async () => {
+    if (!currencyReady) { setCheckoutError("Please use one currency per order. Return to the basket to review your items."); return; }
     if (!validateContact()) return;
     setCheckoutLoading(true); setCheckoutError("");
     try {
@@ -300,9 +322,9 @@ export default function ShopCheckout() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate" style={{ color: T.text }}>{item.productName}</p>
-                        <p className="text-xs mt-0.5" style={{ color: T.subtle }}>{item.quantity} × ${item.price.toFixed(2)}</p>
+                        <p className="text-xs mt-0.5" style={{ color: T.subtle }}>{item.quantity} × {formatVialMoney(item.price, item.currency)}</p>
                       </div>
-                      <span className="text-sm font-black shrink-0" style={{ color: ACCENT }}>${(item.price * item.quantity).toFixed(2)}</span>
+                      <span className="text-sm font-black shrink-0" style={{ color: ACCENT }}>{formatVialMoney(item.price * item.quantity, item.currency)}</span>
                     </div>
                   ))}
                 </div>
@@ -311,18 +333,23 @@ export default function ShopCheckout() {
                 <div className="px-4 py-3 space-y-2" style={{ borderTop: `1px solid ${T.border}`, background: T.surface2 }}>
                   <div className="flex justify-between text-sm">
                     <span style={{ color: T.muted }}>Subtotal</span>
-                    <span className="font-semibold" style={{ color: T.text }}>${cartTotal.toFixed(2)}</span>
+                    <span className="font-semibold" style={{ color: T.text }}>{currencyReady ? formatVialMoney(cartTotal, cartCurrency) : "Review basket currencies"}</span>
                   </div>
                   {discount && (
                     <div className="flex justify-between text-sm">
                       <span className="text-emerald-600">Discount ({discount.code})</span>
-                      <span className="font-semibold text-emerald-600">−${discount.discountAmount.toFixed(2)}</span>
+                      <span className="font-semibold text-emerald-600">−{formatVialMoney(discount.discountAmount, cartCurrency)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-base font-black pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
                     <span style={{ color: T.text }}>Total</span>
-                    <span style={{ color: ACCENT }}>${finalTotal.toFixed(2)} USDT</span>
+                    <span style={{ color: ACCENT }}>{currencyReady ? formatVialMoney(finalTotal, cartCurrency) : "—"}</span>
                   </div>
+                  <p className="px-4 pb-3 text-xs" style={{ color: T.muted }}>
+                    {currencyReady
+                      ? `Prices stay in ${cartCurrency}. If paying in crypto, the converted USDT/USDC amount is locked when you place your order and shown before payment.`
+                      : currencyError || "Refreshing saved prices. If your items use different currencies, please order them separately."}
+                  </p>
                 </div>
               </div>
 
@@ -333,7 +360,7 @@ export default function ShopCheckout() {
                     <Check className="w-4 h-4 text-emerald-500 shrink-0" />
                     <div className="flex-1">
                       <p className="text-sm font-bold text-emerald-600">{discount.code}</p>
-                      <p className="text-xs text-emerald-500/80">{discount.description} · saves ${discount.discountAmount.toFixed(2)}</p>
+                      <p className="text-xs text-emerald-500/80">{discount.description} · saves {formatVialMoney(discount.discountAmount, cartCurrency)}</p>
                     </div>
                     <button onClick={() => { setDiscount(null); setCodeInput(""); }} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: T.surface2 }}>
                       <X className="w-3 h-3" style={{ color: T.muted }} />
@@ -353,7 +380,7 @@ export default function ShopCheckout() {
                       />
                       <button
                         onClick={applyCode}
-                        disabled={discountLoading || !codeInput.trim()}
+                        disabled={discountLoading || !codeInput.trim() || !currencyReady}
                         className="h-10 px-4 rounded-xl text-xs font-bold disabled:opacity-40"
                         style={{ background: "rgba(45,107,204,0.1)", color: ACCENT, border: "1px solid rgba(45,107,204,0.2)" }}
                       >
@@ -386,6 +413,7 @@ export default function ShopCheckout() {
 
               <button
                 onClick={() => setStep(2)}
+                disabled={!currencyReady}
                 className="w-full h-13 rounded-xl font-bold text-sm flex items-center justify-center gap-2 text-white"
                 style={{ background: "linear-gradient(135deg, var(--t-blue-deep) 0%, var(--t-blue) 100%)", boxShadow: "0 4px 18px var(--t-blue-35)", height: 52 }}
               >
@@ -397,7 +425,7 @@ export default function ShopCheckout() {
           {/* ─── Step 2: Contact ─── */}
           {step === 2 && (
             <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-              <SummaryStrip total={finalTotal} count={cartCount} discountCode={discount?.code} />
+              <SummaryStrip total={finalTotal} currency={cartCurrency} count={cartCount} discountCode={discount?.code} />
 
               <div className="rounded-xl overflow-hidden" style={cardStyle}>
                 <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: `1px solid ${T.border}` }}>
@@ -463,13 +491,13 @@ export default function ShopCheckout() {
 
               <button
                 onClick={placeOrder}
-                disabled={checkoutLoading}
+                disabled={checkoutLoading || !currencyReady}
                 className="w-full rounded-xl font-bold text-sm flex items-center justify-center gap-2 text-white disabled:opacity-60"
                 style={{ background: "linear-gradient(135deg, var(--t-blue-deep) 0%, var(--t-blue) 100%)", boxShadow: "0 4px 18px var(--t-blue-35)", height: 52 }}
               >
                 {checkoutLoading
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Placing order…</>
-                  : <>Place Order · ${finalTotal.toFixed(2)} USDT <ChevronRight className="w-4 h-4" /></>
+                  : <>Place Order · {formatVialMoney(finalTotal, cartCurrency)} <ChevronRight className="w-4 h-4" /></>
                 }
               </button>
 
@@ -648,7 +676,8 @@ export default function ShopCheckout() {
                     <div className="p-4 space-y-3">
                       {/* Amount */}
                       <div className="rounded-xl p-3.5" style={{ background: "var(--t-blue-06)", border: "1px solid var(--t-blue-15)" }}>
-                        <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-blue)" }}>Order total</p>
+                        <p className="text-xs font-semibold mb-1" style={{ color: "var(--t-blue)" }}>Order total: {formatVialMoney(order.total, order.currency)}</p>
+                        <p className="text-xs mb-1" style={{ color: T.muted }}>Crypto amount to send — exchange rate locked when ordered</p>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <span className="text-2xl font-black font-mono" style={{ color: T.text }}>{order.paymentUsdAmount.toFixed(2)}</span>
@@ -804,19 +833,20 @@ export default function ShopCheckout() {
                     {order.items.map((item, i) => (
                       <div key={i} className="flex justify-between text-xs">
                         <span style={{ color: T.muted }}>{item.productName} × {item.quantity}</span>
-                        <span className="font-semibold" style={{ color: T.text }}>${item.lineTotal.toFixed(2)}</span>
+                        <span className="font-semibold" style={{ color: T.text }}>{formatVialMoney(item.lineTotal, order.currency)}</span>
                       </div>
                     ))}
                     {order.discountAmount > 0 && (
                       <div className="flex justify-between text-xs text-emerald-600">
                         <span>Discount ({order.discountCodeUsed})</span>
-                        <span>−${order.discountAmount.toFixed(2)}</span>
+                        <span>−{formatVialMoney(order.discountAmount, order.currency)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm font-black pt-2" style={{ borderTop: `1px solid ${T.border}` }}>
                       <span style={{ color: T.text }}>Total</span>
-                      <span style={{ color: ACCENT }}>${order.paymentUsdAmount.toFixed(2)} {cryptoCurrency}</span>
+                      <span style={{ color: ACCENT }}>{formatVialMoney(order.total, order.currency)}</span>
                     </div>
+                    <p className="text-xs text-right" style={{ color: T.muted }}>Crypto payment: {order.paymentUsdAmount.toFixed(2)} {cryptoCurrency}</p>
                   </div>
                 </>
               ))}

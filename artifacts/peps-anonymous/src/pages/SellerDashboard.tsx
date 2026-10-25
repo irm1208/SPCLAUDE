@@ -10,6 +10,8 @@ import {
 import { PageLayout } from "@/components/PageLayout";
 import { resolveTurnstileSiteKey } from "@/lib/account-verification-flow";
 import { buildSellerSignupBody, canSubmitSellerSignup } from "@/lib/seller-signup";
+import { formatVialMoney } from "@/lib/vial-money";
+import { SellerTelegramSettings } from "@/components/SellerTelegramSettings";
 
 interface SellerSession {
   vendorId: string;
@@ -29,6 +31,7 @@ interface Product {
 interface Order {
   id: string; code: string; telegramUsername: string;
   status: string; orderStatus: string; paymentStatus: string; total: number;
+  currency: string | null;
   shippingName: string | null; shippingAddress: string | null;
   createdAt: string;
   items: { productName: string; quantity: number; lineTotal: number }[];
@@ -912,7 +915,7 @@ function SellerProductCard({ product, onEdit, onToggle, onDelete }: {
             )}
           </div>
           <div className="text-right shrink-0">
-            <p className="text-lg font-black" style={{ color: "var(--t-blue)" }}>${product.price.toFixed(2)}</p>
+            <p className="text-lg font-black" style={{ color: "var(--t-blue)" }}>{formatVialMoney(product.price, product.currency)}</p>
             <p className="text-[10px]" style={{ color: "var(--t-subtle)" }}>{product.currency}</p>
           </div>
         </div>
@@ -1068,7 +1071,7 @@ function OrdersTab({ session }: { session: SellerSession }) {
             <p className="text-sm font-semibold mt-0.5" style={{ color: "var(--t-text)" }}>@{o.telegramUsername}</p>
           </div>
           <div className="text-right space-y-1">
-            <p className="text-base font-black" style={{ color: "var(--t-blue)" }}>${o.total.toFixed(2)}</p>
+            <p className="text-base font-black" style={{ color: "var(--t-blue)" }}>{formatVialMoney(o.total, o.currency)}</p>
             <div className="flex gap-1 justify-end flex-wrap">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${os.color}18`, color: os.color }}>{os.label}</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${ps.color}18`, color: ps.color }}>{ps.label}</span>
@@ -1080,7 +1083,7 @@ function OrdersTab({ session }: { session: SellerSession }) {
           {o.items.map((item, i) => (
             <div key={i} className="flex justify-between text-xs" style={{ color: "var(--t-muted)" }}>
               <span>{item.productName} ×{item.quantity}</span>
-              <span className="font-semibold">${item.lineTotal.toFixed(2)}</span>
+              <span className="font-semibold">{formatVialMoney(item.lineTotal, o.currency)}</span>
             </div>
           ))}
         </div>
@@ -1258,6 +1261,7 @@ interface VendorProfile {
   contactTelegram: string | null; country: string | null; shipsTo: string | null;
   rating: number | null; walletAddress: string | null; revolutLink: string | null;
   paypalLink: string | null;
+  telegramChatId: string | null; notifyVendor: boolean;
 }
 
 export function StoreProfileTab({ session, onPasswordChanged }: { session: SellerSession; onPasswordChanged: () => void }) {
@@ -1269,7 +1273,9 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
   const [form, setForm] = useState({
     tagline: "", description: "", country: "", shipsTo: "",
     walletAddress: "", revolutLink: "", paypalLink: "",
+    telegramChatId: "",
   });
+  const [notifyVendor, setNotifyVendor] = useState(true);
   const [membersOnly, setMembersOnly] = useState(false);
   const [togglingMO, setTogglingMO] = useState(false);
   const [passwordCurrent, setPasswordCurrent] = useState("");
@@ -1284,6 +1290,7 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
       .then(r => r.json())
       .then(d => {
         setProfile(d);
+        setNotifyVendor(d.notifyVendor !== false);
         setForm({
           tagline: d.tagline || "",
           description: d.description || "",
@@ -1292,6 +1299,7 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
           walletAddress: d.walletAddress || "",
           revolutLink: d.revolutLink || "",
           paypalLink: d.paypalLink || "",
+          telegramChatId: d.telegramChatId || "",
         });
         setLoading(false);
       })
@@ -1340,11 +1348,12 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
       const res = await fetch("/api/vial/seller/profile", {
         method: "PUT",
         headers: sellerHeaders(session),
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, notifyVendor }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Save failed"); return; }
       setProfile(data);
+      setForm(f => ({ ...f, telegramChatId: data.telegramChatId || "" }));
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch { setError("Connection error"); }
@@ -1436,6 +1445,10 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
 
       {error && <div className="flex items-center gap-2 p-3 rounded-xl text-sm font-medium" style={{ background: "rgba(239,68,68,0.08)", color: "#DC2626" }}><AlertTriangle className="w-4 h-4 shrink-0" />{error}</div>}
       {success && <div className="flex items-center gap-2 p-3 rounded-xl text-sm font-medium" style={{ background: "rgba(16,185,129,0.08)", color: "#059669" }}><Check className="w-4 h-4 shrink-0" />Store profile updated!</div>}
+
+      <SellerTelegramSettings chatId={form.telegramChatId} enabled={notifyVendor}
+        savedChatId={profile?.telegramChatId} headers={sellerHeaders(session)}
+        onChatId={value => set("telegramChatId", value)} onEnabled={setNotifyVendor} />
 
       <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Store Info</p>

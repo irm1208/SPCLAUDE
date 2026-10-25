@@ -70,6 +70,8 @@ export const vialOrdersTable = pgTable("vial_orders", {
   subtotal: numeric("subtotal", { precision: 10, scale: 2 }).notNull(),
   discountAmount: numeric("discount_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   total: numeric("total", { precision: 10, scale: 2 }).notNull(),
+  // Pricing denomination, separate from the token used to pay. Null = legacy unknown.
+  currency: text("currency"),
   discountCodeId: text("discount_code_id"),
   discountCodeUsed: text("discount_code_used"),
   orderStatus: text("order_status").notNull().default("accepted"),
