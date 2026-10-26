@@ -3146,7 +3146,7 @@ export default function AccountOrderDetail() {
                         style={{ background: ACCENT, padding: "10px 16px" }}
                         onClick={handleTopUp}
                       >
-                        <Plus className="w-4 h-4" /> Add to this order — no extra shipping
+                        <Plus className="w-4 h-4" /> Add to this order
                       </button>
                     ) : order.orderType === "wholesale_shared" ? (
                       <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
