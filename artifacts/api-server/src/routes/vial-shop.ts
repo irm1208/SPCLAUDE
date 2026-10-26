@@ -1134,10 +1134,20 @@ router.get("/admin/vial/sellers", async (req, res): Promise<void> => {
   const result = vendors.map(v => {
     const vendorProducts = products.filter(p => p.vendorId === v.id);
     const vendorProductIds = new Set(vendorProducts.map(p => p.id));
-    const confirmedOrderIds = new Set(orders.filter(o => o.paymentStatus === "confirmed").map(o => o.id));
+    const confirmedOrders = new Map(orders.filter(o => o.paymentStatus === "confirmed").map(o => [o.id, o]));
     const vendorItems = orderItems.filter(i => vendorProductIds.has(i.productId));
-    const confirmedItems = vendorItems.filter(i => confirmedOrderIds.has(i.orderId));
-    const revenue = confirmedItems.reduce((sum, i) => sum + parseFloat(i.lineTotal), 0);
+    // Preserve gross seller-item revenue and confirmed-only inclusion. Currency
+    // comes only from the order snapshot, never today's product or payment token.
+    const revenueCents = new Map<string | null, number>();
+    for (const item of vendorItems) {
+      const order = confirmedOrders.get(item.orderId);
+      if (!order) continue;
+      const currency = order.currency?.trim().toUpperCase() || null;
+      revenueCents.set(currency, (revenueCents.get(currency) ?? 0) + Math.round(Number(item.lineTotal) * 100));
+    }
+    const revenueByCurrency = [...revenueCents]
+      .sort(([a], [b]) => a === null ? 1 : b === null ? -1 : a.localeCompare(b))
+      .map(([currency, cents]) => ({ currency, total: cents / 100 }));
     const uniqueOrderIds = new Set(vendorItems.map(i => i.orderId));
     const lastLoginLog = loginLogs.find(l => {
       const meta = l.metadata as Record<string, unknown> | null;
@@ -1146,7 +1156,7 @@ router.get("/admin/vial/sellers", async (req, res): Promise<void> => {
     return {
       ...fmtVendor(v, vendorProducts.length),
       activeProductCount: vendorProducts.filter(p => p.active).length,
-      totalRevenue: parseFloat(revenue.toFixed(2)),
+      revenueByCurrency,
       totalOrders: uniqueOrderIds.size,
       lastLogin: lastLoginLog?.createdAt ?? null,
     };

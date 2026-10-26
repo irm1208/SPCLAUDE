@@ -2,6 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("Vial Shop seller details", () => {
+  it("uses currency-separated revenue in both the seller row and expanded summary", () => {
+    const source = readFileSync(new URL("./VialShopTab.tsx", import.meta.url), "utf8");
+    expect(source).toContain("<VialSellerRevenue totals={s.revenueByCurrency}");
+    expect(source).toContain("<VialSellerRevenue totals={seller.revenueByCurrency}");
+    expect(source).toContain("confirmed item totals before discounts");
+    expect(source).not.toContain("totalRevenue");
+  });
+
   it("renders the selected seller panel inline with the selected row", () => {
     const source = readFileSync(new URL("./VialShopTab.tsx", import.meta.url), "utf8");
     const sellersList = source.slice(

@@ -71,6 +71,7 @@ export const vialOrdersTable = pgTable("vial_orders", {
   discountAmount: numeric("discount_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   total: numeric("total", { precision: 10, scale: 2 }).notNull(),
   // Pricing denomination, separate from the token used to pay. Null = legacy unknown.
+  // Revenue reporting must keep unknowns separate, never infer from current products.
   currency: text("currency"),
   discountCodeId: text("discount_code_id"),
   discountCodeUsed: text("discount_code_used"),

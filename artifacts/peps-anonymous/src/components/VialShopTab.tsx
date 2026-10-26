@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Button, Card, cn } from "@/components/ui";
 import { formatVialMoney } from "@/lib/vial-money";
+import { VialSellerRevenue, type VialRevenueTotal } from "./VialSellerRevenue";
 
 // ─── Types ────────────────────────────────────────────────────
 interface VialManufacturer {
@@ -822,7 +823,7 @@ interface SellerSummary {
   country: string | null; shipsTo: string | null;
   contactTelegram: string | null; active: boolean; createdAt: string;
   productCount: number; activeProductCount: number;
-  totalRevenue: number; totalOrders: number;
+  revenueByCurrency: VialRevenueTotal[]; totalOrders: number;
   lastLogin: string | null;
   walletAddress: string | null; revolutLink: string | null; paypalLink: string | null;
   notifyVendor: boolean;
@@ -1078,8 +1079,8 @@ function SellerDetailPanel({ seller, secret, onClose, onActiveChange }: {
           <p className="text-[10px] text-muted-foreground">Orders</p>
         </div>
         <div className="rounded-lg bg-white border border-border p-2 text-center">
-          <p className="text-lg font-bold text-orange-500">{fmt(seller.totalRevenue)}</p>
-          <p className="text-[10px] text-muted-foreground">Revenue</p>
+          <div className="text-sm font-bold text-orange-500 break-words"><VialSellerRevenue totals={seller.revenueByCurrency} /></div>
+          <p className="text-[10px] text-muted-foreground">Revenue · confirmed item totals before discounts</p>
         </div>
       </div>
 
@@ -1368,7 +1369,9 @@ function SellersSubTab({ secret }: { secret: string }) {
                 <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground flex-wrap">
                   <span><span className="font-semibold text-foreground">{s.productCount}</span> products</span>
                   <span><span className="font-semibold text-foreground">{s.totalOrders}</span> orders</span>
-                  {s.totalRevenue > 0 && <span className="font-semibold text-orange-500">{fmt(s.totalRevenue)} revenue</span>}
+                  <span className="font-semibold text-orange-500" title="Confirmed item totals before discounts">
+                    Revenue: <VialSellerRevenue totals={s.revenueByCurrency} />
+                  </span>
                   {s.lastLogin ? <span>Last login {fmtRelativeTime(s.lastLogin)}</span> : <span className="italic">Never logged in</span>}
                 </div>
               </div>
