@@ -197,7 +197,7 @@ export default function Workspace({
       onGoto={tab => setActive(tab as WorkspaceTabId)}
     />
   ) : active === "orders" ? (
-    <OrdersTab selectedGbId={gb.id} highlightId={highlightId} onOpenDispatch={() => setActive("dispatch")} />
+    <OrdersTab selectedGbId={gb.id} highlightId={highlightId} canMarkPaid={apiGroupBuy?.organiserCanEditPaymentStatus ?? false} onOpenDispatch={() => setActive("dispatch")} />
   ) : active === "supplier-batches" ? (
     <SupplierBatchManager key={gb.id} scope="organiser" groupBuyId={gb.id}
       onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("organiser", gb.id, batchId, orderId); setActive("orders"); }}

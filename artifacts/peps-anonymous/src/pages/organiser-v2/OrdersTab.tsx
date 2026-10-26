@@ -6,6 +6,7 @@ import { V2_CARD_BORDER } from "./theme";
 import { fmtMoney } from "./data";
 import { organiserApi } from "./api/organiser-api";
 import { useOrderRepository, useOrders } from "./domain/repository-context";
+import { MarkOrdersPaid } from "@/components/MarkOrdersPaid";
 import type { OrganiserOrder as Order, OrderStatus } from "./domain/order";
 import {
   cloneOrderFilters,
@@ -67,7 +68,7 @@ const DEFAULT_FILTER_VALUES: OrderFilterValues = {
   sortOrder: "newest",
 };
 
-export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }: { selectedGbId?: string; highlightId?: string; onOpenDispatch?: () => void } = {}) {
+export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch, canMarkPaid = false }: { selectedGbId?: string; highlightId?: string; onOpenDispatch?: () => void; canMarkPaid?: boolean } = {}) {
   const supplierBatches = useOrderBatches("organiser", selectedGbId);
   const batchLabels = Object.fromEntries([...supplierBatches.byOrder].map(([id, b]) => [id, `${b.reference} · ${b.state}${b.exceptions.length ? " · Review" : ""}`]));
   const [searchQuery, setSearchQuery] = useState("");
@@ -327,20 +328,6 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
   };
 
   // Additional bulk actions
-  const bulkMarkAsPaid = () => {
-    const paidAt = new Date().toISOString();
-    orderRepository.updateMany(
-      selectedOrders,
-      order => ({ ...order, status: "paid", paidAt }),
-      {
-        type: "order.bulk_paid",
-        actorId: "organiser",
-        summary: `Marked ${selectedOrders.length} orders as paid`,
-      },
-    );
-    setSelectedOrders([]);
-  };
-
   const bulkMarkAsDispatched = () => {
     orderRepository.updateMany(
       selectedOrders,
@@ -629,13 +616,8 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
         <div className="flex gap-2">
           {selectedOrders.length > 0 && (
             <>
-              <button
-                onClick={bulkMarkAsPaid}
-                className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5"
-                style={{ background: "#16A34A", color: "#fff" }}
-              >
-                <CheckCircle2 className="w-4 h-4" /> Mark as Paid
-              </button>
+              {selectedGbId && <MarkOrdersPaid key={selectedGbId} groupBuyId={selectedGbId} orderIds={selectedOrders} allowed={canMarkPaid}
+                onSaved={async () => { await orderRepository.load(); setSelectedOrders([]); }} />}
               <button
                 onClick={bulkMarkAsDispatched}
                 className="h-10 px-4 rounded-lg text-[14px] font-semibold flex items-center gap-1.5"
@@ -964,6 +946,10 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
             <div className="atlas-drawer-summary"><AtlasStatusBadge tone={quickViewOrder.status === "pending" ? "warning" : quickViewOrder.status === "cancelled" ? "danger" : "success"}>{STATUS_CONFIG[quickViewOrder.status].label}</AtlasStatusBadge><strong>{fmtMoney(quickViewOrder.total, "GBP")}</strong><span>{quickViewOrder.paymentMethod} · {quickViewOrder.country}</span></div>
             <AtlasDrawerSection title="Items"><div className="atlas-order-history">{quickViewOrder.products.map(product => <article key={product.name}><div><strong>{product.name}</strong><small>Quantity {product.quantity}</small></div><strong>{fmtMoney(product.price * product.quantity, "GBP")}</strong></article>)}</div></AtlasDrawerSection>
             <AtlasDrawerSection title="Payment">
+              {selectedGbId && quickViewOrder.paymentStatus !== "confirmed" && quickViewOrder.status !== "cancelled" && (
+                <MarkOrdersPaid key={quickViewOrder.id} groupBuyId={selectedGbId} orderIds={[quickViewOrder.id]} allowed={canMarkPaid}
+                  onSaved={async () => { const fresh = await orderRepository.load(); setQuickViewOrder(fresh.find(order => order.id === quickViewOrder.id) ?? null); }} />
+              )}
               <dl className="atlas-detail-list">
                 <div><dt>Method</dt><dd>{quickViewOrder.paymentMethod}</dd></div>
                 <div><dt>Status</dt><dd>{quickViewOrder.paymentStatus ?? STATUS_CONFIG[quickViewOrder.status].label}</dd></div>
@@ -1319,13 +1305,14 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch }:
                     style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}
                   >
                     <option value="pending">Pending Payment</option>
-                    <option value="paid">Paid</option>
+                    {editingOrder?.status === "paid" && <option value="paid">Paid</option>}
                     <option value="processing">Processing</option>
                     <option value="shipped">Shipped</option>
                     <option value="dispatched">Dispatched</option>
                     <option value="delivered">Delivered</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
+                  {editingOrder?.status !== "paid" && <p className="mt-1 text-xs" style={{ color: "var(--t-muted)" }}>To confirm payment with a note, use “Mark as paid” in the order details.</p>}
                 </div>
                 <div>
                   <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>

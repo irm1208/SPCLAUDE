@@ -1,5 +1,6 @@
 import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
 import { BankTransferSettings } from "@/components/BankTransferSettings";
+import { MarkOrdersPaid } from "@/components/MarkOrdersPaid";
 import { parseBankTransfer, type BankTransfer } from "@workspace/api-zod/bank-transfer";
 import { ReshipperFulfilmentDownload } from "@/components/ReshipperFulfilmentDownload";
 import { EuCustomPostageImport, PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
@@ -9193,6 +9194,9 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
           </label>
           {selectedOrderIds.size > 0 && (
             <>
+              <MarkOrdersPaid key={gb.id} groupBuyId={gb.id} orderIds={[...selectedOrderIds]} allowed={gb.organiserCanEditPaymentStatus}
+                label={`Mark ${selectedOrderIds.size} as paid`}
+                onSaved={() => { loadOrders(); setSelectedOrderIds(new Set()); }} />
               <button
                 className="text-[11px] font-semibold underline"
                 style={{ color: "var(--t-subtle)" }}
@@ -9571,7 +9575,10 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                       </div>
                     )}
                     {/* Notes */}
-                    {o.adminNotes && <p style={{ fontSize: 11, fontStyle: "italic", color: "var(--t-subtle)", margin: 0 }}>📝 {o.adminNotes}</p>}
+                    {o.adminNotes && <p style={{ fontSize: 11, fontStyle: "italic", whiteSpace: "pre-wrap", color: "var(--t-subtle)", margin: 0 }}>📝 {o.adminNotes}</p>}
+                    {!["confirmed", "refunded"].includes(o.paymentStatus) && !["Cancelled", "Draft"].includes(o.status) && (
+                      <MarkOrdersPaid key={o.id} groupBuyId={gb.id} orderIds={[o.id]} allowed={gb.organiserCanEditPaymentStatus} onSaved={loadOrders} />
+                    )}
                     {o.notes && <p style={{ fontSize: 11, color: "var(--t-muted)", margin: 0 }}>💬 {o.notes}</p>}
                     {/* Lab test */}
                     {o.testingContribution != null && o.testingContribution > 0 && (
@@ -9687,7 +9694,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                                 className="w-full h-8 px-2 rounded-lg text-xs"
                                 style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)", outline: "none" }}
                               >
-                                {PAYMENT_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                                {PAYMENT_STATUS_OPTIONS.filter(s => s !== "confirmed" || o.paymentStatus === "confirmed").map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
                               </select>
                             </div>
                           )}

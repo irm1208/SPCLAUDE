@@ -153,3 +153,4 @@
 - [Reshipper payout method](reshipper-payout-method.md) — Admin records external transfers by TXID; no wallet connection for new payouts.
 - [Single-vial pricing](vial-shop-currency-policy.md) — keep seller-currency prices throughout checkout; show locked crypto settlement separately; never add unlike currencies.
 - [GB bank transfers](group-buy-bank-transfer-policy.md) — UK and international organiser details; member “sent” notifications require manual receipt confirmation.
+- [GB manual payments](group-buy-manual-payment-policy.md) — single/selected paid confirmations require a staff-only note and actor/time; independent balances stay unchanged.
