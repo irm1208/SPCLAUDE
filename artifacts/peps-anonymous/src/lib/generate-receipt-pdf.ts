@@ -9,6 +9,10 @@ export interface ReceiptLineItem {
 }
 
 export interface Receipt {
+  orderId?: string;
+  shippingName?: string | null;
+  shippingAddress?: string | null;
+  shippingCountry?: string | null;
   code: string;
   telegramUsername: string;
   deliveryMethod: string;

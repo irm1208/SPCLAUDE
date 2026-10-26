@@ -340,6 +340,9 @@ export default function Review() {
       groupBuyId?: string | null;
       notes?: string | null;
       lineItems?: { productName: string; quantity: number; unitPrice: number; lineTotal: number }[];
+      shippingName?: string | null;
+      shippingAddress?: string | null;
+      shippingCountry?: string | null;
     }) => {
       const oid = data.id ?? existingOrderId ?? "";
       if (draft.halfKitCheckout && draft.groupBuyId) {
@@ -386,6 +389,10 @@ export default function Review() {
         ? null
         : receivedVendorShipping;
       localStorage.setItem("peps:lastReceipt", JSON.stringify({
+        orderId: oid,
+        shippingName: data.shippingName !== undefined ? data.shippingName : draft.shippingName || null,
+        shippingAddress: data.shippingAddress !== undefined ? data.shippingAddress : draft.shippingAddress || null,
+        shippingCountry: data.shippingCountry !== undefined ? data.shippingCountry : payload.shippingCountry,
         code: data.code,
         telegramUsername: data.telegramUsername ?? checkoutUsername,
         deliveryMethod: draft.deliveryMethod,

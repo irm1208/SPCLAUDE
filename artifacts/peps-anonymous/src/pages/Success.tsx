@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import PaymentPanel from "@/components/PaymentPanel";
 import { OnwardPaymentCard } from "@/components/onward-delivery/OnwardPayments";
 import { HubBottomNav, type HubSection } from "@/components/HubBottomNav";
-import { useAccount, useAccountOrders, useLogout, useMyGroupBuys } from "@/hooks/use-account";
+import { useAccount, useAccountOrders, useAccountOrderDetail, useLogout, useMyGroupBuys } from "@/hooks/use-account";
 import { DashboardShell, type DashOrder } from "@/components/DashboardShell";
 import type { PortalNavProps } from "@/pages/CustomerPortal";
 import { COUNTRIES } from "@/data/countries";
@@ -22,14 +22,19 @@ export type { Receipt, ReceiptLineItem };
 
 const COMMON_COUNTRIES = ["United Kingdom", "Ireland", "United States", "Canada", "Australia", "Germany", "France", "Netherlands", "Spain", "Italy"];
 
-function ShippingAddressForm({ orderId, deliveryMethod, onSaved }: { orderId: string; deliveryMethod?: string; onSaved: () => void }) {
+type ShippingDetails = Pick<Receipt, "shippingName" | "shippingAddress" | "shippingCountry">;
+
+function ShippingAddressForm({ orderId, deliveryMethod, initialAddress, onSaved }: {
+  orderId: string; deliveryMethod?: string; initialAddress?: ShippingDetails;
+  onSaved: (details: ShippingDetails) => void;
+}) {
   const deliveryTitle = deliveryMethod?.trim() ? deliveryMethod.trim() : "Shipping Address";
   const { account } = useAccount();
-  const [name, setName] = useState("");
-  const [street, setStreet] = useState("");
+  const [name, setName] = useState(initialAddress?.shippingName ?? "");
+  const [street, setStreet] = useState(initialAddress?.shippingAddress ?? "");
   const [city, setCity] = useState("");
   const [postcode, setPostcode] = useState("");
-  const [country, setCountry] = useState("");
+  const [country, setCountry] = useState(initialAddress?.shippingCountry ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +88,7 @@ function ShippingAddressForm({ orderId, deliveryMethod, onSaved }: { orderId: st
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error || "Failed to save");
       }
-      onSaved();
+      onSaved({ shippingName: name.trim(), shippingAddress: fullAddress, shippingCountry: country || null });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
       setSaving(false);
@@ -196,6 +201,7 @@ function ShippingAddressForm({ orderId, deliveryMethod, onSaved }: { orderId: st
               style={{ ...fieldStyle, color: country ? "var(--t-text)" : "var(--t-muted)" }}
             >
               <option value="">Select country…</option>
+              {country && !COUNTRIES.some(option => option === country) && <option value={country}>{country}</option>}
               <optgroup label="Common">
                 {COMMON_COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
               </optgroup>
@@ -224,6 +230,61 @@ function ShippingAddressForm({ orderId, deliveryMethod, onSaved }: { orderId: st
       </div>
     </motion.div>
   );
+}
+
+export function SuccessShippingAddress({ orderId, deliveryMethod, receipt }: {
+  orderId: string; deliveryMethod: string; receipt?: Partial<Receipt> | null;
+}) {
+  const { isLoggedIn, isLoading: accountLoading } = useAccount();
+  const { data: order, isPending, isError, refetch } = useAccountOrderDetail(orderId, isLoggedIn);
+  const [saved, setSaved] = useState<ShippingDetails | null>(null);
+  useEffect(() => setSaved(null), [orderId]);
+  // A receipt belongs to one specific order; never reuse a previous customer's/order's address.
+  // For signed-in orders, server data wins even when the saved fields are explicitly empty.
+  const initialAddress = order ?? (receipt?.orderId === orderId ? receipt : undefined);
+  const address = saved ?? initialAddress;
+  const complete = !!address?.shippingName?.trim() && !!address?.shippingAddress?.trim();
+
+  if (accountLoading || (isLoggedIn && isPending && !order)) {
+    return <p role="status" className="text-sm mb-5" style={{ color: "var(--t-muted)" }}>
+      Checking your saved shipping address…
+    </p>;
+  }
+  if (isLoggedIn && isError && !order) {
+    return <div role="alert" className="w-full rounded-xl border p-4 mb-5" style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+      <p className="text-sm mb-2">We couldn’t check your saved address. You don’t need to re-enter it yet.</p>
+      <Button onClick={() => void refetch()}>Retry address check</Button>
+    </div>;
+  }
+  if (complete && address) {
+    return <div className="w-full rounded-xl border p-4 mb-5" style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Package className="w-5 h-5 text-green-600 shrink-0" />
+        <p className="text-sm font-semibold">Shipping address saved</p>
+      </div>
+      <p className="text-sm mb-3" style={{ color: "var(--t-muted)" }}>Your delivery details are saved with this order. No need to enter it again.</p>
+      <p className="font-semibold text-sm">{address.shippingName}</p>
+      <p className="text-sm whitespace-pre-wrap">{address.shippingAddress}</p>
+      {address.shippingCountry && <p className="text-sm">{address.shippingCountry}</p>}
+    </div>;
+  }
+  return <ShippingAddressForm
+    key={orderId}
+    orderId={orderId}
+    deliveryMethod={deliveryMethod}
+    initialAddress={initialAddress}
+    onSaved={details => {
+      setSaved(details);
+      // Retain the just-saved details on a refresh too, without changing any price/payment fields.
+      try {
+        const existing = JSON.parse(localStorage.getItem("peps:lastReceipt") ?? "null");
+        if (existing?.orderId === orderId || (order && existing?.code === order.code)) {
+          localStorage.setItem("peps:lastReceipt", JSON.stringify({ ...existing, ...details, orderId }));
+        }
+      } catch { /* The server has saved the address even if local storage is unavailable. */ }
+      if (isLoggedIn) void refetch();
+    }}
+  />;
 }
 
 function InPostNotice() {
@@ -304,7 +365,6 @@ export default function Success() {
   const [downloading, setDownloading] = useState(false);
   const [confirmedTxHash, setConfirmedTxHash] = useState<string | null>(null);
   const [confirmedCurrency, setConfirmedCurrency] = useState<string>("USDT");
-  const [addressSaved, setAddressSaved] = useState(false);
   const [hubSection, setHubSection] = useState<HubSection>("orders");
   const [hubMoreOpen, setHubMoreOpen] = useState(false);
 
@@ -529,26 +589,13 @@ export default function Success() {
         {isInPost && <InPostNotice />}
 
         <AnimatePresence>
-          {confirmedTxHash && orderId && !isInPost && !addressSaved && (
-            <ShippingAddressForm
+          {confirmedTxHash && orderId && !isInPost && (
+            <SuccessShippingAddress
               key="ship-form"
               orderId={orderId}
               deliveryMethod={deliveryMethod}
-              onSaved={() => setAddressSaved(true)}
+              receipt={receipt}
             />
-          )}
-          {confirmedTxHash && addressSaved && !isInPost && (
-            <motion.div
-              key="ship-saved"
-              initial={{ y: 12, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              className="w-full mb-5"
-            >
-              <div className="flex gap-3 items-center p-4 rounded-xl bg-green-50 border border-green-200">
-                <Package className="w-5 h-5 text-green-600 shrink-0" />
-                <p className="text-sm font-semibold text-green-800">Shipping address saved. We'll send your order!</p>
-              </div>
-            </motion.div>
           )}
         </AnimatePresence>
 

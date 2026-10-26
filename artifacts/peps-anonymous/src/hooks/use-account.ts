@@ -644,6 +644,9 @@ export function useUpdateCountry() {
 }
 
 export interface AccountOrder {
+  shippingName?: string | null;
+  shippingAddress?: string | null;
+  shippingCountry?: string | null;
   memberReceivedAt?: string | null;
   id: string;
   code: string;
