@@ -146,7 +146,10 @@ export const fetchManagedUpdates = async (scope: GbUpdatesScope, gbId: string, s
   parseUpdatesResponse(await req<unknown>(`${manageBase(scope, gbId)}/updates`, { signal }));
 export async function saveMoqSettings(
   scope: GbUpdatesScope, gbId: string,
-  settings: { enabled: boolean; targetKits: number | null; showToMembers: boolean },
+  settings: {
+    enabled: boolean; targetKits: number | null; showToMembers: boolean;
+    countMode?: GroupBuyMoq["countMode"]; productTargets?: { productId: string; targetKits: number }[];
+  },
   expectedUpdatedAt: string | null,
 ) {
   return parseUpdatesResponse(await req<unknown>(`${manageBase(scope, gbId)}/moq`, {

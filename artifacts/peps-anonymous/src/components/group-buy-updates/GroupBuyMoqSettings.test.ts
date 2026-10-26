@@ -27,7 +27,8 @@ test("staff can enable MOQ, keep a draft across refreshes, save visibility and d
   const container = dom.window.document.getElementById("root")!;
   const initial: GbUpdatesResponse = {
     groupBuy: { id: "GB1", name: "Group" }, stage: "open", stageUpdatedAt: null, updates: [],
-    moq: { enabled: false, targetKits: null, showToMembers: false, orderedKits: 0, remainingKits: null, met: false, updatedAt: null },
+    moq: { enabled: false, targetKits: null, showToMembers: false, orderedKits: 0, remainingKits: null, met: false, updatedAt: null,
+      products: [{ productId: "hgh36", name: "HGH 36IU", targetKits: null, orderedKits: 0, paidKits: 0 }] },
   };
   const payloads: Record<string, unknown>[] = [];
   globalThis.fetch = async (_url, init) => {
@@ -38,6 +39,11 @@ test("staff can enable MOQ, keep a draft across refreshes, save visibility and d
       moq: {
         ...payload, orderedKits: payload.enabled ? 12.5 : 0, remainingKits: payload.enabled ? 87.5 : 100,
         met: false, updatedAt: `2026-10-20T09:00:0${payloads.length}.000Z`,
+        paidKits: payload.enabled ? 10 : 0,
+        products: initial.moq!.products!.map(product => ({
+          ...product, targetKits: payload.productTargets?.find((p: { productId: string }) => p.productId === product.productId)?.targetKits ?? null,
+          orderedKits: 12.5, paidKits: 10,
+        })),
       },
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
@@ -72,7 +78,8 @@ test("staff can enable MOQ, keep a draft across refreshes, save visibility and d
     assert.equal((container.querySelector("input[type=number]") as HTMLInputElement).value, "100");
     assert.equal(container.querySelectorAll('[role="switch"]')[1].getAttribute("aria-checked"), "true");
     await click([...container.querySelectorAll("button")].find(button => button.textContent === "Save MOQ settings")!);
-    assert.deepEqual(payloads[0], { enabled: true, targetKits: 100, showToMembers: true, expectedUpdatedAt: null });
+    assert.deepEqual(payloads[0], { enabled: true, targetKits: 100, showToMembers: true,
+      countMode: "active", productTargets: [], expectedUpdatedAt: null });
     assert.match(container.textContent!, /MOQ settings saved/);
     assert.match(container.textContent!, /12.5 \/ 100 kits ordered/);
     await click(container.querySelector('[role="switch"]')!);
@@ -81,6 +88,30 @@ test("staff can enable MOQ, keep a draft across refreshes, save visibility and d
     assert.equal(payloads[1].targetKits, 100);
     assert.equal(payloads[1].expectedUpdatedAt, "2026-10-20T09:00:01.000Z");
     assert.equal(container.querySelector('[data-testid="gb-moq-progress"]'), null);
+    await click(container.querySelector('[role="switch"]')!);
+    const setInput = async (element: HTMLInputElement, value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(element, value);
+      element.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    });
+    await setInput(container.querySelector("input[type=number]")!, "");
+    await setInput(container.querySelector('input[aria-label="HGH 36IU MOQ (kits)"]')!, "50");
+    for (const mode of ["both", "paid", "active"]) {
+      await act(async () => {
+        const select = container.querySelector("select")!;
+        select.value = mode;
+        select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+      });
+      await click([...container.querySelectorAll("button")].find(button => button.textContent === "Save MOQ settings")!);
+      const last = payloads.at(-1)!;
+      assert.equal(last.countMode, mode);
+      assert.equal(last.targetKits, null);
+      assert.deepEqual(last.productTargets, [{ productId: "hgh36", targetKits: 50 }]);
+      assert.equal(container.querySelector("select")!.value, mode);
+      assert.equal((container.querySelector('input[aria-label="HGH 36IU MOQ (kits)"]') as HTMLInputElement).value, "50");
+      const text = container.textContent!;
+      assert.equal(text.includes("12.5 / 50 kits ordered"), mode !== "paid");
+      assert.equal(text.includes("10 / 50 kits paid"), mode !== "active");
+    }
   } finally {
     await act(async () => root.unmount());
     globalThis.fetch = originalFetch;

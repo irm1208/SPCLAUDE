@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, like, sql } from "drizzle-orm";
-import { db, accountGroupBuysTable, groupBuysTable, ordersTable, siteConfigTable } from "@workspace/db";
+import { db, accountGroupBuysTable, groupBuysTable, ordersTable, siteConfigTable, groupBuyProductsTable, orderLineItemsTable } from "@workspace/db";
 import {
   canonicalUsername, defaultGroupProgress, GroupUpdateError, GROUP_PROGRESS_STAGES,
   groupUpdateDto, parseGroupUpdate, parseProgressInput, progressKey, readGroupUpdate, readProgress, updatePrefix,
@@ -119,9 +119,22 @@ export async function setGroupBuyMoq(
     if ((previous?.updatedAt ?? null) !== input.expectedUpdatedAt) {
       throw new GroupUpdateError("MOQ changed in another session. Refresh and review it before saving.", 409);
     }
+    if (input.productTargets?.length) {
+      const catalogue = await tx.select({ productId: groupBuyProductsTable.productId }).from(groupBuyProductsTable)
+        .where(eq(groupBuyProductsTable.groupBuyId, id));
+      const ordered = await tx.select({ productId: orderLineItemsTable.productId }).from(ordersTable)
+        .innerJoin(orderLineItemsTable, eq(orderLineItemsTable.orderId, ordersTable.id))
+        .where(eq(ordersTable.groupBuyId, id));
+      const allowed = new Set([...catalogue, ...ordered].map(row => row.productId));
+      if (input.productTargets.some(target => !allowed.has(target.productId))) {
+        throw new GroupUpdateError("Choose products belonging to this group buy.");
+      }
+    }
     const updatedAt = new Date(Math.max(Date.now(), previous?.updatedAt ? Date.parse(previous.updatedAt) + 1 : 0)).toISOString();
     const value = JSON.stringify({
       enabled: input.enabled, targetKits: input.targetKits, showToMembers: input.showToMembers, updatedAt,
+      countMode: input.countMode ?? previous?.countMode ?? "active",
+      productTargets: input.productTargets ?? previous?.productTargets ?? [],
     });
     await tx.insert(siteConfigTable).values({ key: moqKey(id), value })
       .onConflictDoUpdate({ target: siteConfigTable.key, set: { value } });

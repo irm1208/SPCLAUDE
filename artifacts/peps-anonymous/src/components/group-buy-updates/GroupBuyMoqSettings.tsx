@@ -13,6 +13,9 @@ export function GroupBuyMoqSettings({ moq, scope, gbId, run, blocked, reload }: 
   const [enabled, setEnabled] = useState(moq?.enabled ?? false);
   const [target, setTarget] = useState(moq?.targetKits != null ? String(moq.targetKits) : "");
   const [show, setShow] = useState(moq?.showToMembers ?? false);
+  const [mode, setMode] = useState<NonNullable<GroupBuyMoq["countMode"]>>(moq?.countMode ?? "active");
+  const [productTargets, setProductTargets] = useState<Record<string, string>>(() =>
+    Object.fromEntries((moq?.products ?? []).filter(p => p.targetKits !== null).map(p => [p.productId, String(p.targetKits)])));
   const [version, setVersion] = useState(moq?.updatedAt ?? null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -22,6 +25,8 @@ export function GroupBuyMoqSettings({ moq, scope, gbId, run, blocked, reload }: 
     setEnabled(value?.enabled ?? false);
     setTarget(value?.targetKits != null ? String(value.targetKits) : "");
     setShow(value?.showToMembers ?? false);
+    setMode(value?.countMode ?? "active");
+    setProductTargets(Object.fromEntries((value?.products ?? []).filter(p => p.targetKits !== null).map(p => [p.productId, String(p.targetKits)])));
     setVersion(value?.updatedAt ?? null);
   };
   useEffect(() => {
@@ -30,16 +35,21 @@ export function GroupBuyMoqSettings({ moq, scope, gbId, run, blocked, reload }: 
   const changed = () => { setDirty(true); setSaved(false); setError(""); };
   const save = async () => {
     const quantity = target.trim() ? Number(target) : null;
-    if ((enabled && quantity === null) || (quantity !== null && (
+    const perProduct = Object.entries(productTargets).filter(([, value]) => value.trim()).map(([productId, value]) =>
+      ({ productId, targetKits: Number(value) }));
+    if ((enabled && quantity === null && !perProduct.length) || (quantity !== null && (
       !Number.isFinite(quantity) || quantity <= 0 || quantity > 100_000_000 || !Number.isInteger(quantity * 2)
-    ))) {
-      setError("Enter an MOQ above zero in whole or half kits.");
+    )) || perProduct.some(p => !Number.isFinite(p.targetKits) || p.targetKits <= 0 ||
+      p.targetKits > 100_000_000 || !Number.isInteger(p.targetKits * 2))) {
+      setError("Enter at least one MOQ above zero in whole or half kits.");
       return;
     }
     setSaving(true); setError(""); setSaved(false);
     try {
       const response = await run(
-        () => saveMoqSettings(scope, gbId, { enabled, targetKits: quantity, showToMembers: show }, version),
+        () => saveMoqSettings(scope, gbId, {
+          enabled, targetKits: quantity, showToMembers: show, countMode: mode, productTargets: perProduct,
+        }, version),
         (_old, result) => result,
       );
       reset(response.moq); setDirty(false); setSaved(true);
@@ -61,23 +71,53 @@ export function GroupBuyMoqSettings({ moq, scope, gbId, run, blocked, reload }: 
           onCheckedChange={value => { changed(); setEnabled(value); }} className="data-[state=checked]:bg-[#2D6BCC]" />
       </div>
       <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-        A target for the whole group buy, not a minimum per member. Counts paid and unpaid orders; half a kit counts as 0.5.
+        Set a whole-group target, individual product targets, or both. These are not minimums per member; half a kit counts as 0.5.
       </p>
       {enabled && (
         <>
           <label className="block text-xs font-semibold space-y-1.5">
-            <span>MOQ target (kits)</span>
+            <span>Whole-group MOQ target (kits, optional)</span>
             <input type="number" min="0.5" max="100000000" step="0.5" value={target}
               disabled={blocked || saving} placeholder="e.g. 100"
               onChange={e => { changed(); setTarget(e.target.value); }}
               className="w-full sm:max-w-56 rounded-lg border px-3 py-2 block text-sm"
               style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }} />
           </label>
+          <label className="block text-xs font-semibold space-y-1.5">
+            <span>Progress to show</span>
+            <select value={mode} disabled={blocked || saving}
+              onChange={e => { changed(); setMode(e.target.value as typeof mode); }}
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+              <option value="active">Active orders</option>
+              <option value="paid">Paid orders</option>
+              <option value="both">Both — active and paid orders</option>
+            </select>
+          </label>
+          <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+            Active includes paid and unpaid orders. Paid includes fully confirmed payments with no outstanding balance.
+            Both shows separate figures against the same target; they are not added together.
+          </p>
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-bold mb-2">Per-product MOQ targets (kits)</legend>
+            <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Leave blank for no target. Each product and strength is counted separately.</p>
+            {(moq?.products ?? []).map(product => <label key={product.productId}
+              className="flex items-center justify-between gap-3 text-xs">
+              <span className="min-w-0 break-words">{product.name}</span>
+              <input type="number" min="0.5" max="100000000" step="0.5" placeholder="No MOQ"
+                aria-label={`${product.name} MOQ (kits)`} value={productTargets[product.productId] ?? ""}
+                disabled={blocked || saving}
+                onChange={e => { changed(); setProductTargets(old => ({ ...old, [product.productId]: e.target.value })); }}
+                className="w-28 shrink-0 rounded-lg border px-3 py-2"
+                style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }} />
+            </label>)}
+            {!moq?.products?.length && <p className="text-xs" style={{ color: "var(--t-muted)" }}>Add products to this group buy to set their MOQ targets.</p>}
+          </fieldset>
           <div className="flex items-center justify-between gap-3">
             <div>
               <label htmlFor={`${id}-members`} className="text-xs font-semibold">Show MOQ progress to members</label>
               <p className="text-[11px] mt-0.5" style={{ color: "var(--t-muted)" }}>
-                Shows ordered kits versus target on their group-buy card and order page.
+                Shows product targets and your chosen active/paid progress on their group-buy card and order page.
               </p>
             </div>
             <Switch id={`${id}-members`} checked={show} disabled={blocked || saving}

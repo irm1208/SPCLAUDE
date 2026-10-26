@@ -9,6 +9,12 @@ MOQ is a target for the entire group buy, measured in kits. Half a kit counts as
 
 **How to apply:** Keep the group target separate from any per-member minimum. Do not silently change the count to paid-only or interpret units as individual vials.
 
+Per-product MOQ targets are optional alongside the whole-group target. Organisers choose Active orders, Paid orders or Both; Both shows separate progress against the same targets, never a sum of the two.
+
+**Why:** The user explicitly requested individual product targets and the ability for each organiser to choose active, paid or both statuses.
+
+**How to apply:** Keep each product/strength distinct. Active retains the existing exclusions and is the legacy default. Paid is the fully confirmed subset with no outstanding balance, not test-only payments. Member summaries show all configured product targets, including those with zero orders.
+
 Enabling MOQ and showing its progress to members are independent choices. Member visibility is opt-in; staff can use MOQ privately.
 
 **Why:** The user requested an optional MOQ and a separate optional choice to show ordered quantities versus the target to members.

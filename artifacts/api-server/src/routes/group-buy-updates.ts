@@ -54,6 +54,7 @@ router.put(management.map(path => `${path}/moq`), managementAuth, noCache, async
   await audit(req, "group_buy_moq_updated", {
     enabled: result.moq?.enabled, targetKits: result.moq?.targetKits,
     showToMembers: result.moq?.showToMembers,
+    countMode: result.moq?.countMode, productTargets: result.moq?.productTargets,
   });
   res.json(result);
 });

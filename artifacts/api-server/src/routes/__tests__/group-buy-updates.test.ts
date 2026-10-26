@@ -35,28 +35,43 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@workspace/db", () => {
   const group = { table: "groups", id: "id", organiserId: "organiserId" };
   const members = { table: "members", id: "id", groupBuyId: "groupBuyId", accountId: "accountId" };
-  const orders = { table: "orders", id: "id", groupBuyId: "groupBuyId", telegramUsername: "telegramUsername", deletedAt: "deletedAt", status: "status", paymentStatus: "paymentStatus" };
-  const items = { table: "items", orderId: "orderId", quantity: "quantity", isOos: "isOos" };
+  const orders = { table: "orders", id: "id", groupBuyId: "groupBuyId", telegramUsername: "telegramUsername", deletedAt: "deletedAt", status: "status", paymentStatus: "paymentStatus", amountDue: "amountDue" };
+  const items = { table: "items", orderId: "orderId", quantity: "quantity", isOos: "isOos", productId: "productId", productName: "productName" };
+  const catalogue = { table: "catalogue", groupBuyId: "groupBuyId", productId: "productId" };
+  const products = { table: "products", id: "id", name: "name", mgSize: "mgSize" };
   const config = { table: "config", key: "key", value: "value" };
   const rows = (table: { table: string }) => data.tables[table.table] ?? [];
   let queue = Promise.resolve();
   const database = {
     select: (fields?: Record<string, string>) => ({ from: (table: { table: string }) => ({
       innerJoin: (_joined: unknown, _on: unknown) => ({
-        where: (predicate: Predicate) => ({
+        where: (predicate: Predicate) => {
+          const joined: Row[] = table === catalogue
+            ? rows(catalogue).map(link => ({ ...link,
+              name: rows(products).find(p => p.id === link.productId)?.name,
+              mgSize: rows(products).find(p => p.id === link.productId)?.mgSize }))
+            : rows(table).flatMap(order => rows(items).filter(item => item.orderId === order.id).map(item => ({ ...order, ...item })));
+          const filtered = joined.filter(predicate);
+          return {
+          then: (resolve: (value: Row[]) => unknown) => Promise.resolve(filtered.map(row =>
+            Object.fromEntries(Object.entries(fields ?? {}).map(([key, column]) => [key, row[column]])))).then(resolve),
           groupBy: async () => {
-            const totals = new Map<string, number>();
-            for (const order of rows(table)) {
-              for (const item of rows(items).filter(item => item.orderId === order.id)) {
-                if (predicate({ ...order, ...item })) {
-                  const id = String(order.groupBuyId);
-                  totals.set(id, (totals.get(id) ?? 0) + Number(item.quantity));
-                }
+            const totals = new Map<string, Row>();
+            for (const row of filtered) {
+              const key = `${row.groupBuyId}:${row.productId ?? "default"}`;
+              const total = totals.get(key) ?? {
+                groupBuyId: row.groupBuyId, productId: row.productId ?? "default", name: row.productName ?? "Product",
+                orderedKits: 0, paidKits: 0,
+              };
+              total.orderedKits = Number(total.orderedKits) + Number(row.quantity);
+              if (String(row.paymentStatus).trim().toLowerCase() === "confirmed" && Number(row.amountDue ?? 0) <= 0) {
+                total.paidKits = Number(total.paidKits) + Number(row.quantity);
               }
+              totals.set(key, total);
             }
-            return [...totals].map(([groupBuyId, quantity]) => ({ groupBuyId, orderedKits: String(quantity) }));
+            return [...totals.values()];
           },
-        }),
+        }; },
       }),
       where: (predicate: Predicate) => {
       const found = rows(table).filter(predicate).map(row => fields
@@ -108,7 +123,8 @@ vi.mock("@workspace/db", () => {
       finally { release(); }
     },
   };
-  return { db: database, groupBuysTable: group, accountGroupBuysTable: members, ordersTable: orders, orderLineItemsTable: items, siteConfigTable: config };
+  return { db: database, groupBuysTable: group, accountGroupBuysTable: members, ordersTable: orders,
+    orderLineItemsTable: items, siteConfigTable: config, groupBuyProductsTable: catalogue, productsTable: products };
 });
 vi.mock("../../middleware/account-auth", () => ({
   requireAccount: (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -252,6 +268,51 @@ describe("group-buy progress and announcements API", () => {
     expect(responses.map(response => response.status).sort()).toEqual([200, 409]);
     expect(data.tables.orders).toEqual(before);
     expect(data.tables.config.filter(row => row.key === "gb_moq:GB1")).toHaveLength(1);
+  });
+  it("persists product-only targets and modes, includes zero-order products, and isolates other groups", async () => {
+    data.tables.catalogue = [
+      { groupBuyId: "GB1", productId: "hgh36" }, { groupBuyId: "GB1", productId: "hgh24" },
+      { groupBuyId: "GB2", productId: "other" },
+    ];
+    data.tables.products = [
+      { id: "hgh36", name: "HGH 36IU" }, { id: "hgh24", name: "HGH 24IU" }, { id: "other", name: "Private product" },
+    ];
+    const fixtures = [
+      ["paid", "confirmed", 20, 0], ["unpaid", "unpaid", 10.5, 0],
+      ["balance", "confirmed", 5, 1], ["test", "test_confirmed", 2, 0],
+    ];
+    for (const [id, paymentStatus, quantity, amountDue] of fixtures) {
+      data.tables.orders.push({ id, paymentStatus, amountDue, groupBuyId: "GB1", status: "Submitted", deletedAt: null });
+      data.tables.items.push({ orderId: id, productId: "hgh36", productName: "HGH 36IU", quantity, isOos: false });
+    }
+    const original = structuredClone(data.tables.orders);
+    const productTargets = [{ productId: "hgh36", targetKits: 30 }, { productId: "hgh24", targetKits: 50 }];
+    const savedResponse = await moq({ targetKits: null, showToMembers: true, countMode: "both", productTargets });
+    expect(savedResponse.status).toBe(200);
+    const saved = await getBody<Detail>(savedResponse);
+    expect(saved.moq).toMatchObject({ countMode: "both", productTargets, targetKits: null, orderedKits: 37.5, paidKits: 20 });
+    expect(saved.moq!.products).toEqual(expect.arrayContaining([
+      { productId: "hgh36", name: "HGH 36IU", targetKits: 30, orderedKits: 37.5, paidKits: 20 },
+      { productId: "hgh24", name: "HGH 24IU", targetKits: 50, orderedKits: 0, paidKits: 0 },
+    ]));
+    const memberView = await getBody<Detail>(await request("/group-buys/GB1/updates", { headers: member }));
+    expect(memberView.moq).toEqual(saved.moq);
+    expect(memberView.moq!.products).toHaveLength(2);
+    const summary = await getBody<{ progress: Record<string, { moq: unknown }> }>(
+      await request("/group-buys/progress", { headers: member }));
+    expect(summary.progress.GB1.moq).toEqual(saved.moq);
+    const changed = await getBody<Detail>(await moq({
+      targetKits: null, showToMembers: true, countMode: "paid", productTargets,
+      expectedUpdatedAt: saved.moq!.updatedAt,
+    }));
+    expect(changed.moq?.countMode).toBe("paid");
+    expect((await moq({
+      targetKits: null, productTargets: [{ productId: "other", targetKits: 50 }],
+      expectedUpdatedAt: changed.moq!.updatedAt,
+    })).status).toBe(400);
+    expect(data.tables.orders).toEqual(original);
+    const reloaded = await getBody<Detail>(await request(`${management}/updates`, { headers: manager }));
+    expect(reloaded.moq).toEqual(changed.moq);
   });
   it("requires authentication and isolates members and organisers to their own groups", async () => {
     expect((await request("/group-buys/GB1/updates")).status).toBe(401);
