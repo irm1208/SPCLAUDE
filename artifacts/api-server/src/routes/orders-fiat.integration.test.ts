@@ -31,6 +31,7 @@ vi.mock("@workspace/db", async () => {
             const rows = table === "orders" ? [state.order]
               : table === "wholesale_shares" ? (state.share ? [state.share] : [])
               : table === "group_buys" ? (state.group ? [state.group] : [])
+              : table === "accounts" ? [{ accountStatus: "active" }]
               : table === "revoked_tokens" && state.revoked ? [{ jti: "revoked" }] : [];
             return Promise.resolve(rows).then(resolve, reject);
           },
@@ -102,6 +103,19 @@ beforeEach(() => {
 });
 
 describe("signed-in fiat payment submission", () => {
+  it("submits a configured bank transfer only for review, never auto-confirms", async () => {
+    state.order.groupBuyId = "group-1";
+    state.order.orderType = "group_buy";
+    state.order.sharedOrderId = null;
+    state.group = { organiserPayments: { bankTransfer: { uk: { enabled: true, accountHolder: "Example", sortCode: "123456", accountNumber: "00123456", bankName: "Example Bank" } } }, allowedCountries: ["DE"], excludedCountries: [] };
+    const response = await post("confirm-fiat", { method: "bank_transfer" });
+    expect(response.status).toBe(200);
+    expect(state.writes[0]).toMatchObject({ paymentStatus: "pending_confirmation", paymentTxHash: "fiat:bank_transfer" });
+  });
+  it("rejects bank claims when bank transfer is not configured", async () => {
+    expect((await post("confirm-fiat", { method: "bank_transfer" })).status).toBe(400);
+    expect(state.writes).toHaveLength(0);
+  });
   it("uploads the owner's screenshot without restoring PIN access", async () => {
     expect((await post("payment-screenshot", { screenshot })).status).toBe(200);
     expect(state.writes).toEqual([{ paymentScreenshot: screenshot }]);
@@ -164,12 +178,12 @@ describe("signed-in fiat payment submission", () => {
     expect((await post("confirm-fiat", { method: "revolut" })).status).toBe(400);
     expect(state.writes).toHaveLength(0);
   });
-  it("preserves group-buy country restrictions", async () => {
+  it("does not apply joining country restrictions to an existing order payment", async () => {
     state.order.groupBuyId = "group-1";
     state.order.orderType = "group_buy";
     state.order.sharedOrderId = null;
     state.group = { organiserPayments: { revolutHandle: "gb-organiser" }, allowedCountries: ["United Kingdom"], excludedCountries: [] };
-    expect((await post("confirm-fiat", { method: "revolut" })).status).toBe(403);
-    expect(state.writes).toHaveLength(0);
+    expect((await post("confirm-fiat", { method: "revolut" })).status).toBe(200);
+    expect(state.writes[0]).toMatchObject({ paymentStatus: "pending_confirmation" });
   });
 });

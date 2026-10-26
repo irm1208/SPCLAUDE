@@ -2085,6 +2085,7 @@ router.get("/admin/group-buys/:gbId/orders", async (req, res): Promise<void> => 
       if (txHash?.startsWith("anonpay:")) paymentMethod = "anonpay";
       else if (txHash === "fiat:revolut") paymentMethod = "revolut";
       else if (txHash === "fiat:paypal") paymentMethod = "paypal";
+      else if (txHash === "fiat:bank_transfer") paymentMethod = "bank_transfer";
 
       return {
       id: o.id,

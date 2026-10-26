@@ -8,6 +8,9 @@ import { safeSubtractMoneyClamped } from "@/lib/exact-money";
 
 // ── Brand icons ────────────────────────────────────────────────
 
+import { hasBankTransfer, type BankTransfer } from "@workspace/api-zod/bank-transfer";
+import { BankTransferDetails } from "./BankTransferDetails";
+
 function RevolutIcon({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -361,9 +364,9 @@ function TxInput({ label, value, onChange, onSubmit, submitting, error, retry }:
 
 // ── Types ──────────────────────────────────────────────────────
 
-type PaymentMethod = "crypto" | "revolut" | "paypal" | "anonpay";
-type Step = "loading" | "unavailable" | "method" | "chain" | "choice" | "test" | "pay" | "revolut" | "paypal" | "anonpay";
-type FiatMethod = "revolut" | "paypal";
+type PaymentMethod = "crypto" | "revolut" | "paypal" | "bank_transfer" | "anonpay";
+type Step = "loading" | "unavailable" | "method" | "chain" | "choice" | "test" | "pay" | "revolut" | "paypal" | "bank_transfer" | "anonpay";
+type FiatMethod = "revolut" | "paypal" | "bank_transfer";
 
 interface Props {
   orderId?: string;
@@ -449,6 +452,7 @@ export default function PaymentPanel({
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [revolutHandle, setRevolutHandle] = useState<string | null>(null);
   const [paypalHandle, setPaypalHandle] = useState<string | null>(null);
+  const [bankTransfer, setBankTransfer] = useState<BankTransfer | null>(null);
   const [orderCode, setOrderCode] = useState<string | null>(null);
   const [cryptoCurrency, setCryptoCurrency] = useState<string>("USDT");
   const [cryptoNetwork, setCryptoNetwork] = useState<string>("ERC-20");
@@ -624,6 +628,7 @@ export default function PaymentPanel({
         setWalletAddress(validatedWallet);
         setRevolutHandle(d.revolutHandle ?? null);
         setPaypalHandle(d.paypalHandle ?? null);
+        setBankTransfer(hasBankTransfer(d.bankTransfer) ? d.bankTransfer : null);
         setOrderCode(d.orderCode ?? null);
         if (d.cryptoCurrency) setCryptoCurrency(d.cryptoCurrency);
         if (d.cryptoNetwork) setCryptoNetwork(d.cryptoNetwork);
@@ -643,11 +648,13 @@ export default function PaymentPanel({
           const hasCrypto = !!validatedWallet;
           const hasRevolut = !!d.revolutHandle;
           const hasPayPal = !!d.paypalHandle;
-          const count = [hasCrypto, hasRevolut, hasPayPal, hasAnonPay].filter(Boolean).length;
+          const hasBank = hasBankTransfer(d.bankTransfer);
+          const count = [hasCrypto, hasRevolut, hasPayPal, hasBank, hasAnonPay].filter(Boolean).length;
           if (count === 0) return "unavailable";
           if (count === 1) {
             if (hasRevolut) return "revolut";
             if (hasPayPal) return "paypal";
+            if (hasBank) return "bank_transfer";
             if (hasAnonPay) return "anonpay";
             return "choice";
           }
@@ -730,6 +737,7 @@ export default function PaymentPanel({
     walletAddress ? "crypto" : null,
     revolutHandle ? "revolut" : null,
     paypalHandle ? "paypal" : null,
+    bankTransfer ? "bank_transfer" : null,
     anonPayEnabled ? "anonpay" : null,
   ] as (PaymentMethod | null)[]).filter((m): m is PaymentMethod => m !== null);
 
@@ -1163,6 +1171,14 @@ export default function PaymentPanel({
               <ChevronRight className="w-4 h-4 shrink-0 group-hover:translate-x-0.5 transition-transform" style={{ color: "var(--t-subtle)" }} />
             </button>
           )}
+          {availableMethods.includes("bank_transfer") && (
+            <button type="button" onClick={() => { setStep("bank_transfer"); setFiatError(""); }}
+              className="w-full flex items-center gap-3.5 p-4 rounded-2xl border text-left"
+              style={{ background: "var(--t-surface)", borderColor: "var(--t-border)", color: "var(--t-text)" }}>
+              <span className="text-sm font-bold">Bank transfer</span>
+              <span className="text-xs" style={{ color: "var(--t-subtle)" }}>UK or international · organiser confirms receipt</span>
+            </button>
+          )}
 
           {availableMethods.includes("paypal") && (
             <button
@@ -1198,6 +1214,23 @@ export default function PaymentPanel({
         </div>
       </Card>
     );
+  }
+
+  // ── Bank Transfer Checkout ───────────────────────────────────
+  if (step === "bank_transfer" && bankTransfer) {
+    return <Card className="p-5 space-y-4" style={cryptoStyle}>
+      <CollectedByBanner collectedBy={collectedBy} />
+      {multiMethod && <button type="button" onClick={() => setStep("method")} className="text-sm underline">Back to payment methods</button>}
+      <h3 className="font-bold" style={{ color: "var(--t-text)" }}>Bank transfer</h3>
+      <p className="text-sm" style={{ color: "var(--t-text)" }}>Amount to pay: <strong>{(currency || "USD").toUpperCase()} {((currency || "USD").toUpperCase() === "USD" ? effectiveGrandTotal : grandTotal).toFixed(2)}</strong></p>
+      <p className="text-xs" style={{ color: "var(--t-subtle)" }}>Use UK details for a UK-to-UK transfer, or international details for an overseas transfer. Include your order number as the reference. Bank fees are extra; send the full order amount in the currency shown.</p>
+      <BankTransferDetails value={bankTransfer} reference={String(orderCode ?? orderId)} />
+      <p className="text-xs" style={{ color: "var(--t-subtle)" }}>After sending, notify the organiser below. Your payment remains awaiting confirmation until they check that the money has arrived.</p>
+      {fiatError && <p role="alert" className="text-sm text-red-600">{fiatError}</p>}
+      <button type="button" disabled={fiatSubmitting} onClick={() => submitFiatPayment("bank_transfer")} className="w-full rounded-xl px-4 py-3 font-bold text-white disabled:opacity-50" style={{ background: "#1B3A7A" }}>
+        {fiatSubmitting ? "Notifying organiser…" : "I've sent the bank transfer"}
+      </button>
+    </Card>;
   }
 
   // ── Revolut Checkout ─────────────────────────────────────────

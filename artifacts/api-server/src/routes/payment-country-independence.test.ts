@@ -6,7 +6,7 @@ import type { Server } from "node:http";
 
 const state = vi.hoisted(() => ({
   order: {} as any, group: {} as any, country: null as string | null,
-  blocked: false, duplicate: false, reads: [] as string[], updates: [] as any[],
+  blocked: false, duplicate: false, routing: false, reads: [] as string[], updates: [] as any[],
 }));
 const database = {
   select: vi.fn((fields?: any) => {
@@ -24,7 +24,7 @@ const database = {
         else if (table === "gb_country_legs") rows = [{ paymentBlocked: state.blocked }];
         else if (table === "site_config") {
           const key = new PgDialect().sqlToQuery(condition).params[0];
-          rows = [{ value: key === "paymentRoutingEnabled" ? "false" : null }];
+          rows = [{ value: key === "paymentRoutingEnabled" ? String(state.routing) : null }];
         }
         return Promise.resolve(rows).then(resolve, reject);
       },
@@ -85,7 +85,7 @@ beforeEach(() => {
     directShippingRequested: false, deletedAt: null, grandTotal: "100" };
   state.group = { id: "G", currency: "USD", paymentsEnabled: true, directShippingPaymentsEnabled: true,
     allowedCountries: ["DE"], excludedCountries: [], organiserPayments: { revolutHandle: "synthetic-organiser" } };
-  state.country = "Germany"; state.blocked = false; state.duplicate = false;
+  state.country = "Germany"; state.blocked = false; state.duplicate = false; state.routing = false;
   state.reads = []; state.updates = [];
 });
 async function call(action: string, body: any = {}, user = "member") {
@@ -94,6 +94,22 @@ async function call(action: string, body: any = {}, user = "member") {
   return { status: response.status, body: await response.json() as any };
 }
 const hash = `0x${"b".repeat(64)}`;
+
+it("exposes only enabled organiser bank details in the group-buy payment options", async () => {
+  state.routing = true;
+  const uk = { enabled: true, accountHolder: "Example Ltd", sortCode: "12-34-56", accountNumber: "00123456", bankName: "Example Bank" };
+  state.group.organiserPayments = { bankTransfer: {
+    uk, international: { enabled: false, accountHolder: "Private draft", accountNumber: "hidden-draft" },
+  } };
+  const response = await fetch(`${base}/payments-info?orderId=O`);
+  expect(response.status).toBe(200);
+  const info = await response.json();
+  expect(info.bankTransfer.uk).toMatchObject(uk);
+  expect(info.bankTransfer.international).toBeUndefined();
+  expect(info.collectedBy).toEqual({ type: "organiser" });
+  expect(info.revolutHandle).toBeNull();
+  expect(info.paypalHandle).toBeNull();
+});
 
 describe.each(["ISO/full-name mismatch", "outside allowed list", "excluded profile country", "missing country"])("%s does not block payment", scenario => {
   beforeEach(() => {

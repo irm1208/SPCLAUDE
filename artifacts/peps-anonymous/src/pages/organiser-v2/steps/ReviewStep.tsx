@@ -13,6 +13,7 @@ export default function ReviewStep({ onEdit }: { onEdit?: (step: number) => void
     draft.payments?.anonpayEnabled ? "AnonPay" : null,
     draft.payments?.revolutEnabled ? "Revolut" : null,
     draft.payments?.paypalEnabled ? "PayPal" : null,
+    draft.payments?.bankTransfer?.uk?.enabled || draft.payments?.bankTransfer?.international?.enabled ? "Bank transfer" : null,
   ].filter((value): value is string => Boolean(value));
   const summary = {
     basics: {

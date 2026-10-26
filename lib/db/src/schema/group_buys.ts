@@ -63,6 +63,10 @@ export const groupBuysTable = pgTable("group_buys", {
     usdtWallet?: string;
     revolutHandle?: string;
     paypalHandle?: string;
+    bankTransfer?: {
+      uk?: { enabled: boolean; accountHolder: string; accountNumber: string; bankName: string; sortCode?: string };
+      international?: { enabled: boolean; accountHolder: string; accountNumber: string; bankName: string; swiftBic?: string; clearingCode?: string; bankAddress?: string };
+    } | null;
     cryptoCurrency?: string;
     cryptoNetwork?: string;
     cryptoWalletAddress?: string;

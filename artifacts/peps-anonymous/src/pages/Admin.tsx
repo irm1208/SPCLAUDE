@@ -1226,6 +1226,7 @@ function OrdersTab({ secret }: { secret: string }) {
     if (txHash.startsWith("anonpay:")) return "anonpay";
     if (txHash === "fiat:revolut") return "revolut";
     if (txHash === "fiat:paypal") return "paypal";
+    if (txHash === "fiat:bank_transfer") return "bank_transfer";
     return "manual";
   };
 

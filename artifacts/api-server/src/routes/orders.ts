@@ -1,4 +1,5 @@
 import { getOnwardOrderPreference, saveOnwardOrderPreference, validateEuDeliveryCheckout } from "../lib/gb-onward-delivery";
+import { hasBankTransfer } from "@workspace/api-zod/bank-transfer";
 import { resolveGroupOrderRoute } from "../lib/group-buy-delivery-routing-service";
 import { OnwardDeliveryError, validOnwardMethod } from "../lib/gb-onward-delivery-rules";
 import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
@@ -3166,8 +3167,8 @@ router.post("/orders/:id/confirm-fiat", requireAccount, async (req, res): Promis
   const id = String(req.params["id"]);
   const { method } = req.body;
 
-  if (!method || !["revolut", "paypal"].includes(method)) {
-    res.status(400).json({ error: "method must be 'revolut' or 'paypal'" });
+  if (!method || !["revolut", "paypal", "bank_transfer"].includes(method)) {
+    res.status(400).json({ error: "method must be 'revolut', 'paypal' or 'bank_transfer'" });
     return;
   }
 
@@ -3195,7 +3196,7 @@ router.post("/orders/:id/confirm-fiat", requireAccount, async (req, res): Promis
     return;
   }
 
-  let op: Record<string, string> | null = null;
+  let op: Record<string, unknown> | null = null;
   if (order.orderType === "wholesale_shared" && order.sharedOrderId) {
     const [share] = await db.select().from(wholesaleSharesTable).where(eq(wholesaleSharesTable.id, order.sharedOrderId));
     if (!share || share.status === "cancelled") {
@@ -3225,10 +3226,14 @@ router.post("/orders/:id/confirm-fiat", requireAccount, async (req, res): Promis
       return;
     }
 
-    op = gb.organiserPayments as Record<string, string> | null;
+    op = gb.organiserPayments as Record<string, unknown> | null;
   }
   const hasRevolut = !!(op?.revolutHandle);
   const hasPaypal = !!(op?.paypalHandle);
+  if (method === "bank_transfer" && !hasBankTransfer(op?.bankTransfer)) {
+    res.status(400).json({ error: "This order does not have a bank transfer payment option" });
+    return;
+  }
   if (method === "revolut" && !hasRevolut) {
     res.status(400).json({ error: "This order does not have a Revolut payment option" });
     return;

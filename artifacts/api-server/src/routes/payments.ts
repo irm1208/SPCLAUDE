@@ -1,4 +1,5 @@
 import { refundMutableOrderWhere } from "../lib/refund-mutation-guard";
+import { hasBankTransfer, parseBankTransfer, type BankTransfer } from "@workspace/api-zod/bank-transfer";
 import { verifySolanaStablecoinPayment } from "../lib/solana-payment-verify";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { createHash, timingSafeEqual } from "crypto";
@@ -62,6 +63,7 @@ async function checkLegPaymentBlocked(
 
 // ─── Shared type: organiser payment methods stored in GB JSONB ─
 export interface OrganiserPayments {
+  bankTransfer?: BankTransfer | null;
   usdtWallet?: string;
   revolutHandle?: string;
   paypalHandle?: string;
@@ -976,6 +978,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
   let paymentsEnabled = globalPaymentsEnabled;
   let revolutHandle: string | null = null;
   let paypalHandle: string | null = null;
+  let bankTransfer: BankTransfer | null = null;
   let orderCode: string | null = null;
   let cryptoCurrency: string | null = null;
   let cryptoNetwork: string | null = null;
@@ -1146,6 +1149,10 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
           if (op) {
             revolutHandle       = op.revolutHandle       ?? null;
             paypalHandle        = op.paypalHandle        ?? null;
+            if (hasBankTransfer(op.bankTransfer)) {
+              const bank = parseBankTransfer(op.bankTransfer)!;
+              bankTransfer = { uk: bank.uk?.enabled ? bank.uk : undefined, international: bank.international?.enabled ? bank.international : undefined };
+            }
             cryptoCurrency      = op.cryptoCurrency      ?? null;
             cryptoNetwork       = op.cryptoNetwork       ?? null;
             cryptoWalletAddress = op.cryptoWalletAddress ?? null;
@@ -1165,7 +1172,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
               cryptoNetwork          = gbCryptoOpts[0].network;
             }
           }
-          const hasOrganiserDetails = !!(revolutHandle || paypalHandle || cryptoWalletAddress || (anonPayEnabled && anonPayWallet));
+          const hasOrganiserDetails = !!(bankTransfer || revolutHandle || paypalHandle || cryptoWalletAddress || (anonPayEnabled && anonPayWallet));
           collectedBy = hasOrganiserDetails ? { type: "organiser" } : { type: "admin" };
         }
       }
@@ -1203,6 +1210,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
       }
       if (halfKitMethods) {
         // Never expose a global fallback, including to older payment clients.
+        bankTransfer = null;
         walletAddress = null;
         requiresExplicitPaymentMethods = true;
         isGroupBuyOrder = true;
@@ -1225,6 +1233,7 @@ router.get("/payments-info", optionalAccountAuth, async (req, res): Promise<void
     requiresExplicitPaymentMethods,
     revolutHandle,
     paypalHandle,
+    bankTransfer,
     orderCode,
     cryptoCurrency,
     cryptoNetwork,

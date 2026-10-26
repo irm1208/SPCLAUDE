@@ -27,6 +27,7 @@ export interface SetupShippingOptionDraft {
 }
 
 export interface SetupPaymentDraft {
+  bankTransfer?: import("@workspace/api-zod/bank-transfer").BankTransfer | null;
   cryptoEnabled: boolean;
   cryptoWallets: Array<{ id: string; currency: string; network: string; address: string }>;
   anonpayEnabled: boolean;
@@ -110,6 +111,7 @@ export function buildSetupPayload(draft: SetupDraftSnapshot): Record<string, unk
       }];
     }),
     organiserPayments: {
+      bankTransfer: payments?.bankTransfer ?? null,
       cryptoOptions,
       revolutHandle: payments?.revolutEnabled ? optional(payments.revolutHandle) : undefined,
       paypalHandle: payments?.paypalEnabled ? optional(payments.paypalHandle) : undefined,

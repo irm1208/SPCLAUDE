@@ -1,4 +1,6 @@
 import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
+import { BankTransferSettings } from "@/components/BankTransferSettings";
+import { parseBankTransfer, type BankTransfer } from "@workspace/api-zod/bank-transfer";
 import { ReshipperFulfilmentDownload } from "@/components/ReshipperFulfilmentDownload";
 import { EuCustomPostageImport, PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
 import type { KitPrices } from "@/lib/country-shipping-options";
@@ -131,7 +133,7 @@ export interface OrganiserGB {
   paymentMessage: string | null;
   paymentMessageEnabled: boolean;
   shippingOptions: { id: string; label: string; price: number; description?: string; country?: string | null; requiresAddress?: boolean; requiresQrCode?: boolean; source?: string; kitPrices?: KitPrices }[];
-  organiserPayments: { usdtWallet?: string; revolutHandle?: string; paypalHandle?: string; cryptoCurrency?: string; cryptoNetwork?: string; cryptoWalletAddress?: string; cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null; anonPayEnabled?: boolean; anonPayWallet?: string; anonPayTicker?: string; anonPayNetwork?: string } | null;
+  organiserPayments: { bankTransfer?: BankTransfer | null; usdtWallet?: string; revolutHandle?: string; paypalHandle?: string; cryptoCurrency?: string; cryptoNetwork?: string; cryptoWalletAddress?: string; cryptoOptions?: Array<{ currency: string; network: string; walletAddress: string }> | null; anonPayEnabled?: boolean; anonPayWallet?: string; anonPayTicker?: string; anonPayNetwork?: string } | null;
   organiserId: string | null;
   labTestSupplier: string | null;
   vendorShippingEnabled: boolean;
@@ -6237,6 +6239,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
     })(),
     revolutHandle: gb.organiserPayments?.revolutHandle ?? "",
     paypalHandle: gb.organiserPayments?.paypalHandle ?? "",
+    bankTransfer: gb.organiserPayments?.bankTransfer ?? null,
     anonPayEnabled: gb.organiserPayments?.anonPayEnabled ?? false,
     anonPayWallet: gb.organiserPayments?.anonPayWallet ?? "",
     anonPayTicker: gb.organiserPayments?.anonPayTicker ?? "usdt",
@@ -6338,6 +6341,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
           cryptoOptions: payments.cryptoOptions,
           revolutHandle: payments.revolutHandle.trim() || null,
           paypalHandle: payments.paypalHandle.trim() || null,
+          bankTransfer: parseBankTransfer(payments.bankTransfer),
           anonPayEnabled: payments.anonPayEnabled,
           anonPayWallet: payments.anonPayWallet.trim() || null,
           anonPayTicker: payments.anonPayTicker.trim() || null,
@@ -6345,8 +6349,10 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
         }),
       });
       if (!res.ok) { const d = await res.json(); setError(d.error || "Failed"); return; }
+      const saved = await res.json();
+      onUpdated({ ...gb, organiserPayments: saved.organiserPayments });
       setOkPay(true); setTimeout(() => setOkPay(false), 2000);
-    } catch { setError("Connection error"); } finally { setSavingPay(false); }
+    } catch (error) { setError(error instanceof Error ? error.message : "Connection error"); } finally { setSavingPay(false); }
   };
 
   return (
@@ -6616,6 +6622,7 @@ export function ShippingPayTab({ gb, onUpdated }: { gb: OrganiserGB; onUpdated: 
         <p className="text-sm font-bold mt-2" style={{ color: "var(--t-text)" }}>Other Payment Methods</p>
         <Field label="Revolut Handle" icon={CreditCard}><input value={payments.revolutHandle} onChange={e => setPayments(p => ({ ...p, revolutHandle: e.target.value }))} placeholder="@yourhandle" className={inputCls} style={inputStyle} /></Field>
         <Field label="PayPal Handle / Email" icon={DollarSign}><input value={payments.paypalHandle} onChange={e => setPayments(p => ({ ...p, paypalHandle: e.target.value }))} placeholder="paypal.me/username or email" className={inputCls} style={inputStyle} /></Field>
+        <div className="sm:col-span-2"><BankTransferSettings value={payments.bankTransfer} onChange={bankTransfer => setPayments(p => ({ ...p, bankTransfer }))} /></div>
 
         {/* AnonPay section */}
         <div className="pt-2 space-y-3">
@@ -6834,7 +6841,7 @@ function PendingConfirmationsPanel({ gb, onResolved }: { gb: OrganiserGB; onReso
   if (loading) return null;
   if (pending.length === 0) return null;
 
-  const methodLabel = (m: string) => m === "revolut" ? "Revolut" : m === "paypal" ? "PayPal" : m === "anonpay" ? "AnonPay" : "Crypto";
+  const methodLabel = (m: string) => m === "bank_transfer" ? "Bank transfer" : m === "revolut" ? "Revolut" : m === "paypal" ? "PayPal" : m === "anonpay" ? "AnonPay" : "Crypto";
   const methodColor = (m: string) => m === "revolut" ? "#0666EB" : m === "paypal" ? "#003087" : m === "anonpay" ? "#F97316" : "#64748B";
 
   return (
@@ -8854,7 +8861,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
          <select value={paymentMethodFilter} onChange={e => { setPaymentMethodFilter(e.target.value as any); setPage(1); }}
           className="h-9 px-3 rounded-xl text-[12px] font-semibold w-full appearance-none"
           style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}>
-          {[{ id: "all", label: "All Methods" }, { id: "revolut", label: "Revolut" }, { id: "paypal", label: "PayPal" }, { id: "anonpay", label: "AnonPay" }, { id: "manual", label: "Crypto" }].map(f => (
+          {[{ id: "all", label: "All Methods" }, { id: "revolut", label: "Revolut" }, { id: "paypal", label: "PayPal" }, { id: "bank_transfer", label: "Bank transfer" }, { id: "anonpay", label: "AnonPay" }, { id: "manual", label: "Crypto" }].map(f => (
             <option key={f.id} value={f.id}>{f.label}</option>
           ))}
         </select>
@@ -8932,6 +8939,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
           { id: "all", label: "All Methods", bg: "var(--t-blue-deep)", inactive: "var(--t-surface2)", text: "var(--t-muted)" },
           { id: "revolut", label: "Revolut", bg: "#0666EB", inactive: "rgba(6,102,235,0.1)", text: "#0666EB" },
           { id: "paypal", label: "PayPal", bg: "#003087", inactive: "rgba(0,48,135,0.08)", text: "#003087" },
+          { id: "bank_transfer", label: "Bank transfer", bg: "#1B3A7A", inactive: "var(--t-surface2)", text: "var(--t-text)" },
           { id: "anonpay", label: "AnonPay", bg: "#F97316", inactive: "rgba(249,115,22,0.1)", text: "#F97316" },
           { id: "manual", label: "Crypto", bg: "#64748B", inactive: "var(--t-surface2)", text: "var(--t-muted)" },
         ] as const).map(f => {
@@ -9309,7 +9317,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
           const isTestPaid = o.paymentStatus === "test_confirmed";
           const isEditing = editOpen.has(o.id);
           const edit = edits[o.id];
-          const pmLabel = (m: string) => m === "revolut" ? "Revolut" : m === "paypal" ? "PayPal" : m === "anonpay" ? "AnonPay" : "Crypto";
+          const pmLabel = (m: string) => m === "bank_transfer" ? "Bank transfer" : m === "revolut" ? "Revolut" : m === "paypal" ? "PayPal" : m === "anonpay" ? "AnonPay" : "Crypto";
           const pmColor = (m: string) => m === "revolut" ? "#0666EB" : m === "paypal" ? "#003087" : m === "anonpay" ? "#F97316" : "#64748B";
           const thisCountry = o.shippingCountry ?? o.accountCountry ?? "";
           const thisCanonical = thisCountry ? _canonicalCountry(thisCountry) : "";
@@ -14103,7 +14111,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "overview" && <OverviewTab gbs={gbs} loading={loadingGbs} profile={profile} onSelect={handleSelectGb} onNew={handleNewGb} onRefresh={loadGbs} />}
         {activeTab === "edit" && <GBFormTab gb={creatingNew ? null : selectedGb} onSaved={handleGbSaved} onGbUpdated={handleGbUpdated} onBack={() => setActiveTab("overview")} onDelete={handleGbDeleted} onStatusChange={handleStatusChange} statusSaving={statusSaving} availableStatuses={availableStatuses} />}
         {activeTab === "products" && selectedGb && <ProductsTab key={selectedGb.id} gb={selectedGb} />}
-        {activeTab === "shipping" && selectedGb && <ShippingPayTab gb={selectedGb} onUpdated={handleGbUpdated} />}
+        {activeTab === "shipping" && selectedGb && <ShippingPayTab key={selectedGb.id} gb={selectedGb} onUpdated={handleGbUpdated} />}
         {activeTab === "shippingsplit" && selectedGb && <ShippingSplitTab groupBuy={selectedGb} />}
         {activeTab === "orders" && selectedGb && <OrdersTab gb={selectedGb} />}
         {activeTab === "supplier-batches" && selectedGb && <SupplierBatchManager key={selectedGb.id} scope="organiser" groupBuyId={selectedGb.id}

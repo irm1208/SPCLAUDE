@@ -48,7 +48,7 @@ const saved: SetupDraftSnapshot = {
   basics: { name: "Saved GB", description: "Description", currency: "USD", closeDate: "2026-12-01T12:00", manufacturer: "Supplier", manufacturerCountry: "China", labTestSupplier: "Lab" },
   products: { products: [{ id: "p1", name: "Product", price: "23", category: "Supplier", stock: "100" }] },
   shipping: { options: [{ id: "s1", label: "Tracked", price: "8", description: "Postage", region: "GB", requiresAddress: false, requiresQr: true }] },
-  payments: { cryptoEnabled: true, cryptoWallets: [{ id: "w1", currency: "USDT", network: "TRC20", address: "test-wallet" }], anonpayEnabled: true, anonpayWallet: "test-anon", anonpayCurrency: "USDT", anonpayNetwork: "TRC20", revolutEnabled: true, revolutHandle: "example", paypalEnabled: true, paypalHandle: "example" },
+  payments: { cryptoEnabled: true, cryptoWallets: [{ id: "w1", currency: "USDT", network: "TRC20", address: "test-wallet" }], anonpayEnabled: true, anonpayWallet: "test-anon", anonpayCurrency: "USDT", anonpayNetwork: "TRC20", revolutEnabled: true, revolutHandle: "example", paypalEnabled: true, paypalHandle: "example", bankTransfer: { uk: { enabled: true, accountHolder: "Example Ltd", sortCode: "12-34-56", accountNumber: "00123456", bankName: "Example Bank" } } },
   access: { entryFeeEnabled: true, entryFeeAmount: "4", entryFeeLabel: "Entry", countryMode: "allow", countries: ["GB"], blockedAccounts: ["blocked"], pinEnabled: true, pin: "1234" },
   rules: { welcomeMessage: "Welcome", rules: [{ id: "r1", text: "A saved rule" }], disclaimer: "Disclaimer", additionalInfo: "Details" },
 };

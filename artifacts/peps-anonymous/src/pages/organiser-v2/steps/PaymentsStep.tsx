@@ -7,6 +7,9 @@ import { useRegisterSetupSection, useSetupDraftSnapshot } from "../setup-draft-c
 // Configure how the organiser gets paid. Shows toggles for each payment method
 // (crypto, Revolut, PayPal, AnonPay) with relevant fields like wallet addresses.
 
+import { BankTransferSettings } from "@/components/BankTransferSettings";
+import type { BankTransfer } from "@workspace/api-zod/bank-transfer";
+
 interface CryptoWallet {
   id: string;
   currency: string;
@@ -31,9 +34,10 @@ export default function PaymentsStep() {
 
   const [paypalEnabled, setPaypalEnabled] = useState(() => saved?.paypalEnabled ?? false);
   const [paypalHandle, setPaypalHandle] = useState(() => saved?.paypalHandle ?? "");
+  const [bankTransfer, setBankTransfer] = useState<BankTransfer | null>(() => saved?.bankTransfer ?? null);
   useRegisterSetupSection("payments", {
     cryptoEnabled, cryptoWallets, anonpayEnabled, anonpayWallet, anonpayCurrency, anonpayNetwork,
-    revolutEnabled, revolutHandle, paypalEnabled, paypalHandle,
+    revolutEnabled, revolutHandle, paypalEnabled, paypalHandle, bankTransfer,
   });
 
   const addCryptoWallet = () => {
@@ -320,6 +324,7 @@ export default function PaymentsStep() {
         </div>
       </div>
 
+      <BankTransferSettings value={bankTransfer} onChange={setBankTransfer} />
       {/* Helper text */}
       <div className="rounded-lg p-3" style={{ background: "var(--t-blue-05)", border: `1px solid var(--t-blue-20)` }}>
         <p className="text-[13px]" style={{ color: "var(--t-blue)" }}>

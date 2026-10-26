@@ -1,4 +1,5 @@
 import { validateGroupProductLabReport } from "../lib/group-product-lab-report";
+import { parseBankTransfer } from "@workspace/api-zod/bank-transfer";
 import { getGbOrderCounts, gbOrderPersonKey } from "../lib/gb-multiple-orders";
 import { editOrderWithHalfKits } from "../lib/half-kit-order-edit";
 import { organiserHalfKitEditInput } from "../lib/half-kit-organiser-edit";
@@ -340,6 +341,10 @@ router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise
     return;
   }
 
+  try {
+    if (organiserPayments) organiserPayments.bankTransfer = parseBankTransfer(organiserPayments.bankTransfer);
+  } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
+
   if (invitePin && (typeof invitePin !== "string" || !/^\d{4}$/.test(invitePin.trim()))) {
     res.status(400).json({ error: "invitePin must be exactly 4 numeric digits" });
     return;
@@ -408,7 +413,7 @@ router.post("/organiser/group-buys", requireOrganiser, async (req, res): Promise
     shippingOptions: shippingOptions ? JSON.stringify(shippingOptions) : undefined,
     organiserId: username,
     approvalStatus: "pending_approval",
-    organiserPayments: organiserPayments ?? undefined,
+    organiserPayments: organiserPayments ? { ...organiserPayments, bankTransfer: parseBankTransfer(organiserPayments.bankTransfer) } : undefined,
     allowedCountries: Array.isArray(allowedCountries) ? allowedCountries : undefined,
     excludedCountries: Array.isArray(excludedCountries) ? excludedCountries : undefined,
     blockedAccounts: Array.isArray(blockedAccounts) ? blockedAccounts : undefined,
@@ -876,6 +881,9 @@ router.patch("/organiser/group-buys/:id", requireOrganiser, async (req, res): Pr
     updates.shippingOptions = shippingOptions ? JSON.stringify(shippingOptions) : null;
   }
   if (organiserPayments !== undefined) {
+    try {
+      if (organiserPayments) organiserPayments.bankTransfer = parseBankTransfer(organiserPayments.bankTransfer);
+    } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
     (updates as Record<string, unknown>)["organiserPayments"] = organiserPayments ?? null;
   }
   if (allowedCountries !== undefined) {
@@ -1046,14 +1054,18 @@ router.post("/organiser/group-buys/:id/backfill-admin-fee", requireOrganiser, as
 router.patch("/organiser/group-buys/:id/payments", requireOrganiser, async (req, res): Promise<void> => {
   const username = req.organiser!.telegramUsername;
   const id = String(req.params["id"]);
-  const { usdtWallet, revolutHandle, paypalHandle, cryptoCurrency, cryptoNetwork, cryptoWalletAddress, cryptoOptions, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
+  const { usdtWallet, revolutHandle, paypalHandle, bankTransfer, cryptoCurrency, cryptoNetwork, cryptoWalletAddress, cryptoOptions, anonPayEnabled, anonPayWallet, anonPayTicker, anonPayNetwork } = req.body;
 
   const [existing] = await db
-    .select({ id: groupBuysTable.id })
+    .select({ id: groupBuysTable.id, organiserPayments: groupBuysTable.organiserPayments })
     .from(groupBuysTable)
     .where(gbOwner(req, id));
 
   if (!existing) { res.status(404).json({ error: "Group buy not found" }); return; }
+
+  let bank;
+  try { bank = parseBankTransfer(bankTransfer === undefined ? existing.organiserPayments?.bankTransfer : bankTransfer); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
 
   // Validate and normalise cryptoOptions array
   const normalizedCryptoOptions: Array<{ currency: string; network: string; walletAddress: string }> | undefined =
@@ -1072,6 +1084,7 @@ router.patch("/organiser/group-buys/:id/payments", requireOrganiser, async (req,
   const firstCrypto = normalizedCryptoOptions?.[0];
 
   const payments = {
+    bankTransfer: bank,
     usdtWallet: usdtWallet ? String(usdtWallet).trim() : undefined,
     revolutHandle: revolutHandle ? String(revolutHandle).trim() : undefined,
     paypalHandle: paypalHandle ? String(paypalHandle).trim() : undefined,
@@ -2455,6 +2468,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
     if (txHash?.startsWith("anonpay:")) paymentMethod = "anonpay";
     else if (txHash === "fiat:revolut") paymentMethod = "revolut";
     else if (txHash === "fiat:paypal") paymentMethod = "paypal";
+    else if (txHash === "fiat:bank_transfer") paymentMethod = "bank_transfer";
 
     return {
       ...rest,
@@ -3057,6 +3071,7 @@ router.patch("/organiser/group-buys/:gbId/orders/:orderId", requireOrganiser, as
       const s = tx ?? "";
       if (s.startsWith("fiat:revolut")) return "Revolut";
       if (s.startsWith("fiat:paypal")) return "PayPal";
+      if (s.startsWith("fiat:bank_transfer")) return "Bank transfer";
       if (s.startsWith("anonpay:")) return "AnonPay";
       if (s === "credits") return "Store Credits";
       if (s) return "Crypto";
@@ -3213,6 +3228,7 @@ router.post("/organiser/group-buys/:gbId/orders/:orderId/confirm-payment", requi
     const s = tx ?? "";
     if (s.startsWith("fiat:revolut")) return "Revolut";
     if (s.startsWith("fiat:paypal")) return "PayPal";
+    if (s.startsWith("fiat:bank_transfer")) return "Bank transfer";
     if (s.startsWith("anonpay:")) return "AnonPay";
     if (s === "credits") return "Store Credits";
     if (s) return "Crypto";
@@ -3344,6 +3360,7 @@ router.get("/organiser/pending-payment-confirmations", requireOrganiser, async (
     if (txHash?.startsWith("anonpay:")) paymentMethod = "anonpay";
     else if (txHash === "fiat:revolut") paymentMethod = "revolut";
     else if (txHash === "fiat:paypal") paymentMethod = "paypal";
+    else if (txHash === "fiat:bank_transfer") paymentMethod = "bank_transfer";
     return {
       id: o.id,
       code: o.code,

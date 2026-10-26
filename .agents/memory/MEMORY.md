@@ -152,3 +152,4 @@
 - [Supplier batch policies](supplier-batch-export-policy.md) — full FS3 exports, same-region prepared additions, staff readiness alerts and EU/US/GB reference prefixes.
 - [Reshipper payout method](reshipper-payout-method.md) — Admin records external transfers by TXID; no wallet connection for new payouts.
 - [Single-vial pricing](vial-shop-currency-policy.md) — keep seller-currency prices throughout checkout; show locked crypto settlement separately; never add unlike currencies.
+- [GB bank transfers](group-buy-bank-transfer-policy.md) — UK and international organiser details; member “sent” notifications require manual receipt confirmation.

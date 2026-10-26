@@ -654,6 +654,9 @@ importers:
       '@types/three':
         specifier: ^0.183.1
         version: 0.183.1
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../../lib/api-zod
       '@workspace/payout-assets':
         specifier: workspace:*
         version: link:../../lib/payout-assets

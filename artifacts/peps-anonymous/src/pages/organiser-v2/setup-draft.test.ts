@@ -42,6 +42,7 @@ test("buildSetupPayload maps the wizard draft to the organiser create/update con
     labTestSupplier: "Janoshik",
     shippingOptions: [{ id: "ship-1", label: "UK tracked", price: 6.5, description: "Tracked", region: "UK", requiresAddress: true, requiresQr: false }],
     organiserPayments: {
+      bankTransfer: null,
       cryptoOptions: [{ currency: "USDT", network: "TRC20", walletAddress: "T-wallet" }],
       revolutHandle: "@summer",
       paypalHandle: undefined,
@@ -66,6 +67,12 @@ test("buildSetupProducts removes empty rows and normalizes numeric fields", () =
   assert.deepEqual(buildSetupProducts(draft), [
     { name: "BPC-157", price: 35, vendor: "Vendor A", category: "Vendor A", stock: 25 },
   ]);
+});
+
+test("setup payload keeps bank account details and leading zeroes", () => {
+  const bankTransfer = { uk: { enabled: true, accountHolder: "Example Ltd", sortCode: "12-34-56", accountNumber: "00123456", bankName: "Example Bank" } };
+  const payload = buildSetupPayload({ ...draft, payments: { ...draft.payments!, bankTransfer } });
+  assert.deepEqual(payload.organiserPayments.bankTransfer, bankTransfer);
 });
 
 test("buildSetupRules maps enabled server rule records", () => {

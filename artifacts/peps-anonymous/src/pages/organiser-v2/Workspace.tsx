@@ -223,7 +223,7 @@ export default function Workspace({
   ) : active === "legs" ? (
     <LiveOrganiserCountryLegsTab gb={apiGroupBuy} />
   ) : active === "shipping" ? (
-    <LiveShippingPayTab gb={apiGroupBuy} onUpdated={onGroupBuyUpdated} />
+    <LiveShippingPayTab key={apiGroupBuy.id} gb={apiGroupBuy} onUpdated={onGroupBuyUpdated} />
   ) : active === "shipping-split" ? (
     <ShippingSplitTab groupBuy={apiGroupBuy} />
   ) : active === "pnl" ? (

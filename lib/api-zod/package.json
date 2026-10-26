@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./bank-transfer": "./src/bank-transfer.ts"
   },
   "dependencies": {
     "zod": "catalog:"

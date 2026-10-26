@@ -341,6 +341,7 @@ function paymentMethodLabel(value: unknown): string {
   const method = String(value ?? "manual").trim().toLowerCase();
   if (method === "revolut") return "Revolut";
   if (method === "paypal") return "PayPal";
+  if (method === "bank_transfer") return "Bank transfer";
   if (method === "anonpay") return "AnonPay";
   if (method === "crypto") return "Crypto";
   if (method === "credits") return "Store Credits";

@@ -1189,7 +1189,7 @@ export function OrdersSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) {
                     <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground">
                       <span className="tabular-nums shrink-0">{orderDate}</span>
                       {o.paymentMethod && (() => {
-                        const label = o.paymentMethod === "revolut" ? "Revolut" : o.paymentMethod === "paypal" ? "PayPal" : o.paymentMethod === "anonpay" ? "AnonPay" : "Crypto";
+                        const label = o.paymentMethod === "bank_transfer" ? "Bank transfer" : o.paymentMethod === "revolut" ? "Revolut" : o.paymentMethod === "paypal" ? "PayPal" : o.paymentMethod === "anonpay" ? "AnonPay" : "Crypto";
                         const color = o.paymentMethod === "revolut" ? "#0666EB" : o.paymentMethod === "paypal" ? "#003087" : o.paymentMethod === "anonpay" ? "#F97316" : "#64748B";
                         return <span className="font-semibold" style={{ color }}>{label}</span>;
                       })()}
