@@ -4,13 +4,13 @@ import test from "node:test";
 
 const read = file => readFileSync(new URL(file, import.meta.url), "utf8");
 
-test("order cards show a four-field compact summary and expand inline on click", () => {
+test("order cards show payment status and both dates in the compact summary and expand inline on click", () => {
   const compact = read("./CompactOrderList.tsx");
   const orders = read("./OrdersTab.tsx");
   const mobile = read("./OrdersMobileWorkspace.tsx");
 
-  // Four column headers exist
-  for (const label of ["User name", "QTY", "Total", "Date"]) {
+  // Summary column headers exist
+  for (const label of ["User name", "QTY", "Total", "Payment", "Order date", "Payment date"]) {
     assert.match(compact, new RegExp(`>${label}<`));
   }
   // Quantity is summed across all products

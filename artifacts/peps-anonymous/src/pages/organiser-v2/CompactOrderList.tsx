@@ -37,12 +37,25 @@ function orderQuantity(order: OrganiserOrder): number {
 }
 
 function fmt(iso: string, withTime = false): string {
+  if (!iso || Number.isNaN(new Date(iso).getTime())) return "—";
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
     ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
   }).format(new Date(iso));
+}
+
+function OrderDate({ value }: { value?: string }) {
+  if (!value || fmt(value) === "—") return <>—</>;
+  return <time dateTime={value} title={fmt(value, true)}>{fmt(value)}</time>;
+}
+
+function PaymentPill({ status }: { status?: string }) {
+  if (status === "confirmed") return <AtlasStatusBadge tone="success" dot={false}>Paid</AtlasStatusBadge>;
+  if (status === "test_confirmed") return <AtlasStatusBadge tone="warning" dot={false}>Test paid</AtlasStatusBadge>;
+  if (status === "refunded") return <AtlasStatusBadge tone="neutral" dot={false}>Refunded</AtlasStatusBadge>;
+  return <AtlasStatusBadge tone="warning" dot={false}>Unpaid</AtlasStatusBadge>;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -114,7 +127,9 @@ export default function CompactOrderList({
         <span>User name</span>
         <span>QTY</span>
         <span>Total</span>
-        <span>Date</span>
+        <span>Payment</span>
+        <span>Order date</span>
+        <span>Payment date</span>
         <span />
       </div>
 
@@ -162,8 +177,14 @@ export default function CompactOrderList({
               <span className="orders-compact-cell orders-compact-total" data-label="Total">
                 <strong>{fmtMoney(order.total, "GBP")}</strong>
               </span>
-              <span className="orders-compact-cell" data-label="Date">
-                <time dateTime={order.createdAt}>{fmt(order.createdAt)}</time>
+              <span className="orders-compact-cell" data-label="Payment">
+                <PaymentPill status={order.paymentStatus} />
+              </span>
+              <span className="orders-compact-cell" data-label="Order date">
+                <OrderDate value={order.createdAt} />
+              </span>
+              <span className="orders-compact-cell" data-label="Payment date">
+                <OrderDate value={order.paidAt} />
               </span>
               <ChevronRight aria-hidden="true" className="orders-compact-chevron" />
             </button>
