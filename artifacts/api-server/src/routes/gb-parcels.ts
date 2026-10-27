@@ -144,6 +144,7 @@ export function resolveCarrierCode(carrier: string): number {
   // Exact label → 17track carrier code (mirrors the frontend CARRIERS_17TRACK list)
   const EXACT: Record<string, number> = {
     "auto detect": 0,
+    "sxw wuli": 192203,
     "afghan post": 1021,
     "albanian post": 1031,
     "algeria post": 1041,

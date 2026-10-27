@@ -1,5 +1,6 @@
 export const CARRIERS_17TRACK = [
   { label: "Auto Detect", code: 0, region: "General" },
+  { label: "SXW Wuli", code: 192203, region: "China" },
   { label: "Afghan Post", code: 1021, region: "Postal Services" },
   { label: "Albanian Post", code: 1031, region: "Europe" },
   { label: "Algeria Post", code: 1041, region: "Postal Services" },
