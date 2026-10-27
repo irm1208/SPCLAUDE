@@ -30,6 +30,7 @@ interface GbSettingsState {
   entryFeeAmount: string;
   entryFeeLabel: string;
   inviteOnly: boolean;
+  allowCredits: boolean;
   infoCards: InfoCard[];
 }
 
@@ -119,6 +120,7 @@ function settingsFromApi(groupBuy: ApiGroupBuy): GbSettingsState {
     entryFeeAmount: groupBuy.entryFeeAmount == null ? "" : String(groupBuy.entryFeeAmount),
     entryFeeLabel: typeof groupBuy.entryFeeLabel === "string" ? groupBuy.entryFeeLabel : "",
     inviteOnly: Boolean(groupBuy.hiddenFromList),
+    allowCredits: groupBuy.allowCredits !== false,
     infoCards,
   };
 }
@@ -134,6 +136,7 @@ function settingsPayload(settings: GbSettingsState): Record<string, unknown> {
     entryFeeAmount: settings.entryFeeAmount || null,
     entryFeeLabel: settings.entryFeeLabel.trim() || null,
     hiddenFromList: settings.inviteOnly,
+    allowCredits: settings.allowCredits,
     infoCards: settings.infoCards,
   };
 }
@@ -675,6 +678,16 @@ export default function GbSettingsTab({ selectedGbId }: { selectedGbId?: string 
             checked={settings.inviteOnly}
             onChange={e => patch({ inviteOnly: e.target.checked })}
           />
+        </label>
+
+        <label className="gb-settings-atlas__switch-row">
+          <span>
+            <strong>Allow store credits</strong>
+            <small>Members can use store credits on this group buy. Turning this off does not remove credits already applied to existing orders.</small>
+          </span>
+          <input type="checkbox" role="switch" aria-label="Allow store credits"
+            checked={settings.allowCredits}
+            onChange={e => patch({ allowCredits: e.target.checked })} />
         </label>
 
         <SaveButton

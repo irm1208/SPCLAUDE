@@ -19,6 +19,7 @@ interface CryptoWallet {
 
 export default function PaymentsStep() {
   const saved = useSetupDraftSnapshot().payments;
+  const [allowCredits, setAllowCredits] = useState(() => saved?.allowCredits ?? true);
   const [cryptoEnabled, setCryptoEnabled] = useState(() => saved?.cryptoEnabled ?? false);
   const [cryptoWallets, setCryptoWallets] = useState<CryptoWallet[]>(() => saved?.cryptoWallets ?? [
     { id: "1", currency: "USDT", network: "ERC20", address: "" },
@@ -37,7 +38,7 @@ export default function PaymentsStep() {
   const [bankTransfer, setBankTransfer] = useState<BankTransfer | null>(() => saved?.bankTransfer ?? null);
   useRegisterSetupSection("payments", {
     cryptoEnabled, cryptoWallets, anonpayEnabled, anonpayWallet, anonpayCurrency, anonpayNetwork,
-    revolutEnabled, revolutHandle, paypalEnabled, paypalHandle, bankTransfer,
+    revolutEnabled, revolutHandle, paypalEnabled, paypalHandle, bankTransfer, allowCredits,
   });
 
   const addCryptoWallet = () => {
@@ -54,6 +55,17 @@ export default function PaymentsStep() {
 
   return (
     <div className="space-y-4">
+      <label className="flex items-center justify-between gap-4 rounded-lg p-4" style={{ border: `1px solid ${V2_CARD_BORDER}`, background: "var(--t-surface)" }}>
+        <span>
+          <strong className="block text-[14px]" style={{ color: "var(--t-text)" }}>Allow store credits</strong>
+          <span className="block text-[12px] mt-1" style={{ color: "var(--t-subtle)" }}>
+            Members can use store credits on this group buy. Turning this off does not remove credits already applied to existing orders.
+          </span>
+        </span>
+        <input type="checkbox" role="switch" aria-label="Allow store credits" checked={allowCredits}
+          onChange={e => setAllowCredits(e.target.checked)} className="w-4 h-4 shrink-0"
+          style={{ accentColor: "var(--t-blue)" }} />
+      </label>
       {/* Crypto Payment */}
       <div className="rounded-lg bg-white" data-tour="payment-crypto" style={{ border: `1px solid ${V2_CARD_BORDER}` }}>
         <div className="flex items-center justify-between px-4 py-2.5" style={{ background: "var(--t-surface2)", borderBottom: `1px solid ${V2_CARD_BORDER}` }}>

@@ -53,6 +53,26 @@ const saved: SetupDraftSnapshot = {
   rules: { welcomeMessage: "Welcome", rules: [{ id: "r1", text: "A saved rule" }], disclaimer: "Disclaimer", additionalInfo: "Details" },
 };
 
+saved.payments!.allowCredits = false;
+
+it("retains the credit toggle between setup steps and submits the selected policy", async () => {
+  const snapshotRef = { current: structuredClone(saved) };
+  const renderStep = async (index: number) => act(async () => {
+    root.render(createElement(SetupDraftProvider, { snapshotRef, children: createElement(steps[index].default) }));
+  });
+  await renderStep(3);
+  const toggle = el.querySelector<HTMLInputElement>('[aria-label="Allow store credits"]');
+  expect(toggle).not.toBeNull();
+  expect(toggle!.checked).toBe(false);
+  expect(buildSetupPayload(snapshotRef.current).allowCredits).toBe(false);
+  await act(async () => toggle!.click());
+  expect(snapshotRef.current.payments?.allowCredits).toBe(true);
+  await renderStep(4);
+  await renderStep(3);
+  expect(el.querySelector<HTMLInputElement>('[aria-label="Allow store credits"]')!.checked).toBe(true);
+  expect(buildSetupPayload(snapshotRef.current).allowCredits).toBe(true);
+});
+
 for (const [index, section] of (["basics", "products", "shipping", "payments", "access", "rules"] as const).entries()) {
   it(`restores every saved ${section} field instead of replacing it with defaults`, async () => {
     const snapshotRef = { current: structuredClone(saved) };

@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSetupPayload, buildSetupProducts, buildSetupRules } from "./setup-draft.ts";
 
+test("setup preserves the chosen store-credit policy and defaults to enabled", () => {
+  assert.equal(buildSetupPayload({}).allowCredits, true);
+  assert.equal(buildSetupPayload({ payments: { ...draft.payments, allowCredits: false } }).allowCredits, false);
+  assert.equal(buildSetupPayload({ payments: { ...draft.payments, allowCredits: true } }).allowCredits, true);
+});
+
 const draft = {
   basics: {
     name: " Summer Run ", description: "Live draft", currency: "GBP", closeDate: "2026-08-01T18:00",
@@ -36,6 +42,7 @@ test("buildSetupPayload maps the wizard draft to the organiser create/update con
     name: "Summer Run",
     description: "Live draft",
     currency: "GBP",
+    allowCredits: true,
     closeDate: "2026-08-01T18:00",
     manufacturer: "QSC",
     manufacturerCountry: "China",

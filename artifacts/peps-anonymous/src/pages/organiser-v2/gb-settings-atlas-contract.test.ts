@@ -4,11 +4,11 @@ import test from "node:test";
 
 const source = (file: string) => readFileSync(new URL(file, import.meta.url), "utf8");
 
-test("GB Settings uses the five-section Atlas Clear control navigator", () => {
+test("GB Settings uses the Atlas Clear control navigator", () => {
   const tab = source("./GbSettingsTab.tsx");
 
   assert.match(tab, /import "\.\/gb-settings-atlas\.css"/);
-  assert.match(tab, /type SettingsSectionId = "identity" \| "lifecycle" \| "access" \| "cards" \| "danger"/);
+  assert.match(tab, /type SettingsSectionId = "identity" \| "lifecycle" \| "progress" \| "access" \| "coupons" \| "image" \| "cards" \| "danger"/);
   for (const label of ["Identity", "Lifecycle", "Access & fee", "Member cards", "Danger zone"]) {
     assert.match(tab, new RegExp(label));
   }
@@ -51,6 +51,16 @@ test("Atlas controls expose labels, live feedback, and named icon actions", () =
   assert.match(tab, /aria-live="polite"/);
   assert.match(tab, /aria-label=\{`Remove \$\{card\.title/);
   assert.match(tab, /role="switch"/);
+});
+
+test("GB setup loads, edits and saves the live store-credit policy", () => {
+  const tab = source("./GbSettingsTab.tsx");
+  assert.match(tab, /allowCredits:\s*groupBuy\.allowCredits !== false/);
+  assert.match(tab, /allowCredits:\s*settings\.allowCredits/);
+  assert.match(tab, /Allow store credits/);
+  assert.match(tab, /checked=\{settings\.allowCredits\}/);
+  assert.match(tab, /patch\(\{ allowCredits: e\.target\.checked \}\)/);
+  assert.match(tab, /credits already applied/i);
 });
 
 test("Atlas stylesheet is scoped, responsive, focus-visible, and motion-safe", () => {

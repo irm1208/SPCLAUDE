@@ -27,6 +27,7 @@ export interface SetupShippingOptionDraft {
 }
 
 export interface SetupPaymentDraft {
+  allowCredits?: boolean;
   bankTransfer?: import("@workspace/api-zod/bank-transfer").BankTransfer | null;
   cryptoEnabled: boolean;
   cryptoWallets: Array<{ id: string; currency: string; network: string; address: string }>;
@@ -92,6 +93,7 @@ export function buildSetupPayload(draft: SetupDraftSnapshot): Record<string, unk
     name: clean(basics?.name),
     description: clean(basics?.description),
     currency: clean(basics?.currency) || "GBP",
+    allowCredits: payments?.allowCredits ?? true,
     closeDate: clean(basics?.closeDate),
     manufacturer: clean(basics?.manufacturer),
     manufacturerCountry: clean(basics?.manufacturerCountry),
