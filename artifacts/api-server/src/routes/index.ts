@@ -78,6 +78,7 @@ import { requestSupplierReconciliation } from "../lib/supplier-batch-worker";
 import wholesaleTrackingRouter from "./wholesale-tracking";
 import adminAuthRouter from "./admin-auth";
 import adminInvoicesRouter from "./admin-invoices";
+import vendorPortalRouter from "./vendor-portal";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
 const router: IRouter = Router();
@@ -127,6 +128,7 @@ router.use((req, res, next) => {
 router.use(supplierBatchesRouter);
 router.use(supplierFulfilmentRouter);
 router.use(adminInvoicesRouter);
+router.use(vendorPortalRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them
 // after the scoped admin boundary so their /admin handlers receive the

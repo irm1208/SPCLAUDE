@@ -15,7 +15,7 @@ export async function storeWholesaleUpdateImage(buffer: Buffer, store: UpdateIma
 
 export async function storePageUpdateImage(
   buffer: Buffer,
-  namespace: "wholesale-updates" | "group-buy-updates",
+  namespace: "wholesale-updates" | "group-buy-updates" | "vendor-dispatch",
   store: UpdateImageStore = getClient(),
 ): Promise<string> {
   if (buffer.byteLength > WHOLESALE_IMAGE_LIMIT) throw new WholesaleUpdateValidationError("Images must be 5 MB or smaller.");

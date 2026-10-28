@@ -5,6 +5,7 @@ export * from "./orders";
 export { orderMessagesTable } from "./orders";
 export type { OrderMessage } from "./orders";
 export * from "./site_config";
+export * from "./vendor_portal";
 export * from "./fs3_costs";
 export * from "./feedback";
 export * from "./lab_tests";

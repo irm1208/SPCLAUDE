@@ -13,7 +13,7 @@ Vitest's automatic jsdom environment cannot resolve the workspace's transitive j
 
 **Why:** Radix captures document availability when its layout-effect module first loads; an early import permanently selects a no-op effect and its portal stays empty. Wouter likewise installs its history event patch only if the browser globals already exist.
 
-**How to apply:** Dynamically import these libraries after DOM setup in node tests. A missing dialog without a render error can be a test initialization issue rather than an app defect.
+**How to apply:** Dynamically import these libraries after DOM setup in node tests. A missing dialog without a render error can be a test initialization issue rather than an app defect. For Wouter links, also expose global location/history and bind global addEventListener/removeEventListener to the same jsdom window. Otherwise the page renders but crashes when its location subscription mounts.
 
 Vitest’s built-in jsdom environment resolves its dependency from the root runner, not the frontend artifact.
 

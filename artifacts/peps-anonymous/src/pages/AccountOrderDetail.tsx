@@ -1,4 +1,5 @@
 import { OnwardPaymentCard } from "@/components/onward-delivery/OnwardPayments";
+import { VendorOrderImages } from "@/components/VendorOrderImages";
 import React, { useState, useRef, useEffect } from "react";
 import { OnwardDeliveryOrderCard } from "@/components/onward-delivery/OnwardDelivery";
 import { submittedTimelineLabel, wholesaleStatusLabel } from "@/lib/wholesale-status-label";
@@ -2801,6 +2802,7 @@ export default function AccountOrderDetail() {
 
                       {/* Dispatch photos uploaded by admin */}
                       <MemberDispatchImages orderId={order.id} />
+                      <VendorOrderImages orderId={order.id} />
                     </div>
 
                     {/* ---------- SIDEBAR ---------- */}

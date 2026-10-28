@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { useLocation, useRoute } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -2451,6 +2452,7 @@ export default function WholesaleShared() {
     return (
       <section className="space-y-2">
         <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipment Status</p>
+        {isRecipient && myMember?.orderId && <VendorOrderImages orderId={myMember.orderId} />}
         <div className="rounded-xl overflow-hidden" style={card}>
           {/* Row 1: Group parcel (vendor → recipient) */}
           <div className="flex items-center gap-3 p-4">

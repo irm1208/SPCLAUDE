@@ -18,6 +18,7 @@ import OrderForm from "@/pages/OrderForm";
 import Review from "@/pages/Review";
 import Success from "@/pages/Success";
 import Admin from "@/pages/Admin";
+import VendorPortal from "@/pages/VendorPortal";
 import ProtoypeAdmin from "@/pages/ProtoypeAdmin";
 import JanoshikReceiver from "@/pages/JanoshikReceiver";
 import PrototypeHome from "@/pages/PrototypeHome";
@@ -177,6 +178,7 @@ function Router() {
       <Route path="/wholesale/shared" component={WholesaleShareEntry} />
       <Route path="/wholesale/tracking" component={WholesaleTracking} />
       <Route path="/wholesale" component={WholesaleOrder} />
+      <Route path="/vendor" component={VendorPortal} />
       <Route path="/join-wholesale/:code" component={WholesaleInviteLanding} />
       <Route path="/sleepingpepisadmin/janoshik-receiver" component={JanoshikReceiver} />
       <Route path="/sleepingpepisadmin" component={Admin} />

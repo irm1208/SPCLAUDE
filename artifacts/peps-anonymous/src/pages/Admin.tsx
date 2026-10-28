@@ -34,6 +34,7 @@ import AdminAiChatbot from "@/components/AdminAiChatbot";
 import AdminBtChat from "@/components/AdminBtChat";
 import AdminSageSettings from "@/components/AdminSageSettings";
 import { AdminWholesaleUpdates } from "@/components/AdminWholesaleUpdates";
+import VendorPortalAdmin from "@/components/admin/VendorPortalAdmin";
 import { Fs3PastedList } from "@/components/admin/Fs3PastedList";
 import { loadFs3Costs } from "@/lib/fs3-cost-catalogue";
 import { AdminDispatch } from "@/components/AdminDispatch";
@@ -15701,6 +15702,7 @@ const ALL_TABS_META = [
   { id: "payment-audit", label: "Payment Audit", icon: ShieldCheck },
   { id: "packages", label: "Packages", icon: PackageCheck },
   { id: "fs3", label: "FS3", icon: ShieldCheck },
+  { id: "vendor-portal", label: "Vendor portal", icon: Building2 },
   { id: "pnl", label: "P&L", icon: TrendingUp },
   { id: "notifications", label: "Notifs", icon: Bell },
   { id: "announcements", label: "Announcements", icon: MessageSquarePlus },
@@ -25122,6 +25124,7 @@ const SIDEBAR_SECTIONS = [
   {
     label: "Wholesale",
     items: [
+      { id: "vendor-portal", label: "Vendor portal", icon: Building2, keywords: ["supplier login", "vendor access", "submit wholesale orders", "supplier fulfilment"] },
       { id: "wholesale",        label: "Wholesale",         icon: Package,      keywords: ["bulk orders", "wholesale pricing", "trade", "reseller", "large orders", "wholesale tier", "moq", "minimum order", "wholesale status"] },
       { id: "wholesale-shares", label: "Shared Orders",     icon: Users,        keywords: ["shared orders", "shared order", "open shared order", "wholesale share", "combined wholesale", "shared members", "shared delivery", "shared order settings", "lock shared order", "shared parcel"] },
       { id: "wholesale-access", label: "Access Requests",  icon: Lock,         keywords: ["wholesale access", "access requests", "pay in", "enable wholesale", "disable wholesale", "applications", "wholesale toggle", "open applications", "close applications"] },
@@ -28390,6 +28393,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
           {activeTab === "testingpools" && <AdminTestingPools secret={secret} />}
           {activeTab === "tglog"         && <TelegramLogTab secret={secret} />}
           {activeTab === "wholesale"     && <AdminWholesaleTab secret={secret} />}
+          {activeTab === "vendor-portal" && <VendorPortalAdmin secret={secret} />}
           {activeTab === "wholesale-shares" && <AdminWholesaleSharesTab secret={secret} />}
           {activeTab === "wholesale-access" && <WholesaleAccessRequestsAdminTab secret={secret} />}
           {activeTab === "wholesale-tracking" && <WholesaleTrackingTab secret={secret} />}
