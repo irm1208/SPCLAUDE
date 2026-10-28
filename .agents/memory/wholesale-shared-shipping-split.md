@@ -5,6 +5,16 @@ description: Why shared-wholesale per-member shipping must never be recomputed f
 
 # Wholesale shared shipping split integrity
 
+## Multi-vendor product requirement
+
+Wholesale buyers must be able to choose their vendor. Shared orders may contain goods from Uther and another vendor, with a separate shipping charge for each vendor used.
+
+**Why:** The user plans to add another wholesale vendor and explicitly requested both vendors' shipping charges when buying from both in the same shared order.
+
+**How to apply:** Preserve vendor identity and separate shipping amounts throughout checkout and shared-order calculations. The exact allocation of each vendor's charge among members is still a draft assumption for user review, not a confirmed rule.
+
+## Existing shipping integrity
+
 A `wholesale_shared` order's `vendorShipping` is a CROSS-MEMBER split of the whole parcel's
 shipping, computed once at share-lock time (`attemptLockShare` in wholesale-shares.ts) and
 snapshotted onto BOTH the materialised order AND the `wholesale_share_members.shipping_share`
