@@ -12,7 +12,8 @@
     "migrate:db-backups": "tsx scripts/migrate-db-backups-to-google-drive.ts",
     "restore:db-backup": "tsx scripts/restore-db-backup-from-google-drive.ts",
     "backfill:shared-organiser-payments": "tsx scripts/backfill-shared-organiser-order-payments.ts",
-    "test:e2e:payment-audit": "node scripts/payment-audit-e2e.mjs"
+    "test:e2e:payment-audit": "node scripts/payment-audit-e2e.mjs",
+    "test:e2e:vendor-portal": "VENDOR_PORTAL_BROWSER_TESTS=1 vitest run src/routes/__tests__/vendor-portal.browser.test.ts"
   },
   "dependencies": {
     "@google/genai": "workspace:*",
@@ -42,6 +43,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

@@ -8,6 +8,7 @@
 - [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
 - [Discord signup verification policy](discord-signup-verification-policy.md) — successful Discord OAuth replaces email verification and CAPTCHA for new Discord accounts; invite-only signup still applies.
 - [Browser test import order](browser-test-import-order.md) — initialize jsdom before importing browser-only libraries; early Radix/Wouter imports can silently disable portals or history updates.
+- [Browser runner environment](browser-runner-environment.md) — use Replit's Chromium wrapper on Nix; a downloaded Playwright browser may lack runtime shared libraries.
 - [Lab imports and reports](lab-import-reference.md) — provider restrictions, extraction pitfalls, bloodwork parsing, certificate compression and blob-free lists.
 - [GB entry-fee join gate](gb-entry-fee-join-gate.md) — membership only inserted after fee confirmed (402 ENTRY_FEE_REQUIRED gate in join handler); any new join path must route through same gate.
 - [GB entry-fee confirm atomicity](gb-entry-fee-confirm-atomicity.md) — confirm status-update + membership-grant must be one transaction w/ idempotent retry, or payment shows confirmed forever with no membership.
