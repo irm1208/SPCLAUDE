@@ -4,7 +4,6 @@ import { readAccountSessionResponse } from "@/lib/account-session";
 
 export interface AccountMe {
   telegramUsername: string;
-  vendorId?: string | null;
   verificationRequired?: boolean;
   discordUsername?: string | null;
   discordId?: string | null;

@@ -208,7 +208,7 @@ export default function Login() {
       if (accountRequiresVerification(account)) {
         setLocation("/verify-account");
       } else {
-        setLocation(nextParam || (account.vendorId ? "/vendor" : "/account"));
+        setLocation(nextParam || "/account");
       }
     }
   }, [accountLoading, account, step, setLocation, nextParam]);
@@ -335,13 +335,7 @@ export default function Login() {
       } else if (result.needsPassword) {
         setStep("set-password");
       } else {
-        // The default landing page is role-aware; explicit same-site destinations win.
-        if (nextParam) setLocation(nextParam);
-        else {
-          const response = await fetch("/api/account/me", { credentials: "include" });
-          const current = response.ok ? await response.json() : null;
-          setLocation(current?.vendorId ? "/vendor" : "/account");
-        }
+        setLocation(nextParam || "/account");
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");

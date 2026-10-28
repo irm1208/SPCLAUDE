@@ -100,7 +100,7 @@ export default function VendorPortal() {
 
   const logout = async () => {
     await fetch("/api/account/logout", { method: "POST", credentials: "include" }).catch(() => undefined);
-    window.location.assign("/login?next=/vendor");
+    window.location.assign("/vendor/login");
   };
 
   const visible = useMemo(() => (orders ?? []).filter(o => filter === "all" || !o.trackingNumber), [orders, filter]);
@@ -117,7 +117,8 @@ export default function VendorPortal() {
           <Lock className="w-8 h-8 mx-auto mb-3" style={{ color: "var(--t-blue)" }} />
           <h1 className="text-xl font-bold mb-2" style={{ color: "var(--t-text)" }}>{msg[0]}</h1>
           <p className="text-sm mb-5" style={{ color: "var(--t-muted)" }}>{msg[1]}</p>
-          {authState === "401" ? <a href="/login?next=/vendor" className={btnPrimary} style={{ background: "#1B3A7A" }} data-testid="link-login">Sign in</a>
+          {authState === "401" ? <a href="/vendor/login" className={btnPrimary} style={{ background: "#1B3A7A" }} data-testid="link-login">Sign in</a>
+            : authState === "403" ? <a href="/vendor/login" className={btnPrimary} style={{ background: "#1B3A7A" }} data-testid="link-switch-account">Switch account</a>
             : authState === "error" ? <button className={btnPrimary} style={{ background: "#1B3A7A" }} onClick={() => window.location.reload()} data-testid="button-reload">Retry</button>
             : <Link href="/" className={btnPrimary} style={{ background: "#1B3A7A" }} data-testid="link-home">Back to home</Link>}
         </div>

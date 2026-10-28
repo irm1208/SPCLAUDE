@@ -35,8 +35,18 @@ it("requires login and never loads vendor orders while signed out", async () => 
   await act(async () => root.render(createElement(VendorPortal)));
   await settle();
   expect(el.textContent).toContain("Sign in");
+  expect(el.querySelector('[data-testid="link-login"]')?.getAttribute("href")).toBe("/vendor/login");
   expect(fetchMock).toHaveBeenCalledWith("/api/vendor/me", { credentials: "include" });
   expect(fetchMock).not.toHaveBeenCalledWith("/api/vendor/orders", expect.anything());
+});
+
+it("directs an account without vendor access to the dedicated sign-in", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 403 }));
+  const el = setup();
+  await act(async () => root.render(createElement(VendorPortal)));
+  await settle();
+  expect(el.querySelector('[data-testid="state-auth-403"]')).not.toBeNull();
+  expect(el.querySelector('a[href="/vendor/login"]')?.textContent).toContain("Switch account");
 });
 
 it("vendor sees only cost and delivery fields, without member price or payment", async () => {

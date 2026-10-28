@@ -12,7 +12,6 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { vendorPortalAccessTable } from "@workspace/db";
 import { groupBuyCreditsAllowed } from "../lib/group-buy-credit-policy";
 import { accountsTable, accountGroupBuysTable, groupBuysTable, ordersTable, orderLineItemsTable, orderDispatchImagesTable, orderNotesTable, orderMessagesTable, customersTable, bloodTestSessionsTable, compoundLogsTable, glp1LogsTable, plotterCyclesTable, btConversationsTable, customerActivityLogsTable, healthInsightLogsTable, wholesaleShareMembersTable, wholesaleSharesTable, gbWaitlistTable, poolParticipantsTable, testingPoolsTable, productsTable, labTestsTable, gbReshippersTable, gbCountryLegsTable, ruleAcceptancesTable, siteConfigTable, creditTransactionsTable, lookupAttemptsTable, blockedIpsTable, inviteCodesTable, gbParcelsTable, telegramMessageLogsTable, hiddenOrdersTable, wholesaleAccessRequestsTable } from "@workspace/db";
 import { eq, and, or, asc, desc, sql, isNull, isNotNull, gt, lt, inArray } from "drizzle-orm";
@@ -453,8 +452,6 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
   // Ruleset version data
   const [ruleVersionRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable).where(eq(siteConfigTable.key, "ruleset_version"));
   const rulesetVersion = ruleVersionRow?.value ? parseInt(ruleVersionRow.value, 10) : 1;
-  const [vendorAccess] = await db.select({ vendorId: vendorPortalAccessTable.vendorId }).from(vendorPortalAccessTable)
-    .where(eq(vendorPortalAccessTable.username, req.account!.telegramUsername));
   const [latestAcceptance] = await db.select({ version: ruleAcceptancesTable.version }).from(ruleAcceptancesTable)
     .where(sql`lower(${ruleAcceptancesTable.accountId}) = ${normalizeTg(tg)}`).orderBy(desc(ruleAcceptancesTable.version)).limit(1);
   const ruleAcceptedVersion = latestAcceptance?.version ?? null;
@@ -467,7 +464,6 @@ router.get("/account/me", requireAccount, async (req, res): Promise<void> => {
     discordLinked: acct?.discordLinked === true,
     healthDataConsent: acct?.healthDataConsent ?? false,
     organiserStatus: acct?.organiserStatus ?? null,
-    vendorId: vendorAccess?.vendorId ?? null,
     reshipperStatus: acct?.reshipperStatus ?? null,
     country: acct?.country ?? null,
     addressLine1: acct?.addressLine1 ?? null,
