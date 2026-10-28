@@ -113,6 +113,13 @@
       "when": 1786894193082,
       "tag": "0020_reshipper_and_image_cols",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793220000000,
+      "tag": "0021_multi_vendor_wholesale",
+      "breakpoints": true
     }
   ]
 }

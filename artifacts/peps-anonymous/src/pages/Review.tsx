@@ -299,6 +299,7 @@ export default function Review() {
         ? selectedGroupBuyId
         : draft.groupBuyId ?? undefined,
       orderType: draft.orderType ?? null,
+      wholesaleVendorId: isWholesale ? (draft.wholesaleVendorId ?? undefined) : undefined,
       shippingName: draft.shippingName || null,
       shippingPhone: draft.shippingPhone || null,
       shippingEmail: draft.shippingEmail || null,

@@ -57,6 +57,7 @@ export function calcTotalShipping(
   if (region.customNote || region.priceNote || !region.prices) return null;
   if (kits <= 0) return 0;
   const maxPkg = vendor.maxKitsPerPackage ?? 25;
+  if (!Number.isFinite(maxPkg) || maxPkg <= 0 || !Number.isFinite(kits)) return null;
   let remaining = kits;
   let total = 0;
   // Guard against runaway loops on bad config (maxPkg <= 0).
@@ -64,7 +65,7 @@ export function calcTotalShipping(
   while (remaining > 0) {
     const inThisPackage = Math.min(remaining, maxPkg);
     const price = calcPackageShipping(vendor, region, inThisPackage);
-    if (price === null) return null;
+    if (price === null || !Number.isFinite(price) || price < 0) return null;
     total += price;
     remaining -= inThisPackage;
   }

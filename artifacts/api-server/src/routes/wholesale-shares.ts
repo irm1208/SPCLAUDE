@@ -27,7 +27,8 @@ import { requireWholesale, requireWholesaleOrAdmin } from "../middleware/require
 import { requireAdmin } from "../middleware/require-admin";
 import { requireAccount, issueAccountCookieForAccount } from "../middleware/account-auth";
 import bcrypt from "bcryptjs";
-import { getActiveWholesaleVendor } from "./config";
+import { getActiveWholesaleVendor, getEnabledWholesaleVendors, getVendors } from "./config";
+import { quoteVendorShipping, resolveProductVendor } from "../lib/multi-vendor-shipping";
 import { normalizeTg } from "../lib/normalize";
 import {
   calcTotalShipping,
@@ -396,7 +397,8 @@ async function buildShareResponse(
   const combinedSubtotal = Number(members.reduce((s, m) => s + memberSubtotal(m.items ?? []), 0).toFixed(2));
 
   // Resolve vendor + delivery region for a live shipping estimate.
-  const vendor = await getActiveWholesaleVendor();
+  const configuredVendors = await getVendors();
+  const vendor = configuredVendors.find(v => v.id === share.vendorId) ?? null;
   let shippingEstimate: number | null = null;
   let shippingRegion: string | null = null;
   let estimateCalculable = false;
@@ -427,6 +429,16 @@ async function buildShareResponse(
     liveShares = splitShipping(shippingEstimate, weights, splitMode);
   }
 
+  const vendorQuote = quoteVendorShipping(configuredVendors, members.map(m => m.items ?? []),
+    share.shippingCountry ?? "", splitMode, share.vendorId,
+    share.shippingOverride == null ? null : Number(share.shippingOverride));
+  if (!isLocked) {
+    shippingEstimate = vendorQuote.total;
+    estimateCalculable = vendorQuote.total !== null;
+    liveShares = vendorQuote.members.map(parts => parts.reduce((s, p) => s + (p.shipping ?? 0), 0));
+  } else {
+    shippingEstimate = Number(share.totalVendorShipping ?? members.reduce((s, m) => s + Number(m.shippingShare ?? 0), 0));
+  }
   // The parcel recipient (delivery member) is exempt from the organiser fee. Treat
   // their effective fee as 0 here so a post-set recipient change can never leave a
   // stale fee on the new recipient.
@@ -464,6 +476,8 @@ async function buildShareResponse(
         productName: it.productName,
         quantity: Number(it.quantity),
         unitPrice: Number(it.unitPrice),
+        vendorId: it.vendorId ?? share.vendorId,
+        vendorName: it.vendorName ?? configuredVendors.find(v => v.id === (it.vendorId ?? share.vendorId))?.name ?? "Vendor",
       })),
       kits: memberKits(items),
       subtotal: memberSubtotal(items),
@@ -472,6 +486,7 @@ async function buildShareResponse(
       isConfirmed: m.confirmedAt != null,
       canConfirm: share.status === "open" && isOwn && memberKits(items) > 0,
       shippingShare,
+      vendorShippingShares: isLocked ? m.vendorShippingShares ?? [] : vendorQuote.members[idx],
       adminAdjustmentFee: Number(m.adminAdjustmentFee ?? 0),
       adminAdjustmentMessage: m.adminAdjustmentMessage ?? null,
       // Fee materialised into the member order once the shared order is locked.
@@ -647,6 +662,9 @@ async function buildShareResponse(
       maxKitsPerPackage: vendor.maxKitsPerPackage,
       regions: vendor.regions,
     } : null,
+    vendorShippingBreakdown: isLocked ? share.vendorShippingBreakdown ?? [] : vendorQuote.breakdown,
+    packageCount: (isLocked ? share.vendorShippingBreakdown ?? [] : vendorQuote.breakdown).reduce((s,p) =>
+      s + Math.ceil(p.kits / Math.max(1, configuredVendors.find(v => v.id === p.vendorId)?.maxKitsPerPackage ?? 25)), 0),
     shippingEstimate,
     shippingRegion,
     estimateCalculable,
@@ -1239,6 +1257,8 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
       name: productsTable.name,
       price: productsTable.price,
       wholesalePrice: productsTable.wholesalePrice,
+      vendor: productsTable.vendor,
+      wholesaleVendorId: productsTable.wholesaleVendorId,
     })
     .from(productsTable)
     .where(and(
@@ -1248,6 +1268,8 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
     ));
   const productMap = new Map(wholesaleProducts.map(p => [p.id, p]));
 
+  const availableVendors = await getEnabledWholesaleVendors();
+  const catalogueVendors = await getVendors();
   const cleanItems: WholesaleShareItem[] = [];
   for (const raw of body.items) {
     const productId = typeof raw.productId === "string" ? raw.productId : null;
@@ -1257,7 +1279,9 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
     const product = productMap.get(productId);
     if (!product) { res.status(400).json({ error: `Product ${productId} is not available for wholesale.` }); return; }
     const unitPrice = product.wholesalePrice != null ? parseFloat(product.wholesalePrice) : parseFloat(product.price);
-    cleanItems.push({ productId, productName: product.name, quantity, unitPrice });
+    const owner = resolveProductVendor(product, catalogueVendors);
+    if (!owner || !availableVendors.some(v => v.id === owner.id)) { res.status(400).json({error:`The vendor for ${product.name} is not available.`}); return; }
+    cleanItems.push({ productId, productName: product.name, quantity, unitPrice, vendorId: owner.id, vendorName: owner.name });
   }
 
   let tip = 0;
@@ -1412,10 +1436,11 @@ router.put("/wholesale-shares/:id/delivery-address", requireWholesaleOrAdmin, as
 
   // The country must map to a shippable vendor region or the parcel can never be
   // priced or locked — reject early so the recipient gets immediate feedback.
-  const vendor = await getActiveWholesaleVendor();
-  if (!vendor) { res.status(400).json({ error: "No active wholesale vendor is configured. Please contact an admin." }); return; }
-  if (!pickRegionForCountry(vendor as unknown as ShippingVendor, country)) {
-    res.status(400).json({ error: `The current vendor doesn't ship to "${country}". Please choose a different destination.` });
+  const shippingMembers = await db.select().from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId,share.id));
+  const shippingVendors = await getVendors();
+  const shippingQuote = quoteVendorShipping(shippingVendors,shippingMembers.map(m=>m.items ?? []),country,share.splitMode ?? "even",share.vendorId);
+  if (shippingQuote.breakdown.some(p => !shippingVendors.some(v=>v.id===p.vendorId && pickRegionForCountry(v,country)))) {
+    res.status(400).json({ error: `One of the selected vendors doesn't ship to "${country}". Choose another destination or remove that vendor's items.` });
     return;
   }
   // Organiser country allow-list (if set) — the parcel may only go to listed countries.
@@ -2428,21 +2453,16 @@ export async function attemptLockShare(
   }
 
   // ── Shipping ──
-  const vendor = await getActiveWholesaleVendor();
-  if (!vendor) {
-    return { ok: false, status: 400, error: "No active wholesale vendor is configured. Please contact an admin." };
-  }
-  const picked = pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry);
-  if (!picked) {
-    return { ok: false, status: 400, error: `No shipping region matches "${share.shippingCountry}" for the current vendor.` };
-  }
+  const vendors = await getVendors();
+  const quote = quoteVendorShipping(vendors, members.map(m => m.items ?? []), share.shippingCountry,
+    share.splitMode ?? "even", share.vendorId, share.shippingOverride == null ? null : Number(share.shippingOverride));
+  const picked = {region:{name: quote.breakdown.map(p => p.vendorName).join(", ")}};
   const combinedKits = members.reduce((s, m) => s + memberKits(m.items ?? []), 0);
   // Total kit cap (also enforced as members add items, re-checked here for safety).
   if (share.maxTotalKits && share.maxTotalKits > 0 && combinedKits > share.maxTotalKits) {
     return { ok: false, status: 400, error: `The combined order (${combinedKits} kits) is over the ${share.maxTotalKits}-kit total limit — reduce items before locking.` };
   }
-  const calculatedShipping = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, combinedKits);
-  const totalShipping = share.shippingOverride != null ? Number(share.shippingOverride) : calculatedShipping;
+  const totalShipping = quote.total;
   if (totalShipping === null) {
     return { ok: false, status: 400, error: "Shipping for this region uses custom pricing and can't be auto-calculated. Please contact an admin." };
   }
@@ -2486,21 +2506,33 @@ export async function attemptLockShare(
         existingOrders.map(order => ({ id: order.id, paymentStatus: order.paymentStatus })),
       );
       const preservedOrderIds = new Set(reopenPlan.preserveOrderIds);
-      const frozenShipping = members.reduce((total, member) => {
-        const order = member.orderId ? existingOrderById.get(member.orderId) : undefined;
-        return total + (order && preservedOrderIds.has(order.id) ? Number(order.vendorShipping ?? 0) : 0);
-      }, 0);
       const mutableMembers = members.filter(member => {
         const order = member.orderId ? existingOrderById.get(member.orderId) : undefined;
         return !order || !preservedOrderIds.has(order.id);
       });
-      const remainingShipping = Number((totalShipping - frozenShipping).toFixed(2));
-      if (remainingShipping < 0) throw LOCK_PROTECTED_TOTAL_DECREASE;
-      const mutableShares = splitShipping(
-        remainingShipping,
-        mutableMembers.map(member => memberKits(member.items ?? [])),
-        (share.splitMode as WholesaleShareSplitMode) ?? "even",
-      );
+      const partsByMember = new Map(members.map(m => [m.id, [] as typeof quote.breakdown]));
+      for (const part of quote.breakdown) {
+        const uses = (m: MemberRow) => (m.items ?? []).some(it => (it.vendorId ?? share.vendorId) === part.vendorId);
+        let frozen = 0;
+        for (const m of members.filter(uses)) {
+          const order = m.orderId ? existingOrderById.get(m.orderId) : undefined;
+          if (!order || !preservedOrderIds.has(order.id)) continue;
+          const saved = m.vendorShippingShares?.find(p => p.vendorId === part.vendorId);
+          const memberVendorIds=new Set((m.items ?? []).map(it=>it.vendorId ?? share.vendorId));
+          const value = saved?.shipping ?? (memberVendorIds.size === 1 ? Number(order.vendorShipping ?? 0) : null);
+          if (value == null) throw LOCK_PROTECTED_TOTAL_DECREASE;
+          frozen += value;
+          partsByMember.get(m.id)!.push({...part, kits: (m.items ?? []).filter(it => (it.vendorId ?? share.vendorId) === part.vendorId).reduce((s,it)=>s+it.quantity,0), shipping:value});
+        }
+        const remaining = Number((part.shipping! - frozen).toFixed(2));
+        if (remaining < 0) throw LOCK_PROTECTED_TOTAL_DECREASE;
+        const buyers = mutableMembers.filter(uses);
+        if (!buyers.length && remaining > 0) throw LOCK_PROTECTED_TOTAL_DECREASE;
+        const weights = buyers.map(m => (m.items ?? []).filter(it => (it.vendorId ?? share.vendorId) === part.vendorId).reduce((s,it)=>s+it.quantity,0));
+        const splits = splitShipping(remaining, weights, share.splitMode === "by_size" ? "by_size" : "even");
+        buyers.forEach((m,i) => partsByMember.get(m.id)!.push({...part,kits:weights[i],shipping:splits[i]}));
+      }
+      const mutableShares = mutableMembers.map(m => partsByMember.get(m.id)!.reduce((s,p)=>s+(p.shipping ?? 0),0));
       const shippingByMemberId = new Map<string, number>();
       for (const member of members) {
         const order = member.orderId ? existingOrderById.get(member.orderId) : undefined;
@@ -2551,7 +2583,7 @@ export async function attemptLockShare(
             }).where(refundMutableOrderWhere(eq(ordersTable.id, existingOrder.id)));
           }
           await tx.update(wholesaleShareMembersTable)
-            .set({ shippingShare: Number(existingOrder.vendorShipping ?? 0).toFixed(2) })
+            .set({ shippingShare: Number(existingOrder.vendorShipping ?? 0).toFixed(2),vendorShippingShares:partsByMember.get(m.id) })
             .where(eq(wholesaleShareMembersTable.id, m.id));
           continue;
         }
@@ -2582,6 +2614,7 @@ export async function attemptLockShare(
               id: randomUUID(),
               orderId: existingOrder.id,
               productId: it.productId,
+              vendorId: it.vendorId ?? share.vendorId,
               productName: it.productName,
               quantity: Number(it.quantity).toFixed(2),
               unitPrice: Number(it.unitPrice).toFixed(2),
@@ -2589,7 +2622,7 @@ export async function attemptLockShare(
             })));
           }
           await tx.update(wholesaleShareMembersTable)
-            .set({ shippingShare: shippingShare.toFixed(2) })
+            .set({ shippingShare: shippingShare.toFixed(2), vendorShippingShares: partsByMember.get(m.id) })
             .where(eq(wholesaleShareMembersTable.id, m.id));
           continue;
         }
@@ -2632,6 +2665,7 @@ export async function attemptLockShare(
             id: randomUUID(),
             orderId,
             productId: it.productId,
+            vendorId: it.vendorId ?? share.vendorId,
             productName: it.productName,
             quantity: Number(it.quantity).toFixed(2),
             unitPrice: Number(it.unitPrice).toFixed(2),
@@ -2640,7 +2674,7 @@ export async function attemptLockShare(
         }
 
         await tx.update(wholesaleShareMembersTable)
-          .set({ orderId, shippingShare: shippingShare.toFixed(2) })
+          .set({ orderId, shippingShare: shippingShare.toFixed(2), vendorShippingShares: partsByMember.get(m.id) })
           .where(eq(wholesaleShareMembersTable.id, m.id));
       }
 
@@ -2651,6 +2685,7 @@ export async function attemptLockShare(
           status: "locked",
           lockedAt: new Date(),
           totalVendorShipping: totalShipping.toFixed(2),
+          vendorShippingBreakdown: quote.breakdown,
           totalKits: combinedKits.toFixed(2),
         })
         .where(and(
@@ -3560,6 +3595,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
       if (Array.isArray(body.items)) {
         const products = await tx.select({
           id: productsTable.id, name: productsTable.name, price: productsTable.price, wholesalePrice: productsTable.wholesalePrice,
+          vendor: productsTable.vendor, wholesaleVendorId: productsTable.wholesaleVendorId,
         }).from(productsTable).where(and(
           eq(productsTable.active, true),
           eq(productsTable.wholesaleEnabled, true),
@@ -3574,8 +3610,11 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
           if (quantity > 1000) throw new Error("Item quantity is too large.");
           const product = productById.get(productId);
           if (!product) throw new Error("One of the selected products is not available for wholesale.");
+          const owner = resolveProductVendor(product, await getVendors());
+          if (!owner) throw new Error("Choose a configured vendor for every selected product.");
           clean.push({
             productId,
+            vendorId: owner.id, vendorName:owner.name,
             productName: product.name,
             quantity,
             unitPrice: Number(product.wholesalePrice ?? product.price),
@@ -3604,6 +3643,10 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
         throw new Error(`This shared order allows at most ${share.maxTotalKits} kits in total.`);
       }
 
+      const adjustmentQuote = quoteVendorShipping(await getVendors(),updatedMembers.map(m=>m.items ?? []),
+        share.shippingCountry ?? "",share.splitMode ?? "even",share.vendorId,
+        shippingInput ?? (share.shippingOverride == null ? null : Number(share.shippingOverride)));
+      if (adjustmentQuote.breakdown.length > 1 && shippingInput !== undefined) throw new Error("Mixed-vendor shipping is calculated separately for each vendor. A single combined override cannot be applied.");
       let totalShipping: number;
       if (shippingInput !== undefined) {
         totalShipping = shippingInput;
@@ -3611,16 +3654,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
         if (share.shippingOverride != null) totalShipping = Number(share.shippingOverride);
         else if (share.status === "locked" && share.totalVendorShipping != null) totalShipping = Number(share.totalVendorShipping);
         else {
-          const vendor = await getActiveWholesaleVendor();
-          const picked = vendor && share.shippingCountry
-            ? pickRegionForCountry(vendor as unknown as ShippingVendor, share.shippingCountry)
-            : null;
-          if (!picked) throw new Error("Vendor shipping is not automatically calculable. Enter a total vendor-shipping fee.");
-          const calculatedShipping = calcTotalShipping(
-            vendor as unknown as ShippingVendor,
-            picked.region,
-            combinedKits,
-          );
+          const calculatedShipping = adjustmentQuote.total;
           if (calculatedShipping == null) {
             throw new Error("Vendor shipping is not automatically calculable. Enter a total vendor-shipping fee.");
           }
@@ -3628,7 +3662,14 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
         }
       }
 
+      const keepShipping = share.status === "locked" && !Array.isArray(body.items) && shippingInput === undefined;
+      if (!keepShipping) {
+        if (adjustmentQuote.total == null) throw new Error("Shipping is not configured for every selected vendor and destination.");
+        totalShipping = adjustmentQuote.total;
+      }
+      const vendorAllocations = updatedMembers.map((m,i) => keepShipping ? m.vendorShippingShares ?? [] : adjustmentQuote.members[i]);
       const calculations = calculateSharedOrderAdjustment({
+        shippingSharesById:Object.fromEntries(updatedMembers.map((m,i)=>[m.id, keepShipping ? Number(m.shippingShare ?? 0) : vendorAllocations[i].reduce((s,p)=>s+(p.shipping ?? 0),0)])),
         members: updatedMembers.map(member => ({
           id: member.id,
           items: member.items ?? [],
@@ -3650,6 +3691,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
         await tx.update(wholesaleShareMembersTable).set({
           items: member.items ?? [],
           shippingShare: calculation.shippingShare.toFixed(2),
+          vendorShippingShares: vendorAllocations[updatedMembers.findIndex(m=>m.id===member.id)],
           adminAdjustmentFee: Number(member.adminAdjustmentFee ?? 0).toFixed(2),
           adminAdjustmentMessage: member.adminAdjustmentMessage ?? null,
           // Item changes alter a member's draft, so an earlier ready-to-pay
@@ -3666,6 +3708,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
                 id: randomUUID(),
                 orderId: order.id,
                 productId: item.productId,
+                vendorId:item.vendorId ?? share.vendorId,
                 productName: item.productName,
                 quantity: Number(item.quantity).toFixed(2),
                 unitPrice: Number(item.unitPrice).toFixed(2),
@@ -3688,6 +3731,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
         shippingOverride: shippingInput === undefined ? share.shippingOverride : totalShipping.toFixed(2),
         totalVendorShipping: share.status === "locked" ? totalShipping.toFixed(2) : share.totalVendorShipping,
         totalKits: share.status === "locked" ? combinedKits.toFixed(2) : share.totalKits,
+        vendorShippingBreakdown: keepShipping ? share.vendorShippingBreakdown : adjustmentQuote.breakdown,
       }).where(eq(wholesaleSharesTable.id, share.id));
 
       if (feeInput !== undefined && feeInput > 0) {

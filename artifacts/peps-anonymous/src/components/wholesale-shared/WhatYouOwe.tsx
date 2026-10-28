@@ -1,4 +1,5 @@
 import { CreditCard, CheckCircle2 } from "lucide-react";
+import { VendorShippingBreakdown } from "./VendorShippingBreakdown";
 import type { WholesaleShareDetail, WholesaleShareMember } from "@/hooks/use-wholesale-shares";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -45,6 +46,7 @@ export function WhatYouOwe({ share, me, onPayOrder }: WhatYouOweProps) {
               </div>
               <span className="text-sm font-bold shrink-0" style={{ color: "var(--t-text)" }}>{money(total)}</span>
             </div>
+            <VendorShippingBreakdown lines={me.vendorShippingShares} label="Your shipping by vendor" testId="owe-vendor-shipping" />
             {organiserDue > 0 && <div className="flex justify-between text-xs" style={{ color: "var(--t-muted)" }}><span>Organiser fee</span><span>{money(organiserDue)}</span></div>}
             {outstandingBalance && <div className="flex justify-between text-xs font-semibold" style={{ color: "#b45309" }}><span>Outstanding balance</span><span>{money(me.amountDue)}</span></div>}
             {orderPaid ? (

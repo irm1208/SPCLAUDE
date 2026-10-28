@@ -45,6 +45,8 @@ interface ProductWithMeta {
   isNew?: boolean;
   stock?: number | null;
   lowStockThreshold?: number | null;
+  vendorId?: string | null;
+  vendorName?: string | null;
 }
 
 interface WholesaleVendorRegion {
@@ -108,6 +110,15 @@ export default function WholesaleOrder() {
   const [editCode, setEditCode] = useState<string | null>(null);
   const [vendor, setVendor] = useState<WholesaleVendor | null>(null);
   const [vendorLoading, setVendorLoading] = useState(true);
+  // Multi-vendor: every enabled vendor + the buyer's chosen one (one vendor per order).
+  const [vendors, setVendors] = useState<WholesaleVendor[]>([]);
+  const [defaultVendorId, setDefaultVendorId] = useState<string | null>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [pendingVendorId, setPendingVendorId] = useState<string | null>(null);
+  const [vendorUnavailable, setVendorUnavailable] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  // Vendor id restored from draft/edit/reorder; resolved once vendors load.
+  const restoredVendorRef = useRef<string | null | undefined>(undefined);
   const [selectedRegionIdx, setSelectedRegionIdx] = useState<number | null>(null);
   const [regionAutoSelected, setRegionAutoSelected] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -149,6 +160,7 @@ export default function WholesaleOrder() {
 
     const editRaw = sessionStorage.getItem("peps:edit-wholesale");
     const reorderRaw = sessionStorage.getItem("peps:reorder-wholesale");
+    if (!reorderRaw) sessionStorage.removeItem("peps:reorder-wholesale-vendor");
 
     if (editRaw) {
       try {
@@ -166,16 +178,22 @@ export default function WholesaleOrder() {
         if (d.tip != null) setTip(d.tip);
         if (d.orderId) setEditOrderId(d.orderId);
         if (d.code) setEditCode(d.code);
+        if (d.wholesaleVendorId) restoredVendorRef.current = String(d.wholesaleVendorId);
       } catch { }
       sessionStorage.removeItem("peps:edit-wholesale");
       draftInitialised.current = true;
+      setDraftReady(true);
     } else if (reorderRaw) {
       try {
         const parsed: Record<string, number> = JSON.parse(reorderRaw);
         setQuantities(parsed);
       } catch { }
       sessionStorage.removeItem("peps:reorder-wholesale");
+      const reorderVendor = sessionStorage.getItem("peps:reorder-wholesale-vendor");
+      if (reorderVendor) restoredVendorRef.current = reorderVendor;
+      sessionStorage.removeItem("peps:reorder-wholesale-vendor");
       draftInitialised.current = true;
+      setDraftReady(true);
     } else {
       // Load from DB
       fetch("/api/account/wholesale-draft", { credentials: "include" })
@@ -197,6 +215,7 @@ export default function WholesaleOrder() {
             if (d.tip != null) setTip(d.tip as number);
             if (d.editOrderId) setEditOrderId(d.editOrderId as string);
             if (d.editCode) setEditCode(d.editCode as string);
+            if (d.wholesaleVendorId) restoredVendorRef.current = String(d.wholesaleVendorId);
             const hasContent =
               (!!d.quantities && Object.keys(d.quantities as object).length > 0) ||
               !!(d.fullName || d.phone || d.email || d.addrLine1 || d.shippingCountry || d.notes) ||
@@ -205,12 +224,12 @@ export default function WholesaleOrder() {
           }
         })
         .catch(() => {})
-        .finally(() => { draftInitialised.current = true; });
+        .finally(() => { draftInitialised.current = true; setDraftReady(true); });
     }
   }, []);
 
   // Build the current form as a draft payload, plus a helper to persist/clear it.
-  const buildDraft = () => ({ quantities, fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes, tip, editOrderId, editCode });
+  const buildDraft = () => ({ quantities, fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes, tip, editOrderId, editCode, wholesaleVendorId: selectedVendorId });
   const draftHasContent =
     Object.keys(quantities).length > 0 ||
     [fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes].some(s => s.trim() !== "") ||
@@ -240,7 +259,7 @@ export default function WholesaleOrder() {
       saveWholesaleDraft(draftHasContent ? buildDraft() : null);
     }, 1500);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [quantities, fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes, tip, editOrderId, editCode]);
+  }, [quantities, fullName, phone, email, addrLine1, addrLine2, addrCity, addrPostcode, shippingCountry, notes, tip, editOrderId, editCode, selectedVendorId]);
 
 
   useEffect(() => {
@@ -253,6 +272,7 @@ export default function WholesaleOrder() {
       setSelectedRegionIdx(matchIdx);
       setRegionAutoSelected(true);
     } else {
+      setSelectedRegionIdx(null);
       setRegionAutoSelected(false);
     }
   }, [shippingCountry, vendor]);
@@ -261,19 +281,73 @@ export default function WholesaleOrder() {
   const [requiresApproval, setRequiresApproval] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     setProductsLoading(true);
-    fetch("/api/wholesale/products")
+    const qs = selectedVendorId ? `?vendorId=${encodeURIComponent(selectedVendorId)}` : "";
+    fetch(`/api/wholesale/products${qs}`)
       .then(r => r.ok ? r.json() : [])
-      .then(d => setProducts(Array.isArray(d) ? d : []))
+      .then(d => { if (!cancelled) setProducts(Array.isArray(d) ? d : []); })
       .catch(() => {})
-      .finally(() => setProductsLoading(false));
+      .finally(() => { if (!cancelled) setProductsLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedVendorId]);
 
-    fetch("/api/wholesale-vendor")
+  useEffect(() => {
+    fetch("/api/wholesale-vendors", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
-      .then(d => setVendor(d))
+      .then(async d => {
+        if (d && Array.isArray(d.vendors)) {
+          setVendors(d.vendors as WholesaleVendor[]);
+          setDefaultVendorId(typeof d.defaultVendorId === "string" ? d.defaultVendorId : null);
+          return;
+        }
+        // Legacy single-vendor fallback.
+        const legacy = await fetch("/api/wholesale-vendor").then(r => r.ok ? r.json() : null).catch(() => null);
+        if (legacy && legacy.id) setVendors([legacy as WholesaleVendor]);
+      })
       .catch(() => {})
       .finally(() => setVendorLoading(false));
   }, []);
+
+  // Resolve the initial vendor once both vendors and any restored draft are known.
+  // A restored vendor that is no longer enabled is never silently swapped — the buyer
+  // must choose again explicitly.
+  const vendorResolved = useRef(false);
+  useEffect(() => {
+    if (vendorResolved.current || vendorLoading || !draftReady) return;
+    vendorResolved.current = true;
+    const restored = restoredVendorRef.current;
+    if (restored) {
+      if (vendors.some(v => v.id === restored)) setSelectedVendorId(restored);
+      else setVendorUnavailable(true);
+      return;
+    }
+    const pick = (defaultVendorId && vendors.some(v => v.id === defaultVendorId)) ? defaultVendorId
+      : vendors.length === 1 ? vendors[0].id : null;
+    setSelectedVendorId(pick);
+  }, [vendorLoading, draftReady, vendors, defaultVendorId]);
+
+  useEffect(() => {
+    setVendor(vendors.find(v => v.id === selectedVendorId) ?? null);
+  }, [vendors, selectedVendorId]);
+
+  const applyVendor = (id: string) => {
+    setSelectedVendorId(id);
+    setSelectedRegionIdx(null);
+    setRegionAutoSelected(false);
+    setVendorUnavailable(false);
+    setPendingVendorId(null);
+  };
+  const requestVendorChange = (id: string) => {
+    if (id === selectedVendorId) return;
+    if (Object.keys(quantities).length > 0) { setPendingVendorId(id); return; }
+    applyVendor(id);
+  };
+  const confirmVendorChange = () => {
+    if (!pendingVendorId) return;
+    setQuantities({});
+    applyVendor(pendingVendorId);
+  };
 
   // Resolve GB prefill once the product catalog is available
   useEffect(() => {
@@ -341,7 +415,9 @@ export default function WholesaleOrder() {
 
   if (!account || !account.isWholesale) return null;
 
-  const activeProducts = products.filter(p => p.active !== false);
+  const vendorChoiceRequired = vendors.length > 1 && !selectedVendorId;
+  const activeProducts = vendorChoiceRequired ? [] : products.filter(p =>
+    p.active !== false && (!selectedVendorId || !p.vendorId || p.vendorId === selectedVendorId));
   const selectedProducts = activeProducts.filter(p => (quantities[p.id] ?? 0) > 0);
 
   const setQty = (id: string, val: number) => {
@@ -412,6 +488,7 @@ export default function WholesaleOrder() {
     if (!addrPostcode.trim()) { showError("Please enter your postcode."); return; }
     if (!shippingCountry.trim()) { showError("Please select your shipping country."); return; }
     if (lineItems.length === 0) { showError("Add at least one item to your order."); return; }
+    if (vendors.length > 0 && !selectedVendorId) { showError("Please choose a vendor for this order."); return; }
     if (vendorLoading) { showError("Shipping configuration is still loading — please wait a moment and try again."); return; }
     if (vendor && selectedRegionIdx === null) { showError("Please select your shipping region."); return; }
 
@@ -422,9 +499,10 @@ export default function WholesaleOrder() {
       code: editCode,
       groupBuyId: null,
       orderType: "wholesale",
+      wholesaleVendorId: selectedVendorId,
       telegramUsername: `@${account.telegramUsername.trim().replace(/^@/, "")}`,
       deliveryMethodId: null,
-      deliveryMethod: "Vendor Shipping",
+      deliveryMethod: vendor ? `${vendor.name} — Vendor Shipping` : "Vendor Shipping",
       deliveryPrice: 0,
       vendorShipping: computedVendorShipping ?? 0,
       tip: tip,
@@ -472,7 +550,7 @@ export default function WholesaleOrder() {
     setFullName("");
     setPhone("");
     setEmail("");
-    setShippingAddress("");
+    setAddrLine1(""); setAddrLine2(""); setAddrCity(""); setAddrPostcode("");
     setShippingCountry("");
     setNotes("");
     setTip(0);
@@ -890,6 +968,52 @@ export default function WholesaleOrder() {
               </AnimatePresence>
             </section>
 
+            {/* Vendor picker — one vendor per order */}
+            {vendors.length > 1 && (
+              <section className="space-y-2" aria-label="Vendor" data-testid="section-vendor-picker">
+                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Vendor</p>
+                <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>Each order ships from one vendor. Prices and shipping follow the vendor you pick.</p>
+                  {vendorUnavailable && !selectedVendorId && (
+                    <p role="alert" className="text-xs font-semibold" style={{ color: "#b45309" }} data-testid="text-vendor-unavailable">
+                      The vendor saved on this order is no longer available. Choose a vendor to continue — your items will be priced from its catalogue.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {vendors.map(v => {
+                      const on = v.id === selectedVendorId;
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => requestVendorChange(v.id)}
+                          aria-pressed={on}
+                          data-testid={`button-vendor-${v.id}`}
+                          className="h-9 px-4 rounded-lg text-sm font-semibold border transition-colors"
+                          style={on
+                            ? { background: "var(--t-blue)", color: "#fff", borderColor: "var(--t-blue)" }
+                            : { background: "var(--t-surface2)", color: "var(--t-text)", borderColor: "var(--t-border)" }}
+                        >
+                          {v.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {pendingVendorId && (
+                    <div role="alertdialog" aria-label="Confirm vendor change" className="rounded-lg p-3 space-y-2" style={{ background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.3)" }} data-testid="confirm-vendor-change">
+                      <p className="text-xs" style={{ color: "var(--t-text)" }}>
+                        Switch to <strong>{vendors.find(v => v.id === pendingVendorId)?.name}</strong>? This clears your basket — items aren't carried across vendors or repriced.
+                      </p>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={confirmVendorChange} className="h-8 px-3 rounded-lg text-xs font-bold text-white" style={{ background: "#b45309" }} data-testid="button-confirm-vendor-change">Clear basket &amp; switch</button>
+                        <button type="button" onClick={() => setPendingVendorId(null)} className="h-8 px-3 rounded-lg text-xs font-semibold" style={{ background: "var(--t-chip)", color: "var(--t-text)" }} data-testid="button-cancel-vendor-change">Keep current vendor</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* Vendor Shipping Section */}
             {vendor && (
               <section className="space-y-2">
@@ -1021,6 +1145,11 @@ export default function WholesaleOrder() {
 
             {/* Products section */}
             <section className="space-y-2">
+              {vendorChoiceRequired && (
+                <p className="rounded-xl px-4 py-3 text-sm" style={{ background: "var(--t-surface)", border: "1px dashed var(--t-border)", color: "var(--t-muted)" }} data-testid="text-choose-vendor">
+                  Choose a vendor above to see its catalogue.
+                </p>
+              )}
               <div className="flex items-center justify-between gap-3 px-1">
                 <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>Products</p>
                 <div className="relative flex-1 max-w-xs">

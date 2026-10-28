@@ -1,6 +1,7 @@
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import adminProductStockRouter from "./admin-product-stock";
 import { resolveEditedProductId } from "../lib/admin-order-product-links";
+import { getVendors } from "./config";
 import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
 import { getGbOrderCounts, gbOrderPersonKey, multipleGbOrdersWhere, countMultipleGbOrderPeople } from "../lib/gb-multiple-orders";
 import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
@@ -4151,7 +4152,7 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   // Look up vendor from the products table (for non-GB orders)
   const productIds = [...new Set(allLineItems.map((li) => li.productId).filter(Boolean))] as string[];
   const productRecords = productIds.length > 0
-    ? await db.select({ id: productsTable.id, vendor: productsTable.vendor, stock: productsTable.stock, lowStockThreshold: productsTable.lowStockThreshold })
+    ? await db.select({ id: productsTable.id, vendor: productsTable.vendor, wholesaleVendorId:productsTable.wholesaleVendorId, wholesaleCost:productsTable.wholesaleCost, stock: productsTable.stock, lowStockThreshold: productsTable.lowStockThreshold })
         .from(productsTable)
         .where(inArray(productsTable.id, productIds))
     : [];
@@ -4161,10 +4162,12 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   // Helper: resolve vendor for a line item.
   // Product-table vendor takes precedence so the same product always maps to the
   // same vendor string regardless of which GB (if any) the order belongs to.
-  const resolveVendor = (li: { orderId: string; productId: string }) => {
+  const configuredVendors = await getVendors();
+  const resolveVendor = (li: { orderId: string; productId: string; vendorId?:string|null }) => {
     const gbId = orderGbMap.get(li.orderId) ?? null;
     const gb = gbId ? gbMap.get(gbId) : undefined;
-    return productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
+    const vendorId=li.vendorId ?? productRecords.find(p=>p.id===li.productId)?.wholesaleVendorId;
+    return configuredVendors.find(v=>v.id===vendorId)?.name ?? productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
   };
 
   // Apply vendor filter (after productVendorMap is built)
@@ -4198,20 +4201,22 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   const productMap = new Map<string, {
     name: string; productId: string | null; groupBuyId: string | null; groupBuyName: string | null;
     vendor: string | null; totalQty: number; totalRevenue: number;
-    stock: number | null; lowStockThreshold: number | null;
+    stock: number | null; lowStockThreshold: number | null; vendorId?:string|null; supplierCost?:number|null; vendorScopedCost?:boolean;
   }>();
 
   for (const li of vendorLineItems) {
     const gbId = orderGbMap.get(li.orderId) ?? null;
     const gb = gbId ? gbMap.get(gbId) : undefined;
-    const vendor = productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
+    const vendor = resolveVendor(li);
     // Key by normalised product name ONLY (no vendor, no productId).
     // Including vendor in the key caused every product to appear twice:
     // GB orders resolved vendor from gb.manufacturer while standalone orders
     // resolved from products.vendor — even for the same physical product.
     // Vendor filtering is already handled by resolveVendor() above, so the
     // key only needs to guarantee one row per distinct product name.
-    const key = li.productName.toLowerCase().trim();
+    const productOffer=productRecords.find(p=>p.id===li.productId);
+    const vendorId=li.vendorId ?? productOffer?.wholesaleVendorId;
+    const key = `${vendorId ?? "legacy"}:${li.productName.toLowerCase().trim()}`;
     const qty = parseFloat(String(li.quantity));
     const lineTotal = parseFloat(String(li.lineTotal));
     if (!productMap.has(key)) {
@@ -4222,6 +4227,8 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
         groupBuyId: gbId,
         groupBuyName: gb?.name ?? null,
         vendor,
+        vendorId, vendorScopedCost:!!productOffer?.wholesaleVendorId,
+        supplierCost:productOffer?.wholesaleCost == null ? null : Number(productOffer.wholesaleCost),
         totalQty: 0,
         totalRevenue: 0,
         stock: stockInfo?.stock ?? null,

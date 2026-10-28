@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { siteConfigTable, ruleAcceptancesTable, accountsTable } from "@workspace/db";
-import { eq, desc, count } from "drizzle-orm";
+import { eq, desc, count, sql } from "drizzle-orm";
 import { invalidateTelegramCache, getTelegramStatus, sendAdminTestMessage, setWebhook, buildWebhookUrl } from "../lib/telegram";
 import { requireAdmin } from "../middleware/require-admin";
 
@@ -324,6 +324,8 @@ export interface WholesaleVendorRegion {
 }
 
 export interface WholesaleVendor {
+  legacyCatalogueVendor?: string;
+  enabled?: boolean;
   id: string;
   name: string;
   tiers: string[];                // column header labels (e.g. ["1–5", "6–10", "11–15", "16–25"])
@@ -335,12 +337,38 @@ export interface WholesaleVendor {
 export async function getVendors(): Promise<WholesaleVendor[]> {
   const raw = await getConfigValue("wholesale_vendors");
   if (!raw) return [];
-  try { return JSON.parse(raw) as WholesaleVendor[]; } catch { return []; }
+  try {
+    const vendors = JSON.parse(raw) as WholesaleVendor[];
+    // Before vendor selection, the original Uther catalogue used the first
+    // shipping configuration even when its display name was abbreviated.
+    return vendors.map((v, i) => i === 0 ? {...v,legacyCatalogueVendor:"Uther"} : v);
+  } catch { return []; }
 }
 
 export async function getActiveVendorId(): Promise<string | null> {
   return getConfigValue("wholesale_active_vendor");
 }
+
+export async function getEnabledWholesaleVendors(): Promise<WholesaleVendor[]> {
+  const [vendors, activeId] = await Promise.all([getVendors(), getActiveVendorId()]);
+  return vendors.filter(v => v.enabled === true || (v.enabled == null && v.id === activeId));
+}
+
+router.get("/wholesale-vendors", async (_req, res): Promise<void> => {
+  const [vendors, defaultVendorId] = await Promise.all([getEnabledWholesaleVendors(), getActiveVendorId()]);
+  res.json({ vendors, defaultVendorId: vendors.some(v => v.id === defaultVendorId) ? defaultVendorId : vendors[0]?.id ?? null });
+});
+
+router.patch("/admin/wholesale-vendors/:id/availability", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  if (typeof req.body?.enabled !== "boolean") { res.status(400).json({error:"enabled must be a boolean"}); return; }
+  const vendors = await getVendors();
+  const vendor = vendors.find(v => v.id === req.params.id);
+  if (!vendor) { res.status(404).json({error:"Vendor not found"}); return; }
+  vendor.enabled = req.body.enabled;
+  await setConfigValue("wholesale_vendors", JSON.stringify(vendors));
+  res.json(vendor);
+});
 
 // Resolve the currently-active wholesale vendor (or null if none configured).
 export async function getActiveWholesaleVendor(): Promise<WholesaleVendor | null> {
@@ -407,6 +435,11 @@ router.delete("/admin/wholesale-vendors/:id", async (req, res): Promise<void> =>
   if (!requireAdmin(req, res)) return;
   const { id } = req.params;
   const vendors = await getVendors();
+  const references = await db.execute(sql`SELECT 1 FROM products WHERE wholesale_vendor_id = ${id}
+    OR (wholesale_vendor_id IS NULL AND lower(vendor) = 'uther' AND ${id===vendors[0]?.id}) LIMIT 1`);
+  const history = await db.execute(sql`SELECT 1 FROM orders WHERE wholesale_vendor_id = ${id}
+    UNION ALL SELECT 1 FROM wholesale_shares WHERE vendor_id = ${id} LIMIT 1`);
+  if (references.rows.length || history.rows.length) { res.status(409).json({error:"This vendor is used by the catalogue or order history. Disable availability instead of deleting it."}); return; }
   const filtered = vendors.filter(v => v.id !== id);
   await setConfigValue("wholesale_vendors", JSON.stringify(filtered));
   const activeId = await getActiveVendorId();

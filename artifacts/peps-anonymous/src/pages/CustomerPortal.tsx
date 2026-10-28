@@ -7765,6 +7765,9 @@ export default function CustomerPortal() {
     }
     if (Object.keys(qtyMap).length > 0) {
       sessionStorage.setItem("peps:reorder-wholesale", JSON.stringify(qtyMap));
+      const reorderVendorId = (order as { wholesaleVendorId?: string | null }).wholesaleVendorId;
+      if (reorderVendorId) sessionStorage.setItem("peps:reorder-wholesale-vendor", reorderVendorId);
+      else sessionStorage.removeItem("peps:reorder-wholesale-vendor");
     }
     setLocation("/wholesale");
   };

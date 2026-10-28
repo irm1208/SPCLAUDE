@@ -36,6 +36,8 @@ router.get("/products", async (_req, res): Promise<void> => {
   );
 });
 
+import { getEnabledWholesaleVendors, getVendors } from "./config";
+import { resolveProductVendor } from "../lib/multi-vendor-shipping";
 // GET /api/wholesale/products - returns wholesale-enabled active global products
 export async function wholesaleProductsHandler(req: Request, res: Response): Promise<void> {
   const wholesale = req.wholesale;
@@ -102,8 +104,15 @@ export async function wholesaleProductsHandler(req: Request, res: Response): Pro
     );
   }
 
+  const vendors = await getEnabledWholesaleVendors();
+  const catalogueVendors = await getVendors();
   res.json(
-    products.map((p) => withAuthorizedBatchCode({
+    products.filter(p => {
+      const v = resolveProductVendor(p, catalogueVendors);
+      return !!v && vendors.some(enabled => enabled.id === v.id) && (!req.query.vendorId || v.id === req.query.vendorId);
+    }).map((p) => withAuthorizedBatchCode({
+      vendorId: resolveProductVendor(p, catalogueVendors)!.id,
+      vendorName: resolveProductVendor(p, catalogueVendors)!.name,
       id: p.id,
       name: p.name,
       price: p.wholesalePrice != null ? parseFloat(p.wholesalePrice) : parseFloat(p.price),
@@ -132,6 +141,9 @@ router.get("/admin/wholesale-products", async (req, res): Promise<void> => {
       id: productsTable.id,
       name: productsTable.name,
       vendor: productsTable.vendor,
+      wholesaleVendorId: productsTable.wholesaleVendorId,
+      wholesaleCost: productsTable.wholesaleCost,
+      stock: productsTable.stock,
       category: productsTable.category,
       mgSize: productsTable.mgSize,
       active: productsTable.active,
@@ -176,6 +188,33 @@ router.patch("/admin/wholesale-products/:id", async (req, res): Promise<void> =>
   const body = req.body as { wholesaleEnabled?: boolean; wholesalePrice?: number | null; wholesalePriceNote?: unknown; isNew?: boolean; sortOrder?: number };
 
   const updates: Partial<typeof productsTable.$inferInsert> = {};
+  if ("wholesaleVendorId" in req.body) {
+    const vendorId = req.body.wholesaleVendorId;
+    const configuredVendors=await getVendors();
+    if (typeof vendorId !== "string" || !configuredVendors.some(v => v.id === vendorId)) {
+      res.status(400).json({error:"Choose a configured wholesale vendor"}); return;
+    }
+    const [existingOffer]=await db.select().from(productsTable).where(eq(productsTable.id,id));
+    if (existingOffer && resolveProductVendor(existingOffer,configuredVendors)?.id !== vendorId) {
+      const references=await db.execute(sql`SELECT 1 FROM order_line_items WHERE product_id=${id} LIMIT 1`);
+      if (references.rows.length) {
+        res.status(409).json({error:"This product is already used in orders. Create a separate product offer for the other vendor so historical orders keep their supplier."});return;
+      }
+    }
+    updates.wholesaleVendorId = vendorId;
+  }
+  if ("wholesaleCost" in req.body) {
+    const cost = req.body.wholesaleCost;
+    if (cost !== null && (!Number.isFinite(Number(cost)) || Number(cost) < 0)) {
+      res.status(400).json({error:"Supplier cost must be a non-negative amount"}); return;
+    }
+    updates.wholesaleCost = cost == null ? null : Number(cost).toFixed(2);
+  }
+  if ("stock" in req.body) {
+    const stock = req.body.stock;
+    if (stock !== null && (!Number.isInteger(stock) || stock < 0)) { res.status(400).json({error:"Stock must be a whole non-negative quantity or null."}); return; }
+    updates.stock = stock;
+  }
   if ("wholesalePriceNote" in body) {
     try {
       updates.wholesalePriceNote = normalizeWholesalePriceNote(body.wholesalePriceNote);
@@ -186,6 +225,7 @@ router.patch("/admin/wholesale-products/:id", async (req, res): Promise<void> =>
   }
   if (typeof body.wholesaleEnabled === "boolean") updates.wholesaleEnabled = body.wholesaleEnabled;
   if ("wholesalePrice" in body) {
+    if (body.wholesalePrice !== null && (!Number.isFinite(Number(body.wholesalePrice)) || Number(body.wholesalePrice) < 0)) { res.status(400).json({error:"Selling price must be a non-negative amount."}); return; }
     updates.wholesalePrice = body.wholesalePrice != null ? String(body.wholesalePrice) : null;
   }
   if (typeof body.isNew === "boolean") updates.isNew = body.isNew;
@@ -202,6 +242,9 @@ router.patch("/admin/wholesale-products/:id", async (req, res): Promise<void> =>
       id: productsTable.id,
       wholesaleEnabled: productsTable.wholesaleEnabled,
       wholesalePrice: productsTable.wholesalePrice,
+      wholesaleVendorId: productsTable.wholesaleVendorId,
+      wholesaleCost: productsTable.wholesaleCost,
+      stock: productsTable.stock,
       wholesalePriceNote: productsTable.wholesalePriceNote,
       isNew: productsTable.isNew,
       sortOrder: productsTable.sortOrder,

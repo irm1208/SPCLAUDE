@@ -19,6 +19,7 @@ export function calculateSharedOrderAdjustment(input: {
   members: AdminAdjustmentMember[];
   splitMode: "even" | "by_size";
   totalShipping: number;
+  shippingSharesById?: Record<string,number>;
 }): Array<{ id: string; subtotal: number; shippingShare: number; grandTotal: number }> {
   if (!Number.isFinite(input.totalShipping) || input.totalShipping < 0) {
     throw new Error("Shipping must be a non-negative amount.");
@@ -36,7 +37,11 @@ export function calculateSharedOrderAdjustment(input: {
   const weights = input.members.map(member =>
     member.items.reduce((total, item) => total + (Number(item.quantity) || 0), 0),
   );
-  const shippingShares = splitShipping(input.totalShipping, weights, input.splitMode);
+  const shippingShares = input.shippingSharesById
+    ? input.members.map(m=>input.shippingSharesById![m.id]) : splitShipping(input.totalShipping, weights, input.splitMode);
+  if (shippingShares.some(n=>!Number.isFinite(n)||n<0) || Math.abs(shippingShares.reduce((s,n)=>s+n,0)-input.totalShipping)>0.005) {
+    throw new Error("Member shipping allocations must match the vendor shipping total.");
+  }
 
   return input.members.map((member, index) => {
     const subtotal = Number(member.items.reduce(

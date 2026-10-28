@@ -3,7 +3,7 @@ import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
-  db, accountsTable, ordersTable, wholesaleSharesTable,
+  db, accountsTable, ordersTable, orderLineItemsTable, wholesaleSharesTable,
   vendorPortalAccessTable, vendorSubmissionsTable, vendorImagesTable,
 } from "@workspace/db";
 import { requireAccount } from "../middleware/account-auth";
@@ -15,6 +15,7 @@ import {
   submitVendorOrders, loadVendorSource, isVendorSubmissionStale,
 } from "../lib/vendor-portal-service";
 import { publicVendorOrder, VendorPortalError } from "../lib/vendor-portal-model";
+import { vendorSupplierText, vendorSupplierCsv } from "../lib/vendor-supplier-export";
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh";
 import { notifyUser } from "../lib/telegram";
@@ -95,7 +96,7 @@ router.patch("/vendor/orders/:id", requireAccount, sameOrigin, handled(async (re
     const initial = await ownedSubmission(tx, String(req.params.id), access.vendorId);
     const source = await loadVendorSource(tx, initial.sourceKey, true);
     const row = await ownedSubmission(tx, initial.id, access.vendorId, true);
-    if (source.fingerprint !== row.sourceFingerprint || (source.share?.vendorId && source.share.vendorId !== access.vendorId)) {
+    if (source.fingerprint !== row.sourceFingerprint || source.vendorIds.some(id => id !== access.vendorId)) {
       throw new VendorPortalError("The order changed after submission. Ask Admin to review it before continuing.", 409);
     }
     if (source.orders.some(o => o.status === "Completed")) throw new VendorPortalError("Completed orders cannot be changed by the vendor.", 409);
@@ -111,7 +112,19 @@ router.patch("/vendor/orders/:id", requireAccount, sameOrigin, handled(async (re
       }
       const trackingNumber = body.trackingNumber.trim();
       const carrier = body.carrier.trim();
+      const mixed = source.share && (source.share.vendorShippingBreakdown?.length ?? 0) > 1;
+      const otherSubmissions = mixed ? await tx.select().from(vendorSubmissionsTable)
+        .where(eq(vendorSubmissionsTable.sharedOrderId, row.sharedOrderId!)) : [];
       for (const order of source.orders) {
+        if (mixed) {
+          const lines = await tx.select({ vendorId: orderLineItemsTable.vendorId }).from(orderLineItemsTable)
+            .where(eq(orderLineItemsTable.orderId, order.id));
+          const expected = [...new Set(lines.map(l => l.vendorId ?? source.share.vendorId))];
+          const allShipped = expected.every(id => id === row.vendorId || otherSubmissions.some(s => s.vendorId === id && s.status === "Shipped" && s.orderIds.includes(order.id)));
+          await tx.update(ordersTable).set({status:allShipped ? "Shipped" : "Processing",updatedAt:now}).where(eq(ordersTable.id,order.id));
+          if (allShipped && order.status !== "Shipped") notifications.push({username:order.telegramUsername,code:order.code});
+          continue;
+        }
         const changed = order.trackingNumber !== trackingNumber || order.shippingCarrier !== carrier || order.status !== "Shipped";
         if (!changed) continue;
         let tracking;
@@ -125,7 +138,7 @@ router.patch("/vendor/orders/:id", requireAccount, sameOrigin, handled(async (re
         if (tracking.shouldNotify || order.status !== "Shipped") notifications.push({ username: order.telegramUsername, code: order.code });
       }
       await tx.update(vendorSubmissionsTable).set({ status: "Shipped", trackingNumber, carrier, updatedAt: now }).where(eq(vendorSubmissionsTable.id, row.id));
-      if (row.sharedOrderId) refreshShare = row.sharedOrderId;
+      if (row.sharedOrderId && !mixed) refreshShare = row.sharedOrderId;
     }
     await auditVendor(tx, username(req), body.action, row.id);
   });
@@ -238,16 +251,67 @@ router.delete("/admin/vendor-portal/orders/:id", handled(async (req, res) => {
   });
   res.json({ ok: true });
 }));
+router.post("/admin/vendor-portal/export", handled(async (req,res) => {
+  if (!requireAdmin(req,res)) return;
+  const vendor = (await getVendors()).find(v=>v.id===req.body?.vendorId);
+  const codes = req.body?.orderCodes;
+  if (!vendor || !Array.isArray(codes) || codes.some(c=>typeof c !== "string")) throw new VendorPortalError("Choose a vendor and orders to export.");
+  const shipments = await db.transaction(tx=>prepareVendorShipments(tx,vendor.id,codes));
+  const csv=req.body?.format==="csv";
+  res.set("Cache-Control","no-store").json({filename:`supplier-${vendor.id}.${csv?"csv":"txt"}`,text:csv?vendorSupplierCsv(shipments,vendor.name):vendorSupplierText(shipments,vendor.name)});
+}));
+
 router.get("/account/orders/:id/vendor-images", requireAccount, handled(async (req, res) => {
   const [order] = await db.select({ id: ordersTable.id, sharedOrderId: ordersTable.sharedOrderId, username: ordersTable.telegramUsername })
     .from(ordersTable).where(eq(ordersTable.id, String(req.params.id)));
   if (!order || normalizeTg(order.username) !== username(req)) throw new VendorPortalError("Order not found.", 404);
-  const sourceKey = order.sharedOrderId ? `share:${order.sharedOrderId}` : `order:${order.id}`;
-  const [row] = await db.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.sourceKey, sourceKey));
-  if (!row) { res.json({ images: [] }); return; }
-  try { await memberMaySee(req, row); }
-  catch (error) { if (error instanceof VendorPortalError) { res.json({ images: [] }); return; } throw error; }
-  res.set("Cache-Control", "no-store").json({ images: await imageList(row, "account") });
+  const rows = await db.select().from(vendorSubmissionsTable).where(order.sharedOrderId
+    ? eq(vendorSubmissionsTable.sharedOrderId,order.sharedOrderId)
+    : eq(vendorSubmissionsTable.sourceKey,`order:${order.id}`));
+  const images = [];
+  for (const row of rows) {
+    try { await memberMaySee(req,row); images.push(...await imageList(row,"account")); }
+    catch (error) { if (!(error instanceof VendorPortalError)) throw error; }
+  }
+  res.set("Cache-Control", "no-store").json({ images });
+}));
+
+router.get("/account/orders/:id/vendor-shipments", requireAccount, handled(async (req, res) => {
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, String(req.params.id)));
+  if (!order || normalizeTg(order.telegramUsername) !== username(req)) throw new VendorPortalError("Order not found.",404);
+  let recipient = !order.sharedOrderId;
+  let expectedVendorIds: string[] = [];
+  if (order.sharedOrderId) {
+    const [share] = await db.select({recipient:wholesaleSharesTable.deliveryUsername,breakdown:wholesaleSharesTable.vendorShippingBreakdown}).from(wholesaleSharesTable).where(eq(wholesaleSharesTable.id,order.sharedOrderId));
+    recipient = normalizeTg(share?.recipient ?? "") === username(req);
+    if (recipient) expectedVendorIds=(share?.breakdown ?? []).map(p=>p.vendorId);
+  }
+  if (!expectedVendorIds.length) {
+    const lines=await db.select({vendorId:orderLineItemsTable.vendorId}).from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId,order.id));
+    expectedVendorIds=[...new Set(lines.map(l=>l.vendorId).filter((id):id is string=>!!id))];
+  }
+  const rows = await db.select().from(vendorSubmissionsTable).where(order.sharedOrderId
+    ? eq(vendorSubmissionsTable.sharedOrderId,order.sharedOrderId)
+    : eq(vendorSubmissionsTable.sourceKey,`order:${order.id}`));
+  const vendors = await getVendors();
+  const shipments = [];
+  const shown=new Set<string>();
+  for (const row of rows) {
+    if (!recipient && !row.orderIds.includes(order.id)) continue;
+    if (await isVendorSubmissionStale(db,row)) continue;
+    shown.add(row.vendorId);
+    shipments.push({
+      id:row.id, vendorName:vendors.find(v=>v.id===row.vendorId)?.name ?? "Vendor",
+      status:row.status, trackingNumber:recipient ? row.trackingNumber : null,
+      carrier:recipient ? row.carrier : null, trackingMasked:!recipient,
+      images:recipient ? await imageList(row,"account") : [],
+    });
+  }
+  for (const id of expectedVendorIds.filter(id=>!shown.has(id))) {
+    shipments.push({id:`pending:${id}`,vendorName:vendors.find(v=>v.id===id)?.name ?? "Vendor",status:"Awaiting vendor processing",
+      trackingNumber:null,carrier:null,trackingMasked:!recipient,images:[]});
+  }
+  res.set("Cache-Control","no-store").json({shipments});
 }));
 
 function imageHandler(mode: "vendor" | "admin" | "account"): Handler {

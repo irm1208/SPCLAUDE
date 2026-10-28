@@ -107,6 +107,7 @@ export const ordersTable = pgTable("orders", {
   carrierServiceRef: text("carrier_service_ref"),
   quotedWeightGrams: integer("quoted_weight_grams"),
   orderType: text("order_type"),
+  wholesaleVendorId: text("wholesale_vendor_id"),
   couponCode: text("coupon_code"),
   couponDiscount: numeric("coupon_discount", { precision: 10, scale: 2 }).notNull().default("0"),
   adminFee: numeric("admin_fee", { precision: 10, scale: 2 }).notNull().default("0"),
@@ -203,6 +204,7 @@ export type OrderMessage = typeof orderMessagesTable.$inferSelect;
 // Order line items — one row per product per order
 // quantity is numeric to support 0.5 increments
 export const orderLineItemsTable = pgTable("order_line_items", {
+  vendorId: text("vendor_id"),
   id: text("id").primaryKey(),
   orderId: text("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
   productId: text("product_id").notNull(),

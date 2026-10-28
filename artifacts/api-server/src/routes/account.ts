@@ -1875,6 +1875,7 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
       deliveryMethod: order.deliveryMethod,
       groupBuyId: order.groupBuyId ?? null,
       orderType: order.orderType ?? null,
+      wholesaleVendorId:order.wholesaleVendorId ?? null,
       currency,
       adminMessage: order.adminMessage ?? null,
       trackingNumber: order.orderType === "wholesale_shared" && !sharedRecipientIds.has(order.sharedOrderId ?? "")
@@ -2137,6 +2138,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     shippingEmail: (order as any).shippingEmail ?? null,
     onwardDeliveryMethod: order.groupBuyId ? await getOnwardOrderPreference(order.id) : null,
     orderType: order.orderType ?? null,
+    wholesaleVendorId:order.wholesaleVendorId ?? null,
     pin: order.pin ?? "0000",
     inpostQrCode: order.inpostQrCode ?? null,
     royalMailQrCode: order.royalMailQrCode ?? null,
@@ -2465,6 +2467,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     shippingPhone: (order as any).shippingPhone ?? null,
     shippingEmail: (order as any).shippingEmail ?? null,
     orderType: order.orderType ?? null,
+    wholesaleVendorId:order.wholesaleVendorId ?? null,
     pin: order.pin ?? "0000",
     inpostQrCode: order.inpostQrCode ?? null,
     royalMailQrCode: order.royalMailQrCode ?? null,

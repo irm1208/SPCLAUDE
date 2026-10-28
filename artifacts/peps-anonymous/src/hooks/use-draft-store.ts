@@ -53,6 +53,9 @@ interface DraftState {
   // Order type (e.g. "wholesale" for orders from WholesaleOrder page)
   orderType: string | null;
 
+  // Wholesale vendor chosen by a standard wholesale buyer (server re-validates).
+  wholesaleVendorId: string | null;
+
   // Wholesale shipping address (collected upfront on wholesale page)
   shippingName: string;
   shippingPhone: string;
@@ -135,6 +138,7 @@ export const useDraftStore = create<DraftState>()(
       additionOfOrderId: null,
       testingContribution: 0,
       orderType: null,
+      wholesaleVendorId: null,
       shippingName: '',
       shippingPhone: '',
       shippingEmail: '',
@@ -322,6 +326,7 @@ export const useDraftStore = create<DraftState>()(
         additionOfOrderId: null,
         testingContribution: 0,
         orderType: null,
+        wholesaleVendorId: null,
         shippingName: '',
         shippingPhone: '',
         shippingEmail: '',

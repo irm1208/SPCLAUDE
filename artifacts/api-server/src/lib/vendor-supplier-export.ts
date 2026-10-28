@@ -1,0 +1,21 @@
+import type { VendorSnapshot } from "@workspace/db";
+export function vendorSupplierCsv(shipments:Array<{reference:string;snapshot:VendorSnapshot}>,vendorName:string) {
+  const escape=(v:unknown)=>`"${String(v).replace(/"/g,'""')}"`;
+  const rows:unknown[][]=[["Vendor","Order","Product","Quantity","Unit cost USD","Line cost USD"]];
+  for (const s of shipments) {
+    for (const i of s.snapshot.items) rows.push([vendorName,s.reference,i.productName,i.quantity,i.unitCost,i.lineTotal]);
+    rows.push([vendorName,s.reference,"Vendor shipping","","",s.snapshot.shippingCost]);
+    rows.push([vendorName,s.reference,"Grand total","","",s.snapshot.totalCost]);
+  }
+  return rows.map(row=>row.map(escape).join(",")).join("\r\n");
+}
+export function vendorSupplierText(shipments: Array<{reference:string; vendorId:string; snapshot:VendorSnapshot}>, vendorName: string) {
+  return shipments.map(s => [
+    `Order no. ${s.reference}`, `Vendor: ${vendorName}`, "New Order:", "",
+    ...s.snapshot.items.map(i => `${i.productName} x${i.quantity} = $${i.lineTotal}`), "",
+    `Total QTY: ${s.snapshot.items.reduce((n,i)=>n+i.quantity,0)}`,
+    `Total: $${s.snapshot.productCost}`, `Package: $${s.snapshot.shippingCost}`, `Grand Total: $${s.snapshot.totalCost}`,
+    "", "Address:", s.snapshot.shipping.name, s.snapshot.shipping.address, s.snapshot.shipping.country,
+    `Phone: ${s.snapshot.shipping.phone}`, `Email: ${s.snapshot.shipping.email}`,
+  ].join("\n")).join("\n\n--------------------\n\n");
+}

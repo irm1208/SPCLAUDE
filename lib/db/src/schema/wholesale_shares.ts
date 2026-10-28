@@ -20,6 +20,8 @@ export type WholesaleShareSplitMode = typeof WHOLESALE_SHARE_SPLIT_MODES[number]
 
 // Draft items held per member while the share is still open (before lock materialises orders).
 export type WholesaleShareItem = {
+  vendorId?: string;
+  vendorName?: string;
   productId: string;
   productName: string;
   quantity: number;
@@ -63,6 +65,7 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   // at lock time (total = quantity × feePerKit, snapshotted as kit_fees on the order).
   feePerKit: numeric("fee_per_kit", { precision: 10, scale: 2 }),
   vendorId: text("vendor_id"), // snapshot of the active wholesale vendor at creation time
+  vendorShippingBreakdown: jsonb("vendor_shipping_breakdown").$type<Array<{vendorId: string; vendorName: string; kits: number; shipping: number | null}>>(),
   // Chosen delivery member + their address snapshot (whole parcel ships here)
   deliveryUsername: text("delivery_username"),
   shippingName: text("shipping_name"),
@@ -147,6 +150,7 @@ export const wholesaleShareMembersTable = pgTable("wholesale_share_members", {
   orderId: text("order_id"),
   // Per-member vendor-shipping share computed at lock (snapshot for display).
   shippingShare: numeric("shipping_share", { precision: 10, scale: 2 }),
+  vendorShippingShares: jsonb("vendor_shipping_shares").$type<Array<{vendorId: string; vendorName: string; kits: number; shipping: number | null}>>(),
   // ── Optional organiser fee set by the organiser for THIS participant ─────────
   // organiserFee → paid directly to the organiser. The current recipient is exempt
   // (effective fee treated as 0). Tracks a "paid" flag confirmed by the organiser.

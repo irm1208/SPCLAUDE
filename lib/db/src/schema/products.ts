@@ -9,6 +9,8 @@ export const productsTable = pgTable("products", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   vendor: text("vendor").notNull().default("Uther"),
+  wholesaleVendorId: text("wholesale_vendor_id"),
+  wholesaleCost: numeric("wholesale_cost", { precision: 10, scale: 2 }),
   price: numeric("price", { precision: 10, scale: 2 }).notNull(),
   active: boolean("active").notNull().default(true),
   category: text("category"),

@@ -10,6 +10,16 @@ export interface WholesaleShareItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  // Server-authoritative vendor for this line (multi-vendor shared baskets).
+  vendorId?: string | null;
+  vendorName?: string | null;
+}
+
+export interface WholesaleVendorShippingLine {
+  vendorId: string;
+  vendorName: string;
+  kits: number;
+  shipping: number | null;
 }
 
 export interface WholesaleShareMember {
@@ -25,6 +35,8 @@ export interface WholesaleShareMember {
   isConfirmed: boolean;
   canConfirm: boolean;
   shippingShare: number | null;
+  // Per-vendor slice of this member's shipping share (sums to shippingShare).
+  vendorShippingShares?: WholesaleVendorShippingLine[];
   // Organiser fee is materialised into the member order total once locked.
   organiserFee: number;
   organiserFeePaid: boolean;
@@ -190,6 +202,10 @@ export interface WholesaleShareDetail {
   combinedKits: number;
   combinedSubtotal: number;
   totalVendorShipping: number | null;
+  // Independent shipping per vendor; totalVendorShipping remains the sum.
+  vendorShippingBreakdown?: WholesaleVendorShippingLine[];
+  // Server-computed: sum over vendors of ceil(kits / vendor.maxKitsPerPackage).
+  packageCount?: number;
   totalKits: number | null;
   fees: WholesaleShareFees;
   members: WholesaleShareMember[];

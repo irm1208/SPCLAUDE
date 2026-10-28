@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { VendorOrderImages } from "@/components/VendorOrderImages";
+import { VendorShipments } from "@/components/VendorShipments";
+import { VendorShippingBreakdown, VendorGroupHeader } from "@/components/wholesale-shared/VendorShippingBreakdown";
+import { groupByVendor, isMultiVendor } from "@/lib/vendor-grouping";
 import { useLocation, useRoute } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -67,6 +70,8 @@ interface ProductLite {
   active?: boolean;
   stock?: number | null;
   lowStockThreshold?: number | null;
+  vendorId?: string | null;
+  vendorName?: string | null;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -1238,6 +1243,9 @@ export default function WholesaleShared() {
             </div>
           )}
         </div>
+        {share.packageCount != null && share.packageCount > 0 && (
+          <Row label="Packages" value={share.settings.maxPackages != null ? `${share.packageCount} / ${share.settings.maxPackages} max` : String(share.packageCount)} />
+        )}
         <Row label="Combined products" value={money(share.combinedSubtotal)} />
         <Row
           label={`Vendor shipping${share.shippingRegion ? ` · ${share.shippingRegion}` : ""}`}
@@ -1249,6 +1257,7 @@ export default function WholesaleShared() {
                 : share.delivery.country ? "—" : "Set delivery to estimate"
           }
         />
+        <VendorShippingBreakdown lines={share.vendorShippingBreakdown} />
         <div className="flex items-center justify-between pt-1">
           <span className="text-sm" style={{ color: "var(--t-muted)" }}>Split between members</span>
           <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
@@ -1297,13 +1306,16 @@ export default function WholesaleShared() {
           {visibleProducts.length === 0 && (
             <p className="text-sm text-center py-6" style={{ color: "var(--t-muted)" }}>No products found.</p>
           )}
-          {visibleProducts.map(p => {
+          {(isMultiVendor(visibleProducts) ? groupByVendor(visibleProducts).flatMap(g => g.items) : visibleProducts).map((p, idx, arr) => {
+            const showVendorHeader = isMultiVendor(visibleProducts) && (idx === 0 || arr[idx - 1].vendorId !== p.vendorId);
             const qty = myItems[p.id] ?? 0;
             const stockLevel = getStockLevel(p.stock);
             const isOos = stockLevel === "oos";
             const stockMeta = STOCK_META[stockLevel];
             return (
-              <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderColor: "var(--t-border)", opacity: isOos ? 0.6 : 1 }}>
+              <div key={p.id} style={{ borderColor: "var(--t-border)" }}>
+              {showVendorHeader && <VendorGroupHeader name={p.vendorName ?? null} />}
+              <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderColor: "var(--t-border)", opacity: isOos ? 0.6 : 1 }}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>{p.name}</p>
                   <WholesalePriceNote note={p.wholesalePriceNote} />
@@ -1343,6 +1355,7 @@ export default function WholesaleShared() {
                     <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
+              </div>
               </div>
             );
           })}
@@ -1387,16 +1400,20 @@ export default function WholesaleShared() {
       <div className="relative overflow-hidden rounded-xl p-4 space-y-2.5" style={card}>
         <PriceWatermark username={share.currentUsername} />
         <div className="divide-y" style={{ borderColor: "var(--t-border)" }}>
-          {myMember.items.map(it => (
-            <div key={it.productId} className="flex items-center justify-between gap-3 py-2 first:pt-0">
+          {(isMultiVendor(myMember.items) ? groupByVendor(myMember.items).flatMap(g => g.items) : myMember.items).map((it, idx, arr) => (
+            <div key={it.productId}>
+            {isMultiVendor(myMember.items) && (idx === 0 || arr[idx - 1].vendorId !== it.vendorId) && <VendorGroupHeader name={it.vendorName ?? null} />}
+            <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
               <div className="min-w-0">
                 <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>{it.productName}</p>
                 <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>{it.quantity} × {money(it.unitPrice)}</p>
               </div>
               <span className="text-sm font-semibold shrink-0" style={{ color: "var(--t-text)" }}>{money(it.quantity * it.unitPrice)}</span>
             </div>
+            </div>
           ))}
         </div>
+        <VendorShippingBreakdown lines={myMember.vendorShippingShares} label="Your shipping by vendor" testId="member-vendor-shipping" />
         {myMember.tip > 0 && (
           <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: "var(--t-border)" }}>
             <span className="text-sm" style={{ color: "var(--t-muted)" }}>Tip</span>
@@ -1473,6 +1490,7 @@ export default function WholesaleShared() {
               <span style={{ color: "var(--t-muted)" }}>Shipping</span>
               <span className="font-semibold" style={{ color: "var(--t-text)" }}>{money(shipping)}</span>
             </div>
+            <VendorShippingBreakdown lines={m.vendorShippingShares} label="Your shipping by vendor" testId="org-vendor-shipping" />
             <div className="flex items-center justify-between pt-1.5 border-t" style={{ borderColor: "var(--t-border)" }}>
               <span className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Total</span>
               <span className="text-lg font-bold" style={{ color: "var(--t-text)" }}>{money(total)}</span>
@@ -2453,6 +2471,7 @@ export default function WholesaleShared() {
       <section className="space-y-2">
         <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipment Status</p>
         {isRecipient && myMember?.orderId && <VendorOrderImages orderId={myMember.orderId} />}
+        {myMember?.orderId && <VendorShipments orderId={myMember.orderId} showImages={false} />}
         <div className="rounded-xl overflow-hidden" style={card}>
           {/* Row 1: Group parcel (vendor → recipient) */}
           <div className="flex items-center gap-3 p-4">

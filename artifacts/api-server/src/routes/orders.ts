@@ -52,7 +52,8 @@ import { notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
 import { requireAccount } from "../middleware/account-auth";
 import { resolveOrderUsername } from "../lib/order-checkout-identity";
 import { logCustomerActivity } from "../lib/activity-log";
-import { getActiveWholesaleVendor } from "./config";
+import { getActiveWholesaleVendor, getEnabledWholesaleVendors, getVendors } from "./config";
+import { resolveProductVendor } from "../lib/multi-vendor-shipping";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
 import { calculateAdditionMerge } from "../lib/order-addition-merge";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
@@ -71,11 +72,12 @@ async function resolveWholesaleShipping(
   clientVendorShipping: unknown,
   shippingCountry: unknown,
   lineItems: unknown,
+  vendorId?: string | null,
 ): Promise<number> {
   const clientVal = Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
   const country = typeof shippingCountry === "string" ? shippingCountry.trim() : "";
   if (!country) return clientVal;
-  const vendor = await getActiveWholesaleVendor();
+  const vendor = vendorId ? (await getVendors()).find(v => v.id === vendorId) : await getActiveWholesaleVendor();
   if (!vendor) return clientVal;
   const picked = pickRegionForCountry(vendor as unknown as ShippingVendor, country);
   if (!picked) return clientVal;
@@ -87,6 +89,29 @@ async function resolveWholesaleShipping(
   );
   const computed = calcTotalShipping(vendor as unknown as ShippingVendor, picked.region, kits);
   return computed !== null ? computed : clientVal;
+}
+
+async function validateWholesaleVendorItems(raw: unknown, requestedVendorId: unknown): Promise<string> {
+  if (!Array.isArray(raw) || !raw.length) throw new Error("At least one wholesale product is required.");
+  const vendors = await getEnabledWholesaleVendors();
+  const catalogueVendors = await getVendors();
+  const products = await db.select().from(productsTable).where(and(
+    inArray(productsTable.id, raw.map(i => String(i?.productId ?? ""))),
+    eq(productsTable.active, true), eq(productsTable.wholesaleEnabled, true), isNull(productsTable.sourceGroupBuyId),
+  ));
+  const ownerIds = new Set<string>();
+  for (const item of raw) {
+    const product = products.find(p => p.id === item?.productId);
+    const owner = product && resolveProductVendor(product, catalogueVendors);
+    if (!product || !owner || !vendors.some(v => v.id === owner.id)) throw new Error("A selected product or vendor is no longer available. Review your basket.");
+    ownerIds.add(owner.id);
+    item.unitPrice = Number(product.wholesalePrice ?? product.price);
+    item.productName = product.name;
+  }
+  if (ownerIds.size !== 1) throw new Error("Choose one vendor for a wholesale order. Use a shared order to buy from multiple vendors.");
+  const ownerId = [...ownerIds][0];
+  if (requestedVendorId && requestedVendorId !== ownerId) throw new Error("The basket does not match the selected vendor.");
+  return ownerId;
 }
 
 // ── Multer: receive QR files as binary multipart uploads ──────
@@ -264,9 +289,11 @@ function formatOrderResponse(order: Record<string, unknown>, lineItems: Record<s
     adminFee: parseFloat((order.adminFee as string) ?? "0"),
     adminFeeLabel: (order.adminFeeLabel as string | null) ?? null,
     shippingCarrier: (order.shippingCarrier as string | null) ?? null,
+    wholesaleVendorId: (order.wholesaleVendorId as string | null) ?? null,
     lineItems: lineItems.map((li) => ({
       id: li.id,
       productId: li.productId,
+      vendorId: li.vendorId ?? null,
       productName: li.productName,
       quantity: parseFloat(li.quantity as string),
       unitPrice: parseFloat(li.unitPrice as string),
@@ -483,6 +510,11 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     return;
   }
   const isWholesaleOrder = clientOrderType === "wholesale";
+  let wholesaleVendorId: string | null = null;
+  if (isWholesaleOrder) {
+    try { wholesaleVendorId = await validateWholesaleVendorItems(clientLineItems, req.body.wholesaleVendorId); }
+    catch (error) { res.status(400).json({error:(error as Error).message}); return; }
+  }
   if (!isWholesaleOrder && (!deliveryMethodId || typeof deliveryMethodId !== "string")) {
     res.status(400).json({ error: "Missing required fields" });
     return;
@@ -727,7 +759,12 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       ? Math.max(0, Number(newHalfGroup.vendorShippingAmount)) : 0;
   } else if (isWholesaleOrder) {
     // Never trust the client's wholesale shipping — recompute it server-side.
-    vendorShipping = await resolveWholesaleShipping(clientVendorShipping, clientShippingCountry, clientLineItems);
+    const owner = (await getEnabledWholesaleVendors()).find(v => v.id === wholesaleVendorId);
+    const region = owner && pickRegionForCountry(owner, String(clientShippingCountry ?? ""));
+    if (!region || calcTotalShipping(owner!, region.region, clientLineItems.reduce((s: number, i: any) => s + Number(i.quantity), 0)) === null) {
+      res.status(400).json({error:"Shipping is not configured for this vendor and destination. Contact Admin before ordering."}); return;
+    }
+    vendorShipping = await resolveWholesaleShipping(clientVendorShipping, clientShippingCountry, clientLineItems, wholesaleVendorId);
   }
   const tip = Math.min(20, Math.max(0, parseFloat(String(clientTip)) || 0)); // cap tip at $20
   const testingContribution = Math.max(0, parseFloat(String(clientTestingContribution)) || 0);
@@ -1560,6 +1597,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       countryLegId: resolvedCountryLegId,
       routingType: codeRoutingType ?? deliveryRoute?.routingType ?? null,
       orderType: clientOrderType === "wholesale" ? "wholesale" : null,
+      wholesaleVendorId,
       shippingName: clientShippingName ? String(clientShippingName).trim().slice(0, 120) || null : null,
       shippingPhone: clientShippingPhone ? String(clientShippingPhone).trim().slice(0, 40) || null : null,
       shippingEmail: clientShippingEmail ? String(clientShippingEmail).trim().slice(0, MAX_SHIPPING_EMAIL_LENGTH) || null : null,
@@ -1583,6 +1621,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     id: randomUUID(),
     orderId,
     productId: li.productId,
+    vendorId: wholesaleVendorId,
     productName: String(li.productName).trim().slice(0, MAX_PRODUCT_NAME_LENGTH),
     quantity: parseFloat(String(li.quantity)).toFixed(2),
     unitPrice: parseFloat(String(li.unitPrice)).toFixed(2),
@@ -2296,6 +2335,15 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   const deliveryPrice = isAddition ? 0 : parseFloat(deliveryMethodRecord.price);
   let vendorShipping = isAddition ? 0 : Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
   if (!isAddition && isWholesaleOrder) {
+    let ownerId: string;
+    try { ownerId = await validateWholesaleVendorItems(clientLineItems, req.body.wholesaleVendorId ?? order.wholesaleVendorId); }
+    catch (error) { res.status(400).json({error:(error as Error).message}); return; }
+    req.body.wholesaleVendorId = ownerId;
+    const editVendor = (await getVendors()).find(v=>v.id===ownerId);
+    const editRegion = editVendor && pickRegionForCountry(editVendor,String(clientShippingCountry ?? order.shippingCountry ?? ""));
+    if (!editRegion || calcTotalShipping(editVendor!,editRegion.region,clientLineItems.reduce((s:number,i:any)=>s+Number(i.quantity),0)) == null) {
+      res.status(400).json({error:"Shipping is not configured for this vendor and destination."});return;
+    }
     // Never trust the client's wholesale shipping — recompute it server-side against the new
     // kit count so adding kits on edit can't dodge the higher tier. Fall back to the stored
     // destination country when the edit omits it.
@@ -2303,6 +2351,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
       clientVendorShipping,
       clientShippingCountry ?? order.shippingCountry,
       clientLineItems,
+      ownerId,
     );
   }
   const tip = Math.min(20, Math.max(0, parseFloat(String(clientTip)) || 0));
@@ -2548,6 +2597,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
       testingContribution: normalizedUpdateContribution.toFixed(2),
       grandTotal: grandTotal.toFixed(2),
       adminFee: resolvedAdminFee.toFixed(2),
+      ...(isWholesaleOrder && {wholesaleVendorId: req.body.wholesaleVendorId}),
       // Editing the order changes the total, so any previously-locked crypto USD
       // amount is now stale. Clear it (unless the order is paid-like) so the payment
       // panel re-locks to the exact new total on next open — never showing a stale
@@ -2582,6 +2632,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     id: randomUUID(),
     orderId: rawId,
     productId: li.productId,
+    vendorId: isWholesaleOrder ? req.body.wholesaleVendorId : null,
     productName: String(li.productName).trim().slice(0, MAX_PRODUCT_NAME_LENGTH),
     quantity: parseFloat(String(li.quantity)).toFixed(2),
     unitPrice: parseFloat(String(li.unitPrice)).toFixed(2),

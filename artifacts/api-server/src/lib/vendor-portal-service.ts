@@ -3,9 +3,10 @@ import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db, accountsTable, fs3CostsTable, ordersTable, orderLineItemsTable,
   wholesaleSharesTable, wholesaleShareMembersTable, vendorPortalAccessTable,
-  vendorSubmissionsTable, vendorAuditTable, type VendorSnapshot,
+  vendorSubmissionsTable, vendorAuditTable, productsTable, type VendorSnapshot,
 } from "@workspace/db";
 import { getVendors } from "../routes/config";
+import { resolveProductVendor } from "./multi-vendor-shipping";
 import { calcTotalShipping, pickRegionForCountry } from "./wholesale-shipping";
 import { assertNoActiveRefunds, refundMutationPredicate } from "./refund-mutation-guard";
 import { supplierItems, requiredShipping, sourceFingerprint, previewFingerprint, VendorPortalError } from "./vendor-portal-model";
@@ -44,7 +45,8 @@ export function validateSourceOrders(orders: any[]) {
 
 // Locks use the same parent→member-order direction as shared-order workflows.
 export async function loadVendorSource(tx: Executor, sourceKey: string, lock = false) {
-  const sharedId = sourceKey.startsWith("share:") ? sourceKey.slice(6) : null;
+  const [baseKey, selectedVendorId] = sourceKey.split(":vendor:");
+  const sharedId = baseKey.startsWith("share:") ? baseKey.slice(6) : null;
   let share: any = null;
   let orderIds: string[];
   if (sharedId) {
@@ -64,7 +66,7 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
   }
   let query = tx.select().from(ordersTable).where(inArray(ordersTable.id, orderIds)).orderBy(asc(ordersTable.id));
   if (lock) query = query.for("update");
-  const orders: any[] = await query;
+  let orders: any[] = await query;
   if (orders.length !== orderIds.length) throw new VendorPortalError("Order membership changed. Review the order.", 409);
   validateSourceOrders(orders);
   if (orders.some(o => (sharedId ? o.sharedOrderId !== sharedId || o.orderType !== "wholesale_shared" : o.sharedOrderId || o.orderType !== "wholesale"))) {
@@ -75,13 +77,25 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
     const mutable = await tx.select({ id: ordersTable.id }).from(ordersTable).where(and(inArray(ordersTable.id, orderIds), refundMutationPredicate()));
     if (mutable.length !== orderIds.length) throw new VendorPortalError("Order has an active refund.", 409);
   }
-  const items = await tx.select({
+  const allItems = await tx.select({
     productId: orderLineItemsTable.productId, productName: orderLineItemsTable.productName,
-    quantity: orderLineItemsTable.quantity,
+    quantity: orderLineItemsTable.quantity, vendorId: orderLineItemsTable.vendorId, orderId: orderLineItemsTable.orderId,
   }).from(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, orderIds));
+  const vendors = await getVendors();
+  const products: any[] = await tx.select().from(productsTable).where(inArray(productsTable.id, allItems.map((i: any) => i.productId)));
+  const resolvedItems = allItems.map((i: any) => ({
+    ...i, vendorId: i.vendorId ?? share?.vendorId ?? orders.find(o => o.id === i.orderId)?.wholesaleVendorId
+      ?? resolveProductVendor(products.find(p => p.id === i.productId) ?? {}, vendors)?.id ?? null,
+  }));
+  const items = selectedVendorId ? resolvedItems.filter((i: any) => i.vendorId === selectedVendorId) : resolvedItems;
+  if (!items.length) throw new VendorPortalError("This order has no items for the selected vendor.", 409);
+  const vendorIds = [...new Set<string>(items.map((i: any) => i.vendorId).filter(Boolean))];
+  if (selectedVendorId && (vendorIds.length !== 1 || vendorIds[0] !== selectedVendorId)) throw new VendorPortalError("Vendor ownership is unclear. Review the order in Admin.", 409);
+  orderIds = [...new Set<string>(items.map((i: any) => i.orderId))].sort();
+  orders = orders.filter(o => orderIds.includes(o.id));
   const shipping = requiredShipping(share ?? orders[0]);
   return {
-    orderIds, orders, share, items, shipping,
+    orderIds, orders, share, items, shipping, vendorIds, products,
     fingerprint: sourceFingerprint({ items, shipping, orderIds }),
     reference: sharedId ? `Shared ${sharedId}` : orders[0].code,
   };
@@ -90,7 +104,7 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
 export async function isVendorSubmissionStale(tx: Executor, row: any): Promise<boolean> {
   try {
     const source = await loadVendorSource(tx, row.sourceKey);
-    return source.fingerprint !== row.sourceFingerprint || (source.share?.vendorId && source.share.vendorId !== row.vendorId);
+    return source.fingerprint !== row.sourceFingerprint || source.vendorIds.some(id => id !== row.vendorId);
   } catch (error) {
     if (error instanceof VendorPortalError || (error as any)?.name === "RefundMutationBlockedError") return true;
     throw error;
@@ -107,13 +121,21 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
   if (matches.length !== codes.length || codes.some(c => matches.filter((o: any) => o.code === c).length !== 1)) {
     throw new VendorPortalError("Some order numbers are missing or ambiguous. Check the selected orders.");
   }
-  const keys: string[] = [...new Set<string>(matches.map((o: any) => o.sharedOrderId ? `share:${o.sharedOrderId}` : `order:${o.id}`))].sort();
+  const keys: string[] = [...new Set<string>(matches.map((o: any) => o.sharedOrderId ? `share:${o.sharedOrderId}:vendor:${vendorId}` : `order:${o.id}`))].sort();
   const costs = await tx.select().from(fs3CostsTable);
   const prepared = [];
-  for (const sourceKey of keys) {
+  for (let sourceKey of keys) {
+    if (sourceKey.includes(":vendor:")) {
+      const legacyKey = sourceKey.split(":vendor:")[0];
+      const [legacy] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.sourceKey, legacyKey));
+      if (legacy) {
+        if (legacy.vendorId !== vendorId) throw new VendorPortalError("This legacy shipment is already assigned to another vendor.", 409);
+        sourceKey = legacyKey;
+      }
+    }
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`vendor-submit:${sourceKey}`}))`);
     const source = await loadVendorSource(tx, sourceKey, true);
-    if (source.share?.vendorId && source.share.vendorId !== vendorId) throw new VendorPortalError("Shared order belongs to a different vendor.", 409);
+    if (source.vendorIds.length !== 1 || source.vendorIds[0] !== vendorId) throw new VendorPortalError("This order belongs to a different vendor. Review its vendor assignment.", 409);
     const [existing] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.sourceKey, sourceKey)).for("update");
     if (existing) {
       if (existing.vendorId !== vendorId) throw new VendorPortalError("This shipment is already submitted to another vendor.", 409);
@@ -122,7 +144,14 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
       continue;
     }
     if (source.orders.some(o => ["Shipped", "Completed"].includes(o.status))) throw new VendorPortalError("An already shipped or completed order cannot be submitted as a new supplier shipment.", 409);
-    const items = supplierItems(source.items, costs);
+    const scopedCosts = source.items.map((i: any) => {
+      const product = source.products.find((p: any) => p.id === i.productId);
+      const unitCost = product?.wholesaleCost ?? (!product?.wholesaleVendorId ? costs.find((c: any) => c.productName === i.productName)?.unitCost : undefined);
+      return {productName:i.productName,unitCost};
+    });
+    const distinctCosts = [...new Map(scopedCosts.map((c: any) => [c.productName,c])).values()] as Array<{productName:string;unitCost:unknown}>;
+    if (distinctCosts.some(c => c.unitCost == null)) throw new VendorPortalError("Set this vendor's supplier cost on every selected wholesale product before submitting.");
+    const items = supplierItems(source.items, distinctCosts);
     const kits = items.reduce((total, i) => total + i.quantity, 0);
     const region = pickRegionForCountry(vendor, source.shipping.country);
     const shippingAmount = region && calcTotalShipping(vendor, region.region, kits);

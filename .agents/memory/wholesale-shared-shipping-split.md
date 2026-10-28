@@ -11,7 +11,9 @@ Wholesale buyers must be able to choose their vendor. Shared orders may contain 
 
 **Why:** The user plans to add another wholesale vendor and explicitly requested both vendors' shipping charges when buying from both in the same shared order.
 
-**How to apply:** Preserve vendor identity and separate shipping amounts throughout checkout and shared-order calculations. The exact allocation of each vendor's charge among members is still a draft assumption for user review, not a confirmed rule.
+**How to apply:** Preserve vendor identity and separate shipping amounts throughout checkout and shared-order calculations. Allocate each vendor's shipping only among members buying from that vendor, using the share's existing even/by-size mode. Snapshot the per-vendor and member amounts when locking; do not reprice historical paid orders.
+
+**Why this allocation:** A member buying only from one supplier must not subsidise shipping from another supplier. Adding a second supplier must not reinterpret historical payment commitments.
 
 ## Existing shipping integrity
 
