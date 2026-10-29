@@ -9,14 +9,14 @@ export function vendorSupplierCsv(shipments:Array<{reference:string;snapshot:Ven
   }
   return rows.map(row=>row.map(escape).join(",")).join("\r\n");
 }
-export function vendorSupplierText(shipments: Array<{reference:string; vendorId:string; snapshot:VendorSnapshot}>, vendorName: string) {
-  return shipments.map(s => [
-    `Order no. ${s.reference}`, `Vendor: ${vendorName}`, "New Order:", "",
+export function vendorSupplierText(shipments: Array<{reference:string; vendorId:string; snapshot:VendorSnapshot}>, _vendorName: string) {
+  return shipments.map((s, index) => [
+    `Order no. ${s.reference}`, `New Order ${index + 1}:`, "",
     ...s.snapshot.items.map(i => `${i.productName} x${i.quantity} = $${i.lineTotal}`), "",
     `Total QTY: ${s.snapshot.items.reduce((n,i)=>n+i.quantity,0)}`,
     `Total: $${s.snapshot.productCost}`, `Package: $${s.snapshot.shippingCost}`, `Grand Total: $${s.snapshot.totalCost}`,
     "", "Address:", s.snapshot.shipping.name || "Recipient name: Not provided",
     s.snapshot.shipping.address || "Address: Not provided", s.snapshot.shipping.country || "Country: Not provided",
-    `Phone: ${s.snapshot.shipping.phone || "Not provided"}`, `Email: ${s.snapshot.shipping.email || "Not provided"}`,
+    `Phone: ${s.snapshot.shipping.phone || "Not provided"}`,
   ].join("\n")).join("\n\n--------------------\n\n");
 }

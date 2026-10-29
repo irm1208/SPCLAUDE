@@ -43,3 +43,11 @@ FS3 order TXT downloads must not be blocked by missing customer contact details.
 **Why:** The user repeatedly needs the downloaded orders to send to the supplier and explicitly rejected a missing-email blocker on downloads.
 
 **How to apply:** Do not reuse strict submission contact requirements for an Admin export. Preserve supplier cost, shipping calculation and vendor-isolation safeguards.
+
+## Preserve the supplier TXT layout
+
+The user requires numbered “New Order 1:”, “New Order 2:” sections, product lines, quantity/cost/package/grand totals, address and phone, separated by dashes. No vendor line or email addresses.
+
+**Why:** The user explicitly rejected unsolicited TXT layout changes while fixing downloads and supplied the required format.
+
+**How to apply:** Match that format; do not redesign supplier downloads as part of unrelated fixes. Keep customer addresses and supplier pricing intact.

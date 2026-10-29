@@ -207,6 +207,10 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect(result.data.text).toContain("50.00");
     expect(result.data.text).toContain("90.00");
     expect(result.data.text).not.toContain("1998");
+    expect(result.data.text).toContain(`Order no. ${f.code}\nNew Order 1:`);
+    expect(result.data.text).not.toContain("Email:");
+    expect(result.data.text).not.toContain("fixture@example.invalid");
+    expect(result.data.text).not.toContain("Vendor:");
     expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
   }));
 
@@ -217,9 +221,10 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     const result = await request("/admin/vendor-portal/export", undefined, input, true);
     expect(result.status).toBe(200);
     expect(result.data.filename).toMatch(/\.txt$/);
-    for (const text of [f.code, f.name, "Fixture Recipient", "Fixture Road", "Package: $50.00", "Grand Total: $90.00", "Email: Not provided", "Phone: Not provided"]) {
+    for (const text of [f.code, f.name, "Fixture Recipient", "Fixture Road", "Package: $50.00", "Grand Total: $90.00", "Phone: Not provided"]) {
       expect(result.data.text).toContain(text);
     }
+    expect(result.data.text).not.toContain("Email:");
     expect(result.data.text).not.toContain("1998");
     expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
     const [order] = await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
