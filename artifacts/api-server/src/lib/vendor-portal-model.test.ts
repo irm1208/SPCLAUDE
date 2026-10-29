@@ -89,4 +89,10 @@ describe("vendor order privacy and pricing", () => {
     expect(requiredShipping({ shippingName: "N", shippingAddress: "17 Road, London, W1 1AA", shippingCity: "London", shippingPostcode: "W1 1AA", shippingCountry: "UK", shippingPhone: "1", shippingEmail: "n@example.test" }).address)
       .toBe("17 Road, London, W1 1AA");
   });
+  it("allows incomplete contact details only for exports, retaining strict submission checks", () => {
+    const source = { shippingName: "N", shippingAddress: "17 Road", shippingCountry: "UK" };
+    expect(requiredShipping(source, "export")).toEqual({ name: "N", address: "17 Road", country: "UK", phone: "", email: "" });
+    expect(() => requiredShipping(source)).toThrow(/phone, email/);
+    expect(() => requiredShipping(source, "submission")).toThrow(/phone, email/);
+  });
 });

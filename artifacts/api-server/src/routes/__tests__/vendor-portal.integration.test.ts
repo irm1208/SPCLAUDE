@@ -210,6 +210,25 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
   }));
 
+  it("downloads TXT without optional contact details, without submitting or changing the order", () => fixture(async f => {
+    await f.tx.update(store.ordersTable).set({ shippingEmail: null, shippingPhone: null }).where(eq(store.ordersTable.id, f.orderId));
+    const input = { vendorId: "vendor-a", orderCodes: [f.code], format: "txt" };
+    expect((await request("/admin/vendor-portal/export", undefined, input)).status).toBe(403);
+    const result = await request("/admin/vendor-portal/export", undefined, input, true);
+    expect(result.status).toBe(200);
+    expect(result.data.filename).toMatch(/\.txt$/);
+    for (const text of [f.code, f.name, "Fixture Recipient", "Fixture Road", "Package: $50.00", "Grand Total: $90.00", "Email: Not provided", "Phone: Not provided"]) {
+      expect(result.data.text).toContain(text);
+    }
+    expect(result.data.text).not.toContain("1998");
+    expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
+    const [order] = await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
+    expect(order.status).toBe("Submitted");
+    expect(order.paymentStatus).toBe("confirmed");
+    expect(order.shippingEmail).toBeNull();
+    expect((await request("/admin/vendor-portal/preview", undefined, input, true)).status).toBe(400);
+  }));
+
   it("gates all orders by explicit Admin submission, exposes only costs and retries idempotently", () => fixture(async f => {
     expect((await request("/vendor/orders")).status).toBe(401);
     expect((await request("/vendor/orders", f.member)).status).toBe(403);

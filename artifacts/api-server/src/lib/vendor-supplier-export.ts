@@ -15,7 +15,8 @@ export function vendorSupplierText(shipments: Array<{reference:string; vendorId:
     ...s.snapshot.items.map(i => `${i.productName} x${i.quantity} = $${i.lineTotal}`), "",
     `Total QTY: ${s.snapshot.items.reduce((n,i)=>n+i.quantity,0)}`,
     `Total: $${s.snapshot.productCost}`, `Package: $${s.snapshot.shippingCost}`, `Grand Total: $${s.snapshot.totalCost}`,
-    "", "Address:", s.snapshot.shipping.name, s.snapshot.shipping.address, s.snapshot.shipping.country,
-    `Phone: ${s.snapshot.shipping.phone}`, `Email: ${s.snapshot.shipping.email}`,
+    "", "Address:", s.snapshot.shipping.name || "Recipient name: Not provided",
+    s.snapshot.shipping.address || "Address: Not provided", s.snapshot.shipping.country || "Country: Not provided",
+    `Phone: ${s.snapshot.shipping.phone || "Not provided"}`, `Email: ${s.snapshot.shipping.email || "Not provided"}`,
   ].join("\n")).join("\n\n--------------------\n\n");
 }

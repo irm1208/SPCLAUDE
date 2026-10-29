@@ -89,7 +89,7 @@ export function previewFingerprint(shipments: unknown): string {
   };
   return createHash("sha256").update(JSON.stringify(canonical(shipments))).digest("hex");
 }
-export function requiredShipping(source: Record<string, any>): VendorShipping {
+export function requiredShipping(source: Record<string, any>, purpose: "submission" | "export" = "submission"): VendorShipping {
   const address = String(source.shippingAddress ?? "").trim();
   const addressParts = [address];
   for (const part of [source.shippingCity, source.shippingPostcode]) {
@@ -102,7 +102,9 @@ export function requiredShipping(source: Record<string, any>): VendorShipping {
     email: String(source.shippingEmail ?? "").trim(),
   };
   const missing = Object.entries(shipping).filter(([, value]) => !value).map(([key]) => key);
-  if (missing.length) throw new VendorPortalError(`Delivery details missing: ${missing.join(", ")}. Set these before submitting.`);
+  // An Admin download is not vendor submission: retain known details and let
+  // the export label absent fields without inventing customer information.
+  if (purpose === "submission" && missing.length) throw new VendorPortalError(`Delivery details missing: ${missing.join(", ")}. Set these before submitting.`);
   return shipping;
 }
 export function publicVendorOrder(row: any, stale: boolean, images: any[]) {

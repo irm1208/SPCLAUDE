@@ -256,7 +256,7 @@ router.post("/admin/vendor-portal/export", handled(async (req,res) => {
   const vendor = (await getVendors()).find(v=>v.id===req.body?.vendorId);
   const codes = req.body?.orderCodes;
   if (!vendor || !Array.isArray(codes) || codes.some(c=>typeof c !== "string")) throw new VendorPortalError("Choose a vendor and orders to export.");
-  const shipments = await db.transaction(tx=>prepareVendorShipments(tx,vendor.id,codes));
+  const shipments = await db.transaction(tx=>prepareVendorShipments(tx,vendor.id,codes,"export"));
   const csv=req.body?.format==="csv";
   res.set("Cache-Control","no-store").json({filename:`supplier-${vendor.id}.${csv?"csv":"txt"}`,text:csv?vendorSupplierCsv(shipments,vendor.name):vendorSupplierText(shipments,vendor.name)});
 }));

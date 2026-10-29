@@ -44,7 +44,7 @@ export function validateSourceOrders(orders: any[]) {
 }
 
 // Locks use the same parent→member-order direction as shared-order workflows.
-export async function loadVendorSource(tx: Executor, sourceKey: string, lock = false) {
+export async function loadVendorSource(tx: Executor, sourceKey: string, lock = false, purpose: "submission" | "export" = "submission") {
   const [baseKey, selectedVendorId] = sourceKey.split(":vendor:");
   const sharedId = baseKey.startsWith("share:") ? baseKey.slice(6) : null;
   let share: any = null;
@@ -93,7 +93,7 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
   if (selectedVendorId && (vendorIds.length !== 1 || vendorIds[0] !== selectedVendorId)) throw new VendorPortalError("Vendor ownership is unclear. Review the order in Admin.", 409);
   orderIds = [...new Set<string>(items.map((i: any) => i.orderId))].sort();
   orders = orders.filter(o => orderIds.includes(o.id));
-  const shipping = requiredShipping(share ?? orders[0]);
+  const shipping = requiredShipping(share ?? orders[0], purpose);
   return {
     orderIds, orders, share, items, shipping, vendorIds, products,
     fingerprint: sourceFingerprint({ items, shipping, orderIds }),
@@ -111,7 +111,7 @@ export async function isVendorSubmissionStale(tx: Executor, row: any): Promise<b
   }
 }
 
-export async function prepareVendorShipments(tx: Executor, vendorId: string, orderCodes: string[]) {
+export async function prepareVendorShipments(tx: Executor, vendorId: string, orderCodes: string[], purpose: "submission" | "export" = "submission") {
   const vendor = (await getVendors()).find(v => v.id === vendorId);
   if (!vendor) throw new VendorPortalError("Choose a configured wholesale vendor.");
   const codes = [...new Set(orderCodes)];
@@ -134,7 +134,7 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
       }
     }
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`vendor-submit:${sourceKey}`}))`);
-    const source = await loadVendorSource(tx, sourceKey, true);
+    const source = await loadVendorSource(tx, sourceKey, true, purpose);
     if (source.vendorIds.length !== 1 || source.vendorIds[0] !== vendorId) throw new VendorPortalError("This order belongs to a different vendor. Review its vendor assignment.", 409);
     const [existing] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.sourceKey, sourceKey)).for("update");
     if (existing) {

@@ -28,3 +28,11 @@ The user requested filling UR / Uther's missing supplier-cost fields from FS3 on
 **Why:** The request names UR; copying this list to another vendor could silently price that supplier's products incorrectly. The live Admin API rejected a background shared-secret update, so the user approved an authenticated review-and-apply import action instead.
 
 **How to apply:** Use the signed-in Admin flow for the live import, preserve existing costs and unrelated product fields, and do not claim live prices changed merely because the import feature was implemented in preview.
+
+## Supplier downloads versus vendor submission
+
+FS3 order TXT downloads must not be blocked by missing customer contact details. Include available details and clearly label missing fields, rather than inventing them. Keep actual vendor-portal submission validation separate.
+
+**Why:** The user repeatedly needs the downloaded orders to send to the supplier and explicitly rejected a missing-email blocker on downloads.
+
+**How to apply:** Do not reuse strict submission contact requirements for an Admin export. Preserve supplier cost, shipping calculation and vendor-isolation safeguards.
