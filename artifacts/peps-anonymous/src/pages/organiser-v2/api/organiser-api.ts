@@ -142,7 +142,8 @@ export interface ApiParcel {
   carrier: string;
   trackingNumber: string;
   notes?: string | null;
-  items: string[];
+  items: Array<string | { name: string; qty: number; productId?: string }>;
+  reshipperUsername?: string | null;
   status: string;
   trackingUrl?: string | null;
   createdAt?: string;
@@ -512,6 +513,10 @@ export function createOrganiserApi(fetcher: typeof fetch = fetch) {
   createParcel: (groupBuyId: string, body: Record<string, unknown>) => request<ApiParcel>(
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/parcels`,
     { method: "POST", body },
+  ),
+  updateParcel: (groupBuyId: string, parcelId: string, body: Record<string, unknown>) => request<ApiParcel>(
+    `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/parcels/${encodeURIComponent(parcelId)}`,
+    { method: "PATCH", body },
   ),
   deleteParcel: (groupBuyId: string, parcelId: string) => request<{ ok: boolean }>(
     `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/parcels/${encodeURIComponent(parcelId)}`,

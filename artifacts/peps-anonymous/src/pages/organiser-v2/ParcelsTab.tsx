@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import {
   Package, Search, Filter, ExternalLink, Clock,
   ChevronDown, ChevronRight,
-  X, Plus, Trash2, Loader2, RefreshCw,
+  X, Plus, Trash2, Loader2, RefreshCw, Pencil,
 } from "lucide-react";
 import { V2_CARD_BORDER } from "./theme";
 import { organiserApi, type ApiParcel } from "./api/organiser-api";
+import { ParcelDestinationField, ParcelDestinationSummary } from "@/components/ParcelDestinationField";
 
 // ─── Workspace: Parcels Tab ──────────────────────────────────────────────────
-// Manages GB parcels via /organiser/group-buys/:id/parcels (GET + POST + DELETE).
+// Manages GB parcels via /organiser/group-buys/:id/parcels.
 
 interface ParcelsTabProps {
   selectedGbId?: string;
@@ -35,13 +36,16 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [expandedParcel, setExpandedParcel] = useState<string | null>(null);
   const [showAddParcel, setShowAddParcel] = useState(false);
+  const [editingParcel, setEditingParcel] = useState<ApiParcel | null>(null);
+  const [destination, setDestination] = useState<string | null>(null);
+  const [destinationChanged, setDestinationChanged] = useState(false);
 
   // Add parcel form
   const [label, setLabel] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [carrier, setCarrier] = useState("Auto");
   const [customTrackingUrl, setCustomTrackingUrl] = useState("");
-  const [items, setItems] = useState<string[]>([]);
+  const [items, setItems] = useState<ApiParcel["items"]>([]);
   const [itemInput, setItemInput] = useState("");
   const [notes, setNotes] = useState("");
   const [adding, setAdding] = useState(false);
@@ -56,7 +60,7 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [selectedGbId]);
+  useEffect(() => { load(); setShowAddParcel(false); }, [selectedGbId]);
 
   const addItem = (item: string) => {
     if (item.trim() && !items.includes(item.trim())) {
@@ -79,30 +83,46 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
   };
 
   const resetForm = () => {
+    setEditingParcel(null); setDestination(null); setDestinationChanged(false);
     setLabel(""); setTrackingNumber(""); setCarrier("Auto");
     setCustomTrackingUrl(""); setItems([]); setNotes(""); setItemInput(""); setAddError("");
   };
 
+  const editParcel = (parcel: ApiParcel) => {
+    resetForm();
+    setEditingParcel(parcel);
+    setDestination(parcel.reshipperUsername ?? null);
+    setLabel(parcel.label); setTrackingNumber(parcel.trackingNumber);
+    setCarrier(parcel.carrier || "Auto"); setCustomTrackingUrl(parcel.trackingUrl ?? "");
+    setItems([...parcel.items]); setNotes(parcel.notes ?? "");
+    setShowAddParcel(true);
+  };
+
   const handleSubmit = async () => {
+    if (adding) return;
     if (!selectedGbId || !label.trim() || !trackingNumber.trim()) {
       setAddError("Label and tracking number are required");
       return;
     }
     setAdding(true); setAddError("");
     try {
-      const parcel = await organiserApi.createParcel(selectedGbId, {
+      const body = {
+        ...(!editingParcel || destinationChanged ? { reshipperUsername: destination } : {}),
         label: label.trim(),
         trackingNumber: trackingNumber.trim(),
         carrier: carrier || "Auto",
-        trackingUrl: customTrackingUrl.trim() || undefined,
+        trackingUrl: customTrackingUrl.trim() || null,
         items,
-        notes: notes.trim() || undefined,
-      });
-      setParcels(prev => [parcel, ...prev]);
+        notes: notes.trim() || null,
+      };
+      const parcel = editingParcel
+        ? await organiserApi.updateParcel(selectedGbId, editingParcel.id, body)
+        : await organiserApi.createParcel(selectedGbId, body);
+      setParcels(prev => editingParcel ? prev.map(p => p.id === parcel.id ? parcel : p) : [parcel, ...prev]);
       resetForm();
       setShowAddParcel(false);
     } catch (err: unknown) {
-      setAddError(err instanceof Error ? err.message : "Failed to add parcel");
+      setAddError(err instanceof Error ? err.message : "Failed to save parcel");
     } finally {
       setAdding(false);
     }
@@ -233,6 +253,7 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
                     <div className="min-w-0">
                       <div className="text-[14px] font-bold truncate" style={{ color: "var(--t-text)" }}>{parcel.label}</div>
                       <div className="text-[12px] font-mono truncate" style={{ color: "var(--t-subtle)" }}>{parcel.trackingNumber}</div>
+                      <ParcelDestinationSummary value={parcel.reshipperUsername} />
                     </div>
                     <div>
                       <div className="text-[12px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "var(--t-subtle)" }}>Carrier</div>
@@ -273,6 +294,13 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
                         </div>
                       </div>
                       <button
+                        onClick={() => editParcel(parcel)}
+                        className="h-8 px-2 rounded-lg flex items-center gap-1 text-xs font-semibold"
+                        style={{ color: "var(--t-blue)" }}
+                      >
+                        <Pencil className="w-4 h-4" /> Edit parcel
+                      </button>
+                      <button
                         onClick={() => handleDelete(parcel.id)}
                         className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50"
                         style={{ color: "#DC2626" }}
@@ -288,7 +316,7 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
                         <div className="flex flex-wrap gap-1.5">
                           {parcel.items.map((item, i) => (
                             <span key={i} className="text-[12px] px-2 py-1 rounded-md" style={{ background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
-                              {item}
+                              {typeof item === "string" ? item : `${item.name} ×${item.qty}`}
                             </span>
                           ))}
                         </div>
@@ -321,25 +349,27 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
 
       {/* Add Parcel Modal */}
       {showAddParcel && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowAddParcel(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { if (!adding) setShowAddParcel(false); }}>
           <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-white px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${V2_CARD_BORDER}` }}>
               <div>
-                <h3 className="text-[16px] font-bold" style={{ color: "var(--t-text)" }}>Add Parcel</h3>
+                <h3 className="text-[16px] font-bold" style={{ color: "var(--t-text)" }}>{editingParcel ? "Edit Parcel" : "Add Parcel"}</h3>
                 <p className="text-[13px] mt-0.5" style={{ color: "var(--t-subtle)" }}>Create a new tracked parcel shipment</p>
               </div>
-              <button onClick={() => setShowAddParcel(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5" style={{ color: "var(--t-subtle)" }}>
+              <button disabled={adding} onClick={() => setShowAddParcel(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5" style={{ color: "var(--t-subtle)" }}>
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <fieldset disabled={adding} className="p-5 space-y-4">
               {addError && (
                 <div className="p-3 rounded-lg text-[13px] font-semibold" style={{ background: "#FEF2F2", color: "#DC2626", border: "1px solid #FECACA" }}>
                   {addError}
                 </div>
               )}
 
+              <ParcelDestinationField gbId={selectedGbId} scope="organiser" value={destination}
+                onChange={value => { setDestination(value); setDestinationChanged(true); }} />
               <div>
                 <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Label <span style={{ color: "#EF4444" }}>*</span></label>
                 <input type="text" placeholder="e.g. UK Batch 5 — Reshipper London" value={label} onChange={e => setLabel(e.target.value)}
@@ -356,6 +386,7 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
                 <label className="block text-[13px] font-semibold mb-1.5" style={{ color: "var(--t-text)" }}>Carrier</label>
                 <select value={carrier} onChange={e => setCarrier(e.target.value)}
                   className="w-full h-10 px-3 rounded-lg text-[14px] outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }}>
+                  {!CARRIERS.includes(carrier) && <option value={carrier}>{carrier}</option>}
                   {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -382,7 +413,7 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
                   <div className="mt-2 space-y-1.5">
                     {items.map((item, i) => (
                       <div key={i} className="flex items-center justify-between p-2 rounded-lg" style={{ background: "var(--t-surface2)" }}>
-                        <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{item}</span>
+                        <span className="text-[13px]" style={{ color: "var(--t-text)" }}>{typeof item === "string" ? item : `${item.name} ×${item.qty}`}</span>
                         <button type="button" onClick={() => setItems(prev => prev.filter((_, j) => j !== i))}
                           className="w-6 h-6 rounded flex items-center justify-center hover:bg-red-50" style={{ color: "#EF4444" }}>
                           <Trash2 className="w-3.5 h-3.5" />
@@ -398,10 +429,10 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
                 <textarea placeholder="Add any internal notes…" value={notes} onChange={e => setNotes(e.target.value)} rows={2}
                   className="w-full px-3 py-2 rounded-lg text-[14px] resize-none outline-none" style={{ border: `1px solid ${V2_CARD_BORDER}`, color: "var(--t-text)" }} />
               </div>
-            </div>
+            </fieldset>
 
             <div className="sticky bottom-0 bg-white px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: `1px solid ${V2_CARD_BORDER}` }}>
-              <button onClick={() => setShowAddParcel(false)}
+              <button disabled={adding} onClick={() => setShowAddParcel(false)}
                 className="px-4 py-2 rounded-lg text-[14px] font-semibold hover:bg-black/5"
                 style={{ color: "var(--t-text)", border: `1px solid ${V2_CARD_BORDER}` }}>
                 Cancel
@@ -410,7 +441,7 @@ export default function ParcelsTab({ selectedGbId }: ParcelsTabProps = {}) {
                 className="px-4 py-2 rounded-lg text-[14px] font-semibold text-white flex items-center gap-2 disabled:opacity-50"
                 style={{ background: "var(--t-blue)" }}>
                 {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                {adding ? "Adding…" : "Add Parcel"}
+                {adding ? "Saving…" : editingParcel ? "Save Changes" : "Add Parcel"}
               </button>
             </div>
           </div>
