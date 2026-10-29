@@ -8,7 +8,6 @@ import {
   accountGroupBuysTable,
   ordersTable,
   orderLineItemsTable,
-  gbCountryLegsTable,
   gbReshippersTable,
   type GbParcel,
   type ParcelItem,
@@ -16,7 +15,7 @@ import {
 } from "@workspace/db";
 import { eq, and, or, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { translateZh } from "../lib/translate-zh";
+import { maskLocation, maskStatus } from "../lib/parcel-event-privacy";
 import { refreshManuallyIfAllowed } from "../lib/manual-tracking-refresh";
 import { getTrack17Key, track17Client } from "../lib/track17-service";
 import {
@@ -27,44 +26,11 @@ import {
   unchangedGbParcelTrackingIdentity,
 } from "../lib/manual-tracking-route-model";
 import type { Track17DetailedResult } from "../lib/track17-client";
+import { validateParcelDestination } from "../lib/parcel-destination-service";
+import { projectMemberParcels } from "../lib/member-gb-parcels";
+import { loadMemberParcelRouting } from "../lib/member-parcel-routing-service";
 
 const router = Router();
-
-// Location + status sanitisers (same logic as shipments.ts)
-const COUNTRY_MAP: [string, string][] = [
-  ["hong kong", "China"], ["china", "China"], [", cn", "China"],
-  ["united kingdom", "United Kingdom"], ["england", "United Kingdom"],
-  ["scotland", "United Kingdom"], [", uk", "United Kingdom"],
-  ["united states", "United States"], [", usa", "United States"], [", us", "United States"],
-  ["germany", "Germany"], ["france", "France"], ["netherlands", "Netherlands"],
-  ["belgium", "Belgium"], ["poland", "Poland"], ["sweden", "Sweden"],
-  ["norway", "Norway"], ["denmark", "Denmark"], ["finland", "Finland"],
-  ["spain", "Spain"], ["italy", "Italy"], ["portugal", "Portugal"],
-  ["switzerland", "Switzerland"], ["austria", "Austria"],
-  ["australia", "Australia"], ["canada", "Canada"],
-  ["japan", "Japan"], ["south korea", "South Korea"], ["singapore", "Singapore"],
-  ["taiwan", "China"], ["thailand", "Thailand"], ["india", "India"],
-];
-
-function maskLocation(loc: string): string {
-  if (!loc) return "";
-  const lower = loc.toLowerCase();
-  for (const [key, label] of COUNTRY_MAP) {
-    if (lower.includes(key)) return label;
-  }
-  return "";
-}
-
-function maskStatus(status: string): string {
-  if (!status) return "";
-  const translated = translateZh(status);
-  if (translated !== status) return translated;
-  return status
-    .replace(/signed\s+(for\s+)?by[:\s]+[A-Z][a-zA-Z]+(\s+[A-Z][a-zA-Z]+)*/g, "Signed for")
-    .replace(/received\s+by[:\s]+[A-Z][a-zA-Z]+(\s+[A-Z][a-zA-Z]+)*/gi, "Received")
-    .replace(/\d{1,5}\s+[A-Z][a-zA-Z]+(\s+[A-Z][a-zA-Z]*)*(St|Ave|Blvd|Rd|Dr|Ln|Ct|Pl|Way|Street|Avenue|Road)/gi, "")
-    .trim();
-}
 
 // v2.4 uses string status names instead of numeric codes
 const STATUS_STRING_MAP: Record<string, string> = {
@@ -133,11 +99,6 @@ function parseTrack17(accepted: unknown): { status: string; statusCode: number; 
   }
 
   return { status, statusCode, events };
-}
-
-function maskTrackingNumber(tn: string): string {
-  // Fully opaque — show no real characters so the carrier cannot be identified
-  return "•".repeat(Math.min(Math.max(tn.length, 6), 12));
 }
 
 export function resolveCarrierCode(carrier: string): number {
@@ -3518,11 +3479,15 @@ async function refreshParcel(
 
 // ─── Verify GB membership ──────────────────────────────────────
 async function isMember(accountId: string, groupBuyId: string): Promise<boolean> {
+  const bare = accountId.trim().replace(/^@/, "").toLowerCase();
   const rows = await db
     .select({ id: accountGroupBuysTable.id })
     .from(accountGroupBuysTable)
     .where(and(
-      eq(accountGroupBuysTable.accountId, accountId),
+      or(
+        eq(sql`lower(${accountGroupBuysTable.accountId})`, bare),
+        eq(sql`lower(${accountGroupBuysTable.accountId})`, `@${bare}`),
+      ),
       eq(accountGroupBuysTable.groupBuyId, groupBuyId),
     ));
   return rows.length > 0;
@@ -3552,14 +3517,14 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
       and(
         eq(ordersTable.groupBuyId, id),
         inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
+        sql`${ordersTable.deletedAt} IS NULL`,
+        sql`lower(${ordersTable.status}) <> 'cancelled'`,
         or(
           eq(sql`lower(${ordersTable.telegramUsername})`, tgWithAt),
           eq(sql`lower(${ordersTable.telegramUsername})`, tgBare),
         ),
       )
     );
-
-  console.log(`[parcels-debug] tg=${tg} gbId=${id} paidOrders=${paidOrders.length} ids=[${paidOrders.map(o => o.id).join(",")}]`);
 
   if (paidOrders.length === 0) {
     res.status(403).json({ error: "No confirmed order in this group buy" });
@@ -3583,84 +3548,11 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
     .from(ordersTable)
     .where(inArray(ordersTable.id, paidOrderIds));
 
-  // Set of reshipper usernames explicitly assigned to this member's orders.
-  const assignedReshippers = new Set(
-    (paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
-      .map(u => u.replace(/^@/, "").toLowerCase())
-  );
-  // Always include member's own handle (they may be a GB reshipper receiving own parcels)
-  assignedReshippers.add(tgBare);
-
-  // Also resolve reshippers via country leg — single-reshipper legs don't stamp reshipperUsername
-  // on the order row; the order only has countryLegId set. Walk: countryLegId → countryCode →
-  // gbReshippersTable to find who handles that leg, and add them to assignedReshippers.
-  //
-  // IMPORTANT: only do this for orders that are actually routed through a reshipper.
-  // Direct orders (routingType='direct', or legacy directShippingRequested=true) must never
-  // have reshippers added — that would cause them to see other customers' reshipper parcels.
-  const reshipperOrderRows = paidOrderRows.filter(o => {
-    if (o.routingType === "direct") return false;          // explicitly direct — never a reshipper route
-    if (o.routingType === "reshipper") return true;        // explicitly reshipper-routed
-    // Legacy orders: fall back to directShippingRequested (false = goes via reshipper hub)
-    return !o.directShippingRequested;
-  });
-
-  const legIds = reshipperOrderRows.map(o => o.countryLegId).filter(Boolean) as string[];
-  if (legIds.length > 0) {
-    const legRows = await db
-      .select({ countryCode: gbCountryLegsTable.countryCode, gbId: gbCountryLegsTable.gbId })
-      .from(gbCountryLegsTable)
-      .where(inArray(gbCountryLegsTable.id, legIds));
-
-    for (const leg of legRows) {
-      const reshippers = await db
-        .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
-        .from(gbReshippersTable)
-        .where(and(
-          eq(gbReshippersTable.gbId, leg.gbId),
-          eq(gbReshippersTable.country, leg.countryCode),
-          eq(gbReshippersTable.enabled, true),
-        ));
-      reshippers.forEach(r => {
-        if (r.reshipperUsername) assignedReshippers.add(r.reshipperUsername.replace(/^@/, "").toLowerCase());
-      });
-    }
-  }
-
-  // Collect the member's own order line items (name + quantity) for matching and qty personalisation
   const lineItems = await db
-    .select({ productName: orderLineItemsTable.productName, quantity: orderLineItemsTable.quantity })
+    .select({ orderId: orderLineItemsTable.orderId, productName: orderLineItemsTable.productName, quantity: orderLineItemsTable.quantity })
     .from(orderLineItemsTable)
     .where(inArray(orderLineItemsTable.orderId, paidOrderIds));
-  const orderedNames = new Set(lineItems.map(li => li.productName.trim().toLowerCase()));
-
-  console.log(`[parcels-debug] tg=${tg} gbId=${id} orderedNames=[${[...orderedNames].join(" | ")}]`);
-
-  // Member's own quantity per product name (aggregated across their orders)
-  const memberQtyMap = new Map<string, number>();
-  for (const li of lineItems) {
-    const key = li.productName.trim().toLowerCase();
-    memberQtyMap.set(key, (memberQtyMap.get(key) ?? 0) + (parseFloat(String(li.quantity ?? "1")) || 1));
-  }
-
-  // Fetch ALL reshipper usernames for this GB.
-  // Parcels whose `label` matches a known reshipper name are treated as "reshipper parcels";
-  // parcels that don't match any reshipper are treated as direct / unassigned parcels.
-  const allGbReshipperRows = await db
-    .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
-    .from(gbReshippersTable)
-    .where(eq(gbReshippersTable.gbId, id));
-  const allGbReshipperNames = new Set(
-    allGbReshipperRows.map(r => r.reshipperUsername.replace(/^@/, "").toLowerCase())
-  );
-
-  // Customer is "direct shipping" when none of their paid orders route through a reshipper hub.
-  const isDirect = reshipperOrderRows.length === 0;
-
-  // Whether the order data resolved an actual reshipper (beyond the self-seed).
-  // When false the organiser hasn't tagged the order with routing info, so we skip
-  // the reshipper gate and fall back to pure item-name matching.
-  const hasExplicitReshipperAssignment = paidOrderRows.some(o => o.reshipperUsername) || legIds.length > 0;
+  const routing = await loadMemberParcelRouting(id, paidOrderRows);
 
   const rows = await db
     .select()
@@ -3668,85 +3560,7 @@ router.get("/group-buys/:id/parcels", requireAccount, async (req: any, res): Pro
     .where(eq(gbParcelsTable.groupBuyId, id))
     .orderBy(gbParcelsTable.createdAt);
 
-  const relevant = rows.filter(p => {
-    const parcelItems = ((p.items ?? []) as { name: string }[]);
-    if (parcelItems.length === 0) return false;
-
-    // Must contain at least one product the customer ordered
-    if (!parcelItems.some(item => orderedNames.has(item.name.trim().toLowerCase()))) return false;
-
-    // When no explicit reshipper routing was resolved, skip the gate entirely —
-    // the member sees every parcel that contains their items.
-    if (!hasExplicitReshipperAssignment) return true;
-
-    // Identify this parcel's reshipper: use the explicit field if set, otherwise match
-    // the parcel label against all known reshippers for this GB (admin convention).
-    const parcelReshipper = p.reshipperUsername
-      ? p.reshipperUsername.replace(/^@/, "").toLowerCase()
-      : (allGbReshipperNames.has(p.label.trim().toLowerCase()) ? p.label.trim().toLowerCase() : null);
-
-    if (parcelReshipper !== null) {
-      // Reshipper parcel — only visible to customers routed through that reshipper
-      return assignedReshippers.has(parcelReshipper);
-    }
-    // Non-reshipper / direct parcel — only visible to direct-shipping customers
-    return isDirect;
-  });
-
-  console.log(`[parcels-debug] tg=${tg} gbId=${id} isDirect=${isDirect} assignedReshippers=[${[...assignedReshippers].join(",")}] allReshippers=[${[...allGbReshipperNames].join(",")}] totalParcels=${rows.length} relevantParcels=${relevant.length} relevantIds=[${relevant.map(p => p.id).join(",")}]`);
-
-  // Return masked data — no real tracking number.
-  // Items are filtered to only what this member ordered, with the member's own quantity (not the
-  // parcel manifest total which could reveal how many other members ordered the same product).
-  const masked = relevant.map(p => ({
-    id: p.id,
-    label: p.label,
-    carrier: p.carrier,
-    maskedTrackingNumber: maskTrackingNumber(p.trackingNumber),
-    status: p.status,
-    items: (p.items ?? [])
-      .filter(item => orderedNames.has(item.name.trim().toLowerCase()))
-      .map(item => ({
-        ...item,
-        qty: memberQtyMap.get(item.name.trim().toLowerCase()) ?? item.qty,
-      })),
-    events: p.cachedEvents ?? [],
-    trackingUrl: p.trackingUrl ?? null,
-    lastChecked: p.lastChecked,
-    createdAt: p.createdAt,
-  }));
-
-  // For direct-shipping orders, also synthesise parcel entries from the
-  // order's own trackingNumber / trackingNumbers so the GB tracking modal
-  // shows the member's personal shipment even when no GB parcel exists.
-  const directOrderParcels: typeof masked = [];
-  const directOrders = paidOrderRows.filter(o =>
-    o.routingType === "direct" || (o.routingType !== "reshipper" && o.directShippingRequested === true)
-  );
-  for (const o of directOrders) {
-    const nums: string[] = (Array.isArray(o.trackingNumbers) && (o.trackingNumbers as string[]).length)
-      ? (o.trackingNumbers as string[])
-      : (o.trackingNumber ? [o.trackingNumber] : []);
-    if (nums.length === 0) continue;
-    const status = (o.status === "Shipped" || o.status === "Completed") ? "in_transit"
-      : o.status === "Delivered" ? "delivered" : "pending";
-    nums.forEach((num, i) => {
-      directOrderParcels.push({
-        id: `order-${o.id}-${i}`,
-        label: nums.length > 1 ? `Your Parcel ${i + 1}` : "Your Parcel",
-        carrier: "",
-        maskedTrackingNumber: num,          // show real number — this is their personal shipment
-        status,
-        items: lineItems.map(li => ({ name: li.productName, qty: Number(li.quantity) })),
-        events: [],
-        trackingUrl: `https://t.17track.net/en#nums=${encodeURIComponent(num)}`,
-        lastChecked: null,
-        createdAt: o.createdAt,
-      });
-    });
-  }
-
-  res.json([...directOrderParcels, ...masked]);
+  res.json(projectMemberParcels(rows, routing.orders, lineItems, routing.usernames));
 });
 
 // ─── Admin: list parcels ──────────────────────────────────────
@@ -3781,10 +3595,14 @@ router.post("/admin/group-buys/:id/parcels", async (req: any, res): Promise<void
   if (!trackingNumber?.trim()) { res.status(400).json({ error: "trackingNumber is required" }); return; }
 
   const parcelId = randomUUID();
+  let destination: string | null | undefined;
+  try { destination = await validateParcelDestination(id, req.body.reshipperUsername); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
 
   await db.insert(gbParcelsTable).values({
     id: parcelId,
     groupBuyId: id,
+    reshipperUsername: destination ?? null,
     label: label.trim(),
     carrier: carrier?.trim() || "Auto",
     trackingNumber: trackingNumber.trim(),
@@ -3806,9 +3624,10 @@ router.post("/admin/group-buys/:id/parcels", async (req: any, res): Promise<void
 // ─── Admin: update parcel ─────────────────────────────────────
 router.patch("/admin/group-buys/:id/parcels/:parcelId", async (req: any, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { parcelId } = req.params;
+  const { id, parcelId } = req.params;
+  const scope = and(eq(gbParcelsTable.id, parcelId), eq(gbParcelsTable.groupBuyId, id));
 
-  const [existing] = await db.select().from(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
+  const [existing] = await db.select().from(gbParcelsTable).where(scope);
   if (!existing) { res.status(404).json({ error: "Parcel not found" }); return; }
 
   const { label, carrier, trackingNumber, items, notes, trackingUrl, status, cachedEvents, trackingParams } = req.body as Partial<{
@@ -3819,6 +3638,10 @@ router.patch("/admin/group-buys/:id/parcels/:parcelId", async (req: any, res): P
   }>;
 
   const updates: Partial<typeof gbParcelsTable.$inferInsert> = {};
+  try {
+    const destination = await validateParcelDestination(id, req.body.reshipperUsername);
+    if (destination !== undefined) updates.reshipperUsername = destination;
+  } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
   if (label !== undefined) updates.label = label.trim();
   if (carrier !== undefined) updates.carrier = carrier.trim();
   if (trackingNumber !== undefined) updates.trackingNumber = trackingNumber.trim();
@@ -3831,8 +3654,8 @@ router.patch("/admin/group-buys/:id/parcels/:parcelId", async (req: any, res): P
 
   if (Object.keys(updates).length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
 
-  await db.update(gbParcelsTable).set(updates).where(eq(gbParcelsTable.id, parcelId));
-  const [updated] = await db.select().from(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
+  await db.update(gbParcelsTable).set(updates).where(scope);
+  const [updated] = await db.select().from(gbParcelsTable).where(scope);
 
   // Re-register with 17track if tracking number changed
   if (trackingNumber !== undefined && trackingNumber.trim() !== existing.trackingNumber) {
@@ -3845,9 +3668,9 @@ router.patch("/admin/group-buys/:id/parcels/:parcelId", async (req: any, res): P
 // ─── Admin: delete parcel ─────────────────────────────────────
 router.delete("/admin/group-buys/:id/parcels/:parcelId", async (req: any, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
-  const { parcelId } = req.params;
+  const { id, parcelId } = req.params;
 
-  await db.delete(gbParcelsTable).where(eq(gbParcelsTable.id, parcelId));
+  await db.delete(gbParcelsTable).where(and(eq(gbParcelsTable.id, parcelId), eq(gbParcelsTable.groupBuyId, id)));
   res.json({ ok: true });
 });
 

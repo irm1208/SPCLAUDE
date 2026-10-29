@@ -1,4 +1,5 @@
 import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
+import { ParcelDestinationField, ParcelDestinationSummary } from "@/components/ParcelDestinationField";
 import { BankTransferSettings } from "@/components/BankTransferSettings";
 import { MarkOrdersPaid } from "@/components/MarkOrdersPaid";
 import { parseBankTransfer, type BankTransfer } from "@workspace/api-zod/bank-transfer";
@@ -270,6 +271,7 @@ interface OrgLabTest {
 
 interface OrgParcel {
   id: string;
+  reshipperUsername?: string | null;
   groupBuyId: string;
   label: string;
   carrier: string;
@@ -10205,6 +10207,8 @@ function ParcelStatusBadge({ status }: { status: string }) {
 function ParcelForm({ parcel, gbId, catalogProducts, onSaved, onCancel }: {
   parcel: OrgParcel | null; gbId: string; catalogProducts: { id: string; name: string }[]; onSaved: () => void; onCancel: () => void;
 }) {
+  const [destination, setDestination] = useState(parcel?.reshipperUsername ?? null);
+  const [destinationChanged, setDestinationChanged] = useState(false);
   const [form, setForm] = useState({
     label: parcel?.label ?? "",
     carrier: parcel?.carrier ?? "Auto",
@@ -10332,6 +10336,7 @@ function ParcelForm({ parcel, gbId, catalogProducts, onSaved, onCancel }: {
         if (v.trim()) cleanParams[k] = v.trim();
       }
       const body = {
+        reshipperUsername: !parcel || destinationChanged ? destination : undefined,
         label: form.label.trim(),
         carrier: form.carrier.trim() || "Auto",
         trackingNumber: form.trackingNumber.trim(),
@@ -10357,6 +10362,7 @@ function ParcelForm({ parcel, gbId, catalogProducts, onSaved, onCancel }: {
       <SectionCard>
         <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{parcel ? "Edit Parcel" : "New Parcel"}</p>
         {error && <ErrorBanner msg={error} />}
+        <ParcelDestinationField gbId={gbId} scope="organiser" value={destination} onChange={value => { setDestination(value); setDestinationChanged(true); }} />
         <Field label="Label *"><input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="e.g. Batch A — UK Members" className={inputCls} style={inputStyle} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Tracking Number *"><input value={form.trackingNumber} onChange={e => setForm(f => ({ ...f, trackingNumber: e.target.value }))} placeholder="e.g. TN123456789" className={inputCls} style={inputStyle} /></Field>
@@ -10711,6 +10717,7 @@ export function ParcelsTab({ gb }: { gb: OrganiserGB }) {
                       <p className="text-sm font-bold" style={{ color: "var(--t-text)" }}>{p.label}</p>
                       <ParcelStatusBadge status={p.status} />
                     </div>
+                    <ParcelDestinationSummary value={p.reshipperUsername} />
                     <div className="flex items-center gap-2 mt-1">
                       <Truck className="w-3 h-3" style={{ color: "var(--t-blue)" }} />
                       <span className="font-mono text-xs font-bold" style={{ color: "var(--t-blue)" }}>{p.trackingNumber}</span>

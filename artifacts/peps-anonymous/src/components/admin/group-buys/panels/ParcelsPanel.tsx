@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { ParcelDestinationField, ParcelDestinationSummary } from "@/components/ParcelDestinationField";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePickerField } from "@/components/DatePickerField";
 import {
@@ -125,6 +126,7 @@ export interface ParcelItem { name: string; qty: number; productId?: string }
 export interface ParcelEvent { date: string; status: string; location: string }
 export interface GbParcel {
   id: string;
+  reshipperUsername?: string | null;
   groupBuyId: string;
   label: string;
   carrier: string;
@@ -172,6 +174,8 @@ export function ParcelForm({ secret, gbId, initial, catalogProducts, onSave, onC
   onCancel: () => void;
 }) {
   const isCreate = !initial;
+  const [destination, setDestination] = useState(initial?.reshipperUsername ?? null);
+  const [destinationChanged, setDestinationChanged] = useState(false);
   const [label, setLabel] = useState(initial?.label ?? "");
   const [carrier, setCarrier] = useState(() => {
     const c = initial?.carrier ?? "Auto Detect";
@@ -366,6 +370,7 @@ export function ParcelForm({ secret, gbId, initial, catalogProducts, onSave, onC
         method,
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
         body: JSON.stringify({
+          reshipperUsername: isCreate || destinationChanged ? destination : undefined,
           label: label.trim(),
           carrier: carrier.trim(),
           trackingNumber: trackingNumber.trim(),
@@ -388,6 +393,7 @@ export function ParcelForm({ secret, gbId, initial, catalogProducts, onSave, onC
 
   return (
     <div className="space-y-4">
+      <ParcelDestinationField gbId={gbId} scope="admin" secret={secret} value={destination} onChange={value => { setDestination(value); setDestinationChanged(true); }} />
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-1">
           <Label className="text-xs">Label *</Label>
@@ -831,6 +837,7 @@ export function ParcelsSubTab({ secret, gb }: { secret: string; gb: GroupBuy }) 
                         <span className="font-semibold text-sm truncate">{parcel.label}</span>
                         <ParcelStatusBadge status={parcel.status} />
                       </div>
+                      <ParcelDestinationSummary value={parcel.reshipperUsername} />
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="text-xs text-muted-foreground">{parcel.carrier}</span>
                         <span className="font-mono text-xs text-orange-500 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded select-all">

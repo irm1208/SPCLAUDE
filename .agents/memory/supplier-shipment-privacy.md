@@ -20,3 +20,15 @@ Treat an old `routingType=direct` without an explicit direct-shipping request as
 **Why:** Direct is a historical default for unassigned orders, not evidence that the supplier is shipping to the member.
 
 **How to apply:** Require explicit reshipper ownership or the member order's confirmed direct-shipping option; show an actionable exception rather than guessing from country or a default routing label.
+
+Carrier descriptions are untrusted free text, even after stored signatory
+redaction. Shared member views must generalize descriptions rather than forward
+partially redacted prose.
+
+**Why:** Carrier formats such as “Delivered to [name]” and arbitrary neighbour,
+address or non-Latin signatory text evade pattern-based redaction and can expose
+another recipient to members sharing a reshipper.
+
+**How to apply:** Project known event categories to fixed phrases and unknown
+events to a generic update; retain raw staff history separately. Limit locations
+to countries and dates to valid timestamps.

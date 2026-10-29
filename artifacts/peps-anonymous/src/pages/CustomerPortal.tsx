@@ -2057,22 +2057,32 @@ const PARCEL_STATUS_DISPLAY: Record<string, { label: string; color: string; bg: 
   expired:          { label: "Expired",          color: "#6B7280", bg: "rgba(107,114,128,0.12)" },
 };
 
-function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; orders?: Order[]; onClose: () => void }) {
+export function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; orders?: Order[]; onClose: () => void }) {
   const [parcels, setParcels] = useState<MaskedParcel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [parcelError, setParcelError] = useState("");
+  const [parcelAttempt, setParcelAttempt] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
-    fetch(`/api/account/group-buys/${gb.id}/parcels`, { credentials: "include", cache: "no-store" })
-      .then(r => r.ok ? r.json() : [])
-      .then(d => setParcels(Array.isArray(d) ? d : []))
-      .catch(() => setParcels([]))
-      .finally(() => setLoading(false));
-  }, [gb.id]);
+    setParcelError("");
+    setParcels([]);
+    fetch(`/api/account/group-buys/${gb.id}/parcels`, { credentials: "include", cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Parcel tracking could not be loaded.");
+        if (!Array.isArray(data)) throw new Error("Invalid parcel tracking response.");
+        if (!controller.signal.aborted) setParcels(data);
+      })
+      .catch(error => { if (!controller.signal.aborted) setParcelError(error.message || "Parcel tracking could not be loaded."); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [gb.id, parcelAttempt]);
 
   const undispatched = (() => {
-    if (!orders.length || loading) return [];
+    if (!orders.length || loading || parcelError) return [];
     const dispatchedNames = new Set(parcels.flatMap(p => p.items.map(item => item.name.toLowerCase())));
     const agg = new Map<string, number>();
     for (const order of orders) {
@@ -2145,11 +2155,16 @@ function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; ord
               <div className="flex justify-center py-12">
                 <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
               </div>
+            ) : parcelError ? (
+              <div role="alert" data-testid="error-member-parcels" className="py-10 text-center space-y-3">
+                <p className="text-sm text-red-600">{parcelError}</p>
+                <button type="button" onClick={() => setParcelAttempt(n => n + 1)} className="text-sm font-semibold underline">Retry tracking</button>
+              </div>
             ) : parcels.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-14 text-center">
                 <Package className="w-12 h-12 text-gray-200" />
-                <p className="text-sm font-medium text-gray-500">No parcels added yet for this group buy.</p>
-                <p className="text-xs text-gray-400">Tracking information will appear here once your order is shipped.</p>
+                <p className="text-sm font-medium text-gray-500">No parcel tracking is available for your order yet.</p>
+                <p className="text-xs text-gray-400">Parcels appear after the organiser confirms their destination and matching contents. Contact the organiser if you expected an update.</p>
               </div>
             ) : (
               <>
@@ -2157,7 +2172,7 @@ function GBParcelsModal({ gb, orders = [], onClose }: { gb: GroupBuySummary; ord
                 <Info className="w-4 h-4 shrink-0 mt-0.5" style={{ color: "var(--t-blue)" }} />
                 <div className="text-xs leading-relaxed text-gray-600 space-y-1">
                   <p>
-                    <strong className="text-gray-800">This tracking is for parcels travelling from the vendor to your reshipper</strong> — it's not the tracking for your personal order being posted to you.
+                    <strong className="text-gray-800">Shared parcel tracking follows shipments from the vendor to your reshipper.</strong> Entries labelled “Your Parcel” are your own direct-delivery shipments.
                   </p>
                   <p>
                     If several parcels list the same items, that's because the order is split across the whole group buy.

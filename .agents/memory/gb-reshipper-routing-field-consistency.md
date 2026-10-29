@@ -9,6 +9,28 @@ Treat a non-null reshipper assignment as authoritative when older order data con
 
 **How to apply:** Any order-routing display must preserve compatibility with historical mismatches, and every admin or organiser path that assigns or clears a reshipper must update both routing fields atomically.
 
+Parcel creator and parcel destination are separate concepts. Never infer that
+AJ/Ghost labels identify particular reshipper accounts, or repair live parcel
+destinations without explicit staff confirmation.
+
+**Why:** The user specified that organisers correctly create packages on behalf
+of recipients; the recipient mapping for historical aliases is unconfirmed.
+
+**How to apply:** Repair existing parcels through authorised staff selection.
+Product overlap, shared country and creator identity are not destination evidence.
+
+For member visibility, distinguish resolving an older order's saved country-leg
+route from guessing a parcel destination. A same-group leg with one enabled
+coverage assignment can resolve the order; ambiguous coverage must fail closed.
+
+**Why:** Legacy paid orders can lack a stamped reshipper despite having an
+explicitly selected leg. Dropping that route resolution hides valid packages
+even after staff confirm the parcel recipient.
+
+**How to apply:** Keep explicit order assignments authoritative. A legacy
+order-route fallback must not assign parcel destinations or reclassify genuine
+direct shipping.
+
 dnd-kit drag overlays must not register the same draggable ID as the original card, and empty routing columns must remain full-column drop targets.
 
 **Why:** The floating preview previously registered a second draggable, while only the short empty-state body accepted drops. Moves to an empty reshipper column could silently snap back even with an enabled reshipper and no batch locks.

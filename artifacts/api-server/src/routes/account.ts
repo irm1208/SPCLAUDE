@@ -1,4 +1,6 @@
 import { getOnwardOrderPreference } from "../lib/gb-onward-delivery";
+import { projectMemberParcels } from "../lib/member-gb-parcels";
+import { loadMemberParcelRouting } from "../lib/member-parcel-routing-service";
 import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import {
@@ -3725,6 +3727,8 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
       and(
         eq(ordersTable.groupBuyId, gbId),
         inArray(ordersTable.paymentStatus, ["confirmed", "test_confirmed"]),
+        isNull(ordersTable.deletedAt),
+        sql`lower(${ordersTable.status}) <> 'cancelled'`,
         or(
           eq(sql`lower(${ordersTable.telegramUsername})`, tgWithAt),
           eq(sql`lower(${ordersTable.telegramUsername})`, tgBare),
@@ -3747,79 +3751,21 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
       directShippingRequested: ordersTable.directShippingRequested,
       reshipperUsername: ordersTable.reshipperUsername,
       countryLegId: ordersTable.countryLegId,
+      trackingNumber: ordersTable.trackingNumber,
+      trackingNumbers: ordersTable.trackingNumbers,
+      status: ordersTable.status,
+      createdAt: ordersTable.createdAt,
     })
     .from(ordersTable)
     .where(inArray(ordersTable.id, paidOrderIds));
 
-  // Build set of reshippers explicitly stamped on the customer's orders.
-  const assignedReshippers = new Set(
-    (paidOrderRows.map(o => o.reshipperUsername).filter(Boolean) as string[])
-      .map(u => u.replace(/^@/, "").toLowerCase())
-  );
-  // Always include member's own handle (they may be a GB reshipper receiving own parcels)
-  assignedReshippers.add(tgBare);
-
-  // Reshipper-routed orders (excludes direct-shipping orders)
-  const reshipperOrderRows = paidOrderRows.filter(o => {
-    if (o.routingType === "direct") return false;
-    if (o.routingType === "reshipper") return true;
-    return !o.directShippingRequested;
-  });
-
-  // Resolve reshippers via country leg for orders that don't have reshipperUsername stamped directly
-  const legIds = reshipperOrderRows.map(o => o.countryLegId).filter(Boolean) as string[];
-  if (legIds.length > 0) {
-    const legRows = await db
-      .select({ countryCode: gbCountryLegsTable.countryCode, gbId: gbCountryLegsTable.gbId })
-      .from(gbCountryLegsTable)
-      .where(inArray(gbCountryLegsTable.id, legIds));
-    for (const leg of legRows) {
-      const reshippers = await db
-        .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
-        .from(gbReshippersTable)
-        .where(and(
-          eq(gbReshippersTable.gbId, leg.gbId),
-          eq(gbReshippersTable.country, leg.countryCode),
-          eq(gbReshippersTable.enabled, true),
-        ));
-      reshippers.forEach(r => {
-        if (r.reshipperUsername) assignedReshippers.add(r.reshipperUsername.replace(/^@/, "").toLowerCase());
-      });
-    }
-  }
-
-  // Whether the order data resolved an actual reshipper (beyond the self-seed).
-  // When false the organiser hasn't tagged the order with routing info, so we skip
-  // the reshipper gate and fall back to pure item-name matching.
-  const hasExplicitReshipperAssignment = paidOrderRows.some(o => o.reshipperUsername) || legIds.length > 0;
-
-  // All reshipper names for this GB — used to identify "reshipper parcels" by their label
-  const allGbReshipperRows = await db
-    .select({ reshipperUsername: gbReshippersTable.reshipperUsername })
-    .from(gbReshippersTable)
-    .where(eq(gbReshippersTable.gbId, gbId));
-  const allGbReshipperNames = new Set(
-    allGbReshipperRows.map(r => r.reshipperUsername.replace(/^@/, "").toLowerCase())
-  );
-
-  // Customer is "direct shipping" when none of their paid orders route through a reshipper hub
-  const isDirect = reshipperOrderRows.length === 0;
+  const routing = await loadMemberParcelRouting(gbId, paidOrderRows);
 
   // Collect ordered product names and quantities from the customer's own orders
   const lineItems = await db
-    .select({ productName: orderLineItemsTable.productName, quantity: orderLineItemsTable.quantity })
+    .select({ orderId: orderLineItemsTable.orderId, productName: orderLineItemsTable.productName, quantity: orderLineItemsTable.quantity })
     .from(orderLineItemsTable)
     .where(inArray(orderLineItemsTable.orderId, paidOrderIds));
-
-  const orderedNames = new Set(lineItems.map(li => li.productName.trim().toLowerCase()));
-
-  const memberQtyMap = new Map<string, number>();
-  for (const li of lineItems) {
-    const key = li.productName.trim().toLowerCase();
-    memberQtyMap.set(key, (memberQtyMap.get(key) ?? 0) + Number(li.quantity ?? 1));
-  }
-
-  console.log(`[parcels-debug/acct] tg=${tg} gbId=${gbId} paidOrders=${paidOrders.length} isDirect=${isDirect} hasExplicit=${hasExplicitReshipperAssignment} assignedReshippers=[${[...assignedReshippers].join(",")}] allReshippers=[${[...allGbReshipperNames].join(",")}]`);
 
   // Fetch all parcels for this group buy then filter to only those the customer can see
   const rows = await db
@@ -3828,46 +3774,7 @@ router.get("/account/group-buys/:gbId/parcels", requireAccount, async (req: any,
     .where(eq(gbParcelsTable.groupBuyId, gbId))
     .orderBy(gbParcelsTable.createdAt);
 
-  const relevant = rows.filter(p => {
-    const items = ((p.items ?? []) as { name: string }[]);
-    if (items.length === 0) return false;
-    if (!items.some(item => orderedNames.has(item.name.trim().toLowerCase()))) return false;
-
-    // When no explicit reshipper routing was resolved, skip the gate entirely —
-    // the member sees every parcel that contains their items.
-    if (!hasExplicitReshipperAssignment) return true;
-
-    // Identify parcel's reshipper via explicit field or label matching
-    const parcelReshipper = p.reshipperUsername
-      ? p.reshipperUsername.replace(/^@/, "").toLowerCase()
-      : (allGbReshipperNames.has(p.label.trim().toLowerCase()) ? p.label.trim().toLowerCase() : null);
-
-    if (parcelReshipper !== null) {
-      return assignedReshippers.has(parcelReshipper);
-    }
-    return isDirect;
-  });
-
-  // Mask the tracking number and strip items not belonging to this customer
-  const masked = relevant.map(p => ({
-    id: p.id,
-    label: p.label,
-    carrier: p.carrier,
-    maskedTrackingNumber: "•".repeat(Math.min(Math.max((p.trackingNumber ?? "").length, 6), 12)),
-    status: p.status,
-    items: ((p.items ?? []) as { name: string; qty: number }[])
-      .filter(item => orderedNames.has(item.name.trim().toLowerCase()))
-      .map(item => ({
-        ...item,
-        qty: memberQtyMap.get(item.name.trim().toLowerCase()) ?? item.qty,
-      })),
-    events: p.cachedEvents ?? [],
-    trackingUrl: p.trackingUrl ?? null,
-    lastChecked: p.lastChecked,
-    createdAt: p.createdAt,
-  }));
-
-  res.json(masked);
+  res.json(projectMemberParcels(rows, routing.orders, lineItems, routing.usernames));
 });
 
 // ── DELETE /api/account — permanently delete own account and all data ─────────

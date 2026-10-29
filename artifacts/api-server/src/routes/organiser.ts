@@ -51,6 +51,7 @@ import { prepareTrackingWrite } from "../lib/tracking-write";
 import { getTrackingPackages } from "@workspace/shipping/tracking";
 import { formatTrackingNumbersForNotification } from "../lib/tracking-notification";
 import { unchangedTrackingWriteFields } from "../lib/tracking-write-cas";
+import { validateParcelDestination } from "../lib/parcel-destination-service";
 
 const router: IRouter = Router();
 const BCRYPT_ROUNDS = 10;
@@ -3959,8 +3960,12 @@ router.post("/organiser/group-buys/:id/parcels", requireOrganiser, async (req, r
     try { const u = new URL(String(trackingUrl).trim()); if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("bad scheme"); safeTrackingUrl = u.href; } catch { res.status(400).json({ error: "trackingUrl must be a valid http/https URL" }); return; }
   }
   const newParcelId = `parcel-${randomUUID().split("-")[0]}`;
+  let destination: string | null | undefined;
+  try { destination = await validateParcelDestination(id, req.body.reshipperUsername); }
+  catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
   const [parcel] = await db.insert(gbParcelsTable).values({
     id: newParcelId, groupBuyId: id,
+    reshipperUsername: destination ?? null,
     label: String(label).trim(),
     carrier: carrier ? String(carrier).trim() : "Auto",
     trackingNumber: String(trackingNumber).trim(),
@@ -3983,6 +3988,10 @@ router.patch("/organiser/group-buys/:gbId/parcels/:parcelId", requireOrganiser, 
   if (!gb) { res.status(404).json({ error: "Group buy not found" }); return; }
   const { label, carrier, trackingNumber, status, notes, items, trackingUrl, trackingParams, cachedEvents } = req.body;
   const updates: Record<string, unknown> = {};
+  try {
+    const destination = await validateParcelDestination(gbId, req.body.reshipperUsername);
+    if (destination !== undefined) updates.reshipperUsername = destination;
+  } catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
   if (label !== undefined) updates.label = String(label).trim();
   if (carrier !== undefined) updates.carrier = String(carrier).trim();
   if (trackingNumber !== undefined) updates.trackingNumber = String(trackingNumber).trim();
