@@ -1455,7 +1455,6 @@ export default function WholesaleOrder() {
               <div className="px-4 py-3 border-b" style={{ borderColor: "var(--t-border)" }}>
                 <p className="whj-eyebrow">Supplier</p>
                 <p className="text-sm font-semibold">{vendor?.name ?? "Choose a supplier first"}</p>
-                {vendor && journeyStep !== 0 && <button type="button" className="text-xs mt-2 underline" onClick={() => setJourneyStep(0)}>Change supplier</button>}
               </div>
 
               {/* Items list */}
