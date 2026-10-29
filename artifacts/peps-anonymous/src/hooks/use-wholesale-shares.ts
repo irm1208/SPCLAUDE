@@ -346,10 +346,10 @@ export function setWholesaleShareHidden(id: string, hidden: boolean) {
   });
 }
 
-export function createWholesaleShare(splitMode: WholesaleSplitMode, organiserFullName: string) {
+export function createWholesaleShare(splitMode: WholesaleSplitMode) {
   return request<WholesaleShareDetail>("/api/wholesale-shares", {
     method: "POST",
-    body: JSON.stringify({ splitMode, organiserFullName }),
+    body: JSON.stringify({ splitMode }),
   });
 }
 

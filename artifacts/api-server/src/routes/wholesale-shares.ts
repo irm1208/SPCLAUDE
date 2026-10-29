@@ -945,11 +945,7 @@ router.get("/wholesale-shares/public", requireWholesale, async (req, res): Promi
 // POST /api/wholesale-shares — create a new shared order; creator becomes first member
 router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
-  const body = (req.body ?? {}) as { splitMode?: string; organiserFullName?: unknown };
-  const organiserFullName = parseOrganiserFullName(body.organiserFullName);
-  if (!organiserFullName) {
-    res.status(400).json({ error: ORGANISER_FULL_NAME_ERROR }); return;
-  }
+  const body = (req.body ?? {}) as { splitMode?: string };
   const splitMode: WholesaleShareSplitMode =
     body.splitMode && (WHOLESALE_SHARE_SPLIT_MODES as readonly string[]).includes(body.splitMode)
       ? (body.splitMode as WholesaleShareSplitMode)
@@ -961,7 +957,6 @@ router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<voi
   await db.insert(wholesaleSharesTable).values({
     id,
     creatorUsername: me,
-    organiserFullName,
     status: "open",
     splitMode,
     vendorId: vendor?.id ?? null,

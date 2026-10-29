@@ -1,16 +1,16 @@
 ---
 name: Shared-order organiser names
-description: Real full names are required separately from usernames and parcel-recipient details.
+description: Collect real names only in delivery details, not shared-order creation or organiser settings.
 ---
 
-Shared-order organisers must provide their real full name, not merely their account or Telegram username.
+Require the recipient's full name in Delivery details only. Do not ask for an organiser's real name when starting a shared order or editing its rules.
 
-**Why:** The user explicitly requested this and clarified that they meant a real full name, rather than enforcing the correct account handle.
+**Why:** The user changed the earlier organiser-name requirement and explicitly selected “Delivery details only.”
 
-**How to apply:** Keep the organiser's declared name separate from both authenticated ownership and the chosen delivery recipient. A name declaration is not identity verification; do not claim that validation proves a name is genuine.
+**How to apply:** Shared-order creation uses authenticated account ownership. The selected delivery recipient provides their full name with the shipping address. Do not fabricate a recipient name from a username or claim a name declaration verifies identity.
 
-Keep these names private to the organiser and authorised administration rather than broadcasting them to participants.
+Keep delivery names private to the authorised shipping viewers rather than broadcasting them to participants.
 
-**Why:** Collecting a real name for organiser details should not expose it as a public member display name.
+**Why:** A delivery name should not become a public member display name.
 
 **How to apply:** Preserve participant-facing usernames and apply server-side visibility checks to real names.

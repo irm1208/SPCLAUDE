@@ -149,7 +149,7 @@
 - [Reshipper aggregate downloads](reshipper-aggregate-downloads.md) — fulfilment TXT is one combined total order per reshipper, without member names or individual breakdowns.
 - [Member regional batches](member-regional-batches.md) — opt-in regional queue progress; batch codes/statuses only for members' own allocated orders, server-filtered; direct-only shows Direct shipping.
 - [Mobile chat overlays](mobile-chat-overlays.md) — chat must clear floating navigation and track the visual viewport; page animation containers can defeat local stacking.
-- [Shared-order organiser names](shared-order-organiser-name.md) — require a real full name, separate from account ownership and the delivery recipient; do not expose it to other members.
+- [Shared-order names](shared-order-organiser-name.md) — full name required in delivery details only, not creation or organiser rules; preserve recipient privacy.
 - [Supplier batch policies](supplier-batch-export-policy.md) — full FS3 exports, same-region prepared additions, staff readiness alerts and EU/US/GB reference prefixes.
 - [Reshipper payout method](reshipper-payout-method.md) — Admin records external transfers by TXID; no wallet connection for new payouts.
 - [Single-vial pricing](vial-shop-currency-policy.md) — keep seller-currency prices throughout checkout; show locked crypto settlement separately; never add unlike currencies.

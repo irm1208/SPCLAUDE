@@ -18,21 +18,24 @@ describe("self-declared organiser full names", () => {
 
 describe("shared-order organiser full name wiring", () => {
   const source = readFileSync(new URL("../routes/wholesale-shares.ts", import.meta.url), "utf8");
-  it("validates the name before creating a share and persists it separately from the username", () => {
+  it("creates a share using account ownership without requiring an organiser name", () => {
     const create = source.slice(source.indexOf('router.post("/wholesale-shares",'), source.indexOf('router.get("/wholesale-shares/:id"'));
-    expect(create.includes("parseOrganiserFullName(body.organiserFullName)")).toBe(true);
-    expect(create.indexOf("parseOrganiserFullName(body.organiserFullName)")).toBeLessThan(create.indexOf("getActiveWholesaleVendor()"));
+    expect(create.includes("parseOrganiserFullName(body.organiserFullName)")).toBe(false);
     expect(create.includes("creatorUsername: me,")).toBe(true);
-    expect(create.includes("organiserFullName,")).toBe(true);
+    expect(create.includes("organiserFullName,")).toBe(false);
   });
   it("does not expose the real name to other shared-order participants", () => {
     expect(source.includes("organiserFullName: isCreatorViewer ? (share.organiserFullName ?? null) : null")).toBe(true);
   });
-  it("connects the required creation input and existing organiser settings", () => {
+  it("collects the required full name in delivery details, not setup or organiser settings", () => {
     const entry = readFileSync(new URL("../../../peps-anonymous/src/pages/WholesaleShareEntry.tsx", import.meta.url), "utf8");
     const detail = readFileSync(new URL("../../../peps-anonymous/src/pages/WholesaleShared.tsx", import.meta.url), "utf8");
-    expect(entry.includes('createWholesaleShare("even", organiserFullName)')).toBe(true);
-    expect(entry.includes('autoComplete="name"')).toBe(true);
-    expect(detail.includes("organiserFullName: settingsForm.organiserFullName")).toBe(true);
+    expect(entry.includes('createWholesaleShare("even")')).toBe(true);
+    expect(entry.includes('id="organiser-full-name"')).toBe(false);
+    expect(detail.includes('id="shared-organiser-full-name"')).toBe(false);
+    expect(detail.includes("organiserFullName: settingsForm.organiserFullName")).toBe(false);
+    expect(detail.includes('Recipient full name')).toBe(true);
+    expect(source.includes('if (!name) { res.status(400)')).toBe(true);
+    expect(detail.includes('!addr.name.trim()')).toBe(true);
   });
 });

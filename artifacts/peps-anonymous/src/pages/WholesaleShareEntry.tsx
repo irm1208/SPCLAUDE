@@ -15,7 +15,6 @@ export default function WholesaleShareEntry() {
   const { data: shares } = useWholesaleShares();
   const { data: publicGroups } = useWholesalePublicGroups();
   const [joinCode, setJoinCode] = useState("");
-  const [organiserFullName, setOrganiserFullName] = useState("");
   const [busy, setBusy] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [visibilityBusyId, setVisibilityBusyId] = useState<string | null>(null);
@@ -59,12 +58,9 @@ export default function WholesaleShareEntry() {
   };
 
   const startShare = async () => {
-    if (organiserFullName.trim().split(/\s+/).length < 2) {
-      setError("Enter your real first and last name, not your username."); return;
-    }
     setError(""); setBusy(true);
     try {
-      const share = await createWholesaleShare("even", organiserFullName);
+      const share = await createWholesaleShare("even");
       setLocation(`/wholesale/shared/${share.id}`);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   };
@@ -138,26 +134,9 @@ export default function WholesaleShareEntry() {
                   <h2 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Start a shared order</h2>
                   <p className="text-xs" style={{ color: "var(--t-muted)" }}>Create a new parcel and invite others to join using your share code.</p>
                 </div>
-                <div className="space-y-1.5">
-                  <label htmlFor="organiser-full-name" className="block text-xs font-semibold" style={{ color: "var(--t-text)" }}>
-                    Your real full name <span aria-hidden="true" style={{ color: "var(--t-red)" }}>*</span>
-                  </label>
-                  <input
-                    id="organiser-full-name"
-                    value={organiserFullName}
-                    onChange={e => setOrganiserFullName(e.target.value)}
-                    autoComplete="name"
-                    placeholder="First and last name"
-                    maxLength={100}
-                    required
-                    className="w-full h-11 px-3 rounded-xl border text-sm bg-transparent outline-none"
-                    style={{ borderColor: "var(--t-border)", color: "var(--t-text)" }}
-                  />
-                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>Enter your real name, not your Telegram username. This is not shown to other members.</p>
-                </div>
                 <button
                   onClick={startShare}
-                  disabled={busy || !organiserFullName.trim()}
+                  disabled={busy}
                   className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-60"
                   style={{ background: "var(--t-blue)" }}
                 >
