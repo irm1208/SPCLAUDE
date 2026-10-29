@@ -3,5 +3,8 @@ const AUTOMATED_REGISTRATION_NAME =
 
 export function isBlockedAutomatedRegistrationName(value: unknown): boolean {
   if (typeof value !== "string") return false;
-  return AUTOMATED_REGISTRATION_NAME.test(value.trim().replace(/^@/, ""));
+  const username = value.trim().replace(/^@/, "").toLowerCase();
+  // Explicitly approved member; all account/role checks still apply.
+  if (username === "audacityblack") return false;
+  return AUTOMATED_REGISTRATION_NAME.test(username);
 }

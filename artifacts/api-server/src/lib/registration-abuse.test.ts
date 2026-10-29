@@ -4,6 +4,21 @@ import { isBlockedAutomatedRegistrationName } from "./registration-abuse";
 
 describe("automated registration name blocking", () => {
   it.each([
+    "audacityblack",
+    "@audacityblack",
+    " AUDACITYBLACK ",
+  ])("exempts the explicitly approved username %s", (username) => {
+    expect(isBlockedAutomatedRegistrationName(username)).toBe(false);
+  });
+
+  it.each(["audacityblackx", "audacityblack123", "audacityblack_test"])(
+    "does not extend the exception to %s",
+    (username) => {
+      expect(isBlockedAutomatedRegistrationName(username)).toBe(true);
+    },
+  );
+
+  it.each([
     "auditx55d544",
     "@audx55d544",
     "audv001122",
