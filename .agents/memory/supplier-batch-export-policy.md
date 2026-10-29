@@ -15,6 +15,12 @@ Existing batches may receive more eligible paid orders only while prepared, with
 
 **How to apply:** Show the combined totals before confirmation, preserve the batch reference, and require reviewing changed queue or destination snapshots again.
 
+When an existing allocated order changes after preparation, the user wants a reviewed update of the prepared batch that keeps its reference, rather than releasing and recreating it.
+
+**Why:** The user explicitly confirmed “Yes, keep the batch reference” when approving the proposed review-and-update option.
+
+**How to apply:** Show old/new changes and require explicit approval; preserve batch identity and allocations. Keep eligibility, payment and concurrency safeguards, and never refresh a batch already submitted to the supplier.
+
 When an enabled supplier region reaches its kit target and Telegram alerts are enabled, notify both the configured Admin Telegram chat and the group-buy organiser. These are staff alerts, not member broadcasts.
 
 **Why:** The user explicitly chose Admin and the organiser as recipients; organiser-only alerts do not notify the Admin who manages supplier purchasing.
