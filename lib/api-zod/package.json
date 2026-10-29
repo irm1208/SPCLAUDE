@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./bank-transfer": "./src/bank-transfer.ts"
+    "./bank-transfer": "./src/bank-transfer.ts",
+    "./fs3-costs": "./src/fs3-costs.ts"
   },
   "dependencies": {
     "zod": "catalog:"

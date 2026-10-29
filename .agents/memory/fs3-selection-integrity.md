@@ -19,16 +19,23 @@ The user confirmed that Na Semax 10mg and Na Selank 10mg use the saved Na Semax 
 
 **Why:** These were explicitly confirmed; a base-name or modified-compound match must not otherwise be inferred from a price-list substring.
 
-**How to apply:** Resolve exact saved costs first, then these approved equivalents only. Keep exports and profit calculations aligned, allow identical case-variant prices, and reject conflicting prices. Other strengths require their own confirmed mapping.
+**How to apply:** Treat these as prior approvals for legacy products, not approval to borrow another supplier's prices. New equivalences require an explicit supplier-scoped Admin review in My Prices, including the compound and dose. Respect revocations; never infer other strengths or modified compounds. Preserve ordered names in supplier documents.
 
 ## FS3 price-list ownership
 
 The user requested filling UR / Uther's missing supplier-cost fields from FS3 on the **live site**, not in preview. Treat the legacy FS3 cost list as UR-specific, not a default source for a newly added vendor.
 
-**Why:** The request names UR; copying this list to another vendor could silently price that supplier's products incorrectly. The live Admin API rejected a background shared-secret update, so the user approved an authenticated review-and-apply import action instead.
+**Why:** The request names UR; copying this list to another vendor could silently price that supplier's products incorrectly.
 
 **How to apply:** Use the signed-in Admin flow for the live import, preserve existing costs and unrelated product fields, and do not claim live prices changed merely because the import feature was implemented in preview.
 
+## Legacy pricing versus supplier identity
+
+A missing modern product supplier ID does not mean the supplier is unknown: older orders may establish it through their shared order, order header, legacy catalogue label or group-buy manufacturer. Use that trustworthy identity for reviewed matches while preserving authoritative exact legacy costs. A known supplier must never borrow a legacy-scope alias.
+
+**Why:** Restricting reviewed-match lookup to modern product/line supplier columns made valid Admin approvals unusable on historical orders even though supplier shipments could already resolve their owner.
+
+**How to apply:** Keep ownership resolution consistent across exports, summary and selected-order margins, P&L and batch sheets; test inherited supplier identities, not only modern catalogue offers.
 ## Supplier downloads versus vendor submission
 
 FS3 order TXT downloads must not be blocked by missing customer contact details. Include available details and clearly label missing fields, rather than inventing them. Keep actual vendor-portal submission validation separate.

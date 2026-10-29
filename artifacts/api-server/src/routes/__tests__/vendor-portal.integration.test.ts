@@ -29,7 +29,7 @@ vi.mock("../../middleware/require-admin", () => ({
 vi.mock("../config", async () => ({
   ...await vi.importActual<any>("../config"),
   getVendors: async () => ["vendor-a", "vendor-b"].map(id => ({
-    id, name: id, tiers: ["1-25"], tierBounds: [25], maxKitsPerPackage: 25,
+    id, name: id, legacyCatalogueVendor: `Legacy ${id}`, tiers: ["1-25"], tierBounds: [25], maxKitsPerPackage: 25,
     regions: [{ name: "UK", countries: ["United Kingdom"], prices: [50] }],
   })),
 }));
@@ -228,6 +228,38 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect(order.shippingEmail).toBeNull();
     expect((await request("/admin/vendor-portal/preview", undefined, input, true)).status).toBe(400);
   }));
+  it.each(["order", "share", "legacy catalogue"])("uses reviewed matches when supplier identity comes from %s", source => fixture(async f => {
+    const { fs3MatchKey } = await import("../../lib/fs3-cost-matches");
+    const { loadFs3PricingContext } = await import("../../lib/fs3-pricing-context");
+    const costName = `${f.name} supplier cost`;
+    await f.tx.delete(store.fs3CostsTable).where(eq(store.fs3CostsTable.productName, f.name));
+    await f.tx.insert(store.fs3CostsTable).values({ productName: costName, unitCost: "35" });
+    await f.tx.insert(store.siteConfigTable).values({
+      key: fs3MatchKey("vendor-a", f.name),
+      value: JSON.stringify({ productName: f.name, costName, vendorId: "vendor-a", active: true,
+        reviewedBy: "fixture-admin", reviewedAt: new Date().toISOString(), reviewNote: "Confirmed supplier product" }),
+    });
+    await f.tx.update(store.orderLineItemsTable).set({ vendorId: null }).where(eq(store.orderLineItemsTable.orderId, f.orderId));
+    if (source === "share") {
+      const shareId = `alias-${randomUUID()}`;
+      await f.tx.insert(store.wholesaleSharesTable).values({ id: shareId, creatorUsername: f.member, deliveryUsername: f.member,
+        vendorId: "vendor-a", status: "submitted", organiserPaymentStatus: "confirmed",
+        shippingName: "Fixture recipient", shippingAddress: "Fixture Road", shippingCountry: "United Kingdom",
+        shippingPhone: "+441234567890", shippingEmail: "fixture@example.invalid" });
+      await f.tx.update(store.ordersTable).set({ orderType: "wholesale_shared", sharedOrderId: shareId, wholesaleVendorId: null }).where(eq(store.ordersTable.id, f.orderId));
+      await f.tx.insert(store.wholesaleShareMembersTable).values({ id: randomUUID(), shareId, username: f.member, orderId: f.orderId });
+    } else if (source === "legacy catalogue") {
+      await f.tx.update(store.ordersTable).set({ wholesaleVendorId: null }).where(eq(store.ordersTable.id, f.orderId));
+      await f.tx.insert(store.productsTable).values({ id: f.name, name: f.name, vendor: "Legacy vendor-a", price: "999" });
+    }
+    const exported = await request("/admin/vendor-portal/export", undefined, { vendorId: "vendor-a", orderCodes: [f.code] }, true);
+    expect(exported.status).toBe(200); expect(exported.data.text).toContain(`${f.name} x2 = $70.00`);
+    const orders = await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
+    const lines = await f.tx.select().from(store.orderLineItemsTable).where(eq(store.orderLineItemsTable.orderId, f.orderId));
+    const pricing = await loadFs3PricingContext(orders, lines, f.tx);
+    expect(pricing.vendorIdFor(lines[0])).toBe("vendor-a"); expect(pricing.unitCostFor(lines[0])).toBe(35);
+  }));
+
 
   it("gates all orders by explicit Admin submission, exposes only costs and retries idempotently", () => fixture(async f => {
     expect((await request("/vendor/orders")).status).toBe(401);

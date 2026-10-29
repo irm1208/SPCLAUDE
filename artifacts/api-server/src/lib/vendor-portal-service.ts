@@ -6,11 +6,12 @@ import {
   vendorSubmissionsTable, vendorAuditTable, productsTable, type VendorSnapshot,
 } from "@workspace/db";
 import { getVendors } from "../routes/config";
-import { resolveProductVendor } from "./multi-vendor-shipping";
 import { calcTotalShipping, pickRegionForCountry } from "./wholesale-shipping";
 import { assertNoActiveRefunds, refundMutationPredicate } from "./refund-mutation-guard";
 import { supplierCatalogueCosts, supplierItems, requiredShipping, sourceFingerprint, previewFingerprint, VendorPortalError } from "./vendor-portal-model";
 import { centsToUsdString, usdToCents } from "./refund-money";
+import { loadFs3CostMatches } from "./fs3-cost-matches";
+import { resolveFs3SupplierId } from "@workspace/api-zod/fs3-costs";
 
 export type Executor = any;
 export async function auditVendor(tx: Executor, actor: string, action: string, submissionId: string | null, details: Record<string, unknown> = {}) {
@@ -84,8 +85,10 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
   const vendors = await getVendors();
   const products: any[] = await tx.select().from(productsTable).where(inArray(productsTable.id, allItems.map((i: any) => i.productId)));
   const resolvedItems = allItems.map((i: any) => ({
-    ...i, vendorId: i.vendorId ?? share?.vendorId ?? orders.find(o => o.id === i.orderId)?.wholesaleVendorId
-      ?? resolveProductVendor(products.find(p => p.id === i.productId) ?? {}, vendors)?.id ?? null,
+    ...i, vendorId: resolveFs3SupplierId({
+      vendorId: i.vendorId, shareVendorId: share?.vendorId,
+      wholesaleVendorId: orders.find(o => o.id === i.orderId)?.wholesaleVendorId,
+    }, products.find(p => p.id === i.productId) ?? {}, vendors),
   }));
   const items = selectedVendorId ? resolvedItems.filter((i: any) => i.vendorId === selectedVendorId) : resolvedItems;
   if (!items.length) throw new VendorPortalError("This order has no items for the selected vendor.", 409);
@@ -123,6 +126,7 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
   }
   const keys: string[] = [...new Set<string>(matches.map((o: any) => o.sharedOrderId ? `share:${o.sharedOrderId}:vendor:${vendorId}` : `order:${o.id}`))].sort();
   const costs = await tx.select().from(fs3CostsTable);
+  const costMatches = await loadFs3CostMatches(tx);
   const prepared = [];
   for (let sourceKey of keys) {
     if (sourceKey.includes(":vendor:")) {
@@ -144,7 +148,7 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
       continue;
     }
     if (source.orders.some(o => ["Shipped", "Completed"].includes(o.status))) throw new VendorPortalError("An already shipped or completed order cannot be submitted as a new supplier shipment.", 409);
-    const distinctCosts = supplierCatalogueCosts(source.items, source.products, costs);
+    const distinctCosts = supplierCatalogueCosts(source.items, source.products, costs, costMatches);
     const items = supplierItems(source.items, distinctCosts);
     const kits = items.reduce((total, i) => total + i.quantity, 0);
     const region = pickRegionForCountry(vendor, source.shipping.country);

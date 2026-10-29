@@ -2,6 +2,10 @@ import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup"
 import adminProductStockRouter from "./admin-product-stock";
 import { resolveEditedProductId } from "../lib/admin-order-product-links";
 import { getVendors } from "./config";
+import { loadFs3CostMatches } from "../lib/fs3-cost-matches";
+import { normaliseFs3Name } from "@workspace/api-zod/fs3-costs";
+import fs3CostMatchesRouter from "./admin-fs3-cost-matches";
+import { loadFs3PricingContext } from "../lib/fs3-pricing-context";
 import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
 import { getGbOrderCounts, gbOrderPersonKey, multipleGbOrdersWhere, countMultipleGbOrderPeople } from "../lib/gb-multiple-orders";
 import { parseLabTestBatchCode } from "../lib/lab-test-warehouse";
@@ -311,6 +315,7 @@ function fmtOrder(o: Record<string, any>, lineItems: Record<string, any>[] = [])
     lineItems: lineItems.map((li) => ({
       id: li.id,
       productId: li.productId,
+      ...(li.costVendorId !== undefined ? { costVendorId: li.costVendorId } : {}),
       productName: li.productName,
       quantity: parseFloat(String(li.quantity)),
       unitPrice: parseFloat(String(li.unitPrice)),
@@ -580,6 +585,10 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
     orderIds.length > 0
       ? await db.select().from(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, orderIds))
       : [];
+  // Only the authenticated Admin FS3 caller requests pricing identity. Other
+  // consumers of this shared order handler must not gain supplier-cost fields.
+  const fs3Pricing = req.query.fs3Pricing === "true" && res.locals["adminAuthorized"]
+    ? await loadFs3PricingContext(orders, allLineItems) : null;
 
   const liByOrder = new Map<string, typeof allLineItems>();
   for (const li of allLineItems) {
@@ -693,7 +702,8 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
     if (o.requiresAddressOverride != null) customShippingRequiresAddress = o.requiresAddressOverride;
     if (o.requiresQrCodeOverride != null) customShippingRequiresQrCode = o.requiresQrCodeOverride;
     return {
-      ...fmtOrder({ ...o, currency } as unknown as Record<string, any>, (liByOrder.get(o.id) ?? []) as unknown as Record<string, any>[]),
+      ...fmtOrder({ ...o, currency } as unknown as Record<string, any>, (liByOrder.get(o.id) ?? []).map(li =>
+        fs3Pricing ? { ...li, costVendorId: fs3Pricing.vendorIdFor(li) } : li) as unknown as Record<string, any>[]),
       reshipperUsername, accountCountry, isWholesale,
       missingAddress, hasUnresolvedBalance, needsBalanceDueReview, hasDraft,
       customShippingRequiresAddress, customShippingRequiresQrCode,
@@ -3990,8 +4000,15 @@ router.get("/admin/fs3-costs", async (req: any, res: any) => {
     await db.insert(fs3CostsTable).values(seeds).onConflictDoNothing();
     rows = await db.select().from(fs3CostsTable).orderBy(fs3CostsTable.productName);
   }
-  res.json(rows.map(r => ({ id: r.id, productName: r.productName, unitCost: parseFloat(String(r.unitCost)) })));
+  const matches = await loadFs3CostMatches();
+  res.set("Cache-Control", "no-store");
+  res.json(rows.map(r => ({
+    id: r.id, productName: r.productName, unitCost: parseFloat(String(r.unitCost)),
+    matches: matches.filter(m => m.active && normaliseFs3Name(m.costName) === normaliseFs3Name(r.productName)),
+  })));
 });
+
+router.use(fs3CostMatchesRouter);
 
 // POST: upsert a single entry
 router.post("/admin/fs3-costs", async (req: any, res: any) => {
@@ -4150,23 +4167,19 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
   const orderGbMap = new Map(allOrders.map((o) => [o.id, o.groupBuyId ?? null]));
 
   // Look up vendor from the products table (for non-GB orders)
-  const productIds = [...new Set(allLineItems.map((li) => li.productId).filter(Boolean))] as string[];
-  const productRecords = productIds.length > 0
-    ? await db.select({ id: productsTable.id, vendor: productsTable.vendor, wholesaleVendorId:productsTable.wholesaleVendorId, wholesaleCost:productsTable.wholesaleCost, stock: productsTable.stock, lowStockThreshold: productsTable.lowStockThreshold })
-        .from(productsTable)
-        .where(inArray(productsTable.id, productIds))
-    : [];
+  const pricing = await loadFs3PricingContext(allOrders, allLineItems);
+  const productRecords = pricing.products;
   const productVendorMap = new Map(productRecords.map((p) => [p.id, p.vendor ?? null]));
   const productStockMap = new Map(productRecords.map((p) => [p.id, { stock: p.stock ?? null, lowStockThreshold: p.lowStockThreshold ?? null }]));
 
   // Helper: resolve vendor for a line item.
   // Product-table vendor takes precedence so the same product always maps to the
   // same vendor string regardless of which GB (if any) the order belongs to.
-  const configuredVendors = await getVendors();
-  const resolveVendor = (li: { orderId: string; productId: string; vendorId?:string|null }) => {
+  const configuredVendors = pricing.vendors;
+  const resolveVendor = (li: { orderId: string; productId: string; productName: string; vendorId?:string|null }) => {
     const gbId = orderGbMap.get(li.orderId) ?? null;
     const gb = gbId ? gbMap.get(gbId) : undefined;
-    const vendorId=li.vendorId ?? productRecords.find(p=>p.id===li.productId)?.wholesaleVendorId;
+    const vendorId=pricing.vendorIdFor(li);
     return configuredVendors.find(v=>v.id===vendorId)?.name ?? productVendorMap.get(li.productId) ?? gb?.vendor ?? null;
   };
 
@@ -4215,7 +4228,7 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
     // Vendor filtering is already handled by resolveVendor() above, so the
     // key only needs to guarantee one row per distinct product name.
     const productOffer=productRecords.find(p=>p.id===li.productId);
-    const vendorId=li.vendorId ?? productOffer?.wholesaleVendorId;
+    const vendorId=pricing.vendorIdFor(li);
     const key = `${vendorId ?? "legacy"}:${li.productName.toLowerCase().trim()}`;
     const qty = parseFloat(String(li.quantity));
     const lineTotal = parseFloat(String(li.lineTotal));
@@ -4228,7 +4241,7 @@ router.get("/admin/fs3-summary", async (req: any, res: any) => {
         groupBuyName: gb?.name ?? null,
         vendor,
         vendorId, vendorScopedCost:!!productOffer?.wholesaleVendorId,
-        supplierCost:productOffer?.wholesaleCost == null ? null : Number(productOffer.wholesaleCost),
+        supplierCost:pricing.unitCostFor(li),
         totalQty: 0,
         totalRevenue: 0,
         stock: stockInfo?.stock ?? null,
@@ -4303,6 +4316,8 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
       tip: ordersTable.tip,
       orderType: ordersTable.orderType,
       groupBuyId: ordersTable.groupBuyId,
+      wholesaleVendorId: ordersTable.wholesaleVendorId,
+      sharedOrderId: ordersTable.sharedOrderId,
     })
     .from(ordersTable)
     .where(and(
@@ -4316,6 +4331,8 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
     ? await db
         .select({
           orderId: orderLineItemsTable.orderId,
+          productId: orderLineItemsTable.productId,
+          vendorId: orderLineItemsTable.vendorId,
           productName: orderLineItemsTable.productName,
           quantity: orderLineItemsTable.quantity,
           lineTotal: orderLineItemsTable.lineTotal,
@@ -4329,6 +4346,7 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
     if (!liByOrder.has(li.orderId)) liByOrder.set(li.orderId, []);
     liByOrder.get(li.orderId)!.push(li);
   }
+  const pricing = await loadFs3PricingContext(allOrders, allLineItems);
 
   const orders = allOrders.map(o => ({
     id: o.id,
@@ -4342,6 +4360,7 @@ router.get("/admin/fs3-pnl", async (req: any, res: any) => {
     groupBuyId: o.groupBuyId ?? null,
     lineItems: (liByOrder.get(o.id) ?? []).map(li => ({
       productName: String(li.productName),
+      supplierUnitCost: pricing.unitCostFor(li),
       quantity: parseFloat(String(li.quantity)),
       lineTotal: parseFloat(String(li.lineTotal ?? "0")),
     })),
@@ -4488,6 +4507,9 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
     const orders = await db
       .select({
         id: ordersTable.id,
+        groupBuyId: ordersTable.groupBuyId,
+        wholesaleVendorId: ordersTable.wholesaleVendorId,
+        sharedOrderId: ordersTable.sharedOrderId,
         telegramUsername: ordersTable.telegramUsername,
         status: ordersTable.status,
         paymentStatus: ordersTable.paymentStatus,
@@ -4515,6 +4537,8 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
     const lineItems = await db
       .select({
         orderId: orderLineItemsTable.orderId,
+        productId: orderLineItemsTable.productId,
+        vendorId: orderLineItemsTable.vendorId,
         productName: orderLineItemsTable.productName,
         quantity: orderLineItemsTable.quantity,
       })
@@ -4522,15 +4546,14 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
       .where(inArray(orderLineItemsTable.orderId, orderIds));
 
     // Build a map: orderId → line items
-    const itemsByOrder = new Map<string, { productName: string; quantity: number }[]>();
+    const itemsByOrder = new Map<string, typeof lineItems>();
     for (const li of lineItems) {
       if (!itemsByOrder.has(li.orderId)) itemsByOrder.set(li.orderId, []);
-      itemsByOrder.get(li.orderId)!.push({ productName: li.productName, quantity: Number(li.quantity) });
+      itemsByOrder.get(li.orderId)!.push(li);
     }
 
     // Fetch cost prices for P&L
-    const costRows = await db.select().from(fs3CostsTable);
-    const costMap = new Map(costRows.map(c => [c.productName.toLowerCase(), parseFloat(String(c.unitCost ?? "0"))]));
+    const pricing = await loadFs3PricingContext(orders, lineItems);
 
     // Resolve routing destination for each order (same logic as frontend)
     const getRoute = (o: typeof orders[number]): string => {
@@ -4545,7 +4568,7 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
     };
 
     // Aggregate: route → product → quantity
-    const routeProducts = new Map<string, Map<string, number>>();
+    const routeProducts = new Map<string, Map<string, { name: string; qty: number; vendorId: string | null; unitCost: number | null }>>();
     const routeOrders = new Map<string, string[]>(); // route → order IDs included
 
     for (const order of orders) {
@@ -4560,7 +4583,14 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
       routeOrders.get(route)!.push(order.id);
       const pm = routeProducts.get(route)!;
       for (const li of items) {
-        pm.set(li.productName, (pm.get(li.productName) ?? 0) + li.quantity);
+        const vendorId = pricing.vendorIdFor(li);
+        const key = JSON.stringify([vendorId, li.productName]);
+        const unitCost = pricing.unitCostFor(li);
+        const previous = pm.get(key);
+        pm.set(key, {
+          name: li.productName, vendorId, qty: (previous?.qty ?? 0) + Number(li.quantity),
+          unitCost: previous && previous.unitCost !== unitCost ? null : unitCost,
+        });
       }
     }
 
@@ -4585,13 +4615,7 @@ router.post("/admin/group-buys/:gbId/fs3-generate", async (req: any, res: any): 
 
     const sheets = orderedRoutes.map(route => {
       const pm = routeProducts.get(route)!;
-      const products = Array.from(pm.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, qty]) => ({
-          name,
-          qty,
-          unitCost: costMap.get(name.toLowerCase()) ?? null,
-        }));
+      const products = Array.from(pm.values()).sort((a, b) => b.qty - a.qty);
       return {
         route,
         label: labelForRoute(route),

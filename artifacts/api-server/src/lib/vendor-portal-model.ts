@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { VendorCostItem, VendorShipping } from "@workspace/db";
 import { centsToUsdString, usdToCents } from "./refund-money";
+import { resolveFs3ProductCost, type Fs3CostMatch } from "@workspace/api-zod/fs3-costs";
 
 export class VendorPortalError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -8,30 +9,17 @@ export class VendorPortalError extends Error {
 
 /** Normalise spelling only; never infer doses or modified compounds. */
 export function supplierCatalogueCosts(
-  lines: Array<{ productId?: string | null; productName: string; unitPrice?: unknown }>,
+  lines: Array<{ productId?: string | null; productName: string; unitPrice?: unknown; vendorId?: string | null }>,
   products: Array<{ id: string; wholesaleVendorId?: string | null; wholesaleCost?: unknown }>,
   savedCosts: Array<{ productName: string; unitCost: unknown }>,
+  matches: Fs3CostMatch[] = [],
 ) {
-  const normalise = (value: string) => value.trim().toLowerCase();
-  // Explicitly approved FS3 catalogue aliases, not general strength inference.
-  // Keep aligned with the FS3 profit lookup in fs3-order-tools.ts.
-  const aliases: Record<string, string> = {
-    "na semax 10mg": "na semax",
-    "na selank 10mg": "na selank",
-    "na kpv 30mg": "kpv 30mg",
-  };
   const resolved = new Map<string, string>();
   const missing = new Set<string>();
   for (const line of lines) {
     const product = products.find(p => p.id === line.productId);
-    let unitCost: unknown = product?.wholesaleCost;
-    if (unitCost == null && !product?.wholesaleVendorId) {
-      const name = normalise(line.productName);
-      const exact = savedCosts.filter(c => normalise(c.productName) === name);
-      const matches = exact.length ? exact : savedCosts.filter(c => aliases[name] && normalise(c.productName) === aliases[name]);
-      const prices = new Set(matches.map(c => c.unitCost == null ? NaN : Number(c.unitCost)));
-      if (prices.size === 1) unitCost = [...prices][0];
-    }
+    const unitCost = resolveFs3ProductCost(product, savedCosts, matches, line.productName,
+      line.vendorId ?? product?.wholesaleVendorId ?? null);
     const amount = unitCost == null ? NaN : Number(unitCost);
     if (!Number.isFinite(amount) || amount < 0) {
       missing.add(line.productName);

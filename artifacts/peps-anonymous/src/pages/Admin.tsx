@@ -42,6 +42,8 @@ import { downloadSupplierVendorOrders } from "@/lib/supplier-vendor-export";
 import VendorPortalAdmin from "@/components/admin/VendorPortalAdmin";
 import { Fs3PastedList } from "@/components/admin/Fs3PastedList";
 import { loadFs3Costs } from "@/lib/fs3-cost-catalogue";
+import { Fs3CostMatches } from "@/components/admin/Fs3CostMatches";
+import type { Fs3CostMatch } from "@workspace/api-zod/fs3-costs";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
@@ -7324,10 +7326,10 @@ function PaymentsTab({ secret }: { secret: string }) {
 }
 
 // ─── FS3 Cost helpers (costs loaded from server, never bundled) ──
-interface Fs3CostEntry { id: number; productName: string; unitCost: number; }
+interface Fs3CostEntry { id: number; productName: string; unitCost: number; matches?: Fs3CostMatch[]; }
 
 function makeCostLookup(costs: Fs3CostEntry[]) {
-  return (name: string) => findFs3SavedCost(costs, name);
+  return (name: string, vendorId?: string | null, allowLegacyExact?: boolean) => findFs3SavedCost(costs, name, vendorId, allowLegacyExact);
 }
 
 // ─── FS3 Toggle helper ────────────────────────────────────────
@@ -7360,7 +7362,7 @@ interface Fs3Totals {
 }
 interface Fs3GroupBuy { id: string; name: string; vendorShippingAmount: number | null; vendorShippingKits: number | null; vendorShippingMaxKitsPerPackage: number | null; }
 interface Fs3GbMember { telegramUsername: string; email: string | null; accountStatus: string | null; hasPassword: boolean; hasTelegram: boolean; joinedAt: string | null; tags: string[]; countryLegId: string | null; }
-interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; creditsApplied?: number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; sharedOrderId?: string | null; }
+interface Fs3GbOrder { id: string; code?: string | null; telegramUsername: string; status: string; paymentStatus?: string | null; grandTotal: string | number | null; creditsApplied?: number | null; shippingCountry: string | null; shippingName?: string | null; shippingAddress?: string | null; shippingPhone?: string | null; shippingEmail?: string | null; deliveryMethod: string | null; createdAt: string; lineItems?: { productId?: string | null; vendorId?: string | null; costVendorId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }[]; routingType?: string | null; reshipperUsername?: string | null; directShippingRequested?: boolean; vendorShipping?: number | null; deliveryPrice?: number | null; tip?: number | null; trackingNumber?: string | null; trackingNumbers?: string[] | null; orderType?: string | null; sharedOrderId?: string | null; }
 interface Fs3ShareMeta { id: string; status: string; creatorUsername: string; deliveryName: string | null; deliveryCountry: string | null; memberCount: number; paidCount: number; allPaid: boolean; combinedKits: number; combinedSubtotal: number; platformPaymentReceived?: number | null; organiserPaymentStatus?: "unpaid" | "pending" | "confirmed"; }
 interface Fs3GbParcel { id: string; groupBuyId: string; reshipperUsername: string | null; label: string; carrier: string; trackingNumber: string; status: string; items: { name: string; qty: number }[]; createdAt: string; }
 interface PersonalItem { productName: string; qty: number; unitCost: number; }
@@ -7368,7 +7370,7 @@ interface PnlOrder {
   id: string; createdAt: string; grandTotal: number; productSubtotal: number;
   deliveryRevenue: number; vendorShipping: number; tips: number;
   orderType: string | null; groupBuyId: string | null;
-  lineItems: { productName: string; quantity: number; lineTotal: number }[];
+  lineItems: { productName: string; quantity: number; lineTotal: number; supplierUnitCost: number | null }[];
 }
 interface PnlBucket {
   key: string; label: string; revenue: number;
@@ -7549,8 +7551,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   useEffect(() => () => { costRequest.current?.abort(); }, [secret]);
   const getCost = useMemo(() => {
     const legacy=makeCostLookup(costs);
-    return (name:string,productId?:string|null) => fs3ProductCost(name, productId, supplierProducts, legacy);
-  }, [costs,supplierProducts]);
+    return (name:string,productId?:string|null,vendorId?:string|null) => fs3ProductCost(name, productId, supplierProducts, legacy, vendorId, supplierVendors);
+  }, [costs,supplierProducts,supplierVendors]);
 
   // Product stock levels (so the order sheet shows what's on hand).
   // Looked up by productId (exact) with product-name as a fallback for legacy/null-id rows.
@@ -7724,6 +7726,15 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       .catch(() => {});
   }, [fetchData, fetchCosts, fetchPnl]);
 
+  useEffect(() => {
+    const refreshPrices = () => {
+      if (!document.hidden) { void fetchCosts(); void fetchPnl(); }
+    };
+    window.addEventListener("focus", refreshPrices);
+    const timer = window.setInterval(refreshPrices, 60_000);
+    return () => { window.removeEventListener("focus", refreshPrices); window.clearInterval(timer); };
+  }, [fetchCosts, fetchPnl]);
+
   // Fetch members + orders + parcels whenever the selected GB changes; also reset ping panel + batch builder
   useEffect(() => {
     if (!filterGroupBuy) {
@@ -7738,7 +7749,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     setGbOrdersLoading(true);
     fetch(apiUrl(`/admin/group-buys/${filterGroupBuy}/members`), { headers: { "x-admin-secret": secret }, credentials: "omit" })
       .then(r => r.json()).then(d => setGbMembers(Array.isArray(d) ? d : [])).catch(() => setGbMembers([])).finally(() => setGbMembersLoading(false));
-    fetch(apiUrl(`/admin/orders?groupBuyId=${filterGroupBuy}&pageSize=500`), { headers: { "x-admin-secret": secret }, credentials: "omit" })
+    fetch(apiUrl(`/admin/orders?groupBuyId=${filterGroupBuy}&pageSize=500&fs3Pricing=true`), { headers: { "x-admin-secret": secret }, credentials: "omit" })
       .then(r => r.json()).then(d => setGbOrders(Array.isArray(d) ? d : (Array.isArray(d?.orders) ? d.orders : []))).catch(() => setGbOrders([])).finally(() => setGbOrdersLoading(false));
     fetch(apiUrl(`/admin/group-buys/${filterGroupBuy}/parcels`), { headers: { "x-admin-secret": secret }, credentials: "omit" })
       .then(r => r.json()).then(d => setGbParcels(Array.isArray(d) ? d : [])).catch(() => setGbParcels([]));
@@ -7749,6 +7760,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     if (!filterRouting) { setRoutingOrders([]); setSelectedOrderIds(new Set()); return; }
     setRoutingOrdersLoading(true);
     const params = new URLSearchParams();
+    params.set("fs3Pricing", "true");
     if (filterRouting === "reshipper") params.set("hasReshipper", "true");
     else if (filterRouting === "direct") { params.set("routingType", "direct"); params.set("pageSize", "500"); }
     else if (filterRouting === "wholesale" || filterRouting === "shared") params.set("wholesale", "true");
@@ -7848,7 +7860,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           const idx = prev.findIndex(c => c.id === updated.id);
           return idx >= 0 ? prev.map(c => c.id === updated.id ? updated : c) : [...prev, updated];
         });
-        await fetchCosts();
+        await Promise.all([fetchCosts(), fetchPnl()]);
         setEditingCostId(null);
         setNewCostName(""); setNewCostVal("");
         setCostMsg(id ? "Saved" : "Added");
@@ -7869,7 +7881,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       });
       if (!response.ok) throw new Error("Could not remove saved price. Try again.");
       setCosts(prev => prev.filter(c => c.id !== id));
-      await fetchCosts();
+      await Promise.all([fetchCosts(), fetchPnl()]);
     } catch (error) {
       setCostMsg(error instanceof Error ? error.message : "Could not remove saved price.");
     } finally { setCostSaving(false); }
@@ -8082,7 +8094,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
 
     filteredRows.forEach(r => {
       const key = `${r.vendorId ?? "legacy"}:${r.name.trim().toLowerCase()}`;
-      const cost = getCost(r.name,r.productId);
+      const cost = getCost(r.name,r.productId,r.vendorId);
       const existing = map.get(key);
       if (existing) {
         // Same product in multiple group buys — add quantities together
@@ -8272,13 +8284,13 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     const fmtMoney = (n: number) => `$${n.toFixed(2)}`;
     const itemLines = items.map(li => {
       const qty = li.quantity % 1 === 0 ? String(Math.round(li.quantity)) : li.quantity.toFixed(1);
-      const fs3UnitCost = getCost(li.productName);
+      const fs3UnitCost = getCost(li.productName,li.productId,li.costVendorId ?? li.vendorId);
       const linePrice = fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity);
       return `${li.productName} x${qty} = ${fmtMoney(linePrice)}`;
     });
 
     const productTotal = items.reduce((s, li) => {
-      const fs3UnitCost = getCost(li.productName);
+      const fs3UnitCost = getCost(li.productName,li.productId,li.costVendorId ?? li.vendorId);
       return s + (fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity));
     }, 0);
     const grandTotal = productTotal + packageTotal;
@@ -8380,7 +8392,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         for (const o of orders) {
           for (const li of (o.lineItems ?? [])) {
             const key = li.productName.trim();
-            const fs3UnitCost = getCost(li.productName);
+            const fs3UnitCost = getCost(li.productName,li.productId,li.costVendorId ?? li.vendorId);
             const unitCost = fs3UnitCost !== null ? fs3UnitCost : ((li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity) / (li.quantity || 1));
             const existing = productMap.get(key);
             if (existing) {
@@ -8451,8 +8463,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     // member line items are merged into a SINGLE combined order block (one total,
     // one package, one address). Standalone direct/wholesale orders keep one block each.
     const vendor = await ensureWholesaleVendor();
-    const itemPrice = (li: { productName: string; quantity: number; unitPrice?: number; lineTotal?: number }): number => {
-      const fs3UnitCost = getCost(li.productName);
+    const itemPrice = (li: { productId?: string | null; vendorId?: string | null; costVendorId?: string | null; productName: string; quantity: number; unitPrice?: number; lineTotal?: number }): number => {
+      const fs3UnitCost = getCost(li.productName,li.productId,li.costVendorId ?? li.vendorId);
       return fs3UnitCost !== null ? fs3UnitCost * li.quantity : (li.lineTotal ?? (li.unitPrice ?? 0) * li.quantity);
     };
     // Build one block for a set of orders that ship together (1 standalone order,
@@ -8541,7 +8553,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
 
   // ── Profit calculations ──
   const enrichedRows = useMemo(() => filteredRows.map(r => {
-    const cost = getCost(r.name,r.productId);
+    const cost = getCost(r.name,r.productId,r.vendorId);
     const totalCost = cost !== null ? cost * r.totalQty : null;
     const profit = totalCost !== null ? r.totalRevenue - totalCost : null;
     const margin = profit !== null && r.totalRevenue > 0 ? (profit / r.totalRevenue) * 100 : null;
@@ -8562,7 +8574,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       b.revenue += order.grandTotal;
       b.orderCount++;
       for (const li of order.lineItems) {
-        const uc = getCost(li.productName);
+        const uc = li.supplierUnitCost;
         if (uc !== null) { b.cost += uc * li.quantity; b.knownRevenue += li.lineTotal; }
       }
     }
@@ -8587,8 +8599,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const selectionEnrichedRows = useMemo(() => {
     if (selectedOrderIds.size === 0) return null;
     const selected = displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id));
-    return aggregateFs3Orders(selected, supplierProducts, makeCostLookup(costs));
-  }, [selectedOrderIds, displayedRoutingOrders, supplierProducts, costs]);
+    return aggregateFs3Orders(selected, supplierProducts, makeCostLookup(costs), supplierVendors);
+  }, [selectedOrderIds, displayedRoutingOrders, supplierProducts, costs, supplierVendors]);
 
   const selectionCombinedRows = useMemo(() => {
     if (selectedOrderIds.size === 0) return null;
@@ -8612,8 +8624,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
 
   const filteredRoutingEnrichedRows = useMemo(() =>
     (filterRouting === "wholesale" || filterRouting === "shared") && (filterPayment || filterOrderStatus)
-      ? aggregateFs3Orders(displayedRoutingOrders, supplierProducts, makeCostLookup(costs)) : null,
-  [filterRouting, filterPayment, filterOrderStatus, displayedRoutingOrders, supplierProducts, costs]);
+      ? aggregateFs3Orders(displayedRoutingOrders, supplierProducts, makeCostLookup(costs), supplierVendors) : null,
+  [filterRouting, filterPayment, filterOrderStatus, displayedRoutingOrders, supplierProducts, costs, supplierVendors]);
   const activeEnrichedRows = selectionEnrichedRows ?? filteredRoutingEnrichedRows ?? enrichedRows;
   const activeKnownRows = activeEnrichedRows.filter(r => r.totalCost !== null);
   const activeUnknownRows = activeEnrichedRows.filter(r => r.totalCost === null);
@@ -8867,6 +8879,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               </Button>
             </div>
           </div>
+          <Fs3CostMatches secret={secret} costs={costs} vendors={supplierVendors}
+            onChanged={async () => { await Promise.all([fetchCosts(), fetchPnl()]); }} />
         </Card>
       )}
 
@@ -9925,7 +9939,7 @@ function PnlContent({ secret, onLock }: { secret: string; onLock: () => void }) 
       b.revenue += order.grandTotal;
       b.orderCount++;
       for (const li of order.lineItems) {
-        const uc = getCost(li.productName);
+        const uc = li.supplierUnitCost;
         if (uc !== null) { b.cost += uc * li.quantity; b.knownRevenue += li.lineTotal; }
       }
     }

@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { supplierCatalogueCosts, supplierItems, sourceFingerprint, previewFingerprint, publicVendorOrder, requiredShipping, VendorPortalError } from "./vendor-portal-model";
+import type { Fs3CostMatch } from "@workspace/api-zod/fs3-costs";
+
+const approvedMatches: Fs3CostMatch[] = [
+  ["Na Semax 10mg", "Na Semax"], ["Na Selank 10mg", "Na Selank"], ["NA KPV 30mg", "KPV 30mg"],
+].map(([productName, costName]) => ({
+  productName, costName, vendorId: null, active: true, reviewedBy: "Owner",
+  reviewedAt: "2026-10-29", reviewNote: "Confirmed equivalent",
+}));
 
 describe("vendor order privacy and pricing", () => {
   it("finds saved FS3 costs despite capitalisation and harmless spacing differences", () => {
@@ -32,14 +40,25 @@ describe("vendor order privacy and pricing", () => {
     ];
     expect(supplierCatalogueCosts([
       { productName: "Na Semax 10mg" }, { productName: "Na Selank 10mg" }, { productName: "NA KPV 30mg" },
-    ], [], prices)).toEqual([
+    ], [], prices, approvedMatches)).toEqual([
       { productName: "Na Semax 10mg", unitCost: "60.00" },
       { productName: "Na Selank 10mg", unitCost: "60.00" },
       { productName: "NA KPV 30mg", unitCost: "110.00" },
     ]);
     expect(supplierCatalogueCosts([{ productName: "Na Semax 10mg" }], [], [
       ...prices, { productName: "Na Semax 10mg", unitCost: "65" },
-    ])[0].unitCost).toBe("65.00");
+    ], approvedMatches)[0].unitCost).toBe("65.00");
+  });
+  it("shares reviewed supplier matches with exports without overriding catalogue costs", () => {
+    const match = { ...approvedMatches[2], vendorId: "supplier-a" };
+    const line = [{ productId: "p", productName: match.productName }];
+    const products = [{ id: "p", wholesaleVendorId: "supplier-a" }];
+    const prices = [{ productName: match.costName, unitCost: "110" }];
+    expect(supplierCatalogueCosts(line, products, prices, [match])).toEqual([
+      { productName: "NA KPV 30mg", unitCost: "110.00" },
+    ]);
+    expect(supplierCatalogueCosts(line, [{ ...products[0], wholesaleCost: "130" }], prices, [match])[0].unitCost).toBe("130.00");
+    expect(() => supplierCatalogueCosts(line, [{ ...products[0], wholesaleVendorId: "supplier-b" }], prices, [match])).toThrow(/NA KPV/);
   });
   it("keeps vendor-specific costs authoritative instead of borrowing the legacy cost", () => {
     expect(() => supplierCatalogueCosts(

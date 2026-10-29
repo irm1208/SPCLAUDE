@@ -1,3 +1,4 @@
+import { resolveFs3Cost, resolveFs3SupplierId, type Fs3SavedCost } from "@workspace/api-zod/fs3-costs";
 export interface Fs3Product {
   id: string;
   name: string;
@@ -9,35 +10,21 @@ export interface Fs3Supplier { id: string; name: string; legacyCatalogueVendor?:
 interface Line {
   productId?: string | null; productName: string; quantity: number;
   unitPrice?: number; lineTotal?: number; vendorId?: string | null;
+  costVendorId?: string | null;
 }
-interface Order { lineItems?: Line[]; }
+interface Order {
+  lineItems?: Line[]; wholesaleVendorId?: string | null; shareVendorId?: string | null; legacyVendor?: string | null;
+}
 const normalise = (name: string) => name.trim().toLowerCase();
 const money = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-export function findFs3SavedCost(costs: Array<{ productName: string; unitCost: number }>, name: string) {
-  // Explicitly approved FS3 aliases; mirror supplierCatalogueCosts on the API.
-  const aliases: Record<string, string> = {
-    "na semax 10mg": "na semax",
-    "na selank 10mg": "na selank",
-    "na kpv 30mg": "kpv 30mg",
-  };
-  const key = normalise(name);
-  const exact = costs.filter(c => normalise(c.productName) === key);
-  const matching = exact.length ? exact : costs.filter(c => aliases[key] && normalise(c.productName) === aliases[key]);
-  const prices = new Set(matching.map(c => c.unitCost));
-  const price = prices.size === 1 ? [...prices][0] : null;
-  return price != null && Number.isFinite(price) && price >= 0 ? price : null;
+export function findFs3SavedCost(costs: Fs3SavedCost[], name: string, vendorId: string | null = null, allowLegacyExact = vendorId === null) {
+  return resolveFs3Cost(costs, costs.flatMap(c => c.matches ?? []), name, vendorId, allowLegacyExact);
 }
 function productFor(line: Pick<Line, "productId" | "productName">, products: Fs3Product[]) {
-  const exact = line.productId ? products.find(p => p.id === line.productId) : undefined;
-  if (exact) return exact;
-  const matching = products.filter(p => normalise(p.name) === normalise(line.productName));
-  if (matching.length === 1) return matching[0];
-  // Historical catalogue duplicates for one supplier are equivalent, not
-  // ambiguous offers from different suppliers.
-  const identities = new Set(matching.map(p => JSON.stringify([
-    p.wholesaleVendorId || normalise(p.vendor ?? ""), p.wholesaleCost == null ? null : Number(p.wholesaleCost),
-  ])));
-  return matching.length > 1 && identities.size === 1 ? matching[0] : undefined;
+  // Match the API: only a persisted product ID establishes a catalogue offer.
+  // An unlinked historical line uses its resolved supplier's reviewed cost,
+  // never a current same-name offer (even when only one exists).
+  return line.productId ? products.find(p => p.id === line.productId) : undefined;
 }
 
 export function matchesFs3Order(
@@ -50,14 +37,10 @@ export function matchesFs3Order(
 /** Resolve only an unambiguous supplier; mixed selections need an explicit choice. */
 export function inferFs3Supplier(orders: Order[], products: Fs3Product[], vendors: Fs3Supplier[]) {
   const ids = new Set<string>();
-  for (const line of orders.flatMap(o => o.lineItems ?? [])) {
+  for (const order of orders) for (const line of order.lineItems ?? []) {
     const product = productFor(line, products);
-    let id = line.vendorId ?? product?.wholesaleVendorId;
-    if (!id && product?.vendor) {
-      const name = normalise(product.vendor);
-      const matching = vendors.filter(v => [v.id, v.name, v.legacyCatalogueVendor ?? ""].some(n => normalise(n) === name));
-      if (matching.length === 1) id = matching[0].id;
-    }
+    const id = line.costVendorId !== undefined ? line.costVendorId
+      : resolveFs3SupplierId({ ...order, vendorId: line.vendorId }, product ?? {}, vendors);
     if (!id || !vendors.some(v => v.id === id)) return "";
     ids.add(id);
   }
@@ -67,25 +50,28 @@ export function inferFs3Supplier(orders: Order[], products: Fs3Product[], vendor
 /** Supplier-cost precedence matches the wholesale supplier export. */
 export function fs3ProductCost(
   name: string, productId: string | null | undefined, products: Fs3Product[],
-  legacyCost: (name: string) => number | null,
+  legacyCost: (name: string, vendorId?: string | null, allowLegacyExact?: boolean) => number | null,
+  vendorId?: string | null,
+  vendors: Fs3Supplier[] = [],
 ) {
   const product = productFor({ productId, productName: name }, products);
   if (product?.wholesaleCost != null) {
     const cost = Number(product.wholesaleCost);
     return Number.isFinite(cost) && cost >= 0 ? cost : null;
   }
-  if (product?.wholesaleVendorId) return null;
-  if (!product && products.filter(p => normalise(p.name) === normalise(name)).length > 1) return null;
-  return legacyCost(name);
+  const scope = vendorId !== undefined ? vendorId : resolveFs3SupplierId({}, product ?? {}, vendors);
+  if (!product && !scope && products.filter(p => normalise(p.name) === normalise(name)).length > 1) return null;
+  return legacyCost(name, scope, !product?.wholesaleVendorId);
 }
 
-export function aggregateFs3Orders(orders: Order[], products: Fs3Product[], legacyCost: (name: string) => number | null) {
+export function aggregateFs3Orders(orders: Order[], products: Fs3Product[], legacyCost: (name: string, vendorId?: string | null, allowLegacyExact?: boolean) => number | null, vendors: Fs3Supplier[] = []) {
   const grouped = new Map<string, {
     name: string; productId: string | null; vendorId: string | null; qty: number; revenue: number;
   }>();
-  for (const line of orders.flatMap(o => o.lineItems ?? [])) {
+  for (const order of orders) for (const line of order.lineItems ?? []) {
     const product = productFor(line, products);
-    const vendorId = line.vendorId ?? product?.wholesaleVendorId ?? null;
+    const vendorId = line.costVendorId !== undefined ? line.costVendorId
+      : resolveFs3SupplierId({ ...order, vendorId: line.vendorId }, product ?? {}, vendors);
     // Keep unresolved duplicate-name lines separate from identified offers.
     const identity = normalise(line.productName);
     const key = `${vendorId ?? "legacy"}:${identity}`;
@@ -97,7 +83,7 @@ export function aggregateFs3Orders(orders: Order[], products: Fs3Product[], lega
     grouped.set(key, entry);
   }
   return [...grouped.values()].map(row => {
-    const cost = fs3ProductCost(row.name, row.productId, products, legacyCost);
+    const cost = fs3ProductCost(row.name, row.productId, products, legacyCost, row.vendorId);
     const totalRevenue = money(row.revenue);
     const totalCost = cost == null ? null : money(cost * row.qty);
     const profit = totalCost == null ? null : money(totalRevenue - totalCost);
