@@ -9,7 +9,7 @@ import { getVendors } from "../routes/config";
 import { resolveProductVendor } from "./multi-vendor-shipping";
 import { calcTotalShipping, pickRegionForCountry } from "./wholesale-shipping";
 import { assertNoActiveRefunds, refundMutationPredicate } from "./refund-mutation-guard";
-import { supplierItems, requiredShipping, sourceFingerprint, previewFingerprint, VendorPortalError } from "./vendor-portal-model";
+import { supplierCatalogueCosts, supplierItems, requiredShipping, sourceFingerprint, previewFingerprint, VendorPortalError } from "./vendor-portal-model";
 import { centsToUsdString, usdToCents } from "./refund-money";
 
 export type Executor = any;
@@ -144,13 +144,7 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
       continue;
     }
     if (source.orders.some(o => ["Shipped", "Completed"].includes(o.status))) throw new VendorPortalError("An already shipped or completed order cannot be submitted as a new supplier shipment.", 409);
-    const scopedCosts = source.items.map((i: any) => {
-      const product = source.products.find((p: any) => p.id === i.productId);
-      const unitCost = product?.wholesaleCost ?? (!product?.wholesaleVendorId ? costs.find((c: any) => c.productName === i.productName)?.unitCost : undefined);
-      return {productName:i.productName,unitCost};
-    });
-    const distinctCosts = [...new Map(scopedCosts.map((c: any) => [c.productName,c])).values()] as Array<{productName:string;unitCost:unknown}>;
-    if (distinctCosts.some(c => c.unitCost == null)) throw new VendorPortalError("Set this vendor's supplier cost on every selected wholesale product before submitting.");
+    const distinctCosts = supplierCatalogueCosts(source.items, source.products, costs);
     const items = supplierItems(source.items, distinctCosts);
     const kits = items.reduce((total, i) => total + i.quantity, 0);
     const region = pickRegionForCountry(vendor, source.shipping.country);

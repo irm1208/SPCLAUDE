@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-
-// Exercise the real selected-order aggregation without mounting the admin page.
-const source = readFileSync(new URL("../pages/Admin.tsx", import.meta.url), "utf8");
-const section = source.slice(source.indexOf("const selectionEnrichedRows = useMemo"));
-const loop = section.slice(section.indexOf("for (const order of selected)"), section.indexOf("return [...productMap.values()]"));
-const aggregate = new Function("selected", `const productMap = new Map(); ${loop} return [...productMap.values()];`);
+import { aggregateFs3Orders } from "./fs3-order-tools";
+const aggregate = (orders: Parameters<typeof aggregateFs3Orders>[0]) =>
+  aggregateFs3Orders(orders, [], () => null).map(r => ({ name: r.name, qty: r.totalQty, revenue: r.totalRevenue }));
 
 test("legacy edited items with empty IDs stay separated by product", () => {
   const rows = aggregate([{ lineItems: [
@@ -35,5 +31,5 @@ test("custom products and different strengths do not merge", () => {
     { productId: null, productName: "BPC 157 10mg", quantity: 1, unitPrice: 50 },
   ] }]);
   assert.equal(rows.length, 3);
-  assert.equal(rows[0].revenue, 0);
+  assert.equal(rows.find(row => row.name === "Custom kit")?.revenue, 0);
 });

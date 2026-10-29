@@ -198,6 +198,18 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect(shipments.data.shipments.map((s:any)=>s.trackingNumber).sort()).toEqual(["TESTA12345","TESTB12345"]);
     expect((await request(`/account/orders/${f.orderId}/vendor-shipments`,f.other)).status).toBe(404);
   }));
+  it("exports saved costs with case-variant names without changing calculated vendor shipping", () => fixture(async f => {
+    await f.tx.update(store.fs3CostsTable).set({ productName: f.name.toLowerCase() }).where(eq(store.fs3CostsTable.productName, f.name));
+    const result = await request("/admin/vendor-portal/export", undefined, { vendorId: "vendor-a", orderCodes: [f.code], format: "txt" }, true);
+    expect(result.status).toBe(200);
+    expect(result.data.text).toContain(f.name);
+    expect(result.data.text).toContain("40.00");
+    expect(result.data.text).toContain("50.00");
+    expect(result.data.text).toContain("90.00");
+    expect(result.data.text).not.toContain("1998");
+    expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
+  }));
+
   it("gates all orders by explicit Admin submission, exposes only costs and retries idempotently", () => fixture(async f => {
     expect((await request("/vendor/orders")).status).toBe(401);
     expect((await request("/vendor/orders", f.member)).status).toBe(403);

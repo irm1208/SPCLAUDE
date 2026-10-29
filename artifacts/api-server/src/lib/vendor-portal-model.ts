@@ -5,6 +5,52 @@ import { centsToUsdString, usdToCents } from "./refund-money";
 export class VendorPortalError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
+
+/** Normalise spelling only; never infer doses or modified compounds. */
+export function supplierCatalogueCosts(
+  lines: Array<{ productId?: string | null; productName: string; unitPrice?: unknown }>,
+  products: Array<{ id: string; wholesaleVendorId?: string | null; wholesaleCost?: unknown }>,
+  savedCosts: Array<{ productName: string; unitCost: unknown }>,
+) {
+  const normalise = (value: string) => value.trim().toLowerCase();
+  // Explicitly approved FS3 catalogue aliases, not general strength inference.
+  // Keep aligned with the FS3 profit lookup in fs3-order-tools.ts.
+  const aliases: Record<string, string> = {
+    "na semax 10mg": "na semax",
+    "na selank 10mg": "na selank",
+    "na kpv 30mg": "kpv 30mg",
+  };
+  const resolved = new Map<string, string>();
+  const missing = new Set<string>();
+  for (const line of lines) {
+    const product = products.find(p => p.id === line.productId);
+    let unitCost: unknown = product?.wholesaleCost;
+    if (unitCost == null && !product?.wholesaleVendorId) {
+      const name = normalise(line.productName);
+      const exact = savedCosts.filter(c => normalise(c.productName) === name);
+      const matches = exact.length ? exact : savedCosts.filter(c => aliases[name] && normalise(c.productName) === aliases[name]);
+      const prices = new Set(matches.map(c => c.unitCost == null ? NaN : Number(c.unitCost)));
+      if (prices.size === 1) unitCost = [...prices][0];
+    }
+    const amount = unitCost == null ? NaN : Number(unitCost);
+    if (!Number.isFinite(amount) || amount < 0) {
+      missing.add(line.productName);
+      continue;
+    }
+    const price = amount.toFixed(2);
+    if (resolved.has(line.productName) && resolved.get(line.productName) !== price) missing.add(line.productName);
+    resolved.set(line.productName, price);
+  }
+  if (missing.size) {
+    throw new VendorPortalError(
+      `Missing or conflicting product supplier costs: ${[...missing].join("; ")}. ` +
+      "Check FS3 My Prices for legacy products, or Wholesale setup for vendor-specific products. " +
+      "This is a product-cost issue, not a vendor shipping charge.",
+    );
+  }
+  return [...resolved].map(([productName, unitCost]) => ({ productName, unitCost }));
+}
+
 export function supplierItems(
   lines: Array<{ productName: string; quantity: unknown; unitPrice?: unknown }>,
   costs: Array<{ productName: string; unitCost: unknown }>,

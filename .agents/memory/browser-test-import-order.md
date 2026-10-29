@@ -3,6 +3,11 @@ name: Browser test import order
 description: Node JSX runtime and browser-global import ordering can cause test-only failures.
 ---
 
+Related test-environment notes:
+- [Chromium on Nix](browser-runner-environment.md)
+- [API fixture routing](browser-api-fixture-routing.md)
+- [Node 20 TypeScript runner](node20-tsx-test-runner.md)
+
 In the node/tsx test harness, initialize the jsdom browser globals before importing browser-only routing and portal libraries.
 
 Vitest's automatic jsdom environment cannot resolve the workspace's transitive jsdom installation even though the package exists.

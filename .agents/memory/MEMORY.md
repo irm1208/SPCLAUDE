@@ -7,8 +7,7 @@
 - [Organiser V2 drawer portal CSS scoping](ov2-drawer-portal-scoping.md) — mobile drawer is a portalled Sheet; `.organiser-v2 .ov2-sidebar-drawer` selectors never match it, use compound `.organiser-v2.ov2-sidebar-drawer`.
 - [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
 - [Discord signup verification policy](discord-signup-verification-policy.md) — successful Discord OAuth replaces email verification and CAPTCHA for new Discord accounts; invite-only signup still applies.
-- [Browser test import order](browser-test-import-order.md) — initialize jsdom before importing browser-only libraries; early Radix/Wouter imports can silently disable portals or history updates.
-- [Browser runner environment](browser-runner-environment.md) — use Replit's Chromium wrapper on Nix; a downloaded Playwright browser may lack runtime shared libraries.
+- [Browser and TypeScript tests](browser-test-import-order.md) — jsdom import order, Nix Chromium, API fixture routing and Node 20 runner notes.
 - [Lab imports and reports](lab-import-reference.md) — provider restrictions, extraction pitfalls, bloodwork parsing, certificate compression and blob-free lists.
 - [GB entry-fee join gate](gb-entry-fee-join-gate.md) — membership only inserted after fee confirmed (402 ENTRY_FEE_REQUIRED gate in join handler); any new join path must route through same gate.
 - [GB entry-fee confirm atomicity](gb-entry-fee-confirm-atomicity.md) — confirm status-update + membership-grant must be one transaction w/ idempotent retry, or payment shows confirmed forever with no membership.
@@ -29,8 +28,7 @@
 - [Group-buy visibility gate](gb-visibility-gate.md) — un-hiding a GB to public lists must be server-gated on approvalStatus==='approved' OR admin, else organisers self-publish unapproved GBs; hidden means list-excluded, still joinable by id+PIN.
 - [GB admin fee fixed vs percent](gb-admin-fee-percentage.md) — order stores RESOLVED fee; percent applies to product subtotal, resolved only at create/edit/backfill; edits never add a fee to an order that never had one; direct-shipping zeroes it; EVERY grandTotal recompute site (not just the main edit endpoint) must include+persist it.
 - [Role change side-effects](role-change-side-effects.md) — any path mutating account roles must mirror single-account handler side-effects (organiser audit log + notify + clear organiserApprovedAt on revoke); strictly validate action/role.
-- [FS3 TXT package pricing](fs3-txt-package-pricing.md) — order TXT package line uses active wholesale vendor regional kit-count tiers (25/pkg); reshipper leg stays flat $70 on purpose (no reliable destination country).
-- [FS3 pasted supplier lists](fs3-pasted-list-purpose.md) — price external item/quantity lists using saved supplier costs; not customer prices, catalogue imports or purchase submission.
+- [FS3 pricing and identities](fs3-selection-integrity.md) — mixed legacy vendor IDs affect selection totals; links to TXT package rates and pasted-list policies.
 - [Shared-wholesale admin grouping](shared-wholesale-admin-grouping.md) — admin order list merges same-sharedOrderId wholesale_shared orders into one lead-labelled parent row; client-side, page-window bound, wholesale/all views only.
 - [My Orders page location](my-orders-page-location.md) — customer My Orders tabs = CustomerPortal.tsx (section "orders", /account?s=orders); /my-orders (AccountOrders.tsx) is a separate secondary page.
 - [Crypto verify tolerance](crypto-verify-tolerance.md) — once crypto amounts are locked-rate converted (display==verify), all verifyTransaction paths must use ~1% default tolerance, never 15%; loose tolerance is a money-integrity risk and gets code-review rejected.
@@ -138,7 +136,6 @@
 - [GB EU onward delivery](gb-eu-onward-delivery.md) — EU custom postage replaces the matrix where imported; automatic kit bands, country isolation, legacy payment preservation.
 - [Account suspension enforcement](account-suspension-enforcement.md) — check current status on every session; order-number/social login and guest order paths must not bypass suspension.
 - [Member order receipt](member-order-receipt-policy.md) — members can confirm their own shipped group-buy, wholesale and shared orders; never complete other members’ parcels or payments.
-- [Node 20 TypeScript tests](node20-tsx-test-runner.md) — this workspace's Node 20 cannot use `--experimental-strip-types`; run TypeScript tests with `pnpm exec tsx`.
 - [Group-buy MOQ policy](group-buy-moq-policy.md) — group-wide kit target, half kits count as 0.5, active paid and unpaid orders count; member visibility is a separate opt-in.
 - [PostgreSQL snapshot concurrency](postgres-snapshot-concurrency.md) — canonicalize JSONB hashes; use generation/state CAS because JS Date loses PostgreSQL microseconds.
 - [Member list completion](member-group-buy-completion.md) — Completed group buys and orders are reversible personal categories, not shared lifecycle or delivery changes.
@@ -156,4 +153,3 @@
 - [GB bank transfers](group-buy-bank-transfer-policy.md) — UK and international organiser details; member “sent” notifications require manual receipt confirmation.
 - [GB manual payments](group-buy-manual-payment-policy.md) — single/selected paid confirmations require a staff-only note and actor/time; independent balances stay unchanged.
 - [Wholesale vendor portal](wholesale-vendor-portal-policy.md) — vendor-only cost prices, Admin submission gate, member fulfilment updates; separate vendor login with existing credentials.
-- [Browser API fixtures](browser-api-fixture-routing.md) — match pathname starting `/api/`, not source directories containing `/api/`, or fixtures can blank the app.

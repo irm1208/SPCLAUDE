@@ -1,6 +1,8 @@
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
 import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
+import { aggregateFs3Orders, findFs3SavedCost, fs3ProductCost, fs3ProfitRowKey, inferFs3Supplier, matchesFs3Order, type Fs3Product, type Fs3Supplier } from "@/lib/fs3-order-tools";
+import { Fs3WholesaleFilters } from "@/components/admin/Fs3WholesaleFilters";
 import { isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -7325,18 +7327,7 @@ function PaymentsTab({ secret }: { secret: string }) {
 interface Fs3CostEntry { id: number; productName: string; unitCost: number; }
 
 function makeCostLookup(costs: Fs3CostEntry[]) {
-  return function getCost(name: string): number | null {
-    const lower = name.toLowerCase().trim();
-    const exact = costs.find(c => c.productName === name);
-    if (exact) return exact.unitCost;
-    const ci = costs.find(c => c.productName.toLowerCase().trim() === lower);
-    if (ci) return ci.unitCost;
-    const partial = costs.find(c =>
-      lower.includes(c.productName.toLowerCase().trim()) ||
-      c.productName.toLowerCase().trim().includes(lower)
-    );
-    return partial ? partial.unitCost : null;
-  };
+  return (name: string) => findFs3SavedCost(costs, name);
 }
 
 // ─── FS3 Toggle helper ────────────────────────────────────────
@@ -7499,12 +7490,14 @@ function Fs3Tab({ secret }: { secret: string; admin2fa?: boolean }) {
 // ─── FS3 Content (shown after password) ───────────────────────
 function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) {
   const [supplierVendorId,setSupplierVendorId] = useState("");
-  const [supplierVendors,setSupplierVendors] = useState<Array<{id:string;name:string}>>([]);
+  const [supplierVendors,setSupplierVendors] = useState<Fs3Supplier[]>([]);
+  const [supplierProducts, setSupplierProducts] = useState<Fs3Product[]>([]);
   const [supplierExportError,setSupplierExportError] = useState("");
+  const [supplierExportBusy, setSupplierExportBusy] = useState(false);
   useEffect(()=>{
     fetch(apiUrl("/admin/wholesale-vendors"),{headers:{"x-admin-secret":secret}})
       .then(r=>r.ok?r.json():Promise.reject(new Error("Cannot load supplier vendors")))
-      .then(d=>{setSupplierVendors(d.vendors ?? []);if(d.vendors?.length===1)setSupplierVendorId(d.vendors[0].id);})
+      .then(d=>{setSupplierVendors(d.vendors ?? []);})
       .catch(e=>setSupplierExportError(e.message));
   },[secret]);
   // Data state
@@ -7524,6 +7517,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const [availableCountries, setAvailableCountries] = useState<string[]>([]);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterPayment, setFilterPayment] = useState("");
+  const [filterOrderStatus, setFilterOrderStatus] = useState("");
 
   // GB-level members + orders + parcels (fetched when a GB is selected)
   const [gbMembers, setGbMembers] = useState<Fs3GbMember[]>([]);
@@ -7554,9 +7549,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   useEffect(() => () => { costRequest.current?.abort(); }, [secret]);
   const getCost = useMemo(() => {
     const legacy=makeCostLookup(costs);
-    const scoped=new Map(rows.filter(r=>r.vendorScopedCost && r.productId).map(r=>[r.productId,r.supplierCost ?? null]));
-    return (name:string,productId?:string|null) => productId && scoped.has(productId) ? scoped.get(productId)! : legacy(name);
-  }, [costs,rows]);
+    return (name:string,productId?:string|null) => fs3ProductCost(name, productId, supplierProducts, legacy);
+  }, [costs,supplierProducts]);
 
   // Product stock levels (so the order sheet shows what's on hand).
   // Looked up by productId (exact) with product-name as a fallback for legacy/null-id rows.
@@ -7564,7 +7558,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   useEffect(() => {
     fetch(apiUrl("/admin/products"), { headers: { "x-admin-secret": secret } })
       .then(r => (r.ok ? r.json() : []))
-      .then((d: any) => setStockList(Array.isArray(d) ? d.map((p: any) => ({ id: String(p.id ?? ""), name: String(p.name ?? ""), stock: p.stock ?? null, low: p.lowStockThreshold ?? null })) : []))
+      .then((d: any) => {
+        setSupplierProducts(Array.isArray(d) ? d : []);
+        setStockList(Array.isArray(d) ? d.map((p: any) => ({ id: String(p.id ?? ""), name: String(p.name ?? ""), stock: p.stock ?? null, low: p.lowStockThreshold ?? null })) : []);
+      })
       .catch(() => setStockList([]));
   }, [secret]);
   useEffect(() => {
@@ -8012,6 +8009,9 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
     // them client-side: "wholesale" = standalone wholesale, "shared" = shared orders.
     if (filterRouting === "wholesale") base = base.filter(o => o.orderType === "wholesale");
     else if (filterRouting === "shared") base = base.filter(o => o.orderType === "wholesale_shared");
+    if (filterRouting === "wholesale" || filterRouting === "shared") {
+      base = base.filter(o => matchesFs3Order(o, filterPayment, filterOrderStatus));
+    }
     if (filterReshipper) base = base.filter(o => o.reshipperUsername === filterReshipper);
     if (filterDateFrom) {
       const from = new Date(filterDateFrom); from.setHours(0, 0, 0, 0);
@@ -8022,7 +8022,29 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       base = base.filter(o => o.createdAt && new Date(o.createdAt) <= to);
     }
     return base;
-  }, [routingOrders, filterReshipper, filterRouting, filterDateFrom, filterDateTo]);
+  }, [routingOrders, filterReshipper, filterRouting, filterDateFrom, filterDateTo, filterPayment, filterOrderStatus]);
+
+  // Hidden orders must not remain in downloads, totals or bulk status actions.
+  useEffect(() => {
+    const visible = new Set(displayedRoutingOrders.map(o => o.id));
+    setSelectedOrderIds(previous => {
+      const next = new Set([...previous].filter(id => visible.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [displayedRoutingOrders]);
+  const inferredSupplierId = inferFs3Supplier(
+    displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id)), supplierProducts, supplierVendors,
+  );
+  const exportWholesaleOrders = async (orders: Fs3GbOrder[]) => {
+    if (supplierExportBusy) return;
+    setSupplierExportBusy(true); setSupplierExportError("");
+    try {
+      const vendorId = supplierVendorId || inferFs3Supplier(orders, supplierProducts, supplierVendors);
+      await downloadSupplierVendorOrders(secret, vendorId, orders.map(o => String(o.code)));
+    } catch (error) {
+      setSupplierExportError(error instanceof Error ? error.message : "Supplier export failed. Please try again.");
+    } finally { setSupplierExportBusy(false); }
+  };
 
   // Wholesale view: collapse a shared order's per-member orders into one group.
   // Orders sharing a `sharedOrderId` belong to the same wholesale shared order;
@@ -8229,8 +8251,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   // ── Download single direct order as TXT (vendor-facing template) ──
   const downloadDirectOrderTxt = async (o: Fs3GbOrder) => {
     if (["wholesale","wholesale_shared"].includes(o.orderType ?? "")) {
-      try {setSupplierExportError("");await downloadSupplierVendorOrders(secret,supplierVendorId,[String(o.code)]);}
-      catch(e){setSupplierExportError((e as Error).message);}
+      await exportWholesaleOrders([o]);
       return;
     }
     const gb = groupBuys.find(g => g.id === filterGroupBuy);
@@ -8320,8 +8341,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       if (!supplierSelected.every(o=>["wholesale","wholesale_shared"].includes(o.orderType ?? ""))) {
         setSupplierExportError("Select wholesale orders separately from group-buy orders.");return;
       }
-      try {setSupplierExportError("");await downloadSupplierVendorOrders(secret,supplierVendorId,supplierSelected.map(o=>String(o.code)));}
-      catch(e){setSupplierExportError((e as Error).message);}
+      await exportWholesaleOrders(supplierSelected);
       return;
     }
     const selected = displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id));
@@ -8567,45 +8587,19 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   const selectionEnrichedRows = useMemo(() => {
     if (selectedOrderIds.size === 0) return null;
     const selected = displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id));
-    const productMap = new Map<string, { name: string; productId: string | null; qty: number; revenue: number }>();
-    for (const order of selected) {
-      for (const li of (order.lineItems ?? [])) {
-        // Match the FS3 summary's name-based grouping, including legacy edited
-        // lines whose product ID was cleared. Never merge unrelated empty IDs.
-        const key = li.productName.trim().toLowerCase();
-        const existing = productMap.get(key);
-        const revenue = (li.unitPrice ?? 0) * li.quantity;
-        if (existing) { existing.qty += li.quantity; existing.revenue += revenue; }
-        else productMap.set(key, { name: li.productName, productId: li.productId ?? null, qty: li.quantity, revenue });
-      }
-    }
-    return [...productMap.values()].map(r => {
-      const cost = getCost(r.name,r.productId);
-      const totalCost = cost !== null ? cost * r.qty : null;
-      const profit = totalCost !== null ? r.revenue - totalCost : null;
-      const margin = profit !== null && r.revenue > 0 ? (profit / r.revenue) * 100 : null;
-      const unitPrice = r.qty > 0 ? r.revenue / r.qty : 0;
-      const unitProfit = cost !== null ? unitPrice - cost : null;
-      const unitMargin = unitProfit !== null && unitPrice > 0 ? (unitProfit / unitPrice) * 100 : null;
-      return { name: r.name, productId: r.productId, totalQty: r.qty, totalRevenue: r.revenue, cost, totalCost, profit, margin, unitPrice, unitProfit, unitMargin, groupBuyId: undefined as string | undefined };
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [selectedOrderIds, displayedRoutingOrders, getCost]);
+    return aggregateFs3Orders(selected, supplierProducts, makeCostLookup(costs));
+  }, [selectedOrderIds, displayedRoutingOrders, supplierProducts, costs]);
 
   const selectionCombinedRows = useMemo(() => {
     if (selectedOrderIds.size === 0) return null;
-    const selected = displayedRoutingOrders.filter(o => selectedOrderIds.has(o.id));
     const map = new Map<string, { name: string; productId: string | null; qty: number; unitCost: number | null; isPersonal: boolean }>();
-    for (const order of selected) {
-      for (const li of (order.lineItems ?? [])) {
-        const key = li.productName.trim().toLowerCase();
-        const cost = getCost(li.productName);
-        const existing = map.get(key);
-        if (existing) { existing.qty += li.quantity; }
-        else map.set(key, { name: li.productName, productId: li.productId ?? null, qty: li.quantity, unitCost: cost, isPersonal: false });
-      }
+    for (const row of selectionEnrichedRows ?? []) {
+      const key = `${row.vendorId ?? "legacy"}:${row.name.trim().toLowerCase()}`;
+      map.set(key, { name: row.name, productId: row.productId, qty: row.totalQty, unitCost: row.cost, isPersonal: false });
     }
     personalItems.forEach(p => {
-      const key = p.productName.trim().toLowerCase();
+      const matching = [...map.entries()].filter(([, row]) => row.name.trim().toLowerCase() === p.productName.trim().toLowerCase());
+      const key = matching.length === 1 ? matching[0][0] : `personal:${p.productName.trim().toLowerCase()}`;
       const existing = map.get(key);
       if (existing) {
         map.set(key, { ...existing, qty: existing.qty + p.qty, isPersonal: true });
@@ -8614,9 +8608,13 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
       }
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [selectedOrderIds, displayedRoutingOrders, getCost, personalItems]);
+  }, [selectedOrderIds, selectionEnrichedRows, personalItems]);
 
-  const activeEnrichedRows = selectionEnrichedRows ?? enrichedRows;
+  const filteredRoutingEnrichedRows = useMemo(() =>
+    (filterRouting === "wholesale" || filterRouting === "shared") && (filterPayment || filterOrderStatus)
+      ? aggregateFs3Orders(displayedRoutingOrders, supplierProducts, makeCostLookup(costs)) : null,
+  [filterRouting, filterPayment, filterOrderStatus, displayedRoutingOrders, supplierProducts, costs]);
+  const activeEnrichedRows = selectionEnrichedRows ?? filteredRoutingEnrichedRows ?? enrichedRows;
   const activeKnownRows = activeEnrichedRows.filter(r => r.totalCost !== null);
   const activeUnknownRows = activeEnrichedRows.filter(r => r.totalCost === null);
   const activeTotalKnownCost = activeKnownRows.reduce((s, r) => s + (r.totalCost ?? 0), 0);
@@ -8695,6 +8693,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         <button
           title="Download order as .txt"
           onClick={e => { e.preventDefault(); e.stopPropagation(); downloadDirectOrderTxt(o); }}
+          disabled={supplierExportBusy}
           className="shrink-0 p-1 rounded hover:bg-slate-200 text-muted-foreground hover:text-foreground transition-colors"
         >
           <Download className="w-3 h-3" />
@@ -8742,13 +8741,6 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
         </div>
       </div>
 
-        <div className="mb-3 text-sm">Supplier for wholesale TXT
-          <select aria-label="Supplier for wholesale TXT" className="border rounded-lg px-3 py-2 ml-2" value={supplierVendorId} onChange={e=>setSupplierVendorId(e.target.value)}>
-            <option value="">Choose supplier</option>{supplierVendors.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-          <p className="text-xs text-muted-foreground mt-1">Mixed orders must be downloaded separately for each supplier.</p>
-          {supplierExportError && <p role="alert" className="text-red-600">{supplierExportError}</p>}
-        </div>
       {showPastedList && (
         <Fs3PastedList costs={costs} loading={costsLoading || costSaving} error={costsError} onRefresh={fetchCosts} />
       )}
@@ -9090,6 +9082,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               <option value="direct">Direct</option>
             </select>
           </div>
+          {(filterRouting === "wholesale" || filterRouting === "shared") && (
+            <Fs3WholesaleFilters payment={filterPayment} status={filterOrderStatus}
+              onChange={(payment, status) => { setFilterPayment(payment); setFilterOrderStatus(status); }} />
+          )}
           {filterRouting === "reshipper" && routingReshippers.length > 0 && (
             <div className="flex items-center gap-1.5">
               <label className="text-xs text-muted-foreground font-medium shrink-0">Reshipper</label>
@@ -9123,10 +9119,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               min={filterDateFrom || undefined}
             />
           </div>
-          {(filterGroupBuy || filterVendor || filterCountry.length > 0 || filterRouting || filterDateFrom || filterDateTo) && (
+          {(filterGroupBuy || filterVendor || filterCountry.length > 0 || filterRouting || filterDateFrom || filterDateTo || filterPayment || filterOrderStatus) && (
             <button
               className="text-xs text-muted-foreground hover:text-foreground underline"
-              onClick={() => { setFilterGroupBuy(""); setFilterVendor(""); setFilterCountry([]); setFilterRouting(""); setFilterReshipper(""); setFilterDateFrom(""); setFilterDateTo(""); }}
+              onClick={() => { setFilterGroupBuy(""); setFilterVendor(""); setFilterCountry([]); setFilterRouting(""); setFilterReshipper(""); setFilterDateFrom(""); setFilterDateTo(""); setFilterPayment(""); setFilterOrderStatus(""); }}
             >
               Clear filters
             </button>
@@ -9166,9 +9162,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                   size="sm" variant="outline"
                   className="text-xs h-7 gap-1.5"
                   onClick={downloadSelectedDirectOrdersTxt}
+                  disabled={supplierExportBusy}
                 >
-                  <Download className="w-3 h-3" />
-                  Download {selectedOrderIds.size} .txt
+                  {supplierExportBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                  {supplierExportBusy ? "Preparing TXT…" : `Download ${selectedOrderIds.size} .txt`}
                 </Button>
               )}
               {displayedRoutingOrders.length > 0 && (
@@ -9188,6 +9185,26 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
               )}
             </div>
           </div>
+
+          {(filterRouting === "wholesale" || filterRouting === "shared") && (
+            <div className="rounded-lg border border-border p-3 space-y-1.5">
+              <label className="flex items-center gap-2 flex-wrap text-xs font-medium">
+                Supplier for TXT
+                <select aria-label="Supplier for wholesale TXT" className="border rounded-md px-2 py-1 bg-background"
+                  value={supplierVendorId || inferredSupplierId} disabled={supplierExportBusy}
+                  onChange={e => { setSupplierVendorId(e.target.value); setSupplierExportError(""); }}>
+                  <option value="">Choose supplier</option>
+                  {supplierVendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Automatically selected when all chosen items have one clear supplier. For mixed-vendor orders, download each supplier separately.
+              </p>
+              {supplierExportError && <p role="alert" className="text-sm text-red-600 whitespace-pre-wrap">{supplierExportError}</p>}
+            </div>
+          )}
+          {filterRouting !== "wholesale" && filterRouting !== "shared" && supplierExportError &&
+            <p role="alert" className="text-sm text-red-600">{supplierExportError}</p>}
 
           {routingOrdersLoading ? (
             <div className="flex items-center justify-center py-8">
@@ -9336,6 +9353,8 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                   <span className="ml-2 font-normal text-primary normal-case tracking-normal">
                     — {selectedOrderIds.size} selected order{selectedOrderIds.size !== 1 ? "s" : ""}
                   </span>
+                ) : filteredRoutingEnrichedRows ? (
+                  <span className="ml-2 font-normal text-primary normal-case tracking-normal">— {displayedRoutingOrders.length} filtered orders</span>
                 ) : (filterGroupBuy || filterVendor) ? (
                   <span className="ml-2 font-normal text-primary normal-case tracking-normal">
                     — filtered
@@ -9367,15 +9386,15 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                 <th className="pb-2 w-8"></th>
               </tr>
             </thead>
-            <tbody className="font-mono">
-              {activeKnownRows.map(r => {
+            <tbody className="font-mono" key={selectionEnrichedRows ? "selected-orders" : filteredRoutingEnrichedRows ? "filtered-orders" : "all-orders"}>
+              {activeKnownRows.map((r, rowIndex) => {
                 const rev = profitView === "unit" ? r.unitPrice : r.totalRevenue;
                 const cst = profitView === "unit" ? (r.cost ?? 0) : r.totalCost!;
                 const pft = profitView === "unit" ? r.unitProfit! : r.profit!;
                 const mgn = profitView === "unit" ? r.unitMargin! : r.margin!;
                 const isEditingThis = inlineEditProduct === r.name;
                 return (
-                  <tr key={`${r.name}||${r.groupBuyId ?? ""}||${r.productId ?? ""}`} className="border-b border-border/50 hover:bg-muted/30">
+                  <tr key={fs3ProfitRowKey(r, rowIndex)} className="border-b border-border/50 hover:bg-muted/30">
                     <td className="py-1.5 pr-3 font-sans text-xs max-w-[140px] truncate">{r.name}</td>
                     <td className="py-1.5 text-right text-muted-foreground">{fmtQty(r.totalQty)}</td>
                     <td className="py-1.5 text-right">
@@ -9444,10 +9463,10 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                 {activeUnknownRows.length} product{activeUnknownRows.length > 1 ? "s" : ""} without cost data (click to expand)
               </summary>
               <div className="mt-2 space-y-1.5 font-mono text-xs">
-                {activeUnknownRows.map(r => {
+                {activeUnknownRows.map((r, rowIndex) => {
                   const isEditingThis = inlineEditProduct === r.name;
                   return (
-                    <div key={`${r.name}||${r.groupBuyId ?? ""}||${r.productId ?? ""}`} className="flex items-center justify-between gap-2">
+                    <div key={`unknown-${fs3ProfitRowKey(r, rowIndex)}`} className="flex items-center justify-between gap-2">
                       <span className="text-muted-foreground flex-1 truncate">{r.name} ×{fmtQty(r.totalQty)}</span>
                       {renderStock(r.productId, r.name)}
                       {isEditingThis ? (

@@ -1,7 +1,58 @@
 import { describe, it, expect } from "vitest";
-import { supplierItems, sourceFingerprint, previewFingerprint, publicVendorOrder, requiredShipping, VendorPortalError } from "./vendor-portal-model";
+import { supplierCatalogueCosts, supplierItems, sourceFingerprint, previewFingerprint, publicVendorOrder, requiredShipping, VendorPortalError } from "./vendor-portal-model";
 
 describe("vendor order privacy and pricing", () => {
+  it("finds saved FS3 costs despite capitalisation and harmless spacing differences", () => {
+    expect(supplierCatalogueCosts(
+      [{ productId: "legacy", productName: "CJC No Dac / IPA 10/10mg" }],
+      [{ id: "legacy" }],
+      [{ productName: " CJC No DAC / Ipa 10/10mg ", unitCost: "130.00" }],
+    )).toEqual([{ productName: "CJC No Dac / IPA 10/10mg", unitCost: "130.00" }]);
+  });
+  it("accepts identical duplicate price names but rejects conflicting prices", () => {
+    const lines = [{ productName: "KPV 30mg" }];
+    expect(supplierCatalogueCosts(lines, [], [
+      { productName: "KPV 30mg", unitCost: "110" }, { productName: "Kpv 30mg", unitCost: "110.00" },
+    ])[0].unitCost).toBe("110.00");
+    expect(() => supplierCatalogueCosts(lines, [], [
+      { productName: "KPV 30mg", unitCost: "110" }, { productName: "Kpv 30mg", unitCost: "95" },
+    ])).toThrow(/KPV 30mg/);
+  });
+  it("lists every missing product and never guesses strengths, modifications or sale prices", () => {
+    expect(() => supplierCatalogueCosts([
+      { productName: "Na Semax 20mg", unitPrice: 999 }, { productName: "NA KPV 40mg" },
+    ], [], [
+      { productName: "Na Semax", unitCost: "60" }, { productName: "KPV 30mg", unitCost: "110" },
+    ])).toThrow(/Na Semax 20mg.*NA KPV 40mg/);
+  });
+  it("applies only the user-confirmed aliases, preserves TXT names, and prefers exact prices", () => {
+    const prices = [
+      { productName: "Na Semax", unitCost: "60" }, { productName: "Na semax", unitCost: "60" },
+      { productName: "Na Selank", unitCost: "60" }, { productName: "KPV 30mg", unitCost: "110" },
+    ];
+    expect(supplierCatalogueCosts([
+      { productName: "Na Semax 10mg" }, { productName: "Na Selank 10mg" }, { productName: "NA KPV 30mg" },
+    ], [], prices)).toEqual([
+      { productName: "Na Semax 10mg", unitCost: "60.00" },
+      { productName: "Na Selank 10mg", unitCost: "60.00" },
+      { productName: "NA KPV 30mg", unitCost: "110.00" },
+    ]);
+    expect(supplierCatalogueCosts([{ productName: "Na Semax 10mg" }], [], [
+      ...prices, { productName: "Na Semax 10mg", unitCost: "65" },
+    ])[0].unitCost).toBe("65.00");
+  });
+  it("keeps vendor-specific costs authoritative instead of borrowing the legacy cost", () => {
+    expect(() => supplierCatalogueCosts(
+      [{ productId: "new", productName: "HGH" }],
+      [{ id: "new", wholesaleVendorId: "new-vendor", wholesaleCost: null }],
+      [{ productName: "HGH", unitCost: "50" }],
+    )).toThrow(/HGH/);
+    expect(supplierCatalogueCosts(
+      [{ productId: "new", productName: "HGH" }],
+      [{ id: "new", wholesaleVendorId: "new-vendor", wholesaleCost: "75" }],
+      [{ productName: "HGH", unitCost: "50" }],
+    )[0].unitCost).toBe("75.00");
+  });
   it("preserves idempotency after PostgreSQL JSONB reorders snapshot keys", () => {
     expect(previewFingerprint({ snapshot: { items: [], currency: "USD" } }))
       .toBe(previewFingerprint({ snapshot: { currency: "USD", items: [] } }));
