@@ -8,7 +8,7 @@ import { Loader2, Save, AlertTriangle, Info } from "lucide-react";
 //  PATCH /api/admin/wholesale-products/:id               { wholesaleVendorId, wholesaleCost, wholesalePrice, stock }
 // Legacy vendors with `enabled === undefined` are treated as enabled only when they are activeVendorId.
 
-export interface AdminVendor { id: string; name: string; enabled?: boolean }
+export interface AdminVendor { id: string; name: string; enabled?: boolean; legacyCatalogueVendor?: string }
 export interface AdminWholesaleProduct {
   id: string;
   name: string;
@@ -34,12 +34,21 @@ export function parseOptionalNumber(raw: string, integer = false): number | null
   return n;
 }
 
-interface RowDraft { vendorId: string; cost: string; price: string; stock: string }
-const toDraft = (p: AdminWholesaleProduct): RowDraft => ({
-  vendorId: p.wholesaleVendorId ?? "",
+interface RowDraft { vendorId: string; cost: string; price: string; stock: string; enabled: boolean }
+export function productVendorId(p: AdminWholesaleProduct, vendors: AdminVendor[]): string {
+  if (p.wholesaleVendorId) return p.wholesaleVendorId;
+  const name = (p.vendor ?? "").trim().toLowerCase();
+  const legacy = vendors.find(v => v.legacyCatalogueVendor?.toLowerCase() === name);
+  if (legacy) return legacy.id;
+  const matches = vendors.filter(v => v.id === name || v.name.trim().toLowerCase() === name);
+  return matches.length === 1 ? matches[0].id : "";
+}
+const toDraft = (p: AdminWholesaleProduct, vendors: AdminVendor[] = []): RowDraft => ({
+  vendorId: productVendorId(p, vendors),
   cost: p.wholesaleCost != null ? String(p.wholesaleCost) : "",
   price: p.wholesalePrice != null ? String(p.wholesalePrice) : "",
   stock: p.stock != null ? String(p.stock) : "",
+  enabled: p.wholesaleEnabled !== false,
 });
 
 async function readError(r: Response, fallback: string) {
@@ -47,7 +56,11 @@ async function readError(r: Response, fallback: string) {
   return body?.error ? `${fallback}: ${body.error}` : `${fallback} (${r.status})`;
 }
 
-export function AdminMultiVendorSetup({ secret }: { secret: string }) {
+export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChanged }: {
+  secret: string;
+  selectedVendorId?: string;
+  onVendorsChanged?: () => void;
+}) {
   const [vendors, setVendors] = useState<AdminVendor[] | null>(null);
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null);
   const [products, setProducts] = useState<AdminWholesaleProduct[]>([]);
@@ -57,6 +70,7 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
   const [rowState, setRowState] = useState<Record<string, { busy?: boolean; error?: string; saved?: boolean }>>({});
   const [toggleBusy, setToggleBusy] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [showUnassigned, setShowUnassigned] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -74,7 +88,7 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
       setVendors(Array.isArray(vb?.vendors) ? vb.vendors : []);
       setActiveVendorId(typeof vb?.activeVendorId === "string" ? vb.activeVendorId : null);
       setProducts(list);
-      setDrafts(Object.fromEntries(list.map(p => [p.id, toDraft(p)])));
+      setDrafts(Object.fromEntries(list.map(p => [p.id, toDraft(p, vb.vendors ?? [])])));
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not load multi-vendor setup");
     }
@@ -93,13 +107,14 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
       });
       if (!r.ok) throw new Error(await readError(r, `Could not update ${v.name}`));
       setVendors(vs => vs?.map(x => x.id === v.id ? { ...x, enabled: next } : x) ?? vs);
+      onVendorsChanged?.();
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : "Could not update vendor availability");
     } finally { setToggleBusy(null); }
   };
 
   const saveRow = async (p: AdminWholesaleProduct) => {
-    const d = drafts[p.id] ?? toDraft(p);
+    const d = drafts[p.id] ?? toDraft(p, vendors ?? []);
     const cost = parseOptionalNumber(d.cost);
     const price = parseOptionalNumber(d.price);
     const stock = parseOptionalNumber(d.stock, true);
@@ -111,13 +126,14 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
       const r = await fetch(`/api/admin/wholesale-products/${encodeURIComponent(p.id)}`, {
         method: "PATCH", credentials: "include",
         headers: { "Content-Type": "application/json", "x-admin-secret": secret },
-        body: JSON.stringify({ wholesaleVendorId: d.vendorId, wholesaleCost: cost, wholesalePrice: price, stock }),
+        body: JSON.stringify({ wholesaleVendorId: d.vendorId, wholesaleCost: cost, wholesalePrice: price, stock,
+          ...(d.enabled !== (p.wholesaleEnabled !== false) ? { wholesaleEnabled: d.enabled } : {}) }),
       });
       if (!r.ok) throw new Error(await readError(r, "Save failed"));
       const body = await r.json().catch(() => null) as Partial<AdminWholesaleProduct> | null;
-      const updated: AdminWholesaleProduct = { ...p, wholesaleVendorId: d.vendorId, wholesaleCost: cost ?? null, wholesalePrice: price ?? null, stock: stock ?? null, ...(body && body.id === p.id ? body : {}) };
+      const updated: AdminWholesaleProduct = { ...p, wholesaleVendorId: d.vendorId, wholesaleCost: cost ?? null, wholesalePrice: price ?? null, stock: stock ?? null, wholesaleEnabled: d.enabled, ...(body && body.id === p.id ? body : {}) };
       setProducts(ps => ps.map(x => x.id === p.id ? updated : x));
-      setDrafts(ds => ({ ...ds, [p.id]: toDraft(updated) }));
+      setDrafts(ds => ({ ...ds, [p.id]: toDraft(updated, vendors ?? []) }));
       setRowState(s => ({ ...s, [p.id]: { saved: true } }));
     } catch (e) {
       setRowState(s => ({ ...s, [p.id]: { error: e instanceof Error ? e.message : "Save failed" } }));
@@ -125,8 +141,11 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
   };
 
   const vendorName = useMemo(() => new Map((vendors ?? []).map(v => [v.id, v.name])), [vendors]);
-  const visible = products.filter(p =>
-    filter === "all" ? true : filter === "unassigned" ? !p.wholesaleVendorId : p.wholesaleVendorId === filter);
+  const visible = products.filter(p => {
+    const id = productVendorId(p, vendors ?? []);
+    if (selectedVendorId) return id === selectedVendorId || (showUnassigned && !id);
+    return filter === "all" ? true : filter === "unassigned" ? !id : id === filter;
+  });
 
   if (loadError) {
     return (
@@ -148,7 +167,7 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
         {toggleError && <p role="alert" className="mt-2 text-xs font-semibold text-red-600" data-testid="multivendor-toggle-error">{toggleError}</p>}
         <div className="mt-2 flex flex-wrap gap-2">
           {vendors.length === 0 && <p className="text-xs text-slate-500">No vendors configured yet — add one in the vendor modal.</p>}
-          {vendors.map(v => {
+          {vendors.filter(v => !selectedVendorId || v.id === selectedVendorId).map(v => {
             const on = isVendorEnabled(v, activeVendorId);
             return (
               <button key={v.id} type="button" role="switch" aria-checked={on} disabled={toggleBusy === v.id}
@@ -167,14 +186,19 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
         <p>Each catalogue product is <strong>one offer from one vendor</strong>. To sell the same item from a second vendor, create a separate catalogue product with Add Product and assign it here. Supplier cost is admin-only and never shown to members.</p>
       </div>
 
-      <div className="flex items-center gap-2">
+      {selectedVendorId ? (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={showUnassigned} onChange={e => setShowUnassigned(e.target.checked)} data-testid="show-unassigned-products" />
+          Show unassigned products to assign to this vendor
+        </label>
+      ) : <div className="flex items-center gap-2">
         <label className="text-xs font-semibold text-slate-600" htmlFor="mv-filter">Vendor</label>
         <select id="mv-filter" value={filter} onChange={e => setFilter(e.target.value)} className="h-8 rounded border border-slate-200 bg-white px-2 text-xs" data-testid="select-multivendor-filter">
           <option value="all">All products ({products.length})</option>
           <option value="unassigned">Unassigned</option>
           {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
         </select>
-      </div>
+      </div>}
 
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full text-xs">
@@ -185,15 +209,16 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
               <th className="text-left font-semibold px-2 py-2 w-24">Supplier cost</th>
               <th className="text-left font-semibold px-2 py-2 w-24">Sell price</th>
               <th className="text-left font-semibold px-2 py-2 w-20">Stock</th>
+              <th className="text-left font-semibold px-2 py-2">Available</th>
               <th className="px-2 py-2 w-20" />
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 && (
-              <tr><td colSpan={6} className="px-2 py-6 text-center text-slate-400">No products match this filter.</td></tr>
+              <tr><td colSpan={7} className="px-2 py-6 text-center text-slate-400">No products match this filter.</td></tr>
             )}
             {visible.map(p => {
-              const d = drafts[p.id] ?? toDraft(p);
+              const d = drafts[p.id] ?? toDraft(p, vendors);
               const st = rowState[p.id] ?? {};
               const set = (k: keyof RowDraft) => (e: { target: { value: string } }) => {
                 setDrafts(ds => ({ ...ds, [p.id]: { ...d, [k]: e.target.value } }));
@@ -210,13 +235,16 @@ export function AdminMultiVendorSetup({ secret }: { secret: string }) {
                   <td className="px-2 py-2">
                     <select value={d.vendorId} onChange={set("vendorId")} className={inputCls} data-testid={`select-mv-vendor-${p.id}`}>
                       <option value="">— Unassigned —</option>
-                      {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                      {vendors.filter(v => !selectedVendorId || v.id === selectedVendorId).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                       {unknownVendor && <option value={p.wholesaleVendorId!}>Unknown ({p.wholesaleVendorId})</option>}
                     </select>
                   </td>
                   <td className="px-2 py-2"><input inputMode="decimal" value={d.cost} onChange={set("cost")} placeholder="—" className={inputCls} data-testid={`input-mv-cost-${p.id}`} /></td>
                   <td className="px-2 py-2"><input inputMode="decimal" value={d.price} onChange={set("price")} placeholder="—" className={inputCls} data-testid={`input-mv-price-${p.id}`} /></td>
                   <td className="px-2 py-2"><input inputMode="numeric" value={d.stock} onChange={set("stock")} placeholder="—" className={inputCls} data-testid={`input-mv-stock-${p.id}`} /></td>
+                  <td className="px-2 py-2"><input type="checkbox" aria-label={`Available for wholesale: ${p.name}`} checked={d.enabled}
+                    onChange={e => { setDrafts(ds => ({ ...ds, [p.id]: { ...d, enabled: e.target.checked } })); setRowState(s => ({ ...s, [p.id]: {} })); }}
+                    data-testid={`input-mv-enabled-${p.id}`} /></td>
                   <td className="px-2 py-2 text-right">
                     <button type="button" onClick={() => void saveRow(p)} disabled={st.busy} data-testid={`button-mv-save-${p.id}`}
                       className="inline-flex items-center gap-1 h-8 px-2.5 rounded bg-slate-800 text-white text-xs font-semibold disabled:opacity-60">

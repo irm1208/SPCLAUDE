@@ -15,6 +15,14 @@ Wholesale buyers must be able to choose their vendor. Shared orders may contain 
 
 **Why this allocation:** A member buying only from one supplier must not subsidise shipping from another supplier. Adding a second supplier must not reinterpret historical payment commitments.
 
+## Admin vendor setup
+
+Admin should have a separate **Wholesale setup** tab grouping vendor details, shipping and products by the selected vendor.
+
+**Why:** The user asked for one place to specify these settings without mixing a new vendor's products with Uther's.
+
+**How to apply:** Keep vendor identity consistent between the product catalogue and shipping configuration; reuse existing saved settings rather than introducing a parallel configuration.
+
 ## Existing shipping integrity
 
 A `wholesale_shared` order's `vendorShipping` is a CROSS-MEMBER split of the whole parcel's

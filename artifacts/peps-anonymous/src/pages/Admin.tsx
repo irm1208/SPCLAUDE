@@ -35,6 +35,7 @@ import AdminBtChat from "@/components/AdminBtChat";
 import AdminSageSettings from "@/components/AdminSageSettings";
 import { AdminWholesaleUpdates } from "@/components/AdminWholesaleUpdates";
 import { AdminMultiVendorSetup } from "@/components/admin/AdminMultiVendorSetup";
+import { AdminWholesaleSetup } from "@/components/admin/AdminWholesaleSetup";
 import { downloadSupplierVendorOrders } from "@/lib/supplier-vendor-export";
 import VendorPortalAdmin from "@/components/admin/VendorPortalAdmin";
 import { Fs3PastedList } from "@/components/admin/Fs3PastedList";
@@ -15791,6 +15792,7 @@ const ALL_TABS_META = [
   { id: "inventorysync", label: "Inventory Sync", icon: RefreshCcw },
   { id: "inventory",    label: "Inventory",      icon: Database },
   { id: "wholesale",    label: "Wholesale",      icon: Package },
+  { id: "wholesale-setup", label: "Wholesale setup", icon: Settings2 },
   { id: "wholesale-shares", label: "Shared Orders", icon: Users },
   { id: "wholesale-access", label: "Access Requests", icon: Lock },
   { id: "dispatch",     label: "Dispatch",        icon: PackageCheck },
@@ -25178,6 +25180,7 @@ const SIDEBAR_SECTIONS = [
     items: [
       { id: "vendor-portal", label: "Vendor portal", icon: Building2, keywords: ["supplier login", "vendor access", "submit wholesale orders", "supplier fulfilment"] },
       { id: "wholesale",        label: "Wholesale",         icon: Package,      keywords: ["bulk orders", "wholesale pricing", "trade", "reseller", "large orders", "wholesale tier", "moq", "minimum order", "wholesale status"] },
+      { id: "wholesale-setup", label: "Wholesale setup", icon: Settings2, keywords: ["vendor details", "supplier setup", "shipping rates", "wholesale products", "supplier cost", "sell price", "regions", "quantity tiers"] },
       { id: "wholesale-shares", label: "Shared Orders",     icon: Users,        keywords: ["shared orders", "shared order", "open shared order", "wholesale share", "combined wholesale", "shared members", "shared delivery", "shared order settings", "lock shared order", "shared parcel"] },
       { id: "wholesale-access", label: "Access Requests",  icon: Lock,         keywords: ["wholesale access", "access requests", "pay in", "enable wholesale", "disable wholesale", "applications", "wholesale toggle", "open applications", "close applications"] },
       { id: "wholesale-tracking", label: "Tracking",          icon: Truck,        keywords: ["wholesale tracking", "shared order tracking", "main parcel", "onward tracking", "tracking status", "tracking events", "delivery status", "shared parcel", "dispatch tracking"] },
@@ -28445,6 +28448,9 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
           {activeTab === "testingpools" && <AdminTestingPools secret={secret} />}
           {activeTab === "tglog"         && <TelegramLogTab secret={secret} />}
           {activeTab === "wholesale"     && <AdminWholesaleTab secret={secret} />}
+          {activeTab === "wholesale-setup" && <AdminWholesaleSetup secret={secret}
+            renderVendorModal={({ vendor, onSave, onClose }) => <VendorModal vendor={vendor} numTiers={vendor?.tiers.length ?? 4} onSave={onSave} onClose={onClose} />}
+          />}
           {activeTab === "vendor-portal" && <VendorPortalAdmin secret={secret} />}
           {activeTab === "wholesale-shares" && <AdminWholesaleSharesTab secret={secret} />}
           {activeTab === "wholesale-access" && <WholesaleAccessRequestsAdminTab secret={secret} />}

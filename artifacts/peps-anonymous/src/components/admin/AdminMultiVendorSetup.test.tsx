@@ -51,3 +51,46 @@ it("toggles availability and saves a row with the exact contract", async () => {
   expect(JSON.parse(save![1]!.body as string)).toEqual({ wholesaleVendorId: "a", wholesaleCost: 4, wholesalePrice: 9.5, stock: 12 });
   expect(el.textContent).toContain("Saved");
 });
+
+it("scopes products and availability to the selected vendor, including legacy mappings", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("wholesale-vendors")
+    ? res({ vendors: [{ id: "a", name: "Alder", legacyCatalogueVendor: "Uther" }, { id: "b", name: "Birch" }], activeVendorId: "a" })
+    : res([
+      { id: "a1", name: "Alder item", wholesaleVendorId: "a" },
+      { id: "b1", name: "Birch item", wholesaleVendorId: "b" },
+      { id: "legacy", name: "Legacy item", vendor: "Uther", wholesaleVendorId: null },
+      { id: "free", name: "Unassigned item", vendor: "Other", wholesaleVendorId: null },
+    ])));
+  const el = document.createElement("div"); document.body.appendChild(el); root = createRoot(el);
+  await act(async () => root.render(createElement(AdminMultiVendorSetup, { secret: "s", selectedVendorId: "a" })));
+  await settle();
+  expect(el.querySelector('[data-testid="row-mv-product-a1"]')).not.toBeNull();
+  expect(el.querySelector('[data-testid="row-mv-product-legacy"]')).not.toBeNull();
+  expect(el.querySelector('[data-testid="row-mv-product-b1"]')).toBeNull();
+  expect(el.querySelector('[data-testid="row-mv-product-free"]')).toBeNull();
+  expect(el.querySelector('[data-testid="toggle-vendor-b"]')).toBeNull();
+  await act(async () => { (el.querySelector('[data-testid="show-unassigned-products"]') as HTMLElement).click(); });
+  expect(el.querySelector('[data-testid="row-mv-product-free"]')).not.toBeNull();
+  expect(el.querySelector('[data-testid="row-mv-product-b1"]')).toBeNull();
+});
+
+it("can enable a product for wholesale and reports vendor availability changes", async () => {
+  const changed = vi.fn();
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "PATCH") return res({});
+    if (url.endsWith("wholesale-vendors")) return res({ vendors: [{ id: "a", name: "Alder", enabled: false }], activeVendorId: null });
+    return res([{ id: "p1", name: "Item", wholesaleVendorId: "a", wholesaleCost: 4, wholesalePrice: 9, stock: 2, wholesaleEnabled: false }]);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const el = document.createElement("div"); document.body.appendChild(el); root = createRoot(el);
+  await act(async () => root.render(createElement(AdminMultiVendorSetup, { secret: "s", selectedVendorId: "a", onVendorsChanged: changed })));
+  await settle();
+  await act(async () => { (el.querySelector('[data-testid="input-mv-enabled-p1"]') as HTMLElement).click(); });
+  await act(async () => { (el.querySelector('[data-testid="button-mv-save-p1"]') as HTMLElement).click(); });
+  await settle();
+  const save = fetchMock.mock.calls.find(c => c[0] === "/api/admin/wholesale-products/p1");
+  expect(JSON.parse(save![1]!.body as string).wholesaleEnabled).toBe(true);
+  await act(async () => { (el.querySelector('[data-testid="toggle-vendor-a"]') as HTMLElement).click(); });
+  await settle();
+  expect(changed).toHaveBeenCalledTimes(1);
+});
