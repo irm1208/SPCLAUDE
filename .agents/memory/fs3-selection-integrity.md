@@ -20,3 +20,11 @@ The user confirmed that Na Semax 10mg and Na Selank 10mg use the saved Na Semax 
 **Why:** These were explicitly confirmed; a base-name or modified-compound match must not otherwise be inferred from a price-list substring.
 
 **How to apply:** Resolve exact saved costs first, then these approved equivalents only. Keep exports and profit calculations aligned, allow identical case-variant prices, and reject conflicting prices. Other strengths require their own confirmed mapping.
+
+## FS3 price-list ownership
+
+The user requested filling UR / Uther's missing supplier-cost fields from FS3 on the **live site**, not in preview. Treat the legacy FS3 cost list as UR-specific, not a default source for a newly added vendor.
+
+**Why:** The request names UR; copying this list to another vendor could silently price that supplier's products incorrectly. The live Admin API rejected a background shared-secret update, so the user approved an authenticated review-and-apply import action instead.
+
+**How to apply:** Use the signed-in Admin flow for the live import, preserve existing costs and unrelated product fields, and do not claim live prices changed merely because the import feature was implemented in preview.

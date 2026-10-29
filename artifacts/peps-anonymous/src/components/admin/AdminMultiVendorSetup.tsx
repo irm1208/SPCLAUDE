@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Save, AlertTriangle, Info } from "lucide-react";
+import { Fs3SupplierCostImport } from "./Fs3SupplierCostImport";
 
 // Contract:
 //  GET   /api/admin/wholesale-vendors                 -> { vendors: AdminVendor[], activeVendorId: string|null }
@@ -71,6 +72,7 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
   const [toggleBusy, setToggleBusy] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [showUnassigned, setShowUnassigned] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -158,9 +160,16 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
   if (!vendors) return <div className="h-32 rounded-lg bg-slate-100 animate-pulse" data-testid="multivendor-loading" />;
 
   const inputCls = "h-8 w-full rounded border border-slate-200 bg-white px-2 text-xs outline-none focus:border-sky-400";
+  const importVendor = vendors.find(v => v.id === (selectedVendorId ?? filter) &&
+    v.legacyCatalogueVendor?.trim().toLowerCase() === "uther");
+  const hasUnsavedEdits = products.some(p => drafts[p.id] &&
+    JSON.stringify(drafts[p.id]) !== JSON.stringify(toDraft(p, vendors)));
+  const importDisabledReason = hasUnsavedEdits ? "Save your unsaved product edits before importing FS3 costs."
+    : Object.values(rowState).some(row => row.busy) || toggleBusy ? "Wait for the current save to finish." : undefined;
 
   return (
     <section className="space-y-4" data-testid="admin-multivendor-setup">
+      <fieldset disabled={importBusy} className="min-w-0 space-y-4">
       <div>
         <h3 className="text-sm font-bold text-slate-800">Vendor availability</h3>
         <p className="text-xs text-slate-500 mt-0.5">Enabled vendors are offered to buyers at the same time. The active vendor in the vendor modal is only the default selection.</p>
@@ -185,6 +194,10 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
         <p>Each catalogue product is <strong>one offer from one vendor</strong>. To sell the same item from a second vendor, create a separate catalogue product with Add Product and assign it here. Supplier cost is admin-only and never shown to members.</p>
       </div>
+
+      {importVendor && <Fs3SupplierCostImport key={importVendor.id} secret={secret}
+        vendorId={importVendor.id} vendorName={importVendor.name} onApplied={load}
+        disabledReason={importDisabledReason} onBusyChange={setImportBusy} />}
 
       {selectedVendorId ? (
         <label className="flex items-center gap-2 text-sm">
@@ -258,6 +271,7 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
           </tbody>
         </table>
       </div>
+      </fieldset>
     </section>
   );
 }
