@@ -10,6 +10,7 @@ import { calcTotalShipping, pickRegionForCountry } from "./wholesale-shipping";
 import { assertNoActiveRefunds, refundMutationPredicate } from "./refund-mutation-guard";
 import { supplierCatalogueCosts, supplierItems, requiredShipping, sourceFingerprint, previewFingerprint, VendorPortalError } from "./vendor-portal-model";
 import { centsToUsdString, usdToCents } from "./refund-money";
+import { supplierTextDetails } from "./vendor-supplier-export";
 import { loadFs3CostMatches } from "./fs3-cost-matches";
 import { resolveFs3SupplierId } from "@workspace/api-zod/fs3-costs";
 
@@ -144,7 +145,9 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
     if (existing) {
       if (existing.vendorId !== vendorId) throw new VendorPortalError("This shipment is already submitted to another vendor.", 409);
       if (existing.sourceFingerprint !== source.fingerprint) throw new VendorPortalError("This submission is stale. Recall it in Admin before resubmitting.", 409);
-      prepared.push({ ...existing, alreadySubmitted: true });
+      prepared.push({ ...existing, alreadySubmitted: true,
+        ...(purpose === "export" ? supplierTextDetails(String(source.orders[0]?.telegramUsername ?? ""), existing.snapshot, vendor) : {}),
+      });
       continue;
     }
     if (source.orders.some(o => ["Shipped", "Completed"].includes(o.status))) throw new VendorPortalError("An already shipped or completed order cannot be submitted as a new supplier shipment.", 409);
@@ -165,7 +168,14 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
       sharedOrderId: source.share?.id ?? null, orderIds: source.orderIds,
       sourceFingerprint: source.fingerprint, snapshot, status: "Submitted", submittedAt: null,
       trackingNumber: null, carrier: null, alreadySubmitted: false,
+      ...(purpose === "export" ? supplierTextDetails(String(source.orders[0]?.telegramUsername ?? ""), snapshot, vendor) : {}),
     });
+  }
+  if (purpose === "export") {
+    // Keep the user's selected order sequence without changing lock ordering.
+    const position = new Map<string, number>(matches.map((m: any) => [m.id, codes.indexOf(m.code)]));
+    const rank = (shipment: any) => Math.min(...shipment.orderIds.map((id: string) => position.get(id) ?? Infinity));
+    prepared.sort((a, b) => rank(a) - rank(b));
   }
   return prepared;
 }
