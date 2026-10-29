@@ -825,7 +825,7 @@ export function DashboardShell({
               className="sticky top-0 z-20 flex items-center gap-3 px-3 md:px-7"
               style={{ height: 72, background: T.panel, borderBottom: `1px solid ${T.border}` }}
             >
-              <h1 className="font-extrabold tracking-tight shrink-0" style={{ fontSize: 21 }}>{title}</h1>
+              <h1 className="font-extrabold tracking-tight min-w-0 truncate sm:shrink-0" style={{ fontSize: 21 }} title={title}>{title}</h1>
 
               <div className="flex-1 flex justify-center min-w-0 sm:px-2">
                 <div className="relative hidden sm:block w-full max-w-[460px]">

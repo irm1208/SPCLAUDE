@@ -11,6 +11,8 @@ import { useDraftStore } from "@/hooks/use-draft-store";
 import { useAccount, getAccountHandle } from "@/hooks/use-account";
 import { PriceWatermark } from "@/components/PriceWatermark";
 import { LabReportPopup } from "@/components/LabTestsPopup";
+import { WholesaleJourney, getWholesaleNextStep, getWholesaleSummaryTotal, getWholesaleRegionIndex, type WholesaleJourneyStep } from "@/components/wholesale/WholesaleJourney";
+import "@/components/wholesale/WholesaleJourney.css";
 
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
@@ -125,7 +127,7 @@ export default function WholesaleOrder() {
   const [draftDismissed, setDraftDismissed] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
   const [draftSavedFlash, setDraftSavedFlash] = useState(false);
-  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [journeyStep, setJourneyStep] = useState<WholesaleJourneyStep>(0);
 
   useEffect(() => {
     if (!accountLoading) {
@@ -264,10 +266,7 @@ export default function WholesaleOrder() {
 
   useEffect(() => {
     if (!vendor || !shippingCountry) return;
-    const normalised = shippingCountry.trim().toLowerCase();
-    const matchIdx = vendor.regions.findIndex(r =>
-      (r.countries ?? []).some(c => c.trim().toLowerCase() === normalised)
-    );
+    const matchIdx = getWholesaleRegionIndex(vendor.regions, shippingCountry);
     if (matchIdx !== -1) {
       setSelectedRegionIdx(matchIdx);
       setRegionAutoSelected(true);
@@ -476,6 +475,7 @@ export default function WholesaleOrder() {
   const computedVendorShipping = (vendor && selectedRegion && totalKits > 0)
     ? calcTotalShipping(totalKits, selectedRegion)
     : null;
+  const summaryTotal = getWholesaleSummaryTotal(productSubtotal, computedVendorShipping, tip);
 
   const handleReview = () => {
     if (!account?.telegramUsername) { showError("Please sign in before placing an order."); return; }
@@ -491,6 +491,7 @@ export default function WholesaleOrder() {
     if (vendors.length > 0 && !selectedVendorId) { showError("Please choose a vendor for this order."); return; }
     if (vendorLoading) { showError("Shipping configuration is still loading — please wait a moment and try again."); return; }
     if (vendor && selectedRegionIdx === null) { showError("Please select your shipping region."); return; }
+    if (termsEnabled && !termsAccepted) { showError("Please agree to the Terms & Conditions."); return; }
 
     const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -580,12 +581,13 @@ export default function WholesaleOrder() {
     <WholesaleShell active="order" title="Wholesale Order">
       <div style={{ background: "var(--t-bg)", minHeight: "100%" }}>
         <SiteAnnouncements />
-        <main className="px-4 py-5 pb-36 max-w-3xl mx-auto w-full space-y-5">
+        <main className="whj-page w-full space-y-5">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
 
             <div className="space-y-1">
-              <div className="flex items-start justify-between gap-4">
-                <h1 className="text-xl font-bold" style={{ color: "var(--t-text)" }}>Wholesale Order</h1>
+              <p className="whj-eyebrow">Member ordering</p>
+              <div className="whj-heading">
+                <h1>Wholesale order</h1>
                 <button
                   onClick={() => setLocation("/wholesale/tracking")}
                   className="shrink-0 inline-flex items-center gap-1.5 text-xs font-bold transition-opacity hover:opacity-70 px-3 py-1.5 rounded-lg border bg-white shadow-sm"
@@ -598,7 +600,7 @@ export default function WholesaleOrder() {
               <p className="text-sm" style={{ color: "var(--t-muted)" }}>
                 {requiresApproval
                   ? "Submit your order for admin review. Once approved, you will receive payment instructions."
-                  : "Select products and quantities, then proceed to review."}
+                  : "Choose your supplier first. Products and shipping stay with the supplier you select."}
               </p>
             </div>
 
@@ -665,10 +667,14 @@ export default function WholesaleOrder() {
             )}
 
             <WholesaleUpdates />
+            <WholesaleJourney step={journeyStep} onStep={setJourneyStep} />
+            <div className="whj-layout">
+            <div className="whj-content space-y-5">
 
             {/* Customer section */}
-            <section className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Customer</p>
+            <section hidden={journeyStep !== 2} className="space-y-2" aria-label="Delivery details">
+              <h2 className="whj-panel-title">Delivery details</h2>
+              <p className="whj-muted">Check your details below. These travel with your order — you do not need to enter them again after checkout.</p>
               <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Telegram Username</label>
@@ -910,7 +916,7 @@ export default function WholesaleOrder() {
             </section>
 
             {/* Tip Section */}
-            <section className="space-y-2">
+            <section hidden={journeyStep !== 2} className="space-y-2">
               <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Tip</p>
               <button
                 type="button"
@@ -969,17 +975,20 @@ export default function WholesaleOrder() {
             </section>
 
             {/* Vendor picker — one vendor per order */}
-            {vendors.length > 1 && (
-              <section className="space-y-2" aria-label="Vendor" data-testid="section-vendor-picker">
-                <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Vendor</p>
-                <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-                  <p className="text-xs" style={{ color: "var(--t-muted)" }}>Each order ships from one vendor. Prices and shipping follow the vendor you pick.</p>
+            {(
+              <section hidden={journeyStep !== 0} className="whj-panel space-y-2" aria-label="Vendor" data-testid="section-vendor-picker">
+                <p className="whj-eyebrow">Step 01 · Supplier</p>
+                <h2 className="whj-panel-title">Choose your supplier</h2>
+                <div className="space-y-3">
+                  <p className="whj-muted">One supplier per regular wholesale order. Catalogue, prices and shipping stay together.</p>
+                  {vendorLoading && <p role="status" className="whj-muted">Loading suppliers…</p>}
+                  {!vendorLoading && vendors.length === 0 && <p role="alert" className="whj-muted">No suppliers are available right now. Please contact support before ordering.</p>}
                   {vendorUnavailable && !selectedVendorId && (
                     <p role="alert" className="text-xs font-semibold" style={{ color: "#b45309" }} data-testid="text-vendor-unavailable">
                       The vendor saved on this order is no longer available. Choose a vendor to continue — your items will be priced from its catalogue.
                     </p>
                   )}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="whj-vendors">
                     {vendors.map(v => {
                       const on = v.id === selectedVendorId;
                       return (
@@ -989,12 +998,11 @@ export default function WholesaleOrder() {
                           onClick={() => requestVendorChange(v.id)}
                           aria-pressed={on}
                           data-testid={`button-vendor-${v.id}`}
-                          className="h-9 px-4 rounded-lg text-sm font-semibold border transition-colors"
-                          style={on
-                            ? { background: "var(--t-blue)", color: "#fff", borderColor: "var(--t-blue)" }
-                            : { background: "var(--t-surface2)", color: "var(--t-text)", borderColor: "var(--t-border)" }}
+                          className="whj-vendor"
                         >
-                          {v.name}
+                          <span className="whj-vendor-icon"><Truck size={19} /></span>
+                          <span className="flex-1 min-w-0"><strong className="block break-words">{v.name}</strong><span className="whj-muted">Wholesale supplier</span></span>
+                          {on ? <Check size={18} /> : <ArrowRight size={18} />}
                         </button>
                       );
                     })}
@@ -1010,12 +1018,21 @@ export default function WholesaleOrder() {
                       </div>
                     </div>
                   )}
+                  <p className="whj-muted">Shared orders are separate and can include products from multiple suppliers, with shipping charged for each supplier.</p>
+                  <div className="whj-footer">
+                    <span className="whj-muted">{vendor ? `${vendor.name} selected` : "Select a supplier to continue."}</span>
+                    <button type="button" className="whj-button" disabled={!selectedVendorId || vendorLoading || !draftReady}
+                      onClick={() => setJourneyStep(getWholesaleNextStep(0, !!selectedVendorId && !vendorLoading && draftReady, totalKits))}>
+                      Choose products <ArrowRight size={16} />
+                    </button>
+                  </div>
                 </div>
               </section>
             )}
 
             {/* Vendor Shipping Section */}
             {vendor && (
+              <div hidden={journeyStep !== 2}>
               <section className="space-y-2">
                 <div className="flex items-center gap-2 px-1">
                   <Truck className="w-3.5 h-3.5" style={{ color: "#8A9AAA" }} />
@@ -1141,10 +1158,13 @@ export default function WholesaleOrder() {
                   Vendor shipping is charged separately based on your total kit quantity. Prices shown in USD.
                 </p>
               </section>
+              </div>
             )}
 
             {/* Products section */}
-            <section className="space-y-2">
+            <section hidden={journeyStep !== 1} className="whj-panel space-y-3">
+              <p className="whj-eyebrow">Step 02 · {vendor?.name ?? "Products"}</p>
+              <h2 className="whj-panel-title">Choose your products</h2>
               {vendorChoiceRequired && (
                 <p className="rounded-xl px-4 py-3 text-sm" style={{ background: "var(--t-surface)", border: "1px dashed var(--t-border)", color: "var(--t-muted)" }} data-testid="text-choose-vendor">
                   Choose a vendor above to see its catalogue.
@@ -1422,97 +1442,36 @@ export default function WholesaleOrder() {
                   ))}
                 </div>
               )}
+              <div className="whj-footer">
+                <button type="button" className="whj-button secondary" onClick={() => setJourneyStep(0)}>Back</button>
+                <button type="button" className="whj-button" disabled={!selectedVendorId || totalKits <= 0 || productsLoading}
+                  onClick={() => setJourneyStep(getWholesaleNextStep(1, !!selectedVendorId, totalKits))}>
+                  Delivery details <ArrowRight size={16} />
+                </button>
+              </div>
             </section>
-
-
-          </motion.div>
-        </main>
-
-      </div>
-
-      {/* ── Floating order summary tab ───────────────────────────────────────── */}
-      <AnimatePresence>
-        {!summaryOpen && (
-          <motion.button
-            key="summary-tab"
-            initial={{ x: 40, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 40, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 350, damping: 28 }}
-            onClick={() => setSummaryOpen(true)}
-            className="fixed right-0 z-[68] flex flex-col items-center justify-center gap-1.5 rounded-l-2xl shadow-xl"
-            style={{
-              top: "50%",
-              transform: "translateY(-50%)",
-              width: 40,
-              paddingTop: 18,
-              paddingBottom: 18,
-              background: "var(--t-blue)",
-              color: "#fff",
-              border: "none",
-              cursor: "pointer",
-            }}
-            aria-label="Open order summary"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            {lineItems.length > 0 && (
-              <span
-                className="flex items-center justify-center rounded-full text-[9px] font-black leading-none"
-                style={{ width: 18, height: 18, background: "#fff", color: "var(--t-blue)", minWidth: 18 }}
-              >
-                {lineItems.length}
-              </span>
-            )}
-          </motion.button>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {summaryOpen && (
-          <>
-            <motion.div
-              key="summary-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[69]"
-              style={{ background: "rgba(0,0,0,0.35)" }}
-              onClick={() => setSummaryOpen(false)}
-            />
-            <motion.div
-              key="summary-panel"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 320, damping: 32 }}
-              className="fixed inset-y-0 right-0 z-[70] flex flex-col shadow-2xl"
-              style={{
-                width: 288,
-                background: "var(--t-surface)",
-                borderLeft: "1px solid var(--t-border)",
-              }}
-            >
+            {journeyStep === 2 && <div className="whj-footer">
+              <button type="button" className="whj-button secondary" onClick={() => setJourneyStep(1)}>Back to products</button>
+              <span className="whj-muted">Check your summary, accept the terms, then review your order.</span>
+            </div>}
+            </div>
+            <aside className="whj-summary" aria-label="Order summary">
               {/* Header */}
-              <div
-                className="flex items-center justify-between px-4 shrink-0"
-                style={{ height: 52, borderBottom: "1px solid var(--t-border)" }}
-              >
+              <div className="whj-summary-header">
                 <div className="flex items-center gap-2">
                   <ShoppingCart className="w-4 h-4" style={{ color: "var(--t-blue)" }} />
                   <span className="font-bold text-sm" style={{ color: "var(--t-text)" }}>Order Summary</span>
                 </div>
-                <button
-                  onClick={() => setSummaryOpen(false)}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-60"
-                  style={{ color: "var(--t-muted)" }}
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <span className="text-xs" style={{ color: "var(--t-muted)" }}>{totalKits} kits</span>
+              </div>
+              <div className="px-4 py-3 border-b" style={{ borderColor: "var(--t-border)" }}>
+                <p className="whj-eyebrow">Supplier</p>
+                <p className="text-sm font-semibold">{vendor?.name ?? "Choose a supplier first"}</p>
+                {vendor && journeyStep !== 0 && <button type="button" className="text-xs mt-2 underline" onClick={() => setJourneyStep(0)}>Change supplier</button>}
               </div>
 
               {/* Items list */}
-              <div className="flex-1 overflow-y-auto px-4 py-3 relative">
+              <div className="whj-summary-items">
                 <PriceWatermark username={getAccountHandle(account)} />
                 {lineItems.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-2 py-10">
@@ -1581,17 +1540,21 @@ export default function WholesaleOrder() {
                       </span>
                     </div>
                   )}
-                  {vendor && selectedRegionIdx === null && totalKits > 0 && (
-                    <p className="text-[11px]" style={{ color: "#F24908" }}>Select a shipping region above</p>
+                  {computedVendorShipping === null && totalKits > 0 && (
+                    <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
+                      {selectedRegion ? "Shipping requires a quote — the total is not final." : "Shipping is calculated in Delivery details."}
+                    </p>
                   )}
-                  {computedVendorShipping !== null && (
+                  {tip > 0 && <div className="flex justify-between text-xs"><span>Tip</span><span>${tip.toFixed(2)}</span></div>}
+                  <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>Available credits and discounts can be applied on review.</p>
+                  {summaryTotal !== null && (
                     <div
                       className="flex justify-between text-sm font-bold pt-1.5"
                       style={{ borderTop: "1px solid var(--t-border)" }}
                     >
                       <span style={{ color: "var(--t-text)" }}>Estimated total</span>
                       <span className="tabular-nums" style={{ color: "var(--t-text)" }}>
-                        ${(productSubtotal + computedVendorShipping).toFixed(2)}
+                        ${summaryTotal.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -1612,7 +1575,7 @@ export default function WholesaleOrder() {
                   {draftSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : draftSavedFlash ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                   {draftSavedFlash ? "Saved!" : "Save draft"}
                 </button>
-                {termsEnabled && (
+                {termsEnabled && journeyStep === 2 && (
                   <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
                     <input
                       type="checkbox"
@@ -1626,20 +1589,24 @@ export default function WholesaleOrder() {
                   </label>
                 )}
                 <button
-                  onClick={() => { setSummaryOpen(false); handleReview(); }}
-                  disabled={lineItems.length === 0 || (termsEnabled && !termsAccepted)}
+                  onClick={() => {
+                    if (journeyStep === 2) handleReview();
+                    else setJourneyStep(getWholesaleNextStep(journeyStep, !!selectedVendorId && !vendorLoading && draftReady, totalKits));
+                  }}
+                  disabled={vendorLoading || productsLoading || !draftReady || !selectedVendorId || (journeyStep > 0 && lineItems.length === 0) || (journeyStep === 2 && termsEnabled && !termsAccepted)}
                   className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 active:scale-[0.98] hover:brightness-110"
                   style={{ background: "var(--t-blue)" }}
                 >
                   <ShoppingCart className="w-4 h-4" />
-                  Review Order
+                  {journeyStep === 0 ? "Choose products" : journeyStep === 1 ? "Delivery details" : "Review order"}
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            </aside>
+            </div>
+          </motion.div>
+        </main>
+      </div>
 
       <AnimatePresence>
         {labTestsProduct && (

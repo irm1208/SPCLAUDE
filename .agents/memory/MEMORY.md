@@ -156,3 +156,4 @@
 - [GB bank transfers](group-buy-bank-transfer-policy.md) — UK and international organiser details; member “sent” notifications require manual receipt confirmation.
 - [GB manual payments](group-buy-manual-payment-policy.md) — single/selected paid confirmations require a staff-only note and actor/time; independent balances stay unchanged.
 - [Wholesale vendor portal](wholesale-vendor-portal-policy.md) — vendor-only cost prices, Admin submission gate, member fulfilment updates; separate vendor login with existing credentials.
+- [Browser API fixtures](browser-api-fixture-routing.md) — match pathname starting `/api/`, not source directories containing `/api/`, or fixtures can blank the app.
