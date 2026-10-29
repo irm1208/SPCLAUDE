@@ -46,6 +46,8 @@ interface DraftState {
   // isTopUp is always derived from this field (additionOfOrderId !== null) — never stored
   // separately, so the two can never fall out of sync.
   additionOfOrderId: string | null;
+  additionRequestId: string | null;
+  ensureAdditionRequestId: () => string;
 
   // Lab Test Contribution ($15 optional)
   testingContribution: number;
@@ -122,7 +124,7 @@ const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export const useDraftStore = create<DraftState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       orderId: null,
       code: null,
       groupBuyId: null,
@@ -136,6 +138,14 @@ export const useDraftStore = create<DraftState>()(
       notes: '',
       lineItems: [],
       additionOfOrderId: null,
+      additionRequestId: null,
+      ensureAdditionRequestId: () => {
+        const state = get();
+        if (state.additionRequestId) return state.additionRequestId;
+        const additionRequestId = crypto.randomUUID();
+        set({ additionRequestId });
+        return additionRequestId;
+      },
       testingContribution: 0,
       orderType: null,
       wholesaleVendorId: null,
@@ -161,6 +171,7 @@ export const useDraftStore = create<DraftState>()(
             // Preserving it when the GB is the same allows the "Place Another Order" top-up
             // flow to keep its delivery-free state after the OrderForm mounts.
             additionOfOrderId: isChangingGb ? null : state.additionOfOrderId,
+            additionRequestId: isChangingGb ? null : state.additionRequestId,
             // When switching to a different group buy, clear stale delivery, line items, and orderId
             ...(isChangingGb
               ? {
@@ -259,6 +270,7 @@ export const useDraftStore = create<DraftState>()(
           // here so the edit screen shows the same state the backend will enforce.
           // isTopUp is derived from additionOfOrderId !== null — not stored separately.
           additionOfOrderId: (order as any).additionOfOrderId ?? null,
+          additionRequestId: null,
           directShippingRequested: isDirectShipping,
           onwardDeliveryMethod: ((order as any).onwardDeliveryMethod === 'pickup' || (order as any).onwardDeliveryMethod === 'home') ? (order as any).onwardDeliveryMethod : null,
           shippingName: (order as any).shippingName ?? '',
@@ -296,6 +308,11 @@ export const useDraftStore = create<DraftState>()(
         // shipping. Carry the parent's shipping fields so the review screen shows where it ships.
         // isTopUp is derived from additionOfOrderId !== null — setting this is enough.
         additionOfOrderId: order.id,
+        additionRequestId: crypto.randomUUID(),
+        orderType: null,
+        wholesaleVendorId: null,
+        preferredReshipperUsername: null,
+        reshipperCode: null,
         onwardDeliveryMethod: null,
         directShippingRequested: (order as any).directShippingRequested === true,
         shippingName: (order as any).shippingName ?? '',
@@ -309,7 +326,7 @@ export const useDraftStore = create<DraftState>()(
         lineItems: [{ id: generateId(), productId: '', productName: '', quantity: 1, unitPrice: 0, lineTotal: 0 }]
       }),
 
-      clearTopUp: () => set({ additionOfOrderId: null, deliveryMethodId: '', deliveryMethod: '', deliveryPrice: 0 }),
+      clearTopUp: () => set({ additionOfOrderId: null, additionRequestId: null, deliveryMethodId: '', deliveryMethod: '', deliveryPrice: 0 }),
 
       clearDraft: () => set({
         halfKitCheckout: null,
@@ -324,6 +341,7 @@ export const useDraftStore = create<DraftState>()(
         tip: 0,
         notes: '',
         additionOfOrderId: null,
+        additionRequestId: null,
         testingContribution: 0,
         orderType: null,
         wholesaleVendorId: null,

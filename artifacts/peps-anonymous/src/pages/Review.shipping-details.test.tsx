@@ -1,14 +1,15 @@
-import React from "react";
+import React, { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), draft: {} as Record<string, unknown> }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), navigate: vi.fn(), invalidate: vi.fn(), draft: {} as Record<string, unknown> }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: mocks.query,
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: mocks.invalidate }),
 }));
-vi.mock("wouter", () => ({ useLocation: () => ["/review", vi.fn()] }));
+vi.mock("wouter", () => ({ useLocation: () => ["/review", mocks.navigate] }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/hooks/use-draft-store", () => ({ useDraftStore: () => mocks.draft }));
 vi.mock("@/hooks/use-account", () => ({
   useAccount: () => ({ account: null, isLoggedIn: false, isLoading: false }),
@@ -79,7 +80,7 @@ it.each(["loading", "error"])("blocks placing an order while delivery requiremen
 it("loads fresh group-buy options for the selected country and fails explicitly on request errors", async () => {
   const dom = render();
   dom.window.close();
-  const query = mocks.query.mock.calls[0][0];
+  const query = mocks.query.mock.calls.find(([query]) => query.queryKey[0] === "review-shipping-options")![0];
   const signal = new AbortController().signal;
   const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ id: "hgh", shippingOptions: options }] });
   vi.stubGlobal("fetch", fetcher);
@@ -87,4 +88,66 @@ it("loads fresh group-buy options for the selected country and fails explicitly 
   expect(fetcher).toHaveBeenCalledWith("/api/group-buys?shippingCountry=United%20States", { credentials: "include", signal });
   fetcher.mockResolvedValue({ ok: false });
   await expect(query.queryFn({ signal })).rejects.toThrow(/Could not load/);
+});
+
+it.each([
+  ["separate", "These items will form a separate order with its own payment"],
+  ["merged", "These items will be added to your original order"],
+] as const)("explains the %s addition outcome without changing included delivery", (outcome, message) => {
+  mocks.draft.additionOfOrderId = "parent-order";
+  mocks.query.mockImplementation(query => query.queryKey[0] === "addition-eligibility"
+    ? { data: { additionOutcome: outcome }, isPending: false, isError: false } : loaded);
+  const dom = render();
+  expect(dom.window.document.body.textContent).toContain(message);
+  expect(dom.window.document.body.textContent).toContain("Delivery remains included");
+  expect(dom.window.document.body.textContent).toContain("original order's address");
+  dom.window.close();
+});
+
+it.each(["separate", "merged"] as const)("submits an addition and uses the server's %s receipt and destination", async outcome => {
+  const browser = new JSDOM('<div id="root"></div>', { url: "https://synthetic.test/review" });
+  Object.defineProperty(browser.window, "matchMedia", { value: () => ({
+    matches: false, addEventListener() {}, removeEventListener() {},
+  }) });
+  vi.stubGlobal("window", browser.window);
+  vi.stubGlobal("document", browser.window.document);
+  vi.stubGlobal("navigator", browser.window.navigator);
+  vi.stubGlobal("localStorage", browser.window.localStorage);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const clearDraft = vi.fn();
+  mocks.draft = { ...mocks.draft, additionOfOrderId: "parent-order", ensureAdditionRequestId: () => "stable-submission-id", clearDraft };
+  mocks.query.mockImplementation(query => query.queryKey[0] === "addition-eligibility"
+    ? { data: { additionOutcome: outcome } } : loaded);
+  const response = { id: outcome === "separate" ? "child-order" : "parent-order", code: "server-code",
+    additionOutcome: outcome, mergedIntoExistingOrder: outcome === "merged",
+    grandTotal: 20, productSubtotal: 20, creditsApplied: 5, amountDue: outcome === "merged" ? 15 : 0,
+    deliveryPrice: 0, vendorShipping: 0, vendorShippingIsTbd: false, groupBuyId: "hgh",
+    shippingAddress: "Server parent address", lineItems: [{ productName: "Canonical", quantity: 2, unitPrice: 10, lineTotal: 20 }] };
+  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => response });
+  vi.stubGlobal("fetch", fetcher);
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(browser.window.document.getElementById("root")!);
+  try {
+    await act(async () => { root.render(<Review />); });
+    const buttons = browser.window.document.querySelectorAll("button") as NodeListOf<HTMLButtonElement>;
+    const button = Array.from(buttons).find(button => button.textContent?.includes("Add to Order"))!;
+    expect(button).toBeDefined();
+    await act(async () => { button.click(); });
+    expect(mocks.navigate).toHaveBeenCalledWith(`/account/orders/${response.id}`);
+    const body = JSON.parse(fetcher.mock.calls.find(([url]) => url === "/api/orders")![1].body);
+    expect(body).toMatchObject({ additionOfOrderId: "parent-order", additionRequestId: "stable-submission-id" });
+    expect(clearDraft).toHaveBeenCalledOnce();
+    expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ["account", "orders"] });
+    expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ["account", "me"] });
+    const receipt = browser.window.localStorage.getItem("peps:lastReceipt");
+    if (outcome === "separate") {
+      expect(JSON.parse(receipt!)).toMatchObject({ orderId: "child-order", code: "server-code",
+        grandTotal: 20, productSubtotal: 20, creditsApplied: 5, amountDue: 15,
+        shippingAddress: "Server parent address", vendorShippingIsTbd: false,
+        lineItems: [{ productName: "Canonical", quantity: 2, unitPrice: 10, lineTotal: 20 }] });
+    } else expect(receipt).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    browser.window.close();
+  }
 });

@@ -26,7 +26,8 @@ describe("half-kit legacy mutation protection", () => {
     expect(halfKitLegacyMutation("POST", "/account/orders/o1/balance-pay", {})?.block).toBe(false);
   });
   it("serializes normal additions and cancellation without forbidding them", () => {
-    expect(halfKitLegacyMutation("POST", "/orders", { additionOfOrderId: "o1" })?.block).toBe(false);
+    // Native addition handler now holds the shared mutex inside its transaction.
+    expect(halfKitLegacyMutation("POST", "/orders", { additionOfOrderId: "o1" })).toBeNull();
     expect(halfKitLegacyMutation("DELETE", "/orders/o1", {})?.block).toBe(false);
   });
   it("scopes organiser monetary changes to their own GB", () => {

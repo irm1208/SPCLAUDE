@@ -40,7 +40,7 @@
 - [Dispatch lessons](dispatch-lessons.md) — role-scoped routing and ownership, shared Admin parity, zero-parcel summaries and incoming manifest privacy.
 - [Order status timeline stepper](order-timeline-stepper.md) — fulfilment stepper "current" must reflect real status only (never over-claim); Paid is a payment overlay; omit fields data lacks.
 - [api-server vitest + db mock](api-server-vitest-db-mock.md) — mock @workspace/db via schema-only export (no Pool); scoped routers use path-less auth, so mount only the router under test, not both.
-- [Order additions / top-ups](order-additions-topup.md) — additions persist additionOfOrderId marker; server forces free shipping + locked parent address on POST/PUT/shipping-address; require parent paymentStatus==='confirmed'; UI zeroes vendor shipping too.
+- [Order additions / top-ups](order-additions-topup.md) — committed supplier-batch parents split; unbatched parents merge. Both retain free delivery and parent address; serialize with batching.
 - [Wholesale shared guidance lockstep](wholesale-shared-guidance-lockstep.md) — presentation-only next-step banner/wizard/tracker must mirror page readiness/money checks exactly, else "all set while fee owed" money-integrity UX bugs.
 - [Wholesale onward roster gate](wholesale-onward-canconfirm-gate.md) — onward roster/Manage UI must AND share.onward.canConfirm with share.onward.enabled (backend sets canConfirm independent of enabled); config path uses canManage, not enabled.
 - [Artifact typecheck stale lib decls](api-server-typecheck-stale-libs.md) — after editing lib/db (or lib/api-zod) schema, run `tsc --build`/`typecheck:libs` first or artifact typecheck phantom-errors "property does not exist" (runtime via tsx/src is fine).

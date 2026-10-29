@@ -24,9 +24,8 @@ export function halfKitLegacyMutation(method: string, path: string, body: Record
   // routes. The captured value must be the order ID, never the "orders" segment.
   match = path.match(/^\/(?:account\/)?orders\/([^/]+)\/shipping-address$/i);
   if (match && method === "POST") return {kind:"order",orderId:match[1],role:"member",block:false};
-  if (method === "POST" && lower === "/orders" && typeof body.additionOfOrderId === "string") {
-    return { kind: "order", orderId: body.additionOfOrderId, role, block: false };
-  }
+  // Addition submissions own a transactional money lock. Do not take the same
+  // session lock here on another connection: that would deadlock the handler.
   // Hold the same monetary mutex throughout external payment verification, including status GETs.
   match = path.match(/^\/payments\/([^/]+)(?:\/|$)/i)
     || path.match(/^\/account\/orders\/([^/]+)(?:\/|$)/i)

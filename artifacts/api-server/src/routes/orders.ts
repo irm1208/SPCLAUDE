@@ -59,6 +59,8 @@ import { calculateAdditionMerge } from "../lib/order-addition-merge";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 import { centsToUsdString, subtractMoneyClamped, usdToCents } from "../lib/refund-money";
 import { inferGroupBuyContext } from "../lib/group-buy-order-context";
+import { additionIsSeparate, createSeparateAddition, lockAddition, recordAddition, replayAddition, validateAdditionItems, type AdditionRequest } from "../lib/order-addition-submission";
+import { fingerprint, SupplierBatchError } from "../lib/supplier-batches-model";
 
 // ── Server-authoritative wholesale shipping ──────────────────────────────────
 // Wholesale shipping is priced by kit-count tiers per destination region, so it must
@@ -272,6 +274,7 @@ function formatOrderResponse(order: Record<string, unknown>, lineItems: Record<s
     shippingPhone: (order.shippingPhone as string | null) ?? null,
     shippingEmail: (order.shippingEmail as string | null) ?? null,
     shippingAddress: (order.shippingAddress as string | null) ?? null,
+    shippingCountry: (order.shippingCountry as string | null) ?? null,
     pin: (order.pin as string | null) ?? "0000",
     inpostQrCode: (order.inpostQrCode as string | null) ?? null,
     royalMailQrCode: (order.royalMailQrCode as string | null) ?? null,
@@ -457,6 +460,16 @@ router.post("/orders/claim-pin", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+// Owner-only advisory. No batch reference, snapshot or other member data.
+router.get("/orders/:orderId/addition-eligibility", requireAccount, async (req, res) => {
+  const [parent] = await db.select().from(ordersTable).where(eq(ordersTable.id, String(req.params.orderId)));
+  const canonical = (value: string) => value.replace(/^@/, "").toLowerCase();
+  if (!parent || parent.deletedAt || canonical(parent.telegramUsername) !== canonical(req.account!.telegramUsername)) {
+    res.status(404).json({ error: "Order not found" }); return;
+  }
+  res.json({ additionOutcome: await additionIsSeparate(db, parent) ? "separate" : "merged" });
+});
+
 // ── POST /api/orders — create a new order ────────────────────
 router.post("/orders", async (req, res, next): Promise<void> => {
   // Preserve the existing guest flow, but never downgrade a blocked/invalid
@@ -467,6 +480,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
   }
   next();
 }, async (req, res): Promise<void> => {
+  const additionRequestHash = fingerprint(req.body);
   if (!validOnwardMethod(req.body?.onwardDeliveryMethod)) {
     res.status(400).json({ error: "Choose pickup point or home delivery." }); return;
   }
@@ -666,6 +680,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
   // parent. Validate the parent belongs to the same customer and group buy.
   // Wholesale orders can never be additions — ignore a stale draft field silently.
   let additionParent: typeof ordersTable.$inferSelect | null = null;
+  let additionRequest: AdditionRequest | null = null;
   if (!isWholesaleOrder && clientAdditionOfOrderId != null && clientAdditionOfOrderId !== "") {
     const sessionUsername = getAccountFromCookie(req);
     if (!sessionUsername) {
@@ -678,7 +693,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     }
     const parentId = String(clientAdditionOfOrderId).slice(0, 64);
     const [parent] = await db.select().from(ordersTable).where(eq(ordersTable.id, parentId));
-    if (!parent || parent.deletedAt || !safeEqual(parent.telegramUsername.toLowerCase(), tg)) {
+    if (!parent || parent.deletedAt || !safeEqual(parent.telegramUsername.replace(/^@/, "").toLowerCase(), tg.replace(/^@/, "").toLowerCase())) {
       res.status(400).json({ error: "Invalid original order for this addition" });
       return;
     }
@@ -694,7 +709,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       res.status(400).json({ error: "Cannot create an addition of an addition order" });
       return;
     }
-    if (parent.orderType === "wholesale") {
+    if (parent.orderType === "wholesale" || parent.orderType === "wholesale_shared" || !parent.groupBuyId) {
       res.status(400).json({ error: "Wholesale orders do not support additions" });
       return;
     }
@@ -704,6 +719,24 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     // and routing checks now run against the parent's group buy instead.
     normalizedGroupBuyId = parent.groupBuyId ?? null;
     additionParent = parent;
+    if (typeof req.body.additionRequestId !== "string" || !/^[a-zA-Z0-9_-]{16,100}$/.test(req.body.additionRequestId)) {
+      res.status(400).json({ error: "Refresh the addition checkout before submitting." }); return;
+    }
+    additionRequest = { parentId: parent.id, groupId: parent.groupBuyId!,
+      username: sessionUsername, requestId: req.body.additionRequestId, requestHash: additionRequestHash };
+    // Replay before catalogue/limits/coupon checks: a successful submission may
+    // itself exhaust stock or coupon uses. Never charge it again.
+    try {
+      const replay = await replayAddition(db, additionRequest);
+      if (replay) {
+        res.json({ ...formatOrderResponse(replay.updatedParent, replay.mergedItems),
+          amountDue: Number(replay.updatedParent.amountDue), mergedIntoExistingOrder: !replay.separate,
+          additionOutcome: replay.separate ? "separate" : "merged", replayed: true }); return;
+      }
+    } catch (error) {
+      if (!(error instanceof SupplierBatchError)) throw error;
+      res.status(error.status).json({ error: error.message }); return;
+    }
   }
 
   let deliveryMethodRecord: { id: string; name: string; price: string } | null | undefined;
@@ -1166,16 +1199,15 @@ router.post("/orders", async (req, res, next): Promise<void> => {
   if (additionParent) {
     const sessionUsername = getAccountFromCookie(req);
     const mergeOutcome = await db.transaction(async (tx) => {
+      const locked = await lockAddition(tx, additionRequest!);
+      if ("replay" in locked) return locked.replay!;
+      await validateAdditionItems(tx, additionRequest!, locked.group, locked.membership, clientLineItems);
       await assertGroupStock(tx, normalizedGroupBuyId, clientLineItems);
-      const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
       const creditRequested = Boolean(sessionUsername && typeof clientCreditsApplied === "number" && clientCreditsApplied > 0);
       const [lockedAccount] = creditRequested
         ? await tx.select({ telegramUsername: accountsTable.telegramUsername, credits: accountsTable.credits })
           .from(accountsTable)
-          .where(or(
-            eq(accountsTable.telegramUsername, normalizeTg(sessionUsername!)),
-            eq(accountsTable.telegramUsername, `@${normalizeTg(sessionUsername!)}`),
-          ))
+          .where(sql`lower(ltrim(${accountsTable.telegramUsername}, '@')) = ${sessionUsername!.replace(/^@/, "").toLowerCase()}`)
           .for("update")
         : [null];
       const [lockedParent] = await tx
@@ -1195,7 +1227,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       if (
         !lockedParent
         || lockedParent.deletedAt
-        || !safeEqual(lockedParent.telegramUsername.toLowerCase(), tg)
+        || !safeEqual(lockedParent.telegramUsername.replace(/^@/, "").toLowerCase(), tg.replace(/^@/, "").toLowerCase())
         || lockedParent.paymentStatus !== "confirmed"
         || lockedParent.status === "Cancelled"
         || lockedParent.additionOfOrderId
@@ -1208,6 +1240,19 @@ router.post("/orders", async (req, res, next): Promise<void> => {
 
       if ((lockedParent.groupBuyId ?? null) !== normalizedGroupBuyId) {
         return { error: "The original order is no longer part of this group buy." } as const;
+      }
+
+      const couponClaim = resolvedCouponId ? await claimCoupon(tx, resolvedCouponId, tg, couponContext, couponDiscount) : null;
+      if (await additionIsSeparate(tx, lockedParent)) {
+        const outcome = await createSeparateAddition(tx, lockedParent, {
+          items: clientLineItems, productSubtotal, grandTotal, tip, testingContribution: normalizedContribution, kitFees: gbKitFees,
+          couponCode: appliedCouponCode, couponDiscount,
+          requestedCredits: creditRequested ? clientCreditsApplied : 0,
+          notes: notes ? String(notes).trim().slice(0, MAX_NOTES_LENGTH) : null,
+        });
+        if (couponClaim) await recordCouponRedemption(tx, couponClaim, outcome.updatedParent.id, tg, couponDiscount);
+        await recordAddition(tx, additionRequest!, outcome.updatedParent.id, true);
+        return outcome;
       }
 
       const existingItems = await tx
@@ -1346,15 +1391,18 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       if (!updatedParent) throw new RefundMutationBlockedError(lockedParent.id);
 
       if (couponClaim) await recordCouponRedemption(tx, couponClaim, lockedParent.id, tg, couponDiscount);
+      await recordAddition(tx, additionRequest!, lockedParent.id, false);
 
       return {
         updatedParent,
         mergedItems,
         addedAmountDue,
         appliedCredits,
+        separate: false,
+        replayed: false,
       } as const;
     }).catch(error => {
-      if (error instanceof CouponError) return { error: error.message } as const;
+      if (error instanceof CouponError || error instanceof SupplierBatchError) return { error: error.message } as const;
       throw error;
     });
 
@@ -1371,15 +1419,17 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       ...formatted,
       amountDue: parseFloat(String(mergeOutcome.updatedParent.amountDue ?? "0")),
       balancePaymentStatus: mergeOutcome.updatedParent.balancePaymentStatus ?? null,
-      mergedIntoExistingOrder: true,
+      mergedIntoExistingOrder: !mergeOutcome.separate,
+      additionOutcome: mergeOutcome.separate ? "separate" : "merged",
     };
 
+    if (mergeOutcome.replayed) { res.json(response); return; }
     pushToGoogleSheets(formatted).catch(() => {});
     writeLog(
       "order",
       "info",
-      "order_addition_merged",
-      `Items added to paid order ${mergeOutcome.updatedParent.code} (${tg}); balance due ${mergeOutcome.addedAmountDue.toFixed(2)}`,
+      mergeOutcome.separate ? "order_addition_created" : "order_addition_merged",
+      `Addition ${mergeOutcome.separate ? "created separately" : "merged"}: ${mergeOutcome.updatedParent.code} (${tg}); payment due ${mergeOutcome.addedAmountDue.toFixed(2)}`,
       {
         orderId: mergeOutcome.updatedParent.id,
         code: mergeOutcome.updatedParent.code,
@@ -1391,7 +1441,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     logCustomerActivity({
       telegramUsername: tg,
       eventCategory: "order",
-      eventType: "order.addition_merged",
+      eventType: mergeOutcome.separate ? "order.created" : "order.addition_merged",
       entityId: mergeOutcome.updatedParent.id,
       actorType: "customer",
       metadata: {
@@ -1403,13 +1453,34 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     createAlert(
       "order",
       "high",
-      "Items Added to Order",
-      `Order #${mergeOutcome.updatedParent.code} updated by ${tg} — balance ${mergeOutcome.addedAmountDue.toFixed(2)}`,
+      mergeOutcome.separate ? "Separate Addition Order" : "Items Added to Order",
+      `Order #${mergeOutcome.updatedParent.code} ${mergeOutcome.separate ? "created" : "updated"} by ${tg} — payment ${mergeOutcome.addedAmountDue.toFixed(2)}`,
       {
         linkUrl: `#orders:${mergeOutcome.updatedParent.id}`,
         relatedEntityId: mergeOutcome.updatedParent.id,
       },
     ).catch(() => {});
+
+    if (mergeOutcome.separate) {
+      const saved = mergeOutcome.updatedParent;
+      const [group] = await db.select({ name: groupBuysTable.name, currency: groupBuysTable.currency,
+        organiser: groupBuysTable.organiserId }).from(groupBuysTable).where(eq(groupBuysTable.id, normalizedGroupBuyId!));
+      const symbols: Record<string, string> = { GBP: "£", EUR: "€", CAD: "CA$", AUD: "A$" };
+      const sym = symbols[group?.currency ?? ""] ?? "$";
+      const variables = {
+        code: saved.code, gb_name: group ? `\nGB: <b>${escapeHtml(group.name)}</b>` : "",
+        organiser: escapeHtml(group?.organiser ?? "Admin"), username: escapeHtml(tg.replace(/^@/, "")),
+        date: saved.createdAt.toLocaleDateString("en-GB"),
+        order_total: `${sym}${Number(saved.grandTotal).toFixed(2)}`,
+        items: mergeOutcome.mergedItems.map(item => `• ${escapeHtml(item.productName)} ×${Number(item.quantity)}`).join("\n"),
+        total_qty: String(mergeOutcome.mergedItems.reduce((n, item) => n + Number(item.quantity), 0)),
+        delivery: escapeHtml(saved.deliveryMethod), delivery_fee: `${sym}0.00`,
+        tip: `${sym}${Number(saved.tip).toFixed(2)}`, payment_status: saved.paymentStatus === "confirmed" ? "Paid with credits" : "Unpaid",
+        app_url: process.env["APP_URL"] ?? "https://saltandpeps.co.uk",
+      };
+      notifyUserFromTemplate(tg, "new_order", "customer_new_order", variables).catch(() => {});
+      sendAdminFromTemplate("admin_new_order", variables).catch(() => {});
+    }
 
     res.json(response);
     return;

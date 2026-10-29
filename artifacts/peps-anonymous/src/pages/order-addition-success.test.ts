@@ -34,6 +34,13 @@ test("ordinary new orders keep the existing success destination", () => {
   ).toBe("/success?code=11483&action=created&oid=new-id");
 });
 
+test("separate additions open their own payment details even with stale edit state", () => {
+  expect(resolveOrderSubmitDestination!({
+    id: "child-id", code: "ADD-unique", mergedIntoExistingOrder: false,
+    additionOutcome: "separate",
+  } as SubmitResponse, "parent-id")).toBe("/account/orders/child-id");
+});
+
 test("the review action names the merge operation", () => {
   const source = readFileSync(new URL("./Review.tsx", import.meta.url), "utf8");
   expect(source).toMatch(/isTopUp\s*\?\s*"Add to Order"/);

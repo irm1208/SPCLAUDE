@@ -104,6 +104,18 @@ export default function Review() {
   // Derived from the single source of truth — additionOfOrderId being set means this is a
   // top-up. Never stored as a separate boolean so the two can never fall out of sync.
   const isTopUp = draft.additionOfOrderId !== null;
+  const additionAdvice = useQuery<{ additionOutcome: "separate" | "merged" }>({
+    queryKey: ["addition-eligibility", account?.telegramUsername ?? null, draft.additionOfOrderId],
+    enabled: isLoggedIn && isTopUp && isNewOrder && draft.orderType !== "wholesale",
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/orders/${encodeURIComponent(draft.additionOfOrderId!)}/addition-eligibility`,
+        { credentials: "include", signal });
+      if (!response.ok) throw new Error("Could not check the original order.");
+      return response.json();
+    },
+  });
 
   const { data: myGroupBuys } = useMyGroupBuys();
   const activeGb = draft.groupBuyId ? myGroupBuys?.find(g => g.id === draft.groupBuyId) : null;
@@ -316,6 +328,7 @@ export default function Review() {
       // Wholesale orders can never be additions — guard against a stale draft field
       // left over from a previous GB top-up flow in the same browser session.
       additionOfOrderId: isWholesale ? undefined : (draft.additionOfOrderId ?? undefined),
+      additionRequestId: !isWholesale && isTopUp && isNewOrder ? draft.ensureAdditionRequestId() : undefined,
       lineItems: draft.lineItems.map(item => ({
         productId: item.productId,
         productName: item.productName,
@@ -331,9 +344,10 @@ export default function Review() {
     const onSuccess = (data: {
       code: string; id?: string; telegramUsername?: string;
       mergedIntoExistingOrder?: boolean;
+      additionOutcome?: "separate" | "merged";
       amountDue?: number;
       balancePaymentStatus?: string | null;
-      deliveryPrice?: number; vendorShipping?: number; productSubtotal?: number;
+      deliveryMethod?: string; deliveryPrice?: number; vendorShipping?: number; productSubtotal?: number;
       vendorShippingIsTbd?: boolean | null;
       tip?: number; testingContribution?: number; grandTotal?: number;
       creditsApplied?: number; adminFee?: number; adminFeeLabel?: string | null;
@@ -346,6 +360,13 @@ export default function Review() {
       shippingCountry?: string | null;
     }) => {
       const oid = data.id ?? existingOrderId ?? "";
+      queryClient.invalidateQueries({ queryKey: ["account", "orders"] });
+      queryClient.invalidateQueries({ queryKey: ["account", "me"] });
+      queryClient.invalidateQueries({ queryKey: ["addition-eligibility"] });
+      if (data.additionOutcome === "separate") toast({
+        title: "Separate addition order created",
+        description: "Your original order is already batched and has not changed. Pay for these additional items on the new order.",
+      });
       if (draft.halfKitCheckout && draft.groupBuyId) {
         const groupId = draft.groupBuyId;
         const offerIds = new Set([draft.halfKitCheckout.offerId, ...(draft.halfKitCheckout.additionalOffers ?? []).map(selection => selection.offerId)]);
@@ -396,13 +417,15 @@ export default function Review() {
         shippingCountry: data.shippingCountry !== undefined ? data.shippingCountry : payload.shippingCountry,
         code: data.code,
         telegramUsername: data.telegramUsername ?? checkoutUsername,
-        deliveryMethod: draft.deliveryMethod,
+        deliveryMethod: data.deliveryMethod ?? draft.deliveryMethod,
         deliveryPrice: data.deliveryPrice ?? effectiveDeliveryPrice,
         productSubtotal: data.productSubtotal ?? productSubtotal,
         tip: data.tip ?? draft.tip,
         grandTotal: serverGrandTotal,
         creditsApplied: serverCreditsApplied,
-        amountDue: safeSubtractMoneyClamped(serverGrandTotal, serverCreditsApplied),
+        amountDue: data.additionOutcome === "separate"
+          ? safeSubtractMoneyClamped(serverGrandTotal, serverCreditsApplied)
+          : data.amountDue ?? safeSubtractMoneyClamped(serverGrandTotal, serverCreditsApplied),
         notes: data.notes ?? (draft.notes || null),
         lineItems: (data.lineItems ?? draft.lineItems).map(item => ({
           productName: item.productName,
@@ -508,6 +531,16 @@ export default function Review() {
 
       <main className={`flex-1 px-4 py-5 max-w-2xl mx-auto w-full space-y-4 ${useDashChrome ? "pb-40 lg:pb-32" : "pb-52 md:pb-36"}`}>
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          {isTopUp && isNewOrder && (
+            <div role="status" className="rounded-xl border p-4 text-sm" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }}>
+              {additionAdvice.data?.additionOutcome === "separate"
+                ? "Your original order is already confirmed in a supplier batch. These items will form a separate order with its own payment. The original order and batch will not change."
+                : additionAdvice.data?.additionOutcome === "merged"
+                  ? "These items will be added to your original order and any extra amount will be payable as a balance. If that order is confirmed into a supplier batch before you submit, the items will form a separate order instead."
+                  : "The server will check your original order when you submit. If it is already confirmed in a supplier batch, these items will form a separate order with its own payment; otherwise they will be added to the original order."}
+              {" "}Delivery remains included and uses the original order's address.
+            </div>
+          )}
 
           <section className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Customer & Delivery</p>

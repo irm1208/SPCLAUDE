@@ -3145,13 +3145,13 @@ export default function AccountOrderDetail() {
                     )}
                     {refundActive ? (
                       <div role="status" className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>Refund request active — order edits, additional items, and cancellation are temporarily locked.</div>
-                    ) : order.paymentStatus === "confirmed" && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (
+                    ) : order.paymentStatus === "confirmed" && !order.additionOfOrderId && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                         style={{ background: ACCENT, padding: "10px 16px" }}
                         onClick={handleTopUp}
                       >
-                        <Plus className="w-4 h-4" /> Add to this order
+                        <Plus className="w-4 h-4" /> Add items
                       </button>
                     ) : order.orderType === "wholesale_shared" ? (
                       <div className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>

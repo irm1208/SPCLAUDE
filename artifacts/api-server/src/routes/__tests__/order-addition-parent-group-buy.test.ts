@@ -17,8 +17,10 @@ describe("order addition group-buy authority", () => {
     const normalInsert = routeSource.indexOf(".insert(ordersTable)");
 
     expect(mergeBranch).toBeGreaterThan(-1);
-    expect(routeSource).toContain("mergedIntoExistingOrder: true");
+    expect(routeSource).toContain("mergedIntoExistingOrder: !mergeOutcome.separate");
     expect(mergeBranch).toBeLessThan(normalInsert);
     expect(routeSource).not.toContain("additionOfOrderId: additionParent.id");
+    expect(routeSource).toContain("await lockAddition(tx, additionRequest!)");
+    expect(routeSource).toContain("await additionIsSeparate(tx, lockedParent)");
   });
 });

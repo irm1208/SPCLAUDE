@@ -2,6 +2,7 @@ export interface OrderSubmitResponse {
   id?: string;
   code: string;
   mergedIntoExistingOrder?: boolean;
+  additionOutcome?: "separate" | "merged";
 }
 
 export function resolveOrderSubmitDestination(
@@ -9,7 +10,7 @@ export function resolveOrderSubmitDestination(
   existingOrderId: string | null,
 ): string {
   const orderId = data.id ?? existingOrderId ?? "";
-  if (data.mergedIntoExistingOrder) {
+  if (data.mergedIntoExistingOrder || data.additionOutcome === "separate") {
     return `/account/orders/${encodeURIComponent(orderId)}`;
   }
   const action = existingOrderId ? "updated" : "created";
