@@ -30,6 +30,13 @@
 .whj-summary { position: sticky; top: 20px; display: flex; flex-direction: column; border-radius: 14px; border: 1px solid var(--t-border); background: var(--t-surface); overflow: hidden; box-shadow: 0 5px 18px rgba(27,58,122,.035); }
 .whj-summary-header { height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--t-border); }
 .whj-summary-items { max-height: 36vh; overflow-y: auto; padding: 12px 18px; position: relative; }
+.whj-floating-search { position: sticky; top: 84px; z-index: 21; display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 10px 6px 16px; min-height: 54px; border-radius: 14px; border: 1px solid var(--t-border); background: var(--t-surface); color: var(--t-muted); box-shadow: 0 6px 22px rgba(27,58,122,.12); }
+.whj-floating-search:focus-within { border-color: var(--t-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-blue) 12%, transparent), 0 6px 22px rgba(27,58,122,.12); }
+.whj-floating-search > svg { flex-shrink: 0; }
+.whj-floating-search input { flex: 1; min-width: 0; height: 40px; border: 0; outline: none; background: transparent; color: var(--t-text); font-size: 16px; }
+.whj-floating-search input:focus-visible { outline: none; }
+.whj-floating-search input::-webkit-search-cancel-button { display: none; }
+.whj-floating-search button { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; color: var(--t-muted); background: var(--t-surface2); }
 .whj-page button:focus-visible, .whj-page input:focus-visible, .whj-page select:focus-visible { outline: 3px solid color-mix(in srgb, var(--t-blue) 50%, transparent); outline-offset: 3px; }
 @media (max-width: 1050px) { .whj-layout { grid-template-columns: minmax(0, 1fr) 270px; gap: 16px; } .whj-page { padding-left: 18px; padding-right: 18px; } }
 @media (max-width: 760px) { .whj-layout { display: flex; flex-direction: column; } .whj-content, .whj-summary { width: 100%; } .whj-summary { position: static; } .whj-page { padding: 22px 12px 120px; } .whj-panel { padding: 18px 14px; } .whj-steps { gap: 5px; } .whj-step { gap: 4px; font-size: 11px; } .whj-step-number { height: 23px; width: 23px; font-size: 9px; } .whj-step-line { display: none; } .whj-heading h1 { font-size: 27px; } }

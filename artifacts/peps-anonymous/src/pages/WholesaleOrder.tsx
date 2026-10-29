@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Search, Heart, ChevronDown, Save, Check, TestTube, X, AlertCircle } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowRight, Minus, Plus, Truck, Heart, ChevronDown, Save, Check, TestTube, X, AlertCircle } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { SiteAnnouncements } from "@/components/SiteAnnouncements";
@@ -13,6 +13,7 @@ import { PriceWatermark } from "@/components/PriceWatermark";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 import { WholesaleJourney, getWholesaleNextStep, getWholesaleSummaryTotal, getWholesaleRegionIndex, type WholesaleJourneyStep } from "@/components/wholesale/WholesaleJourney";
 import "@/components/wholesale/WholesaleJourney.css";
+import { WholesaleProductSearch } from "@/components/wholesale/WholesaleProductSearch";
 
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
@@ -1170,20 +1171,7 @@ export default function WholesaleOrder() {
                   Choose a vendor above to see its catalogue.
                 </p>
               )}
-              <div className="flex items-center justify-between gap-3 px-1">
-                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#8A9AAA" }}>Products</p>
-                <div className="relative flex-1 max-w-xs">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: "var(--t-muted)" }} />
-                  <input
-                    type="text"
-                    value={productSearch}
-                    onChange={e => setProductSearch(e.target.value)}
-                    placeholder="Search products…"
-                    className="w-full h-8 pl-8 pr-3 rounded-lg text-xs outline-none border"
-                    style={{ background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" }}
-                  />
-                </div>
-              </div>
+              <WholesaleProductSearch value={productSearch} onChange={setProductSearch} />
               {selectedProducts.length > 0 && (
                 <section aria-label="Current order" className="relative overflow-hidden rounded-xl border" style={{ borderColor: "var(--t-blue-25)", background: "var(--t-surface)" }}>
                   <PriceWatermark username={getAccountHandle(account)} />
