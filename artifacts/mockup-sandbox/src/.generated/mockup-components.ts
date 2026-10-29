@@ -472,6 +472,8 @@ export const modules: ModuleMap = {
   "./components/mockups/temporal-home/DeltaHome.tsx": () => import("../components/mockups/temporal-home/DeltaHome.tsx"),
   "./components/mockups/temporal-home/ProtocolPosition.tsx": () => import("../components/mockups/temporal-home/ProtocolPosition.tsx"),
   "./components/mockups/temporal-home/TodayAgenda.tsx": () => import("../components/mockups/temporal-home/TodayAgenda.tsx"),
+  "./components/mockups/wholesale-vendor-first/Current.tsx": () => import("../components/mockups/wholesale-vendor-first/Current.tsx"),
+  "./components/mockups/wholesale-vendor-first/VendorFirst.tsx": () => import("../components/mockups/wholesale-vendor-first/VendorFirst.tsx"),
   "./components/mockups/wholesale-wizard/MemberFlow.tsx": () => import("../components/mockups/wholesale-wizard/MemberFlow.tsx"),
   "./components/mockups/wholesale-wizard/OrganiserFlow.tsx": () => import("../components/mockups/wholesale-wizard/OrganiserFlow.tsx")
 };
