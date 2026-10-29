@@ -105,6 +105,121 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     expect(processed.every((o: any) => o.status === "Processing")).toBe(true);
   });
 
+  async function preparedWithChange() {
+    const f = await fixture([3, 71, 7]);
+    await store.db.update(store.ordersTable).set({ grandTotal: "453", productSubtotal: "450", deliveryPrice: "3" })
+      .where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.orderLineItemsTable).set({ unitPrice: "150", lineTotal: "450" })
+      .where(eq(store.orderLineItemsTable.orderId, f.ids[0]));
+    const config = await api.saveSupplierConfig(f.id, admin, { expectedVersion: f.result.version,
+      config: { ...f.result.config, showToMembers: true, regions: [{ ...f.result.config.regions[0], targetKits: 50 }] } });
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: config.proposals[0].token });
+    const batch = prepared.batches[0];
+    await store.db.update(store.ordersTable).set({ grandTotal: "753", productSubtotal: "750", balancePaymentStatus: "confirmed", balanceConfirmedAt: new Date() })
+      .where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.orderLineItemsTable).set({ quantity: "5", lineTotal: "750" })
+      .where(eq(store.orderLineItemsTable.orderId, f.ids[0]));
+    return { ...f, batch };
+  }
+  const refreshBody = (preview: any) => ({ confirm: true, token: preview.token, expectedBatchToken: preview.expectedBatchToken });
+  it("reviews 3→5 without writing; confirms 74→76 kits with the same batch, allocations and order data", async () => {
+    const f = await preparedWithChange();
+    const beforeOrders = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.groupBuyId, f.id));
+    const beforeLines = await store.db.select().from(store.orderLineItemsTable).where(inArray(store.orderLineItemsTable.orderId, f.ids));
+    const beforeAlloc = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.batchId, f.batch.id));
+    const preview = await api.previewSupplierBatchRefresh(f.id, f.batch.id, admin, { expectedBatchToken: f.batch.snapshot.token });
+    expect(preview).toMatchObject({ canConfirm: true, before: { kits: 74, orderCount: 2 }, after: { kits: 76, orderCount: 2 } });
+    expect(preview.orders).toBeUndefined();
+    expect(preview.changes[0]).toMatchObject({ before: { kits: 3 }, after: { kits: 5 } });
+    expect(preview.changes[0].before.money[0]).toBe("453.00");
+    expect(preview.changes[0].after.money[0]).toBe("753.00");
+    const unchanged = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, f.batch.id));
+    expect(unchanged[0].snapshot.kits).toBe(74);
+    const result = await api.refreshSupplierBatch(f.id, f.batch.id, admin, refreshBody(preview));
+    expect(result.batches).toHaveLength(1);
+    expect(result.batches[0]).toMatchObject({ id: f.batch.id, reference: f.batch.reference, state: "prepared",
+      sequence: f.batch.sequence, createdBy: f.batch.createdBy, snapshot: { kits: 76, remainingKits: 0 }, exceptions: [] });
+    expect(result.batches[0].createdAt).toEqual(f.batch.createdAt);
+    expect(result.batches[0].snapshot.orders).toHaveLength(2);
+    expect(result.proposals[0].queuedKits).toBe(7);
+    expect(await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.groupBuyId, f.id))).toEqual(beforeOrders);
+    expect(await store.db.select().from(store.orderLineItemsTable).where(inArray(store.orderLineItemsTable.orderId, f.ids))).toEqual(beforeLines);
+    expect(await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.batchId, f.batch.id))).toEqual(beforeAlloc);
+    expect((await api.exportSupplierBatch(f.id, f.batch.id, admin)).csv).toContain('"5"');
+    expect(result.events.filter((e: any) => e.kind === "refreshed")).toHaveLength(1);
+    await store.db.update(store.groupBuysTable).set({ forcedUsernames: ["synthetic-0"] }).where(eq(store.groupBuysTable.id, f.id));
+    const member = await import("./member-supplier-batches");
+    const own = await member.memberSupplierBatches(f.id, "synthetic-0");
+    expect(JSON.stringify(own)).toContain(f.batch.reference);
+    expect(own.batches[0].kits).toBe(76);
+  });
+  it("serializes duplicate confirmations and replays without overwriting a later batch", async () => {
+    const f = await preparedWithChange();
+    const p = await api.previewSupplierBatchRefresh(f.id, f.batch.id, admin, { expectedBatchToken: f.batch.snapshot.token });
+    const body = refreshBody(p);
+    const results = await Promise.all([api.refreshSupplierBatch(f.id, f.batch.id, admin, body), api.refreshSupplierBatch(f.id, f.batch.id, admin, body)]);
+    expect(results.every(r => r.batches[0].snapshot.kits === 76)).toBe(true);
+    expect(results[1].events.filter((e: any) => e.kind === "refreshed")).toHaveLength(1);
+    await api.orderSupplierBatch(f.id, f.batch.id, admin, { confirm: true });
+    const replay = await api.refreshSupplierBatch(f.id, f.batch.id, admin, body);
+    expect(replay.batches[0].state).toBe("ordered");
+    expect(replay.batches[0].snapshot.kits).toBe(76);
+  });
+  it.each([
+    { amountDue: "300" }, { paymentStatus: "unpaid" }, { refundStatus: "requested" },
+    { shippingCountry: "United Kingdom" }, { routingType: "direct" }, { deletedAt: new Date() },
+    { balancePaymentStatus: "pending_confirmation" },
+  ])("blocks an unsafe order in a reviewed update: %j", async changes => {
+    const f = await preparedWithChange();
+    await store.db.update(store.ordersTable).set(changes).where(eq(store.ordersTable.id, f.ids[0]));
+    const preview = await api.previewSupplierBatchRefresh(f.id, f.batch.id, admin, { expectedBatchToken: f.batch.snapshot.token });
+    expect(preview.canConfirm).toBe(false); expect(preview.blockers.length).toBeGreaterThan(0);
+    await expect(api.refreshSupplierBatch(f.id, f.batch.id, admin, refreshBody(preview))).rejects.toMatchObject({ status: 409 });
+    const [row] = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, f.batch.id));
+    expect(row.snapshot.kits).toBe(74);
+  });
+  it.each(["order", "routing", "settings", "refund", "allocation", "append", "release"] as const)(
+    "rejects stale review after a concurrent %s change", async kind => {
+      const f = await preparedWithChange();
+      const p = await api.previewSupplierBatchRefresh(f.id, f.batch.id, admin, { expectedBatchToken: f.batch.snapshot.token });
+      if (kind === "settings") await api.saveSupplierConfig(f.id, admin, {
+        expectedVersion: f.result.version + 1, config: { ...f.result.config, telegramAlerts: false, regions: [{ ...f.result.config.regions[0], targetKits: 50 }] },
+      });
+      else if (kind === "allocation") await store.db.delete(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+      else if (kind === "release") await api.releaseSupplierBatch(f.id, f.batch.id, admin, { confirm: true, reason: "Synthetic stale review test" });
+      else if (kind === "append") {
+        // Simulate an append winning the lock before this confirmation, without bypassing its guards.
+        await api.refreshSupplierBatch(f.id, f.batch.id, admin, refreshBody(p));
+        const current = await api.supplierData(f.id, admin);
+        await api.appendSupplierBatch(f.id, f.batch.id, admin, { regionId: "eu",
+          token: current.proposals[0].token, expectedBatchToken: current.batches[0].snapshot.token });
+        const staleDifferentRequest = { ...refreshBody(p), token: `${p.token}0` };
+        await expect(api.refreshSupplierBatch(f.id, f.batch.id, admin, staleDifferentRequest)).rejects.toMatchObject({ status: 409 });
+        return;
+      } else {
+        await store.db.update(store.ordersTable).set(kind === "routing" ? { reshipperUsername: "synthetic-new-reshipper" }
+          : kind === "refund" ? { refundStatus: "requested" } : { grandTotal: "754" }).where(eq(store.ordersTable.id, f.ids[0]));
+      }
+      await expect(api.refreshSupplierBatch(f.id, f.batch.id, admin, refreshBody(p))).rejects.toMatchObject({ status: 409 });
+    });
+  it("requires the correct staff owner and explicit confirmation, and rejects terminal batches", async () => {
+    const f = await preparedWithChange();
+    const input = { expectedBatchToken: f.batch.snapshot.token };
+    await expect(api.previewSupplierBatchRefresh(f.id, f.batch.id, { username: "intruder", admin: false }, input)).rejects.toMatchObject({ status: 403 });
+    await expect(api.previewSupplierBatchRefresh(f.id, f.batch.id, { username: "synthetic-organiser", admin: false, adminGbId: "other" }, input)).rejects.toMatchObject({ status: 403 });
+    const organiser = { username: "synthetic-organiser", admin: false };
+    const p = await api.previewSupplierBatchRefresh(f.id, f.batch.id, organiser, input);
+    await expect(api.refreshSupplierBatch(f.id, f.batch.id, organiser, { ...refreshBody(p), confirm: false })).rejects.toMatchObject({ status: 400 });
+    await api.releaseSupplierBatch(f.id, f.batch.id, admin, { confirm: true, reason: "Synthetic terminal test" });
+    await expect(api.refreshSupplierBatch(f.id, f.batch.id, organiser, refreshBody(p))).rejects.toThrow(/prepared/i);
+    const other = await preparedWithChange();
+    const p2 = await api.previewSupplierBatchRefresh(other.id, other.batch.id, organiser, { expectedBatchToken: other.batch.snapshot.token });
+    await api.refreshSupplierBatch(other.id, other.batch.id, organiser, refreshBody(p2));
+    await api.orderSupplierBatch(other.id, other.batch.id, admin, { confirm: true });
+    await expect(api.previewSupplierBatchRefresh(other.id, other.batch.id, admin, { expectedBatchToken: p2.expectedBatchToken })).rejects.toThrow(/prepared/i);
+    await expect(api.refreshSupplierBatch(other.id, other.batch.id, admin, { ...refreshBody(p2), token: "another" })).rejects.toThrow(/prepared/i);
+  });
+
   it("rejects stale target snapshots, wrong regions, released and already ordered batches", async () => {
     const f = await fixture([100, 15]);
     const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });

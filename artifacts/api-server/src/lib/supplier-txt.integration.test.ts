@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 vi.mock("./telegram", () => ({ notifyUserFull: vi.fn(async () => ({ ok: true })) }));
 vi.mock("../routes/config", () => ({ getActiveWholesaleVendor: vi.fn(async () => ({
   id: "synthetic", name: "Synthetic", tiers: ["1-25"], tierBounds: [25], maxKitsPerPackage: 25,
@@ -15,6 +15,7 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("supplier TXT / iso
   afterEach(async () => {
     for (const f of cleanup.splice(0)) {
       await store.db.transaction(async (tx: any) => {
+        await tx.delete(store.auditLogsTable).where(sql`${store.auditLogsTable.metadata}->>'groupBuyId' = ${f.group}`);
         const orders = await tx.select({ id: store.ordersTable.id }).from(store.ordersTable).where(eq(store.ordersTable.groupBuyId, f.group));
         if (orders.length) {
           await tx.delete(store.gbSupplierAllocationsTable).where(inArray(store.gbSupplierAllocationsTable.orderId, orders.map((o: any) => o.id)));
@@ -90,6 +91,25 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("supplier TXT / iso
     expect(text).toContain("synthetic-appended");
     expect(text).toContain("Total QTY: 102");
     expect(text).toContain("Total: $4080.00");
+  });
+  it("exports reviewed quantity changes using current supplier costs and the kept batch reference", async () => {
+    const f = await fixture();
+    await store.db.update(store.orderLineItemsTable).set({ quantity: "52", lineTotal: "5200" })
+      .where(eq(store.orderLineItemsTable.orderId, f.ids[0]));
+    await store.db.update(store.ordersTable).set({ productSubtotal: "5200", grandTotal: "5200", balanceConfirmedAt: new Date() })
+      .where(eq(store.ordersTable.id, f.ids[0]));
+    await expect(api.exportSupplierTxt(f.group, admin, { batchId: f.batch.id })).rejects.toThrow(/exceptions/i);
+    const p = await api.previewSupplierBatchRefresh(f.group, f.batch.id, admin, { expectedBatchToken: f.batch.snapshot.token });
+    await api.refreshSupplierBatch(f.group, f.batch.id, admin, { confirm: true, expectedBatchToken: p.expectedBatchToken, token: p.token });
+    const text = await api.exportSupplierTxt(f.group, admin, { batchId: f.batch.id });
+    expect(text).toContain(f.batch.reference);
+    expect(text).toContain("Total QTY: 102");
+    expect(text).toContain("Total: $4080.00");
+    expect(text).toContain("Package: 5 x $70.00 = $350.00");
+    expect(text).toContain("Supplier Recipient");
+    expect(text).not.toContain("PRIVATE MEMBER ADDRESS");
+    await store.db.delete(store.fs3CostsTable).where(eq(store.fs3CostsTable.productName, f.product));
+    await expect(api.exportSupplierTxt(f.group, admin, { batchId: f.batch.id })).rejects.toThrow(/setup|cost/i);
   });
   it("selects direct orders separately, uses vendor tiers and refuses cross-routing selections", async () => {
     const f = await fixture();

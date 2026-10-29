@@ -3,10 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Download, Plus, Trash2 } from "lucide-react";
 import { SupplierBatchFulfilment } from "./SupplierBatchFulfilment";
 import { DirectSupplierDownload } from "./DirectSupplierDownload";
+import { BatchRefreshReview } from "./BatchRefreshReview";
 import {
   EU_BATCH_COUNTRIES, supplierKey, supplierRequest, downloadSupplierCsv,
   downloadSupplierTxt,
   type SupplierScope, type SupplierData, type BatchConfig, type BatchProposal, type SupplierBatch,
+  type BatchRefreshPreview,
 } from "@/lib/supplier-batches";
 
 const V = {
@@ -245,7 +247,7 @@ export function ProposalCard({ p, enabled, busy, batches = [], onConfirm }: { p:
   );
 }
 
-export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; exportTxt: (id: string) => Promise<void>; context: Props }) {
+export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown, ok?: string) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; exportTxt: (id: string) => Promise<void>; context: Props }) {
   const [mode, setMode] = useState<"ordered" | "release" | null>(null);
   const [showFulfilment, setShowFulfilment] = useState(false);
   const [txtMessage, setTxtMessage] = useState<{ err: boolean; text: string } | null>(null);
@@ -268,6 +270,11 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
         </ul>
       )}
       <OrdersDetail p={b.snapshot} />
+      {b.state === "prepared" && blocked && (
+        <BatchRefreshReview batch={b} scope={context.scope} groupBuyId={context.groupBuyId} busy={busy}
+          requestPreview={(path, body) => supplierRequest<BatchRefreshPreview>(context.scope, context.groupBuyId, path, body, "POST", context.headers)}
+          onConfirm={(path, body) => act(path, body, "Batch updated. Reference kept; orders and payments are unchanged.")} />
+      )}
       {b.state === "ordered" && <div className="space-y-3">
         <button type="button" className={btn} style={{ background: NAVY }} aria-expanded={showFulfilment} onClick={() => setShowFulfilment(v => !v)}>
           {showFulfilment ? "Close" : "Manage"} supplier packages &amp; receipt
@@ -343,7 +350,14 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
   const putConfig = (config: BatchConfig, expectedVersion: number) => supplierRequest(scope, groupBuyId, "/config", { config, expectedVersion }, "PUT", headers);
   const act = async (path: string, body: unknown, ok = "Done.") => {
     setMsg(null);
-    try { await run(() => supplierRequest(scope, groupBuyId, path, body, "POST", headers)); setMsg({ err: false, text: ok }); return true; }
+    try {
+      await run(() => supplierRequest(scope, groupBuyId, path, body, "POST", headers));
+      if (path.endsWith("/refresh")) {
+        await qc.invalidateQueries({ queryKey: ["member-supplier-batches", groupBuyId] });
+        await qc.invalidateQueries({ queryKey: supplierKey(scope === "admin" ? "organiser" : "admin", groupBuyId) });
+      }
+      setMsg({ err: false, text: ok }); return true;
+    }
     catch (e) { setMsg({ err: true, text: e instanceof Error ? e.message : "Request failed." }); return false; }
   };
   const exportCsv = async (id: string) => {
@@ -414,6 +428,9 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
           {d.events.map(e => (
             <p key={e.id} className="text-[11px]" style={{ color: V.text }}>
                {fmt(e.createdAt)} · {e.kind === "ready_admin" ? "Batch ready — Admin" : e.kind === "ready" ? "Batch ready — organiser" : e.kind} · Telegram: <span className="font-semibold">{e.telegram}</span>
+              {e.kind === "refreshed" && e.detail?.before && e.detail?.after && <span className="block pl-3" style={{ color: V.muted }}>
+                {e.detail.reference} · {kits(e.detail.before.kits)} → {kits(e.detail.after.kits)} kits · {e.detail.changes?.length ?? 0} changed orders · by {e.detail.actor}
+              </span>}
               {e.lastError && <span className="text-red-600"> · {e.lastError}</span>}
               {e.detail && (e.detail.region || e.detail.text) && (
                 <span data-testid={`text-event-detail-${e.id}`} className="block pl-3" style={{ color: V.muted }}>

@@ -3,7 +3,7 @@ export type SupplierScope = "admin" | "organiser";
 export interface BatchRegion { id: string; name: string; countries: string[]; targetKits: number }
 export interface BatchConfig { enabled: boolean; telegramAlerts: boolean; showToMembers?: boolean; regions: BatchRegion[] }
 export interface BatchItem { productId: string; productName: string; quantity: number; unitPrice: string; lineTotal: string }
-export interface BatchOrder { id: string; code: string; username: string; country: string; kits: number; paidAt: string | null; orderingAt: string; historicalReviewed: boolean; items: BatchItem[] }
+export interface BatchOrder { id: string; code: string; username: string; country: string; kits: number; paidAt: string | null; orderingAt: string; historicalReviewed: boolean; items: BatchItem[]; /** grandTotal, creditsApplied, amountDue, productSubtotal, vendorShipping, currency, groupBuyId */ money?: string[] }
 export interface BatchProposal { region: BatchRegion; token: string; orders: BatchOrder[]; kits: number; queuedKits: number; remainingKits: number; ready: boolean; readyAt: string | null; products: {productId: string; productName: string; quantity: number}[]; allQueued?: BatchProposal }
 export interface SupplierBatch { id: string; reference: string; state: "prepared" | "ordered" | "released"; createdAt: string; createdBy: string; orderedAt: string | null; releasedAt: string | null; releaseReason: string | null; snapshot: BatchProposal; exceptions: {orderId: string; code: string; reason: string}[] }
 export interface SupplierData {
@@ -11,6 +11,13 @@ export interface SupplierData {
   proposals: BatchProposal[]; batches: SupplierBatch[];
   review: {id: string; code: string; username: string; country: string; reason: string; canReviewHistorical: boolean}[];
   events: {id: string; kind: string; createdAt: string; telegram: string; lastError: string | null; detail: any}[];
+}
+export interface BatchRefreshSummary { kits: number; orderCount: number; products: {productId: string; productName: string; quantity: number}[] }
+export interface BatchRefreshPreview {
+  batchId: string; reference: string; expectedBatchToken: string; token: string; canConfirm: boolean; currency: string;
+  blockers: {orderId: string | null; code: string | null; reason: string}[];
+  changes: {orderId: string; code: string; before: BatchOrder; after: BatchOrder | null}[];
+  before: BatchRefreshSummary; after: BatchRefreshSummary | null;
 }
 export const supplierKey = (scope: SupplierScope, id: string) => ["supplier-batches", scope, id] as const;
 export const supplierUrl = (scope: SupplierScope, id: string) => `/api/${scope}/group-buys/${encodeURIComponent(id)}/supplier-batches`;

@@ -1,7 +1,7 @@
 import express from "express";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { type Server } from "node:http";
-const calls = vi.hoisted(() => ({ admin: vi.fn(), organiser: vi.fn(), data: vi.fn() }));
+const calls = vi.hoisted(() => ({ admin: vi.fn(), organiser: vi.fn(), data: vi.fn(), preview: vi.fn(), refresh: vi.fn() }));
 vi.mock("../middleware/account-auth", () => ({ requireAccount: (req: any, res: any, next: any) => {
   if (req.headers["x-test-member"] !== "yes") return res.status(401).json({ error: "Sign in" });
   req.account = { telegramUsername: "member" }; next();
@@ -19,6 +19,7 @@ vi.mock("../middleware/require-organiser", () => ({ requireOrganiser: (req: any,
 vi.mock("../lib/supplier-batches", () => ({
   supplierData:calls.data,saveSupplierConfig:vi.fn(),confirmSupplierBatch:vi.fn(),orderSupplierBatch:vi.fn(),
   releaseSupplierBatch:vi.fn(),reviewHistoricalSupplierOrder:vi.fn(),exportSupplierBatch:vi.fn(),
+  previewSupplierBatchRefresh:calls.preview,refreshSupplierBatch:calls.refresh,
 }));
 import router from "./supplier-batches";
 describe("supplier batch HTTP authentication", () => {
@@ -34,6 +35,8 @@ describe("supplier batch HTTP authentication", () => {
     server=app.listen(0,"127.0.0.1"); await new Promise<void>(r=>server.once("listening",r));
     base=`http://127.0.0.1:${(server.address() as any).port}`;
     calls.data.mockImplementation(async(id,actor)=>({id,actor}));
+    calls.preview.mockImplementation(async(id,batchId,actor,body)=>({id,batchId,actor,body}));
+    calls.refresh.mockImplementation(async(id,batchId,actor,body)=>({id,batchId,actor,body}));
   });
   afterAll(()=>new Promise<void>((r,e)=>server.close(err=>err?e(err):r())));
   it("requires Admin auth under an Express mounted prefix, never falls through organiser auth",async()=>{
@@ -49,4 +52,16 @@ describe("supplier batch HTTP authentication", () => {
     const res=await fetch(`${base}/api/organiser/group-buys/gb/supplier-batches`,{headers:{"x-test-organiser":"yes"}});
     expect((await res.json() as any).actor).toMatchObject({username:"organiser",adminGbId:"gb"});
   });
+  for(const scope of ["admin","organiser"]) for(const suffix of ["refresh-preview","refresh"]) {
+    it(`${scope}: authenticates ${suffix} and forwards the reviewed body and scoped actor`,async()=>{
+      const url=`${base}/api/${scope}/group-buys/gb/supplier-batches/batch/${suffix}`;
+      const body={expectedBatchToken:"original",...(suffix==="refresh"?{confirm:true,token:"reviewed"}:{})};
+      expect((await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).status).toBe(401);
+      const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json",[`x-test-${scope}`]:"yes"},body:JSON.stringify(body)});
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(await response.json()).toMatchObject({id:"gb",batchId:"batch",body,
+        actor:scope==="admin"?{admin:true}:{username:"organiser",adminGbId:"gb"}});
+    });
+  }
 });

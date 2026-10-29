@@ -9,6 +9,12 @@ Canonicalize object keys recursively before hashing snapshots that are stored as
 
 **How to apply:** Use semantic canonical hashes for preview tokens and immutable snapshot comparisons, and include a JSONB round-trip test.
 
+Normalise PostgreSQL Date instances to ISO strings before canonical hashing live rows.
+
+**Why:** Date instances have no enumerable keys. A canonicaliser that enumerates object keys can silently turn distinct timestamps into the same empty object, weakening stale-preview checks.
+
+**How to apply:** Serialize the token input to JSON-compatible values before hashing, or explicitly handle Date instances. Test distinct live update timestamps, not only JSONB round trips.
+
 Use an integer generation or state transition for outbox claim compare-and-swap rather than comparing a PostgreSQL-generated timestamp to its JavaScript Date round trip.
 
 **Why:** PostgreSQL default now() retains microseconds that JavaScript Date truncates. Timestamp equality prevented a pending readiness alert from ever being claimed.

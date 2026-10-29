@@ -15,6 +15,7 @@ import { SupplierBatchError, validateRegions, eligibleOrder, isDirectSupplierOrd
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
+import { buildPreparedBatchRefresh, refreshedOrderSnapshot } from "./supplier-batch-refresh-model";
 
 type Database = typeof db;
 const emptyConfig: SupplierConfig = { enabled: false, telegramAlerts: false, showToMembers: false, regions: [] };
@@ -49,6 +50,7 @@ async function load(tx: any, id: string) {
     id: ordersTable.id, code: ordersTable.code, telegramUsername: ordersTable.telegramUsername,
     groupBuyId: ordersTable.groupBuyId, shippingCountry: ordersTable.shippingCountry,
     status: ordersTable.status, paymentStatus: ordersTable.paymentStatus, amountDue: ordersTable.amountDue,
+    updatedAt: ordersTable.updatedAt, balancePaymentStatus: ordersTable.balancePaymentStatus,
     paymentConfirmedAt: ordersTable.paymentConfirmedAt, balanceConfirmedAt: ordersTable.balanceConfirmedAt,
     grandTotal: ordersTable.grandTotal, creditsApplied: ordersTable.creditsApplied,
     productSubtotal: ordersTable.productSubtotal, vendorShipping: ordersTable.vendorShipping,
@@ -72,9 +74,8 @@ function mismatch(batch: any, order: any, currentEligibility: any) {
   if (!order || !old) return "Order is missing or moved out of this group buy";
   const reason = eligibleOrder(order, batch.state === "ordered", !!currentEligibility?.reviewedAt);
   if (reason) return reason;
-  const current = snapshotOrder(order, old.orderingAt);
   // Settling timestamps don't alter a purchased snapshot; material product/money changes do.
-  return fingerprint({ ...current, paidAt: old.paidAt, orderingAt: old.orderingAt, historicalReviewed: old.historicalReviewed })
+  return fingerprint(refreshedOrderSnapshot(order, old))
     !== fingerprint(old) ? "Products, destination, member or order amounts changed since preparation" : null;
 }
 async function state(tx: any, group: any, reconcile = true) {
@@ -235,6 +236,59 @@ export async function appendSupplierBatch(id: string, batchId: string, actor: Up
     await audit(tx, id, actor.username, "appended", {
       requestKey, batchId, reference: batch.reference, orderIds: p.orders.map(o => o.id),
       addedKits: p.kits, totalKits: snapshot.kits,
+    });
+    return state(tx, group);
+  }, database);
+}
+function validRefreshToken(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128;
+}
+async function preparedRefresh(tx: any, group: any, batchId: string, expectedBatchToken: string) {
+  const data = await load(tx, group.id);
+  const batch = data.history.find((b: any) => b.id === batchId);
+  if (!batch) throw new SupplierBatchError("Batch not found.", 404);
+  if (batch.state !== "prepared") throw new SupplierBatchError("Only prepared batches can be updated, before supplier submission.");
+  if (batch.snapshot.token !== expectedBatchToken) throw new SupplierBatchError("The batch changed. Load a fresh preview and review it before updating.");
+  const actual = await tx.select().from(allocations).where(eq(allocations.batchId, batchId))
+    .orderBy(asc(allocations.orderId)).for("update");
+  const review = buildPreparedBatchRefresh(batch, data, actual, group.currency ?? "USD");
+  return { batch, review };
+}
+export async function previewSupplierBatchRefresh(id: string, batchId: string, actor: UpdateActor, body: any, database = db) {
+  if (!validRefreshToken(body?.expectedBatchToken)) throw new SupplierBatchError("Select the prepared batch to review.", 400);
+  return locked(id, actor, async (tx, group) => {
+    const { review: { orders: _internalOrders, ...preview } } = await preparedRefresh(tx, group, batchId, body.expectedBatchToken);
+    return preview;
+  }, database);
+}
+export async function refreshSupplierBatch(id: string, batchId: string, actor: UpdateActor, body: any, database = db) {
+  if (body?.confirm !== true || !validRefreshToken(body?.expectedBatchToken) || !validRefreshToken(body?.token))
+    throw new SupplierBatchError("Review the batch changes and explicitly confirm the displayed preview.", 400);
+  const requestKey = fingerprint({ batchId, expectedBatchToken: body.expectedBatchToken, token: body.token });
+  return locked(id, actor, async (tx, group) => {
+    // The group lock serializes append/release/submission and duplicate requests.
+    // Replays return current state even after later changes; they never replace a later snapshot.
+    const [replay] = await tx.select({ id: events.id }).from(events).where(and(
+      eq(events.groupBuyId, id), eq(events.kind, "refreshed"), sql`${events.detail}->>'requestKey' = ${requestKey}`,
+    ));
+    if (replay) return state(tx, group);
+    const { batch, review } = await preparedRefresh(tx, group, batchId, body.expectedBatchToken);
+    if (review.token !== body.token) throw new SupplierBatchError("Orders, payments, routing or settings changed since this preview. Load a fresh preview and review it again.");
+    if (!review.canConfirm) throw new SupplierBatchError(review.blockers.length
+      ? review.blockers.map(b => `${b.code ? `${b.code}: ` : ""}${b.reason}`).join("\n")
+      : "There are no material changes to update. Reload the batch.");
+    await assertNoActiveRefunds(tx, review.orders.map(o => o.id));
+    const combined = propose(review.orders, batch.snapshot.region.targetKits, true);
+    const snapshot = { ...batch.snapshot, ...combined, queuedKits: combined.kits, remainingKits: 0,
+      token: fingerprint({ previous: batch.snapshot.token, requestKey, orders: combined.orders }) };
+    const updated = await tx.update(batches).set({ snapshot }).where(and(
+      eq(batches.id, batchId), eq(batches.groupBuyId, id), eq(batches.state, "prepared"),
+      sql`${batches.snapshot}->>'token' = ${body.expectedBatchToken}`,
+    )).returning({ id: batches.id });
+    if (!updated.length) throw new SupplierBatchError("The batch changed. Load a fresh preview before retrying.");
+    await audit(tx, id, actor.username, "refreshed", {
+      requestKey, batchId, reference: batch.reference, before: review.before, after: review.after,
+      changes: review.changes,
     });
     return state(tx, group);
   }, database);
