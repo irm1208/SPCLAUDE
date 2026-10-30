@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Save, AlertTriangle, Info } from "lucide-react";
 import { Fs3SupplierCostImport } from "./Fs3SupplierCostImport";
+import { JbgYtCatalogueImport } from "./JbgYtCatalogueImport";
 
 // Contract:
 //  GET   /api/admin/wholesale-vendors                 -> { vendors: AdminVendor[], activeVendorId: string|null }
@@ -162,6 +163,8 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
   const inputCls = "h-8 w-full rounded border border-slate-200 bg-white px-2 text-xs outline-none focus:border-sky-400";
   const importVendor = vendors.find(v => v.id === (selectedVendorId ?? filter) &&
     v.legacyCatalogueVendor?.trim().toLowerCase() === "uther");
+  const jbgYtVendor = vendors.find(v => v.id === (selectedVendorId ?? filter) &&
+    v.name.trim().toLowerCase().replace(/\s/g, "") === "jbg/yt");
   const hasUnsavedEdits = products.some(p => drafts[p.id] &&
     JSON.stringify(drafts[p.id]) !== JSON.stringify(toDraft(p, vendors)));
   const importDisabledReason = hasUnsavedEdits ? "Save your unsaved product edits before importing FS3 costs."
@@ -197,6 +200,9 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
 
       {importVendor && <Fs3SupplierCostImport key={importVendor.id} secret={secret}
         vendorId={importVendor.id} vendorName={importVendor.name} onApplied={load}
+        disabledReason={importDisabledReason} onBusyChange={setImportBusy} />}
+      {jbgYtVendor && <JbgYtCatalogueImport key={jbgYtVendor.id} secret={secret}
+        vendorId={jbgYtVendor.id} onApplied={async () => { await load(); onVendorsChanged?.(); }}
         disabledReason={importDisabledReason} onBusyChange={setImportBusy} />}
 
       {selectedVendorId ? (
