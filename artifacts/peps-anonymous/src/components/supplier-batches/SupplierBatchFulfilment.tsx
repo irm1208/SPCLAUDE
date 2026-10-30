@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { SupplierCarrierSelect } from "./SupplierCarrierSelect";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, Package, Truck, Search, ClipboardCheck, Ban, Pencil } from "lucide-react";
 import {
@@ -205,8 +206,8 @@ function CreateShipment({ d, busy, run, onDone }: { d: FulfilmentDetail; busy: b
       <div className="grid gap-2 sm:grid-cols-2">
         <label><span className="block text-[11px] font-semibold mb-1" style={{ color: V.muted }}>Package label</span>
           <input data-testid="input-package-label" value={labelText} onChange={e => setLabelText(e.target.value)} placeholder="Box 1" className={inputCls} style={inputStyle} /></label>
-        <label><span className="block text-[11px] font-semibold mb-1" style={{ color: V.muted }}>Carrier code (17TRACK, 0 = auto)</span>
-          <input data-testid="input-package-carrier" type="number" min={0} step={1} value={carrier} onChange={e => setCarrier(e.target.value)} className={inputCls} style={inputStyle} /></label>
+        <label><span className="block text-[11px] font-semibold mb-1" style={{ color: V.muted }}>Carrier</span>
+          <SupplierCarrierSelect data-testid="input-package-carrier" value={carrier} onChange={setCarrier} className={inputCls} style={inputStyle} /></label>
         <label className="sm:col-span-2"><span className="block text-[11px] font-semibold mb-1" style={{ color: V.muted }}>Tracking number (optional)</span>
           <input data-testid="input-package-tracking" value={tracking} onChange={e => setTracking(e.target.value)} className={`${inputCls} font-mono`} style={inputStyle} /></label>
         <label className="sm:col-span-2"><span className="block text-[11px] font-semibold mb-1" style={{ color: V.muted }}>Notes (optional)</span>
@@ -251,7 +252,7 @@ function EditShipment({ s, busy, run, close, say }: { s: SupplierShipment; busy:
     <fieldset disabled={busy} className="min-w-0 rounded-lg p-3 space-y-2 text-xs" style={{ background: V.tint, color: V.text }}>
       <div className="grid gap-2 sm:grid-cols-2">
         <label><span className="block font-semibold mb-1">Label</span><input value={l} onChange={e => setL(e.target.value)} className={inputCls} style={inputStyle} /></label>
-        <label><span className="block font-semibold mb-1">Carrier code</span><input type="number" min={0} step={1} value={carrier} onChange={e => setCarrier(e.target.value)} className={inputCls} style={inputStyle} /></label>
+        <label><span className="block font-semibold mb-1">Carrier</span><SupplierCarrierSelect value={carrier} onChange={setCarrier} className={inputCls} style={inputStyle} /></label>
         <label className="sm:col-span-2"><span className="block font-semibold mb-1">Tracking number</span><input data-testid={`input-edit-tracking-${s.id}`} value={tn} onChange={e => setTn(e.target.value)} className={`${inputCls} font-mono`} style={inputStyle} /></label>
         <label className="sm:col-span-2"><span className="block font-semibold mb-1">Tracking parameters (one key=value per line, optional)</span><textarea rows={2} value={params} onChange={e => setParams(e.target.value)} className={`${inputCls} font-mono`} style={inputStyle} /></label>
         <label className="sm:col-span-2"><span className="block font-semibold mb-1">Notes</span><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} className={inputCls} style={inputStyle} /></label>
