@@ -9,7 +9,7 @@ import {
   Upload, FileText, DollarSign, Copy, MapPin, CheckCircle2,
   AlertCircle, AlertTriangle, Clock, Navigation, Box, TestTube, BarChart3,
   CreditCard, Send, MessageSquare, ShoppingCart, Wallet, QrCode, UserCheck, ExternalLink,
-  Download, SendHorizonal, Ship, TrendingUp, Settings, Lock, Unlock, Calculator, PenLine, Home,
+  Download, SendHorizonal, Ship, TrendingUp, Settings, Lock, Unlock, Calculator, PenLine, Home, Printer,
 } from "lucide-react";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -30,6 +30,7 @@ import { WaitlistSubTab } from "./panels/WaitlistPanel";
 import { PaymentStatusSubTab } from "./panels/PaymentStatusPanel";
 import { ParcelsSubTab } from "./panels/ParcelsPanel";
 import { OrdersSubTab } from "./panels/OrdersPanel";
+import { PackingSlipsPanel } from "./panels/PackingSlipsPanel";
 import { TestingSubTab } from "./panels/TestingPanel";
 import { AdminFeeCountriesSubTab } from "./panels/FeeByCountryPanel";
 import { PnlSubTab } from "./panels/PnlPanel";
@@ -46,7 +47,7 @@ import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierB
 import { selectSupplierOrderBatch } from "@/components/supplier-batches/OrderBatchFilter";
 
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "./shared/core";
-export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "refunds" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes" | "supplier-batches" | "supplier-receipt";
+export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "refunds" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes" | "supplier-batches" | "supplier-receipt" | "packing-slips";
 
 export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
   secret: string;
@@ -95,6 +96,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
       title: "Operations",
       items: [
         { id: "orders", label: "Orders", icon: ShoppingCart },
+        { id: "packing-slips", label: "Packing slips", icon: Printer },
         { id: "supplier-batches", label: "Supplier batches", icon: Package },
         { id: "supplier-receipt", label: "Batch shipping & receipt", icon: Truck },
         { id: "members", label: "Members", icon: Users },
@@ -247,6 +249,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
           {activeTab === "refunds" && <GroupBuyRefundQueue role="admin" adminSecret={secret} groupBuyId={currentGb.id} />}
           {activeTab === "parcels" && <ParcelsSubTab secret={secret} gb={currentGb} />}
           {activeTab === "orders" && <OrdersSubTab secret={secret} gb={currentGb} />}
+          {activeTab === "packing-slips" && <PackingSlipsPanel key={currentGb.id} secret={secret} groupBuyId={currentGb.id} groupBuyName={currentGb.name} />}
           {activeTab === "supplier-batches" && <SupplierBatchManager key={currentGb.id} scope="admin" groupBuyId={currentGb.id} headers={{"x-admin-secret":secret}}
             onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("admin", currentGb.id, batchId, orderId); selectTab("orders"); }}
             onDispatch={() => selectTab("fulfilment")} />}

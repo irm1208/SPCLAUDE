@@ -123,7 +123,7 @@ interface DispatchParcel {
   items: GbParcelItem[];
 }
 
-interface DispatchOrder {
+export interface DispatchOrder {
   id: string;
   code?: string | null;
   telegramUsername: string;
@@ -1501,7 +1501,7 @@ function OrderSummary({ o }: { o: DispatchOrder }) {
 }
 
 // ─── PrintModal ───────────────────────────────────────────────────────────────
-function PrintModal({ orders, gbName, onClose }: { orders: DispatchOrder[]; gbName?: string; onClose: () => void }) {
+export function PrintModal({ orders, gbName, onClose }: { orders: DispatchOrder[]; gbName?: string; onClose: () => void }) {
   const printRef = useRef<HTMLDivElement>(null);
   const [format, setFormat] = useState<"a4" | "4x6">("a4");
 

@@ -28,6 +28,8 @@ work independently of parcels.
 **Admin pending-slip rule:** Admin must be able to print selected Not Dispatched
 orders even when the group buy has no assigned reshipper or logged parcels.
 Printing alone must never mark orders shipped, allocate stock, or notify members.
+The user also requires this directly within each group buy's Admin backend,
+with country and reshipper filters, including orders without an assigned reshipper.
 
 **Why:** The user needs packing paperwork before dispatch setup is complete.
 
