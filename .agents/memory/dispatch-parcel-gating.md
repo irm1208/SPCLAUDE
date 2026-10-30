@@ -8,7 +8,8 @@ description: Why GB dispatch could show zero reshippers/orders, and the rule tha
 The Admin → Dispatch ("Dispatch & Packing Slips") tool's core job is matching
 orders against *delivered* parcel stock (statuses in_transit/out_for_delivery/
 attempted/delivered) and generating packing slips. That parcel-matching step
-legitimately requires logged parcels.
+legitimately requires logged parcels for stock allocation and dispatch confirmation.
+Admin may also print pending orders independently of that workflow.
 
 The trap: reshipper discoverability and order *visibility* were ALSO gated on
 delivered parcels. If a GB had orders + reshippers but nobody had logged any
@@ -22,7 +23,16 @@ work independently of parcels.
 - The Order Overview fetches `/admin/orders?groupBuyId=...` (optionally
   `&reshipper=`) directly, so it renders for both the reshipper scope and the
   All-Orders scope even with zero parcels (orders land in "Pending").
-- Only the parcel-selection + compute step stays parcel-dependent.
+- Only stock allocation and the parcel-selection + compute step stay parcel-dependent.
+
+**Admin pending-slip rule:** Admin must be able to print selected Not Dispatched
+orders even when the group buy has no assigned reshipper or logged parcels.
+Printing alone must never mark orders shipped, allocate stock, or notify members.
+
+**Why:** The user needs packing paperwork before dispatch setup is complete.
+
+**How to apply:** Keep paperwork independent of stock-readiness checks; preserve
+the existing guarded dispatch-confirmation workflow separately.
 
 **Why:** observed live — a GB had many Submitted orders across 2 reshippers but
 zero `gb_parcels` rows, while parcels existed for other GBs, so the feature itself

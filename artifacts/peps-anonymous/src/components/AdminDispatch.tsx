@@ -451,6 +451,7 @@ function PackingSlipsTab({
 
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [showPrint, setShowPrint] = useState(false);
+  const [showPendingPrint, setShowPendingPrint] = useState(false);
   const [gbName, setGbName] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -464,7 +465,7 @@ function PackingSlipsTab({
   const [markUnfulfillableMsg, setMarkUnfulfillableMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Order overview for the selected reshipper
-  interface OverviewOrder { id: string; code: string; telegramUsername: string | null; shippingName: string | null; status: string }
+  type OverviewOrder = DispatchOrder;
   const [overviewOrders, setOverviewOrders] = useState<OverviewOrder[]>([]);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [ovExpanded, setOvExpanded] = useState<Record<string, boolean>>({ dispatched: false, ready: true, cannot: true, pending: true });
@@ -472,6 +473,11 @@ function PackingSlipsTab({
   const [ovPendingSelected, setOvPendingSelected] = useState<Set<string>>(new Set());
   const [markingPending, setMarkingPending] = useState(false);
   const [markPendingMsg, setMarkPendingMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    setShowPendingPrint(false);
+    setOvPendingSelected(new Set());
+  }, [selectedGb, scopeType, scopeId]);
 
   // Reset downstream when GB changes. For a locked scope (reshipper) re-apply
   // the locked scope instead of clearing it, so multi-GB reshippers don't
@@ -543,6 +549,7 @@ function PackingSlipsTab({
   // Load orders for the overview panel: per-reshipper, per-country-leg, or all
   // orders in the GB. Works even when no parcels have been logged yet.
   useEffect(() => {
+    let cancelled = false;
     setOverviewOrders([]);
     setOverviewLoading(false);
     const isReshipper = scopeType === "reshipper" && !!scopeId;
@@ -555,14 +562,16 @@ function PackingSlipsTab({
     cfg.dfetch(cfg.ordersPath(params.toString()))
       .then(r => r.json())
       .then((data: unknown) => {
+        if (cancelled) return;
         const raw = Array.isArray(data) ? data : (Array.isArray((data as any)?.orders) ? (data as any).orders : []);
         let filtered = (raw as any[]).filter(o => !o.deletedAt);
         // Country leg scope: filter client-side by countryLegId
         if (isCountry) filtered = filtered.filter(o => o.countryLegId === scopeId);
         setOverviewOrders(filtered);
       })
-      .catch(() => { setOverviewOrders([]); })
-      .finally(() => setOverviewLoading(false));
+      .catch(() => { if (!cancelled) setOverviewOrders([]); })
+      .finally(() => { if (!cancelled) setOverviewLoading(false); });
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGb, scopeType, scopeId, cfg]);
 
@@ -606,13 +615,7 @@ function PackingSlipsTab({
         const existingIds = new Set(prev.map(o => o.id));
         const extras: OverviewOrder[] = [...d.fulfillable, ...d.unfulfillable]
           .filter((o: DispatchOrder) => !existingIds.has(o.id))
-          .map((o: DispatchOrder) => ({
-            id: o.id,
-            code: o.code,
-            telegramUsername: (o as any).telegramUsername ?? null,
-            shippingName: (o as any).shippingName ?? null,
-            status: (o as any).status ?? "Processing",
-          }));
+          .map((o: DispatchOrder) => ({ ...o }));
         return extras.length > 0 ? [...prev, ...extras] : prev;
       });
     } catch {
@@ -631,6 +634,10 @@ function PackingSlipsTab({
   const ovPending = useMemo(() => overviewOrders.filter(o =>
     !["Shipped", "Completed", "Cancelled"].includes(o.status) && !readyIds.has(o.id) && !cannotIds.has(o.id)
   ), [overviewOrders, readyIds, cannotIds]);
+  const pendingPrintOrders = useMemo(
+    () => ovPending.filter(o => ovPendingSelected.has(o.id)),
+    [ovPending, ovPendingSelected],
+  );
 
   const handleMarkPendingShipped = async () => {
     const idsToMark = ovPendingSelected.size > 0 ? [...ovPendingSelected] : ovPending.map(o => o.id);
@@ -1199,7 +1206,7 @@ function PackingSlipsTab({
                       <p className="text-xs text-muted-foreground px-4 py-2">{computeResult ? "All orders accounted for." : "Awaiting Calculate…"}</p>
                     ) : (
                       <div>
-                        <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50/70 border-b border-slate-100">
+                        <div className="flex flex-wrap items-center gap-3 px-4 py-1.5 bg-slate-50/70 border-b border-slate-100">
                           <span className="text-[11px] text-slate-600 font-medium">
                             {ovPendingSelected.size > 0 ? `${ovPendingSelected.size} selected` : "Tick to mark individually, or use \u2018Mark all Shipped\u2019"}
                           </span>
@@ -1207,7 +1214,23 @@ function PackingSlipsTab({
                           {ovPendingSelected.size > 0 && (
                             <button onClick={() => setOvPendingSelected(new Set())} className="text-[11px] text-slate-500 hover:underline">Clear</button>
                           )}
+                          {cfg.role === "admin" && (
+                            <button
+                              type="button"
+                              onClick={() => setShowPendingPrint(true)}
+                              disabled={pendingPrintOrders.length === 0}
+                              className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                              Print Packing Slips ({pendingPrintOrders.length})
+                            </button>
+                          )}
                         </div>
+                        {cfg.role === "admin" && (
+                          <p className="px-4 py-1.5 text-[11px] text-muted-foreground">
+                            Printing does not mark orders as dispatched. No assigned reshipper or parcel calculation is required.
+                          </p>
+                        )}
                         <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
                           {ovPending.map(o => {
                             const sel = ovPendingSelected.has(o.id);
@@ -1367,6 +1390,9 @@ function PackingSlipsTab({
       )}
 
       {/* ── Print Modal ── */}
+      {cfg.role === "admin" && showPendingPrint && pendingPrintOrders.length > 0 && (
+        <PrintModal orders={pendingPrintOrders} gbName={gbName} onClose={() => setShowPendingPrint(false)} />
+      )}
       {showPrint && selectedOrders.length > 0 && (
         <PrintModal orders={selectedOrders} gbName={gbName} onClose={() => setShowPrint(false)} />
       )}
@@ -1604,6 +1630,7 @@ function PrintModal({ orders, gbName, onClose }: { orders: DispatchOrder[]; gbNa
             </button>
             <button
               onClick={onClose}
+              aria-label="Close packing slips"
               className="p-2 rounded-lg hover:bg-muted transition-colors"
             >
               <X className="w-4 h-4" />
