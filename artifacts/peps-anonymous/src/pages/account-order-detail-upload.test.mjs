@@ -31,3 +31,10 @@ test("label upload presentation avoids QR-specific prompts", () => {
   assert.match(source, /Upload your label/);
   assert.match(source, /Upload PDF Label/);
 });
+
+test("QR and label uploads do not depend on FileReader or read after saving", () => {
+  const section = source.slice(source.indexOf("function AccountQrSection("), source.indexOf("const isPdfPreview"));
+  assert.doesNotMatch(section, /new FileReader/);
+  assert.match(section, /await blobToDataUrl\(file\)/);
+  assert.ok(section.indexOf("await blobToDataUrl(file)") < section.indexOf("await fetch("));
+});

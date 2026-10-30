@@ -39,6 +39,7 @@ import { safeAddMoney, safeMinMoney, safeSubtractMoneyClamped } from "@/lib/exac
 import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
 import { OrderReceivedButton } from "@/components/OrderReceivedButton";
 import { useQueryClient } from "@tanstack/react-query";
+import { blobToDataUrl } from "@/lib/blob-data-url";
 
 // ── "Warm & Human" palette locals (override the DashboardShell exports for this page only) ──
 const HERO_GRAD = "linear-gradient(120deg,#1B3164 0%,#1B3A7A 45%,#2D6BCC 100%)";
@@ -943,6 +944,9 @@ function AccountQrSection({
     }
     setUploading(true);
     try {
+      // Prepare the preview before saving so a local file-read failure cannot
+      // report an upload failure after the server has already saved the label.
+      const dataUrl = await blobToDataUrl(file);
       const formData = new FormData();
       formData.append("file", file);
       const res = await fetch(`/api/account/orders/${orderId}/${uploadEndpoint}`, {
@@ -953,12 +957,6 @@ function AccountQrSection({
       const isJson = res.headers.get("content-type")?.includes("application/json");
       const j = isJson ? await res.json() : {};
       if (!res.ok) throw new Error((j as { error?: string }).error || `Upload failed (${res.status})`);
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error("Could not read file"));
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.readAsDataURL(file);
-      });
       setPreviewSrc(dataUrl);
       onUploaded(dataUrl);
     } catch (err: unknown) {
