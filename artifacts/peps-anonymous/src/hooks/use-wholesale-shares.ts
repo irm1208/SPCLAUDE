@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 // ── Types (mirror the backend buildShareResponse payload) ──────────────────────
 
@@ -313,12 +313,21 @@ export type ShareFetchResult =
   | { ok: true; share: WholesaleShareDetail }
   | { ok: false; status: number; message: string; creatorUsername?: string | null };
 
+/** Commit authoritative mutation data before releasing the local editor state. */
+export async function applyWholesaleShareResponse(client: QueryClient, id: string, share: WholesaleShareDetail) {
+  const queryKey = ["wholesale-share", id];
+  // A poll started before the save must not overwrite the newly saved draft.
+  await client.cancelQueries({ queryKey, exact: true });
+  client.setQueryData<ShareFetchResult>(queryKey, { ok: true, share });
+  void client.invalidateQueries({ queryKey: ["wholesale-shares"] });
+}
+
 export function useWholesaleShare(id: string | null) {
   return useQuery<ShareFetchResult>({
     queryKey: ["wholesale-share", id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       try {
-        const share = await request<WholesaleShareDetail>(`/api/wholesale-shares/${id}`);
+        const share = await request<WholesaleShareDetail>(`/api/wholesale-shares/${id}`, { signal });
         return { ok: true as const, share };
       } catch (e) {
         const err = e as Error & { status?: number; data?: { creatorUsername?: string | null } };

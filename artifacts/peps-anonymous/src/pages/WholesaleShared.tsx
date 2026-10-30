@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { VendorShipments } from "@/components/VendorShipments";
 import { VendorShippingBreakdown, VendorGroupHeader } from "@/components/wholesale-shared/VendorShippingBreakdown";
@@ -24,6 +25,7 @@ import { PriceWatermark } from "@/components/PriceWatermark";
 import { COUNTRIES } from "@/data/countries";
 import {
   useWholesaleShare,
+  applyWholesaleShareResponse,
   joinWholesaleShare,
   leaveWholesaleShare,
   confirmWholesaleShare,
@@ -139,6 +141,7 @@ export default function WholesaleShared() {
   const id = params?.id ?? null;
   const { account, isLoading: accountLoading } = useAccount();
   const invalidate = useInvalidateWholesaleShare();
+  const queryClient = useQueryClient();
 
   const { data: result, isLoading: shareLoading } = useWholesaleShare(id);
   const share = result?.ok ? result.share : null;
@@ -632,9 +635,9 @@ export default function WholesaleShared() {
     setActionError(""); setBusy("items");
     try {
       const items = Object.entries(myItems).filter(([, q]) => q > 0).map(([productId, quantity]) => ({ productId, quantity }));
-      await setWholesaleShareItems(id, items, myTip);
+      const updated = await setWholesaleShareItems(id, items, myTip);
+      await applyWholesaleShareResponse(queryClient, id, updated);
       setItemsDirty(false);
-      invalidate(id);
       // One-time nudge: once a member has saved real items, while the order is
       // still open and has room for more people, prompt them to share the invite
       // link. "Seen" is remembered per account in the database (account.me flag),
@@ -945,7 +948,10 @@ export default function WholesaleShared() {
   const doConfirm = async () => {
     if (!id) return;
     setActionError(""); setBusy("confirm");
-    try { await confirmWholesaleShare(id); invalidate(id); }
+    try {
+      const updated = await confirmWholesaleShare(id);
+      await applyWholesaleShareResponse(queryClient, id, updated);
+    }
     catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1152,6 +1158,8 @@ export default function WholesaleShared() {
         <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
           {myMember.isConfirmed
             ? "You’re marked ready to pay. Editing your items will require you to confirm again."
+            : itemsDirty
+              ? "Save your item changes before confirming you’re ready to pay."
             : myMember.kits > 0
               ? "Confirm your current items and that you’re ready to pay once the order locks."
               : "Add at least one item before you can confirm."}
@@ -1160,7 +1168,7 @@ export default function WholesaleShared() {
       {!myMember.isConfirmed && (
         <button
           onClick={doConfirm}
-          disabled={!myMember.canConfirm || busy === "confirm"}
+          disabled={!myMember.canConfirm || itemsDirty || busy !== null}
           className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3.5 h-9 rounded-lg text-sm font-bold text-white disabled:opacity-50"
           style={{ background: "var(--t-blue)" }}
         >
@@ -1218,9 +1226,6 @@ export default function WholesaleShared() {
         onRemoveMember={showOrganiserOpen ? removeMember : undefined}
         removingUsername={busy?.startsWith("remove:") ? busy.slice(7) : null}
       />
-      {confirmationAction && (
-        <div className="mt-3">{confirmationAction}</div>
-      )}
       {showOrganiserOpen && share.members.some(m => m.canRemove) && (
         <p className="text-[11px] mt-2" style={{ color: "var(--t-muted)" }}>
           You can remove members who have not confirmed. Removing a member deletes their items; if they were the delivery recipient, you'll need to pick a new one.
@@ -2970,6 +2975,7 @@ export default function WholesaleShared() {
       {sectionShipmentStatus}
       {showOrganiserOpen && id && <ShareInviteLinkCard shareId={id} />}
       {sectionShippingDelivery}
+      {confirmationAction}
       {sectionGroup}
       {sectionMyItems}
       {organiserDone ? sectionOrgOrder : sectionMyItemsReadOnly}
