@@ -14,6 +14,7 @@ import { LabReportPopup } from "@/components/LabTestsPopup";
 import { WholesaleJourney, getWholesaleNextStep, getWholesaleSummaryTotal, getWholesaleRegionIndex, type WholesaleJourneyStep } from "@/components/wholesale/WholesaleJourney";
 import "@/components/wholesale/WholesaleJourney.css";
 import { WholesaleProductSearch } from "@/components/wholesale/WholesaleProductSearch";
+import { SupplierMessage } from "@/components/wholesale/SupplierMessage";
 
 import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
 
@@ -61,6 +62,7 @@ interface WholesaleVendorRegion {
 }
 
 interface WholesaleVendor {
+  wholesaleMessage?: string;
   id: string;
   name: string;
   tiers: string[];
@@ -1031,6 +1033,7 @@ export default function WholesaleOrder() {
               </section>
             )}
 
+            <SupplierMessage vendor={vendor} />
             {/* Vendor Shipping Section */}
             {vendor && (
               <div hidden={journeyStep !== 2}>

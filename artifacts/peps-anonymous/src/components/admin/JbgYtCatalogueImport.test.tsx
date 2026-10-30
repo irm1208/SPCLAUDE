@@ -20,7 +20,7 @@ it("reviews exact separate prices, submits a server-issued token, prevents dupli
   const onBusyChange = vi.fn();
   const response = {
     products: [{ id: "jbg:example:BAC10", sku: "BAC10", name: "BAC water 10ml", wholesaleCost: "32.95", wholesalePrice: "15.00", stock: 100000, exists: false }],
-    previewToken: "a".repeat(64), applied: false, created: 0, preserved: 0,
+    previewToken: "a".repeat(64), applied: false, created: 0, updated: 0, preserved: 0,
   };
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (_path, options) => ({
     ok: true, json: async () => ({ ...response, applied: JSON.parse(String(options?.body)).apply, created: JSON.parse(String(options?.body)).apply ? 1 : 0 }),
@@ -29,14 +29,14 @@ it("reviews exact separate prices, submits a server-issued token, prevents dupli
   const root = createRoot(el);
   try {
     await React.act(async () => root.render(<JbgYtCatalogueImport secret="fixture" vendorId="jbg-example" onApplied={onApplied} onBusyChange={onBusyChange} />));
-    expect(el.textContent).not.toContain("Import 1 JBG/YT products");
+    expect(el.textContent).not.toContain("Apply JBG/YT list (1 products)");
     await React.act(async () => {
       const review = button(el, "Review JBG/YT products"); review.click(); review.click();
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(el.textContent).toContain("$32.95");
     expect(el.textContent).toContain("$15.00");
-    await React.act(async () => button(el, "Import 1 JBG/YT products").click());
+    await React.act(async () => button(el, "Apply JBG/YT list (1 products)").click());
     const [path, options] = fetcher.mock.calls[1];
     expect(path).toBe("/api/admin/wholesale-products/import-jbg-yt");
     expect(options?.headers).toEqual({ "Content-Type": "application/json", "x-admin-secret": "fixture" });
@@ -51,4 +51,27 @@ it("keeps the importer within the selected JBG/YT vendor and locks edits during 
   expect(source).toContain('v.name.trim().toLowerCase().replace(/\\s/g, "") === "jbg/yt"');
   expect(source).toContain("{jbgYtVendor && <JbgYtCatalogueImport");
   expect(source).toContain("disabledReason={importDisabledReason} onBusyChange={setImportBusy}");
+});
+it("allows correcting existing products even when there are no missing products", async () => {
+  const review = {
+    products: [{ id: "existing", sku: "50AM", name: "5-Amino-1MQ 50mg", wholesaleCost: "46.00", wholesalePrice: "60.00",
+      stock: 8, exists: true, needsUpdate: true, previousCost: "60.00", previousPrice: "61.00" }],
+    previewToken: "b".repeat(64), applied: false, created: 0, updated: 0, preserved: 0,
+  };
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (_path, options) => ({
+    ok: true, json: async () => ({ ...review, applied: JSON.parse(String(options?.body)).apply, updated: JSON.parse(String(options?.body)).apply ? 1 : 0 }),
+  } as Response));
+  const onApplied = vi.fn(async () => {});
+  const el = document.createElement("div"); const root = createRoot(el);
+  try {
+    await React.act(async () => root.render(<JbgYtCatalogueImport secret="fixture" vendorId="jbg-example" onApplied={onApplied} />));
+    await React.act(async () => button(el, "Review JBG/YT products").click());
+    expect(el.textContent).toContain("0 new products to add. 1 existing products to correct.");
+    expect(el.textContent).toContain("Was $60.00");
+    expect(el.textContent).toContain("8 (kept)");
+    await React.act(async () => button(el, "Apply JBG/YT list (1 products)").click());
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(el.textContent).toContain("Corrected 1 products.");
+    expect(onApplied).toHaveBeenCalledTimes(1);
+  } finally { await React.act(async () => root.unmount()); }
 });

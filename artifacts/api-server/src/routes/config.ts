@@ -4,6 +4,7 @@ import { siteConfigTable, ruleAcceptancesTable, accountsTable } from "@workspace
 import { eq, desc, count, sql } from "drizzle-orm";
 import { invalidateTelegramCache, getTelegramStatus, sendAdminTestMessage, setWebhook, buildWebhookUrl } from "../lib/telegram";
 import { requireAdmin } from "../middleware/require-admin";
+import { getWholesaleVendorMessages } from "../lib/wholesale-vendor-messages";
 
 const router: IRouter = Router();
 
@@ -324,6 +325,7 @@ export interface WholesaleVendorRegion {
 }
 
 export interface WholesaleVendor {
+  wholesaleMessage?: string;
   legacyCatalogueVendor?: string;
   enabled?: boolean;
   id: string;
@@ -337,12 +339,18 @@ export interface WholesaleVendor {
 export async function getVendors(): Promise<WholesaleVendor[]> {
   const raw = await getConfigValue("wholesale_vendors");
   if (!raw) return [];
+  let vendors: WholesaleVendor[];
   try {
-    const vendors = JSON.parse(raw) as WholesaleVendor[];
-    // Before vendor selection, the original Uther catalogue used the first
-    // shipping configuration even when its display name was abbreviated.
-    return vendors.map((v, i) => i === 0 ? {...v,legacyCatalogueVendor:"Uther"} : v);
+    vendors = JSON.parse(raw) as WholesaleVendor[];
+    if (!Array.isArray(vendors)) return [];
   } catch { return []; }
+  // Before vendor selection, the original Uther catalogue used the first
+  // shipping configuration even when its display name was abbreviated.
+  const messages = await getWholesaleVendorMessages(vendors.map(v => v.id));
+  return vendors.map((v, i) => ({
+    ...v, ...(i === 0 ? { legacyCatalogueVendor: "Uther" } : {}),
+    wholesaleMessage: messages.get(v.id) ?? "",
+  }));
 }
 
 export async function getActiveVendorId(): Promise<string | null> {

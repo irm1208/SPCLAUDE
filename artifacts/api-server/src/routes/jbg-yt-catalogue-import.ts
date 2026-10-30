@@ -31,19 +31,30 @@ router.post("/admin/wholesale-products/import-jbg-yt", async (req, res) => {
           and(isNull(productsTable.wholesaleVendorId), sql`lower(trim(${productsTable.vendor})) = lower(trim(${vendor.name}))`),
         )),
       )).orderBy(productsTable.id).for("update");
-      if (existing.some(row => ids.includes(row.id) && row.wholesaleVendorId !== vendorId)) {
+      if (existing.some(row => ids.includes(row.id) && (row.wholesaleVendorId !== vendorId || row.sourceGroupBuyId !== null))) {
         throw new VendorPortalError("An imported product identity is assigned elsewhere. No changes were saved.", 409);
       }
-      const products = JBG_YT_CATALOGUE.map(row => ({
-        ...row, id: jbgYtProductId(vendorId, row.sku),
-        exists: existing.some(p => p.id === jbgYtProductId(vendorId, row.sku) || p.name.trim().toLowerCase() === row.name.toLowerCase()),
-      }));
+      const products = JBG_YT_CATALOGUE.map(row => {
+        const exact = existing.find(p => p.id === jbgYtProductId(vendorId, row.sku));
+        const matches = exact ? [exact] : existing.filter(p => p.name.trim().toLowerCase() === row.name.toLowerCase());
+        if (matches.length > 1) throw new VendorPortalError(`More than one JBG/YT product matches ${row.name}. Review duplicates before importing.`, 409);
+        const current = matches[0];
+        return {
+          ...row, id: current?.id ?? jbgYtProductId(vendorId, row.sku), exists: !!current,
+          stock: current ? current.stock : row.stock,
+          previousCost: current?.wholesaleCost ?? null, previousPrice: current?.wholesalePrice ?? null,
+          needsUpdate: !!current && (Number(current.wholesaleCost ?? NaN) !== Number(row.wholesaleCost) ||
+            Number(current.wholesalePrice ?? NaN) !== Number(row.wholesalePrice) || Number(current.price) !== Number(row.wholesalePrice)),
+        };
+      });
       const token = createHash("sha256").update(JSON.stringify({ vendorId, products, existing })).digest("hex");
       if (apply && previewToken !== token) {
         throw new VendorPortalError("The catalogue changed since review. Review the products again before importing.", 409);
       }
       const missing = products.filter(row => !row.exists);
+      const corrections = products.filter(row => row.needsUpdate);
       let created = 0;
+      let updated = 0;
       if (apply && missing.length) {
         const inserted = await tx.insert(productsTable).values(missing.map(row => ({
           id: row.id, name: row.name, vendor: vendor.name, wholesaleVendorId: vendorId,
@@ -55,14 +66,26 @@ router.post("/admin/wholesale-products/import-jbg-yt", async (req, res) => {
           throw new VendorPortalError("Products changed during import. Nothing was saved; review again.", 409);
         }
         created = inserted.length;
+      }
+      if (apply) {
+        for (const row of corrections) {
+          await tx.update(productsTable).set({
+            wholesaleCost: row.wholesaleCost, wholesalePrice: row.wholesalePrice, price: row.wholesalePrice,
+          }).where(eq(productsTable.id, row.id));
+          updated++;
+        }
+      }
+      if (apply && (created || updated)) {
         await tx.insert(auditLogsTable).values({
           type: "change", level: "info", action: "jbg_yt_catalogue_import",
-          message: `Imported ${created} JBG/YT wholesale products`,
-          metadata: { vendorId, skus: missing.map(row => row.sku), adminUsername: res.locals["adminUser"]?.username ?? null },
+          message: `Added ${created} and corrected ${updated} JBG/YT wholesale products`,
+          metadata: { vendorId, addedSkus: missing.map(row => row.sku),
+            priceChanges: corrections.map(row => ({ sku: row.sku, previousCost: row.previousCost, previousPrice: row.previousPrice, cost: row.wholesaleCost, price: row.wholesalePrice })),
+            adminUsername: res.locals["adminUser"]?.username ?? null },
           ip: req.ip,
         });
       }
-      return { products, previewToken: token, applied: apply, created, preserved: products.length - missing.length };
+      return { products, previewToken: token, applied: apply, created, updated, preserved: products.length - missing.length - corrections.length };
     });
     res.json(result);
   } catch (error) {

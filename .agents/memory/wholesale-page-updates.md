@@ -20,3 +20,9 @@ Product price explanations are customer-facing notes on individual products in b
 **Why:** The user explicitly corrected the FS3 interpretation and chose individual product explanations.
 
 **How to apply:** Keep product pricing notes separate from general updates and internal finance reporting; do not change prices when saving an explanation.
+
+Supplier-specific wholesale messages are a separate Admin-managed notice, visible only for the buyer's selected supplier.
+
+**Why:** The user requested a message for a specific supplier on the wholesale page, in addition to global announcements and individual product price notes.
+
+**How to apply:** Do not broadcast supplier notices across every supplier or replace global announcements. Support editing and clearing the selected supplier's notice.

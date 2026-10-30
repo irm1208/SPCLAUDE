@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Save, AlertTriangle, Info } from "lucide-react";
 import { Fs3SupplierCostImport } from "./Fs3SupplierCostImport";
 import { JbgYtCatalogueImport } from "./JbgYtCatalogueImport";
+import { wholesaleProfit } from "@/lib/wholesale-profit";
+import { SupplierMessageEditor } from "./SupplierMessageEditor";
 
 // Contract:
 //  GET   /api/admin/wholesale-vendors                 -> { vendors: AdminVendor[], activeVendorId: string|null }
@@ -10,7 +12,7 @@ import { JbgYtCatalogueImport } from "./JbgYtCatalogueImport";
 //  PATCH /api/admin/wholesale-products/:id               { wholesaleVendorId, wholesaleCost, wholesalePrice, stock }
 // Legacy vendors with `enabled === undefined` are treated as enabled only when they are activeVendorId.
 
-export interface AdminVendor { id: string; name: string; enabled?: boolean; legacyCatalogueVendor?: string }
+export interface AdminVendor { id: string; name: string; enabled?: boolean; legacyCatalogueVendor?: string; wholesaleMessage?: string }
 export interface AdminWholesaleProduct {
   id: string;
   name: string;
@@ -167,7 +169,7 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
     v.name.trim().toLowerCase().replace(/\s/g, "") === "jbg/yt");
   const hasUnsavedEdits = products.some(p => drafts[p.id] &&
     JSON.stringify(drafts[p.id]) !== JSON.stringify(toDraft(p, vendors)));
-  const importDisabledReason = hasUnsavedEdits ? "Save your unsaved product edits before importing FS3 costs."
+  const importDisabledReason = hasUnsavedEdits ? "Save your unsaved product edits before importing."
     : Object.values(rowState).some(row => row.busy) || toggleBusy ? "Wait for the current save to finish." : undefined;
 
   return (
@@ -204,6 +206,9 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
       {jbgYtVendor && <JbgYtCatalogueImport key={jbgYtVendor.id} secret={secret}
         vendorId={jbgYtVendor.id} onApplied={async () => { await load(); onVendorsChanged?.(); }}
         disabledReason={importDisabledReason} onBusyChange={setImportBusy} />}
+      {vendors.filter(v => v.id === (selectedVendorId ?? filter)).map(v => <SupplierMessageEditor
+        key={v.id} secret={secret} vendorId={v.id} vendorName={v.name} initialMessage={v.wholesaleMessage ?? ""}
+        onSaved={message => setVendors(current => current?.map(item => item.id === v.id ? { ...item, wholesaleMessage: message } : item) ?? null)} />)}
 
       {selectedVendorId ? (
         <label className="flex items-center gap-2 text-sm">
@@ -227,6 +232,8 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
               <th className="text-left font-semibold px-2 py-2 w-36">Vendor</th>
               <th className="text-left font-semibold px-2 py-2 w-24">Supplier cost</th>
               <th className="text-left font-semibold px-2 py-2 w-24">Sell price</th>
+              <th className="text-left font-semibold px-2 py-2 w-24" title="Sell price minus supplier cost, per kit; excludes shipping, discounts and fees">Profit / kit</th>
+              <th className="text-left font-semibold px-2 py-2 w-24" title="Profit divided by sell price × 100">Margin</th>
               <th className="text-left font-semibold px-2 py-2 w-20">Stock</th>
               <th className="text-left font-semibold px-2 py-2">Available</th>
               <th className="px-2 py-2 w-20" />
@@ -234,10 +241,12 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
           </thead>
           <tbody>
             {visible.length === 0 && (
-              <tr><td colSpan={7} className="px-2 py-6 text-center text-slate-400">No products match this filter.</td></tr>
+              <tr><td colSpan={9} className="px-2 py-6 text-center text-slate-400">No products match this filter.</td></tr>
             )}
             {visible.map(p => {
               const d = drafts[p.id] ?? toDraft(p, vendors);
+              const profit = wholesaleProfit(d.cost, d.price);
+              const profitColor = profit && profit.profit < 0 ? "text-red-700" : profit && profit.profit > 0 ? "text-emerald-700" : "text-slate-500";
               const st = rowState[p.id] ?? {};
               const set = (k: keyof RowDraft) => (e: { target: { value: string } }) => {
                 setDrafts(ds => ({ ...ds, [p.id]: { ...d, [k]: e.target.value } }));
@@ -260,6 +269,8 @@ export function AdminMultiVendorSetup({ secret, selectedVendorId, onVendorsChang
                   </td>
                   <td className="px-2 py-2"><input inputMode="decimal" value={d.cost} onChange={set("cost")} placeholder="—" className={inputCls} data-testid={`input-mv-cost-${p.id}`} /></td>
                   <td className="px-2 py-2"><input inputMode="decimal" value={d.price} onChange={set("price")} placeholder="—" className={inputCls} data-testid={`input-mv-price-${p.id}`} /></td>
+                  <td className={`px-2 py-3 font-semibold whitespace-nowrap ${profitColor}`} data-testid={`mv-profit-${p.id}`}>{profit ? `${profit.profit < 0 ? "−" : ""}$${Math.abs(profit.profit).toFixed(2)}` : "—"}</td>
+                  <td className={`px-2 py-3 font-semibold whitespace-nowrap ${profitColor}`} data-testid={`mv-margin-${p.id}`}>{profit?.margin != null ? `${profit.margin.toFixed(1)}%` : "—"}</td>
                   <td className="px-2 py-2"><input inputMode="numeric" value={d.stock} onChange={set("stock")} placeholder="—" className={inputCls} data-testid={`input-mv-stock-${p.id}`} /></td>
                   <td className="px-2 py-2"><input type="checkbox" aria-label={`Available for wholesale: ${p.name}`} checked={d.enabled}
                     onChange={e => { setDrafts(ds => ({ ...ds, [p.id]: { ...d, enabled: e.target.checked } })); setRowState(s => ({ ...s, [p.id]: {} })); }}

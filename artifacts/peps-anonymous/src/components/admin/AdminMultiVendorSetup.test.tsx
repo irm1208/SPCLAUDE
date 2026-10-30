@@ -40,6 +40,8 @@ it("toggles availability and saves a row with the exact contract", async () => {
   root = createRoot(el);
   await act(async () => root.render(createElement(AdminMultiVendorSetup, { secret: "s3" })));
   await settle();
+  expect(el.querySelector('[data-testid="mv-profit-p1"]')?.textContent).toBe("$5.50");
+  expect(el.querySelector('[data-testid="mv-margin-p1"]')?.textContent).toBe("57.9%");
   await act(async () => { (el.querySelector('[data-testid="toggle-vendor-b"]') as HTMLElement).click(); });
   await settle();
   const toggle = fetchMock.mock.calls.find(c => c[0] === "/api/admin/wholesale-vendors/b/availability");

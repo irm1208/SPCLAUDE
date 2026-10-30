@@ -11,13 +11,15 @@ describe("JBG/YT supplied catalogue", () => {
       expect(Number(row.wholesalePrice)).toBeGreaterThan(0);
     }
   });
-  it("preserves below-cost prices, decimal costs and exact SKU mappings without borrowing FS3 prices", () => {
+  it("uses the corrected supplier costs and selling prices without borrowing FS3 prices", () => {
     const row = (sku: string) => JBG_YT_CATALOGUE.find(p => p.sku === sku)!;
-    expect(row("BAC10")).toMatchObject({ wholesaleCost: "32.95", wholesalePrice: "15.00" });
-    expect(row("BAC3")).toMatchObject({ wholesaleCost: "18.30", wholesalePrice: "10.00" });
-    expect(row("AHK-CU100")).toMatchObject({ wholesaleCost: "60.00", wholesalePrice: "50.00" });
-    expect(row("RT30")).toMatchObject({ wholesaleCost: "95.00", wholesalePrice: "95.00" });
-    expect(row("TR100")).toMatchObject({ wholesaleCost: "190.00", wholesalePrice: "200.00" });
+    expect(row("50AM")).toMatchObject({ wholesaleCost: "46.00", wholesalePrice: "60.00" });
+    expect(row("BAC10")).toMatchObject({ wholesaleCost: "10.00", wholesalePrice: "15.00" });
+    expect(row("BAC3")).toMatchObject({ wholesaleCost: "7.00", wholesalePrice: "10.00" });
+    expect(row("AHK-CU100")).toMatchObject({ wholesaleCost: "46.00", wholesalePrice: "50.00" });
+    expect(row("RT30")).toMatchObject({ wholesaleCost: "88.00", wholesalePrice: "95.00" });
+    expect(row("TR100")).toMatchObject({ wholesaleCost: "180.00", wholesalePrice: "200.00" });
+    expect(row("MS40")).toMatchObject({ wholesaleCost: "134.40", wholesalePrice: "160.00" });
     expect(row("BB10").name).toContain("(17-23) Fragment");
   });
   it("recognises only JBG/YT and keeps product identities vendor scoped and repeatable", () => {

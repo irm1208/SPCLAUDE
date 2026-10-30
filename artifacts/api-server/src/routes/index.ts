@@ -11,6 +11,7 @@ import {
 import healthRouter from "./health";
 import productsRouter from "./products";
 import jbgYtCatalogueImportRouter from "./jbg-yt-catalogue-import";
+import wholesaleVendorMessagesRouter from "./wholesale-vendor-messages";
 import deliveryMethodsRouter from "./delivery-methods";
 import configRouter from "./config";
 import wholesaleUpdatesRouter from "./wholesale-updates";
@@ -136,6 +137,7 @@ router.use(vendorPortalRouter);
 // authenticated session while their public handlers remain unaffected.
 router.use(productsRouter);
 router.use(jbgYtCatalogueImportRouter);
+router.use(wholesaleVendorMessagesRouter);
 router.use(deliveryMethodsRouter);
 router.use(configRouter);
 router.use(wholesaleUpdatesRouter);
