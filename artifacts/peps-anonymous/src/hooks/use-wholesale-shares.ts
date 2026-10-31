@@ -247,6 +247,8 @@ export interface WholesaleShareSummary {
 export interface WholesalePublicGroup {
   id: string;
   organiserUsername: string;
+  allowedVendorIds: string[] | null;
+  allowedVendors: { id: string; name: string }[];
   country: string | null;
   maxMembers: number | null;
   maxTotalKits: number | null;

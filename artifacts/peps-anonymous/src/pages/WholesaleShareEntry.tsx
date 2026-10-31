@@ -313,6 +313,9 @@ export default function WholesaleShareEntry() {
                               </span>
                             )}
                           </div>
+                          <p className="text-[11px] break-words" style={{ color: "var(--t-muted)" }}>
+                            Allowed suppliers: {g.allowedVendors.map(v => v.name).join(", ") || "None currently available"}
+                          </p>
                           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]" style={{ color: "var(--t-muted)" }}>
                             <span className="inline-flex items-center gap-1">
                               <Users className="w-3 h-3" />{g.memberCount}{g.maxMembers != null ? `/${g.maxMembers}` : ""} people

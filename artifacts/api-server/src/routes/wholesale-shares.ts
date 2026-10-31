@@ -904,6 +904,11 @@ router.get("/wholesale-shares/public", requireWholesale, async (req, res): Promi
 
   if (shares.length === 0) { res.json([]); return; }
 
+  const [configuredVendors, enabledVendors] = await Promise.all([
+    getVendors(), getEnabledWholesaleVendors(),
+  ]);
+  const vendorNames = new Map(configuredVendors.map(v => [v.id, v.name]));
+
   const shareIds = shares.map(s => s.id);
   const members = await db
     .select({
@@ -932,6 +937,12 @@ router.get("/wholesale-shares/public", requireWholesale, async (req, res): Promi
     return {
       id: s.id,
       organiserUsername: s.creatorUsername,
+      // Permission to add items, not evidence of an order from these suppliers.
+      // Legacy null policies still allow every enabled supplier.
+      allowedVendorIds: s.allowedVendorIds ?? null,
+      allowedVendors: (s.allowedVendorIds ?? enabledVendors.map(v => v.id)).map(id => ({
+        id, name: vendorNames.get(id) ?? "Unavailable supplier",
+      })),
       country: (s.allowedCountries && s.allowedCountries.length > 0) ? s.allowedCountries[0] : null,
       maxMembers: s.maxMembers ?? null,
       maxTotalKits: s.maxTotalKits ?? null,
