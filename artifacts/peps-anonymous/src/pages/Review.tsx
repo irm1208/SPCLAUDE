@@ -104,7 +104,7 @@ export default function Review() {
   // Derived from the single source of truth — additionOfOrderId being set means this is a
   // top-up. Never stored as a separate boolean so the two can never fall out of sync.
   const isTopUp = draft.additionOfOrderId !== null;
-  const additionAdvice = useQuery<{ additionOutcome: "separate" | "merged" }>({
+  const additionAdvice = useQuery<{ additionOutcome: "separate" | "merged"; canAddItems: boolean; reason: string | null }>({
     queryKey: ["addition-eligibility", account?.telegramUsername ?? null, draft.additionOfOrderId],
     enabled: isLoggedIn && isTopUp && isNewOrder && draft.orderType !== "wholesale",
     staleTime: 0,
@@ -521,6 +521,7 @@ export default function Review() {
   };
 
   const handleSubmit = () => {
+    if (isTopUp && isNewOrder && (additionAdvice.data?.canAddItems === false || additionAdvice.isPending || additionAdvice.isError)) return;
     doSubmit();
   };
 
@@ -533,12 +534,17 @@ export default function Review() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           {isTopUp && isNewOrder && (
             <div role="status" className="rounded-xl border p-4 text-sm" style={{ borderColor: "var(--t-border)", background: "var(--t-surface2)", color: "var(--t-text)" }}>
-              {additionAdvice.data?.additionOutcome === "separate"
+              {additionAdvice.isError
+                ? "Could not check whether additions are still open. Retry before submitting."
+                : additionAdvice.data?.canAddItems === false
+                ? additionAdvice.data.reason
+                : additionAdvice.data?.additionOutcome === "separate"
                 ? "Your original order is already confirmed in a supplier batch. These items will form a separate order with its own payment. The original order and batch will not change."
                 : additionAdvice.data?.additionOutcome === "merged"
                   ? "These items will be added to your original order and any extra amount will be payable as a balance. If that order is confirmed into a supplier batch before you submit, the items will form a separate order instead."
                   : "The server will check your original order when you submit. If it is already confirmed in a supplier batch, these items will form a separate order with its own payment; otherwise they will be added to the original order."}
-              {" "}Delivery remains included and uses the original order's address.
+              {additionAdvice.data?.canAddItems !== false && !additionAdvice.isError && <> Delivery remains included and uses the original order's address.</>}
+              {additionAdvice.isError && <button type="button" className="ml-2 underline" onClick={() => void additionAdvice.refetch()}>Retry check</button>}
             </div>
           )}
 
@@ -829,7 +835,7 @@ export default function Review() {
             </button>
             <button
               onClick={handleSubmit}
-              disabled={isPending || loadingShippingOptions || shippingOptionsFailed || (eligibleGroupBuys.length > 0 && !selectedGroupBuyId)}
+              disabled={isPending || loadingShippingOptions || shippingOptionsFailed || (isTopUp && isNewOrder && (additionAdvice.data?.canAddItems === false || additionAdvice.isPending || additionAdvice.isError)) || (eligibleGroupBuys.length > 0 && !selectedGroupBuyId)}
               className="flex-[2] h-12 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50"
               style={{ background: "var(--t-blue)" }}
             >

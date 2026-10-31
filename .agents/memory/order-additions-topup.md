@@ -1,26 +1,32 @@
 ---
 name: Order additions / top-ups
-description: Batched paid-order additions split; uncommitted additions merge with incremental balances.
+description: Prepared batches allow separate additions; vendor-submitted batches reject new additions.
 ---
 
 # Order additions (top-ups)
 
 An addition (top-up) to an uncommitted paid order appends items to that order without
-creating a second active order or consuming a second code. Batched parents split instead.
+creating a second active order or consuming a second code. Prepared parents split instead;
+vendor-submitted parents no longer accept new additions.
 
 ## Batch-aware exception
-Paid group-buy parents committed to an active prepared/confirmed or ordered supplier
-batch receive separate addition orders, not merged top-ups. Legacy supplier-locked
-parents also split; released batches without active allocations do not.
+Paid group-buy parents committed to an active prepared/confirmed supplier batch may
+receive separate addition orders, not merged top-ups. Once the batch is submitted to
+the vendor (ordered), no new additions are allowed. Legacy supplier-locked parents
+also reject new additions; released batches without active allocations retain merging.
 
-**Why:** The user explicitly superseded the single-order policy for batched parents:
-the original financial records and supplier snapshot must not change.
+**Why:** The user specified that processing/prepared batches may accept additions, but
+vendor-submitted batches may not. This supersedes the earlier policy allowing separate
+additions even after vendor submission. Prepared snapshots still must not change.
 
 **How to apply:** Decide under the same money/group/order lock discipline as supplier
 preparation, append, release and ordering. Separate additions retain free delivery and
 the parent address but own their payment and queue eligibility. Retry keys must survive
 reloads and prevent duplicate coupon/credit spending. The original merge policy below
-applies only to uncommitted parents.
+applies only to uncommitted parents. Check the actual supplier-submission state, not
+merely the member order's Processing label. A successful submission replay must return
+its existing result even if vendor submission happened later; do not cancel historical
+additions or change their payment eligibility when enforcing the new cutoff.
 
 ## The unbatched invariant
 The server must lock and revalidate the paid parent, append/combine canonical catalog

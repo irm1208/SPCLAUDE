@@ -1,4 +1,5 @@
 import { getOnwardOrderPreference } from "../lib/gb-onward-delivery";
+import { getAdditionAvailability } from "../lib/order-addition-submission";
 import { projectMemberParcels } from "../lib/member-gb-parcels";
 import { loadMemberParcelRouting } from "../lib/member-parcel-routing-service";
 import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
@@ -2482,6 +2483,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
     groupBuyCryptoRefundsEnabled,
     groupBuyDirectShippingPaymentsEnabled,
     groupBuyAllowOrderAddons,
+    additionAvailability: order.groupBuyId ? await getAdditionAvailability(db, order) : null,
     groupBuyAllowCredits,
     groupBuyDeleteLocked,
     customShippingRequiresAddress,

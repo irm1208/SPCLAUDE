@@ -7,7 +7,7 @@ import {
 } from "@workspace/db";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefund } from "./refund-mutation-guard";
-import { additionMustSplit } from "./order-addition-policy";
+import { additionMustSplit, additionBlockReason } from "./order-addition-policy";
 import { centsToUsdString, usdToCents } from "./refund-money";
 import { fingerprint, SupplierBatchError } from "./supplier-batches-model";
 
@@ -60,15 +60,23 @@ export async function lockAddition(tx: Tx, input: AdditionRequest) {
   ));
   if (!group || !membership || (group.status !== "active" && !group.allowExtraOrders && !membership.allowExtraOrder)
     || group.allowOrderAddons === false) throw new SupplierBatchError("This group buy is not accepting additions.", 403);
+  const availability = await getAdditionAvailability(tx, parent);
+  if (!availability.canAddItems) throw new SupplierBatchError(availability.reason!, 409);
   return { parent, group, membership } as const;
 }
 
-export async function additionIsSeparate(tx: any, parent: { id: string; batchLocked: boolean }) {
+export async function getAdditionAvailability(tx: any, parent: { id: string; batchLocked: boolean; status?: string }) {
   const [allocation] = await tx.select({ state: gbSupplierBatchesTable.state })
     .from(gbSupplierAllocationsTable)
     .innerJoin(gbSupplierBatchesTable, eq(gbSupplierAllocationsTable.batchId, gbSupplierBatchesTable.id))
     .where(eq(gbSupplierAllocationsTable.orderId, parent.id));
-  return additionMustSplit(parent.batchLocked, allocation?.state);
+  const reason = additionBlockReason(parent.batchLocked, allocation?.state, parent.status);
+  return { canAddItems: reason === null, reason,
+    additionOutcome: additionMustSplit(parent.batchLocked, allocation?.state) ? "separate" as const : "merged" as const };
+}
+
+export async function additionIsSeparate(tx: any, parent: { id: string; batchLocked: boolean }) {
+  return (await getAdditionAvailability(tx, parent)).additionOutcome === "separate";
 }
 
 /** Revalidate catalogue and limits inside the monetary transaction, never client batch hints. */

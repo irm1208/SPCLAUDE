@@ -187,6 +187,7 @@ interface OrderDetail {
   directShippingCost?: number | null;
   routingType?: string | null;
   additionOfOrderId?: string | null;
+  additionAvailability?: { canAddItems: boolean; reason: string | null } | null;
   batchLocked?: boolean | null;
   notes: string | null;
   status: string;
@@ -3146,6 +3147,11 @@ export default function AccountOrderDetail() {
                     {refundActive ? (
                       <div role="status" className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>Refund request active — order edits, additional items, and cancellation are temporarily locked.</div>
                     ) : order.paymentStatus === "confirmed" && !order.additionOfOrderId && order.groupBuyAllowOrderAddons !== false && order.orderType !== "wholesale" && order.orderType !== "wholesale_shared" ? (
+                      order.additionAvailability?.canAddItems === false ? (
+                        <div role="status" className="text-center text-sm p-3 rounded-md" style={{ color: "var(--t-muted)", background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
+                          {order.additionAvailability.reason}
+                        </div>
+                      ) :
                       <button
                         className="w-full rounded-md text-sm font-semibold flex items-center justify-center gap-2 text-white transition-all active:scale-[0.99] hover:brightness-110"
                         style={{ background: ACCENT, padding: "10px 16px" }}

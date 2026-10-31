@@ -122,7 +122,7 @@ describe.runIf(process.env.SUPPLIER_BATCH_DB_TESTS === "1")("batch-aware additio
       batches: await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.groupBuyId, f.groupId)),
     };
   }
-  it.each(["prepared", "ordered", "legacy"] as const)("creates an independent payable order for %s parents without changing any original field", async state => {
+  it.each(["prepared"] as const)("creates an independent payable order for %s parents without changing any original field", async state => {
     const f = await fixture(state), before = await snapshot(f);
     const result = await submit(f.body);
     expect(result.status, JSON.stringify(result.data)).toBe(200);
@@ -145,6 +145,30 @@ describe.runIf(process.env.SUPPLIER_BATCH_DB_TESTS === "1")("batch-aware additio
     const queued = await batches.supplierData(f.groupId, admin);
     expect(queued.proposals[0].orders.map((o: any) => o.id)).toContain(child.id);
   });
+  it.each(["ordered", "legacy"] as const)("blocks new additions after %s supplier commitment without changing money or allocations", async state => {
+    const f = await fixture(state), before = await snapshot(f);
+    const result = await submit(f.body);
+    expect(result.status, JSON.stringify(result.data)).toBe(409);
+    expect(result.data.error).toMatch(/vendor|supplier/i);
+    expect(await snapshot(f)).toEqual(before);
+    const children = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.additionOfOrderId, f.parentId));
+    expect(children).toHaveLength(0);
+    const response = await fetch(`${base}/orders/${f.parentId}/addition-eligibility`);
+    expect((await response.json()).canAddItems).toBe(false);
+  });
+
+  it("preserves a successful retry after the parent batch is submitted to the vendor", async () => {
+    const f = await fixture("prepared");
+    const first = await submit(f.body);
+    expect(first.status).toBe(200);
+    await batches.orderSupplierBatch(f.groupId, f.batch.id, admin, { confirm: true });
+    const replay = await submit(f.body);
+    expect(replay.status).toBe(200);
+    expect(replay.data.id).toBe(first.data.id);
+    const fresh = await submit({ ...f.body, additionRequestId: randomUUID() });
+    expect(fresh.status).toBe(409);
+  });
+
   it.each(["unbatched", "released"] as const)("retains merge and incremental balance for %s parents", async state => {
     const f = await fixture(state);
     const result = await submit(f.body);
@@ -232,7 +256,7 @@ describe.runIf(process.env.SUPPLIER_BATCH_DB_TESTS === "1")("batch-aware additio
   it("authorizes the parent and exposes only an advisory outcome, independent of member batch visibility", async () => {
     const f = await fixture();
     const own = await fetch(`${base}/orders/${f.parentId}/addition-eligibility`);
-    expect(await own.json()).toEqual({ additionOutcome: "separate" });
+    expect(await own.json()).toEqual({ additionOutcome: "separate", canAddItems: true, reason: null });
     const other = await fetch(`${base}/orders/${f.parentId}/addition-eligibility`, { headers: { "x-test-owner": "intruder" } });
     expect(other.status).toBe(404);
     expect((await submit(f.body, "intruder")).status).toBe(400);
@@ -247,7 +271,7 @@ describe.runIf(process.env.SUPPLIER_BATCH_DB_TESTS === "1")("batch-aware additio
   });
   it("honours a stale unbatched advisory when confirmation wins the shared mutex", async () => {
     const f = await fixture("unbatched");
-    expect(await (await fetch(`${base}/orders/${f.parentId}/addition-eligibility`)).json()).toEqual({ additionOutcome: "merged" });
+    expect(await (await fetch(`${base}/orders/${f.parentId}/addition-eligibility`)).json()).toEqual({ additionOutcome: "merged", canAddItems: true, reason: null });
     await batches.confirmSupplierBatch(f.groupId, admin, { regionId: "eu", token: f.configured.proposals[0].token });
     expect((await submit({ ...f.body, additionOutcome: "merged" })).data.additionOutcome).toBe("separate");
   });
@@ -269,6 +293,18 @@ describe.runIf(process.env.SUPPLIER_BATCH_DB_TESTS === "1")("batch-aware additio
       expect((await snapshot(f)).batches).toEqual([]);
     }
   });
+  it("rejects a stale prepared-batch checkout after vendor submission wins the shared mutex", async () => {
+    const f = await fixture("prepared");
+    const advice = await (await fetch(`${base}/orders/${f.parentId}/addition-eligibility`)).json();
+    expect(advice.canAddItems).toBe(true);
+    await batches.orderSupplierBatch(f.groupId, f.batch.id, admin, { confirm: true });
+    const before = await snapshot(f);
+    const result = await submit({ ...f.body, additionOutcome: advice.additionOutcome });
+    expect(result.status).toBe(409);
+    expect(result.data.error).toContain("submitted to the vendor");
+    expect(await snapshot(f)).toEqual(before);
+  });
+
   it("holds the monetary mutex throughout an addition, so concurrent confirmation must reject the old preview", async () => {
     const f = await fixture("unbatched");
     let resume!: () => void, reached!: () => void;

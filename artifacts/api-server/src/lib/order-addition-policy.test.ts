@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { additionMustSplit } from "./order-addition-policy";
+import { additionMustSplit, additionBlockReason } from "./order-addition-policy";
 
 describe("addition batch boundary", () => {
+  it("allows processing/prepared orders until the supplier submission boundary", () => {
+    expect(additionBlockReason(false, "prepared", "Processing")).toBeNull();
+    expect(additionBlockReason(false, undefined, "Processing")).toBeNull();
+    expect(additionBlockReason(false, "released", "Submitted")).toBeNull();
+  });
+  it("blocks ordered batches even when the member order still says Processing", () => {
+    expect(additionBlockReason(false, "ordered", "Processing")).toContain("submitted to the vendor");
+    expect(additionBlockReason(true, undefined, "Processing")).toBeTruthy();
+    expect(additionBlockReason(false, undefined, "Shipped")).toBeTruthy();
+  });
   it.each(["prepared", "ordered"])("splits an active %s allocation", state => {
     expect(additionMustSplit(false, state)).toBe(true);
   });

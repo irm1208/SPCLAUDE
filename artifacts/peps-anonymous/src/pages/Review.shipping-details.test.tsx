@@ -45,6 +45,34 @@ function render() {
   return new JSDOM(renderToStaticMarkup(<Review />));
 }
 
+it("explains and disables a new addition after vendor submission", () => {
+  mocks.draft = { ...mocks.draft, orderId: null, additionOfOrderId: "paid-parent" };
+  mocks.query.mockImplementation((options: { queryKey: unknown[] }) =>
+    options.queryKey[0] === "addition-eligibility" ? {
+      ...loaded, data: { additionOutcome: "separate", canAddItems: false,
+        reason: "Items can no longer be added because this order has already been submitted to the vendor." },
+    } : loaded);
+  const doc = render().window.document;
+  expect(doc.body.textContent).toContain("already been submitted to the vendor");
+  expect(doc.body.textContent).not.toContain("Delivery remains included");
+  const submit = [...doc.querySelectorAll("button")].find(button => /Add to Order|Continue with selected group buy/.test(button.textContent ?? ""));
+  expect(submit).toBeTruthy();
+  expect(submit?.hasAttribute("disabled")).toBe(true);
+});
+
+it("keeps prepared-batch additions available with separate-payment guidance", () => {
+  mocks.draft = { ...mocks.draft, orderId: null, additionOfOrderId: "paid-parent" };
+  mocks.query.mockImplementation((options: { queryKey: unknown[] }) =>
+    options.queryKey[0] === "addition-eligibility" ? {
+      ...loaded, data: { additionOutcome: "separate", canAddItems: true, reason: null },
+    } : loaded);
+  const doc = render().window.document;
+  expect(doc.body.textContent).toContain("separate order with its own payment");
+  const submit = [...doc.querySelectorAll("button")].find(button => /Add to Order|Continue with selected group buy/.test(button.textContent ?? ""));
+  expect(submit).toBeTruthy();
+  expect(submit?.hasAttribute("disabled")).toBe(false);
+});
+
 it("shows the actual US address editor on review using the configured courier requirement", () => {
   const dom = render();
   const doc = dom.window.document;

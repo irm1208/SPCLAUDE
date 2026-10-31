@@ -59,7 +59,7 @@ import { calculateAdditionMerge } from "../lib/order-addition-merge";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 import { centsToUsdString, subtractMoneyClamped, usdToCents } from "../lib/refund-money";
 import { inferGroupBuyContext } from "../lib/group-buy-order-context";
-import { additionIsSeparate, createSeparateAddition, lockAddition, recordAddition, replayAddition, validateAdditionItems, type AdditionRequest } from "../lib/order-addition-submission";
+import { additionIsSeparate, getAdditionAvailability, createSeparateAddition, lockAddition, recordAddition, replayAddition, validateAdditionItems, type AdditionRequest } from "../lib/order-addition-submission";
 import { fingerprint, SupplierBatchError } from "../lib/supplier-batches-model";
 
 // ── Server-authoritative wholesale shipping ──────────────────────────────────
@@ -467,7 +467,7 @@ router.get("/orders/:orderId/addition-eligibility", requireAccount, async (req, 
   if (!parent || parent.deletedAt || canonical(parent.telegramUsername) !== canonical(req.account!.telegramUsername)) {
     res.status(404).json({ error: "Order not found" }); return;
   }
-  res.json({ additionOutcome: await additionIsSeparate(db, parent) ? "separate" : "merged" });
+  res.json(await getAdditionAvailability(db, parent));
 });
 
 // ── POST /api/orders — create a new order ────────────────────
