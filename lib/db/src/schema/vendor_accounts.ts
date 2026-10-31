@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, timestamp, index, foreignKey, check } from "drizzle-orm/pg-core";
 
 /** Dedicated vendor identities; deliberately no foreign key to member accounts. */
 export const vendorAccountsTable = pgTable("vendor_accounts", {
@@ -13,11 +14,19 @@ export const vendorAccountsTable = pgTable("vendor_accounts", {
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, t => [index("vendor_accounts_vendor_id_idx").on(t.vendorId)]);
+}, t => [
+  index("vendor_accounts_vendor_id_idx").on(t.vendorId),
+  check("vendor_accounts_status_check", sql`${t.status} IN ('pending', 'active', 'disabled')`),
+]);
 
 export const vendorSessionsTable = pgTable("vendor_sessions", {
   tokenHash: text("token_hash").primaryKey(),
-  username: text("username").notNull().references(() => vendorAccountsTable.username, { onDelete: "cascade", onUpdate: "cascade" }),
+  username: text("username").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, t => [index("vendor_sessions_username_idx").on(t.username), index("vendor_sessions_expires_at_idx").on(t.expiresAt)]);
+}, t => [
+  index("vendor_sessions_username_idx").on(t.username),
+  index("vendor_sessions_expires_at_idx").on(t.expiresAt),
+  foreignKey({ name: "vendor_sessions_username_fkey", columns: [t.username], foreignColumns: [vendorAccountsTable.username] })
+    .onDelete("cascade").onUpdate("cascade"),
+]);

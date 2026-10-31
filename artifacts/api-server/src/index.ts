@@ -1,4 +1,3 @@
-import { ensureVendorPaymentSchema } from "./lib/vendor-payment-schema";
 import { ensureVendorAccountSchema } from "./lib/vendor-account-schema";
 import { registerVendorPortalScheduler } from "./lib/vendor-portal-worker";
 import { registerVendorTelegramScheduler } from "./lib/vendor-telegram";
@@ -88,7 +87,6 @@ async function runStartupRefundSafeRepair(
 
 async function runStartupMigrations(): Promise<void> {
     await ensureVendorAccountSchema(db);
-    await ensureVendorPaymentSchema(db);
     await ensureSupplierTestingSchema(db);
     // Startup compatibility only adds columns/tables that are absent. It must
     // never change an existing production column type or constraint: publish

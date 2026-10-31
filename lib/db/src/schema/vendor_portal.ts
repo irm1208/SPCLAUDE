@@ -1,4 +1,4 @@
-import { pgTable, text, jsonb, timestamp, unique, index, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, jsonb, timestamp, unique, index, integer, foreignKey } from "drizzle-orm/pg-core";
 import { accountsTable } from "./accounts";
 import { vendorAccountsTable } from "./vendor_accounts";
 
@@ -18,7 +18,7 @@ export const vendorPortalAccessTable = pgTable("vendor_portal_access", {
 
 /** Self-service vendor applications. Admin approval copies the row into vendor_portal_access. */
 export const vendorPortalRequestsTable = pgTable("vendor_portal_requests", {
-  username: text("username").primaryKey().references(() => accountsTable.telegramUsername, { onUpdate: "cascade", onDelete: "cascade" }),
+  username: text("username").primaryKey(),
   companyName: text("company_name").notNull(),
   contactName: text("contact_name").notNull(),
   contactEmail: text("contact_email").notNull(),
@@ -31,7 +31,10 @@ export const vendorPortalRequestsTable = pgTable("vendor_portal_requests", {
   reviewNote: text("review_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, t => [
+  foreignKey({ name: "vendor_portal_requests_username_fkey", columns: [t.username], foreignColumns: [accountsTable.telegramUsername] })
+    .onUpdate("cascade").onDelete("cascade"),
+]);
 
 export const vendorSubmissionsTable = pgTable("vendor_submissions", {
   id: text("id").primaryKey(),
@@ -86,7 +89,7 @@ export const vendorSettingsTable = pgTable("vendor_settings", {
 /** A vendor flags a problem with an assigned shipment; Admin resolves it. */
 export const vendorOrderIssuesTable = pgTable("vendor_order_issues", {
   id: text("id").primaryKey(),
-  submissionId: text("submission_id").notNull().references(() => vendorSubmissionsTable.id, { onDelete: "cascade" }),
+  submissionId: text("submission_id").notNull(),
   vendorId: text("vendor_id").notNull(),
   type: text("type").notNull(),
   note: text("note"),
@@ -95,7 +98,12 @@ export const vendorOrderIssuesTable = pgTable("vendor_order_issues", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   resolvedBy: text("resolved_by"),
   resolution: text("resolution"),
-}, t => [index("vendor_order_issues_submission_idx").on(t.submissionId), index("vendor_order_issues_vendor_idx").on(t.vendorId)]);
+}, t => [
+  index("vendor_order_issues_submission_idx").on(t.submissionId),
+  index("vendor_order_issues_vendor_idx").on(t.vendorId),
+  foreignKey({ name: "vendor_order_issues_submission_id_fkey", columns: [t.submissionId], foreignColumns: [vendorSubmissionsTable.id] })
+    .onDelete("cascade"),
+]);
 
 /* ---------------------------------------------------------------------------
  * Vendor Telegram bot (separate from the member bot)
@@ -138,7 +146,7 @@ export const vendorTelegramEventsTable = pgTable("vendor_telegram_events", {
 export const vendorThreadsTable = pgTable("vendor_threads", {
   id: text("id").primaryKey(),
   vendorId: text("vendor_id").notNull(),
-  submissionId: text("submission_id").references(() => vendorSubmissionsTable.id, { onDelete: "set null" }),
+  submissionId: text("submission_id"),
   subject: text("subject").notNull(),
   status: text("status").notNull().default("open"),
   openedBy: text("opened_by").notNull(),
@@ -150,11 +158,16 @@ export const vendorThreadsTable = pgTable("vendor_threads", {
   closedAt: timestamp("closed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, t => [index("vendor_threads_vendor_idx").on(t.vendorId), index("vendor_threads_last_message_idx").on(t.lastMessageAt)]);
+}, t => [
+  index("vendor_threads_vendor_idx").on(t.vendorId),
+  index("vendor_threads_last_message_idx").on(t.lastMessageAt),
+  foreignKey({ name: "vendor_threads_submission_id_fkey", columns: [t.submissionId], foreignColumns: [vendorSubmissionsTable.id] })
+    .onDelete("set null"),
+]);
 
 export const vendorThreadMessagesTable = pgTable("vendor_thread_messages", {
   id: text("id").primaryKey(),
-  threadId: text("thread_id").notNull().references(() => vendorThreadsTable.id, { onDelete: "cascade" }),
+  threadId: text("thread_id").notNull(),
   authorRole: text("author_role").notNull(),
   authorName: text("author_name").notNull(),
   body: text("body").notNull(),
@@ -162,16 +175,24 @@ export const vendorThreadMessagesTable = pgTable("vendor_thread_messages", {
   imageName: text("image_name"),
   via: text("via").notNull().default("portal"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, t => [index("vendor_thread_messages_thread_idx").on(t.threadId)]);
+}, t => [
+  index("vendor_thread_messages_thread_idx").on(t.threadId),
+  foreignKey({ name: "vendor_thread_messages_thread_id_fkey", columns: [t.threadId], foreignColumns: [vendorThreadsTable.id] })
+    .onDelete("cascade"),
+]);
 
 /** Telegram message ids of thread notifications, so a native Telegram reply lands in the right thread. */
 export const vendorThreadTelegramMessagesTable = pgTable("vendor_thread_telegram_messages", {
   id: text("id").primaryKey(),
   telegramMessageId: text("telegram_message_id").notNull(),
   chatId: text("chat_id").notNull(),
-  threadId: text("thread_id").notNull().references(() => vendorThreadsTable.id, { onDelete: "cascade" }),
+  threadId: text("thread_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, t => [unique("vendor_thread_telegram_messages_unique").on(t.telegramMessageId, t.chatId)]);
+}, t => [
+  unique("vendor_thread_telegram_messages_unique").on(t.telegramMessageId, t.chatId),
+  foreignKey({ name: "vendor_thread_telegram_messages_thread_id_fkey", columns: [t.threadId], foreignColumns: [vendorThreadsTable.id] })
+    .onDelete("cascade"),
+]);
 
 /* ---------------------------------------------------------------------------
  * Vendor account security: authenticator app (TOTP), passkeys, MFA challenges

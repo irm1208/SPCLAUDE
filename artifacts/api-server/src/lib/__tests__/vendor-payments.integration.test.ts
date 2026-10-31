@@ -120,6 +120,7 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
           ).rejects.toThrow("active refund");
           const payment = await recordVendorPayment(body, "fixture", database);
           expect(payment.usdAmount).toBe("0.30");
+          expect(payment.activeTxKey).toBe(`Ethereum:${body.txid}`);
           // The database independently rejects the alias, even if a writer bypasses the service.
           await expect(
             tx.transaction(async (savepoint: any) => {
@@ -191,6 +192,7 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
           );
           expect(voided.orders).toHaveLength(2);
           expect(voided.voidedBy).toBe("fixture");
+          expect(voided.activeTxKey).toBeNull();
           await assertVendorSubmissionUnpaid(tx, one);
           expect(
             await tx

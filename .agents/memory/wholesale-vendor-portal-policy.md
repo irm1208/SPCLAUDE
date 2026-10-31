@@ -9,6 +9,17 @@ Vendors must see only their own wholesale orders and supplier cost prices, never
 
 **How to apply:** Enforce ownership and field privacy server-side, not only through dashboard presentation.
 
+Existing vendor accounts, sessions, Telegram events and message history must be
+preserved when adding or publishing vendor features.
+
+**Why:** The user explicitly said “Don't delete. I want to add these” when Publish
+proposed removing existing vendor tables.
+
+**How to apply:** If Publish proposes unexpected vendor-table deletions, compare
+the applied development and production schemas. Restore missing development
+definitions and verify the publish diff has no destructive statements; never
+approve deletion or overwrite production data.
+
 Orders become visible to the vendor only when Admin submits them, not automatically when payment is confirmed.
 
 **Why:** The user explicitly chose “When Admin submits them.”
