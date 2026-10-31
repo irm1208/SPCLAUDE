@@ -1,3 +1,4 @@
+import { ensureVendorPaymentSchema } from "./lib/vendor-payment-schema";
 import { ensureVendorAccountSchema } from "./lib/vendor-account-schema";
 import { registerVendorPortalScheduler } from "./lib/vendor-portal-worker";
 import { registerVendorTelegramScheduler } from "./lib/vendor-telegram";
@@ -87,6 +88,7 @@ async function runStartupRefundSafeRepair(
 
 async function runStartupMigrations(): Promise<void> {
     await ensureVendorAccountSchema(db);
+    await ensureVendorPaymentSchema(db);
     await ensureSupplierTestingSchema(db);
     // Startup compatibility only adds columns/tables that are absent. It must
     // never change an existing production column type or constraint: publish
@@ -225,6 +227,60 @@ async function runStartupMigrations(): Promise<void> {
         thread_id text NOT NULL REFERENCES vendor_threads(id) ON DELETE CASCADE,
         created_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT vendor_thread_telegram_messages_unique UNIQUE (telegram_message_id, chat_id)
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_totp (
+        username text PRIMARY KEY REFERENCES vendor_accounts(username) ON UPDATE CASCADE ON DELETE CASCADE,
+        secret_enc text NOT NULL,
+        enabled_at timestamptz,
+        last_step integer,
+        recovery_codes jsonb NOT NULL DEFAULT '[]'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_passkeys (
+        id text PRIMARY KEY,
+        username text NOT NULL REFERENCES vendor_accounts(username) ON UPDATE CASCADE ON DELETE CASCADE,
+        credential_id text NOT NULL,
+        public_key jsonb NOT NULL,
+        algorithm integer NOT NULL,
+        counter integer NOT NULL DEFAULT 0,
+        transports jsonb NOT NULL DEFAULT '[]'::jsonb,
+        name text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        last_used_at timestamptz,
+        CONSTRAINT vendor_passkeys_credential_unique UNIQUE (credential_id)
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_passkeys_username_idx ON vendor_passkeys (username)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_notifications (
+        id text PRIMARY KEY,
+        vendor_id text NOT NULL,
+        priority text NOT NULL DEFAULT 'normal',
+        kind text NOT NULL,
+        title text NOT NULL,
+        body text,
+        link text,
+        submission_id text,
+        dedupe_key text,
+        read_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT vendor_notifications_dedupe_unique UNIQUE (dedupe_key)
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_notifications_vendor_idx ON vendor_notifications (vendor_id, created_at)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_mfa_challenges (
+        token_hash text PRIMARY KEY,
+        username text,
+        kind text NOT NULL,
+        data jsonb NOT NULL DEFAULT '{}'::jsonb,
+        expires_at timestamptz NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
       )
     `);
     await db.execute(sql`

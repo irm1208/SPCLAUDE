@@ -9,7 +9,7 @@ export interface VendorAccountStore {
   createSession(account: VendorAccount, session: VendorSession): Promise<boolean>;
   getSession(hash: string, now: Date): Promise<{ account: VendorAccount; session: VendorSession } | null>;
   deleteSession(hash: string): Promise<void>;
-  updateAccount(username: string, changes: Partial<Pick<VendorAccount, "status" | "vendorId" | "passwordHash">>): Promise<VendorAccount | null>;
+  updateAccount(username: string, changes: Partial<Pick<VendorAccount, "status" | "vendorId" | "passwordHash" | "displayName">>): Promise<VendorAccount | null>;
 }
 export const vendorAccountStore: VendorAccountStore = {
   async getAccount(username) { const [row] = await db.select().from(vendorAccountsTable).where(eq(vendorAccountsTable.username, username)); return row ?? null; },
@@ -35,11 +35,14 @@ export const vendorAccountStore: VendorAccountStore = {
       const [current] = await tx.select().from(vendorAccountsTable).where(eq(vendorAccountsTable.username, username)).for("update");
       if (!current) return null;
       const [row] = await tx.update(vendorAccountsTable).set({ ...changes, updatedAt: new Date() }).where(eq(vendorAccountsTable.username, username)).returning();
-      await tx.delete(vendorSessionsTable).where(eq(vendorSessionsTable.username, username));
+      const accessChanged = (changes.status !== undefined && changes.status !== current.status)
+        || (changes.vendorId !== undefined && changes.vendorId !== current.vendorId)
+        || (changes.passwordHash !== undefined && changes.passwordHash !== current.passwordHash);
+      if (accessChanged) await tx.delete(vendorSessionsTable).where(eq(vendorSessionsTable.username, username));
       return row;
     });
   },
 };
 export function publicVendorAccount(account: VendorAccount) {
-  return { username: account.username, vendorId: account.vendorId, status: account.status, companyName: account.companyName, contactName: account.contactName, email: account.email, createdAt: account.createdAt };
+  return { username: account.username, vendorId: account.vendorId, displayName: account.displayName ?? null, status: account.status, companyName: account.companyName, contactName: account.contactName, email: account.email, createdAt: account.createdAt };
 }

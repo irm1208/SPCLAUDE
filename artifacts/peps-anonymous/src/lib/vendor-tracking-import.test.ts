@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { vendorOrdersCsv } from "./vendor-orders-csv.ts";
 import { previewVendorTrackingImport, applyVendorTrackingImport } from "./vendor-tracking-import.ts";
 const order = {
@@ -64,5 +64,19 @@ test("unchanged held or completed shipments do not block other tracking updates"
     assert.equal(preview.updates[0].id, "own-2");
     const edited = vendorOrdersCsv([{ ...old, trackingNumber: "CHANGED123" }]);
     assert.match(previewVendorTrackingImport(edited, [old]).errors.join(), /on hold or completed/);
+  }
+});
+
+test("round trips Chinese export and accepts mixed reordered bilingual headers", () => {
+  const csv = vendorOrdersCsv([{ ...order, carrier: "DHL", trackingNumber: "TRACK123" }], "zh");
+  const expected = [{ id: "own-1", reference: "12614", carrier: "DHL", trackingNumber: "TRACK123" }];
+  assert.deepEqual(previewVendorTrackingImport(csv, [order]).updates, expected);
+  assert.deepEqual(previewVendorTrackingImport(' 运单号 ,Carrier,订单编号\nTRACK123,DHL,12614', [order]).updates, expected);
+});
+test("rejects duplicate semantic headers across languages", () => {
+  for (const headers of ['Order reference,订单编号,Carrier,Tracking number', '订单编号,Carrier,承运商,运单号', '订单编号,承运商,Tracking number,运单号']) {
+    const preview = previewVendorTrackingImport(headers + '\n12614,DHL,TRACK123,extra', [order]);
+    assert.match(preview.errors.join(), /duplicate/i);
+    assert.deepEqual(preview.updates, []);
   }
 });

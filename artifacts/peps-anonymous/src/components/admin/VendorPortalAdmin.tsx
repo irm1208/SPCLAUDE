@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Eye, Loader2, RefreshCw, Send, X } from "lucide-react";
 import VendorAccountsAdmin from "./VendorAccountsAdmin";
+import VendorPaymentsAdmin from "./VendorPaymentsAdmin";
 import VendorPortalIssuesAdmin from "./VendorPortalIssuesAdmin";
 import VendorTelegramAdmin from "./VendorTelegramAdmin";
 import VendorThreadsAdmin from "./VendorThreadsAdmin";
+import VendorBroadcastAdmin from "./VendorBroadcastAdmin";
 import { CostBreakdown, ShippingBlock, StatusPill, type VendorOrder } from "@/pages/VendorPortal";
 
 interface AdminData {
@@ -115,9 +117,13 @@ export default function VendorPortalAdmin({ secret }: { secret: string }) {
 
       <VendorAccountsAdmin />
 
+      <VendorPaymentsAdmin />
+
       <VendorPortalIssuesAdmin secret={secret} />
 
       <VendorThreadsAdmin secret={secret} vendors={data.vendors} />
+
+      <VendorBroadcastAdmin secret={secret} vendors={data.vendors} />
 
       <VendorTelegramAdmin secret={secret} vendors={data.vendors} />
 

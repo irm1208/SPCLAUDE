@@ -8,6 +8,7 @@ import { getVendors } from "../routes/config";
 import { isVendorSubmissionStale } from "./vendor-portal-service";
 import { VendorPortalError } from "./vendor-portal-model";
 import { registerScheduler } from "./scheduler-registry";
+import { pushVendorNotification, pruneNotifications } from "./vendor-notifications";
 
 /* ---------------------------------------------------------------------------
  * Vendor Telegram bot.
@@ -20,9 +21,10 @@ import { registerScheduler } from "./scheduler-registry";
  * ------------------------------------------------------------------------- */
 
 type Executor = any;
-export type EventKind = "new_order" | "hold" | "overdue" | "issue_resolved" | "message" | "test";
+export type EventKind = "new_order" | "hold" | "overdue" | "overdue_critical" | "issue_resolved" | "message" | "test";
 export const PREF_KEYS = ["newOrders", "holds", "overdue", "issues", "messages"] as const;
-const PREF_FOR_KIND: Record<EventKind, keyof VendorTelegramPrefs | null> = { new_order: "newOrders", hold: "holds", overdue: "overdue", issue_resolved: "issues", message: "messages", test: null };
+const PREF_FOR_KIND: Record<EventKind, keyof VendorTelegramPrefs | null> = { new_order: "newOrders", hold: "holds", overdue: "overdue", overdue_critical: "overdue", issue_resolved: "issues", message: "messages", test: null };
+const CRITICAL_OVERDUE_HOURS = 96;
 const OVERDUE_HOURS = 48;
 const LINK_TTL_MS = 15 * 60_000;
 
@@ -109,6 +111,7 @@ export function formatEvent(kind: EventKind, row: { id: string; reference: strin
     case "new_order": return `📦 <b>New shipment assigned</b>\n${line}\n${list}\n\nOpen the vendor portal to start packing.`;
     case "hold": return `⏸ <b>Order changed by Peps Anonymous</b>\n${line}\n\nThis shipment is on hold until it is resubmitted. Do not pack it yet.`;
     case "overdue": return `⏰ <b>Waiting ${OVERDUE_HOURS}h+ without tracking</b>\n${line}\n\nPlease add tracking or report a problem in the portal.`;
+    case "overdue_critical": return `🚨 <b>${CRITICAL_OVERDUE_HOURS}h+ without tracking</b>\n${line}\n\nThe customer is waiting. Add tracking now or report a problem so Peps Anonymous can step in.`;
     case "issue_resolved": return `✅ <b>Peps Anonymous answered your problem report</b>\n${line}\n${extra.label ? `<i>${esc(extra.label)}</i>\n` : ""}${extra.note ? `\n${esc(extra.note)}` : "\nMarked as resolved."}`;
     case "message": return `💬 <b>Message from Peps Anonymous</b>\n${line}`;
     case "test": return `👋 Test message from the Peps Anonymous vendor portal. Alerts for new shipments will arrive here.`;
@@ -197,11 +200,19 @@ export async function notifyVendor(vendorId: string, kind: EventKind, html: stri
 /* ---- Poller -------------------------------------------------------------- */
 let running = false;
 let lastFailure: string | null = null;
+const NOTIFICATION_TITLES: Partial<Record<EventKind, (ref: string) => { title: string; body: string }>> = {
+  new_order: ref => ({ title: `New shipment #${ref}`, body: "Assigned to you. Open it to start packing." }),
+  hold: ref => ({ title: `Order #${ref} put on hold`, body: "Peps Anonymous changed this order. Do not pack it until it is resubmitted." }),
+  overdue: ref => ({ title: `#${ref} has waited ${OVERDUE_HOURS}h without tracking`, body: "Add tracking or report a problem." }),
+  overdue_critical: ref => ({ title: `#${ref} is ${CRITICAL_OVERDUE_HOURS}h+ overdue`, body: "The customer is waiting. Add tracking now or report a problem." }),
+};
 async function recordAndSend(kind: EventKind, row: any) {
   // Insert first: a duplicate key means another run already handled it.
   const inserted = await db.insert(vendorTelegramEventsTable).values({ id: randomUUID(), kind, submissionId: row.id, vendorId: row.vendorId })
     .onConflictDoNothing().returning({ id: vendorTelegramEventsTable.id });
   if (!inserted.length) return;
+  const note = NOTIFICATION_TITLES[kind]?.(row.reference);
+  if (note) await pushVendorNotification(db, { vendorId: row.vendorId, kind, ...note, link: `?order=${encodeURIComponent(row.id)}`, submissionId: row.id, dedupeKey: `${kind}:${row.id}` }).catch(() => null);
   const delivered = await notifyVendor(row.vendorId, kind, formatEvent(kind, row), portalOrderUrl(row.id));
   if (delivered) await db.update(vendorTelegramEventsTable).set({ delivered }).where(eq(vendorTelegramEventsTable.id, inserted[0].id));
 }
@@ -223,8 +234,11 @@ export async function notifyVendorEvents(now = new Date(), options: { vendorIds?
     const fresh = open.filter((r: any) => new Date(r.submittedAt).getTime() > dayAgo.getTime());
     const overdueCutoff = new Date(now.getTime() - OVERDUE_HOURS * 3_600_000);
     const late = open.filter((r: any) => new Date(r.submittedAt).getTime() < overdueCutoff.getTime());
-    const [doneNew, doneLate, doneHold] = await Promise.all([
+    const criticalCutoff = new Date(now.getTime() - CRITICAL_OVERDUE_HOURS * 3_600_000);
+    const veryLate = open.filter((r: any) => new Date(r.submittedAt).getTime() < criticalCutoff.getTime());
+    const [doneNew, doneLate, doneHold, doneCritical] = await Promise.all([
       handledIds("new_order", fresh.map((r: any) => r.id)), handledIds("overdue", late.map((r: any) => r.id)), handledIds("hold", open.map((r: any) => r.id)),
+      handledIds("overdue_critical", veryLate.map((r: any) => r.id)),
     ]);
     for (const row of fresh) if (!doneNew.has(row.id)) await recordAndSend("new_order", row).catch(e => failures.push(`new ${row.reference}: ${e instanceof Error ? e.message : e}`));
     for (const row of open) {
@@ -237,6 +251,11 @@ export async function notifyVendorEvents(now = new Date(), options: { vendorIds?
       if (doneLate.has(row.id) || doneHold.has(row.id)) continue;
       await recordAndSend("overdue", row).catch(e => failures.push(`overdue ${row.reference}: ${e instanceof Error ? e.message : e}`));
     }
+    for (const row of veryLate) {
+      if (doneCritical.has(row.id) || doneHold.has(row.id)) continue;
+      await recordAndSend("overdue_critical", row).catch(e => failures.push(`critical ${row.reference}: ${e instanceof Error ? e.message : e}`));
+    }
+    await pruneNotifications(db).catch(() => undefined);
     lastFailure = failures.join("; ") || null;
     if (lastFailure) throw new Error(lastFailure);
   } finally { running = false; }

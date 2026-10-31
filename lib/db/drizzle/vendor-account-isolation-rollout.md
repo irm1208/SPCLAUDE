@@ -17,3 +17,7 @@ Vendor cookies are host-only, HttpOnly and Secure in production, scoped to `/api
 Development permits vendor preview paths only on localhost/loopback, the configured Replit dev domain, or explicit `VENDOR_DEV_HOSTS` entries. Production never enables these exceptions. Vendor page routing does not mount member auto-login, member session refresh or member account dialogs.
 
 Before publishing, verify signup/approval/login, vendor-only order visibility, CSV tracking import, suspension, reset and reassignment. Confirm requests to `pepsanonymous.com/api/account/me` and `saltandpeps.co.uk/api/vendor/me` are blocked; check both exact and forwarded-host spoofed requests. No live DNS changes or deployment are performed by this change.
+
+## Account-specific portal names
+
+Admin can set an optional Portal display name when creating or linking a vendor account. The nullable `vendor_accounts.display_name` column is added by the same additive schema bootstrap. The portal greeting, header and settings use this override; a blank value falls back to the configured vendor profile name. Vendor IDs and order ownership are unchanged. Name-only updates retain sessions; password, access status or vendor assignment changes still revoke them.

@@ -5,6 +5,7 @@ export const vendorAccountsTable = pgTable("vendor_accounts", {
   username: text("username").primaryKey(),
   passwordHash: text("password_hash").notNull(),
   vendorId: text("vendor_id"),
+  displayName: text("display_name"),
   status: text("status").notNull().default("pending"),
   companyName: text("company_name").notNull().default(""),
   contactName: text("contact_name").notNull().default(""),

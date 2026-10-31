@@ -33,7 +33,7 @@ export async function vendorAccess(tx: Executor, username: string, lock = false,
   }
   const vendor = (await getVendors()).find(v => v.id === account.vendorId);
   if (!vendor) throw new VendorPortalError("Vendor access is not enabled for this account.", 403);
-  return { vendorId: vendor.id, vendorName: vendor.name, username };
+  return { vendorId: vendor.id, vendorName: account.displayName?.trim() || vendor.name, username };
 }
 
 export async function vendorApplicationFor(tx: Executor, username: string) {

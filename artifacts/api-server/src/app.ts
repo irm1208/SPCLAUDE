@@ -8,7 +8,7 @@ import { randomBytes } from "crypto";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { globalLimiter } from "./middleware/rate-limits";
 import router from "./routes";
-import { siteDomainPolicy, siteDocument } from "./lib/site-domain-policy";
+import { siteDomainPolicy, siteDocument, isVendorHost } from "./lib/site-domain-policy";
 import { buildAllowedOrigins, isAllowedOrigin } from "./lib/cors-origin";
 import { refundMutationConflictResponse, refundMutationHttpStatus } from "./lib/refund-mutation-guard";
 
@@ -60,6 +60,12 @@ app.use(
     hidePoweredBy: true,
   })
 );
+
+// Distinct vendor URLs also replace browser requests for legacy/default favicons.
+app.get(["/favicon.svg", "/favicon.ico"], (req, res, next) => {
+  if (isVendorHost(req.headers.host ?? "")) { res.redirect(302, "/brand/pepsanonymous-favicon.svg"); return; }
+  next();
+});
 
 // ── Cookie parser ─────────────────────────────────────────────
 app.use(cookieParser());

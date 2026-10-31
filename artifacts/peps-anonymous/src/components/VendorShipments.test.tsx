@@ -53,3 +53,24 @@ it("shows the selected vendor for single-vendor orders and shows retry on error"
   await settle();
   expect(el2.querySelector('[data-testid="button-retry-vendor-shipments"]')).not.toBeNull();
 });
+
+it("switches shipment labels to Chinese while preserving vendor and carrier identifiers", async () => {
+  const { setVendorLanguage } = await import("../lib/vendor-language");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok({ shipments: [
+    { id: "localized", vendorName: "Royal Mail Supplies", status: "shipped", trackingNumber: "RM123GB", carrier: "Royal Mail", trackingMasked: false, images: [] },
+  ] })));
+  const el = setup();
+  try {
+    await act(async () => { root.render(createElement(VendorShipments, { orderId: "order-localized" })); });
+    await settle();
+    await act(async () => { setVendorLanguage("zh"); });
+    expect(el.textContent).toContain("按供应商查看货件");
+    expect(el.textContent).toContain("已发货");
+    expect(el.textContent).toContain("Royal Mail Supplies");
+    expect(el.textContent).toContain("Royal Mail");
+    expect(el.textContent).toContain("RM123GB");
+    await act(async () => { setVendorLanguage("en"); });
+    expect(el.textContent).toContain("Shipments by vendor");
+    expect(el.textContent).toContain("Shipped");
+  } finally { await act(async () => { setVendorLanguage("en"); }); }
+});

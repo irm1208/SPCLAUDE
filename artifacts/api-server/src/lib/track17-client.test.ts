@@ -550,3 +550,16 @@ describe("Track17Client", () => {
     expect(trackingCalls).toBe(1);
   });
 });
+ describe("carrier detection", () => {
+  it("resolves the carrier without waiting for tracking events and reuses registration", async () => {
+    const provider = vi.fn(async () => acceptedRegistration("ABC123", 3011));
+    const client = createTrack17Client({ getApiKey: async () => "test", fetch: provider as typeof fetch });
+    expect(await client.detectCarrier("ABC123")).toBe(3011);
+    expect(await client.detectCarrier("ABC123")).toBe(3011);
+    expect(provider).toHaveBeenCalledTimes(1);
+  });
+  it("does not guess a carrier from an unrelated response", async () => {
+    const client = createTrack17Client({ getApiKey: async () => "test", fetch: vi.fn(async () => acceptedRegistration("OTHER", 3011)) as typeof fetch });
+    expect(await client.detectCarrier("ABC123")).toBeNull();
+  });
+});

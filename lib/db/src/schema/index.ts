@@ -63,3 +63,4 @@ export * from "./gb_half_kit_offers";
 export * from "./gb_supplier_batches";
 
 export * from "./vendor_accounts";
+export * from "./vendor_payments";

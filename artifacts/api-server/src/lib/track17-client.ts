@@ -15,6 +15,7 @@ function nextMutationToken(): string {
 }
 
 export type Track17Client = {
+  detectCarrier(trackingNumber: string): Promise<number | null>;
   getTrackingInfo(
     trackingNumber: string,
     carrierCode?: number,
@@ -149,6 +150,7 @@ export function createTrack17Client({
     carrierCode: number,
     extraParams: Record<string, string>,
     allowAlternateTrackingCarrier: boolean,
+    registrationOnly = false,
   ): Promise<Track17DetailedResult> {
     let stage: "registration" | "tracking" = "registration";
     try {
@@ -204,6 +206,7 @@ export function createTrack17Client({
         effectiveCarrier = registrationResult.carrier;
       }
 
+      if (registrationOnly) return { kind: "success", accepted: { number: trackingNumber, carrier: effectiveCarrier } };
       stage = "tracking";
       const trackingEntry = effectiveCarrier > 0
         ? { number: trackingNumber, carrier: effectiveCarrier }
@@ -304,6 +307,7 @@ export function createTrack17Client({
       carrierCode,
       extraParams,
       options?.allowAlternateTrackingCarrier === true,
+      keyVariant === "detect",
     ).finally(() => {
       inFlight.delete(key);
     });
@@ -312,6 +316,12 @@ export function createTrack17Client({
   }
 
   return {
+    async detectCarrier(trackingNumber) {
+      const result = await getTrackingInfoDetailedWithKey(trackingNumber, 0, undefined, "detect");
+      if (result.kind !== "success" || !isRecord(result.accepted)) return null;
+      const code = result.accepted.carrier;
+      return typeof code === "number" && code > 0 ? code : null;
+    },
     async getTrackingInfo(trackingNumber, carrierCode = 0, options) {
       const result = await getTrackingInfoDetailed(trackingNumber, carrierCode, options);
       return result.kind === "success" ? result.accepted : null;

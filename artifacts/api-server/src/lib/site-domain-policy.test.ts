@@ -68,3 +68,17 @@ describe("site HTML document", () => {
     expect(siteDocument(html, "pepsanonymous.com.evil.test")).toBe(html);
   });
 });
+
+describe("vendor favicon isolation", () => {
+  const html = '<title>Salt & Peps</title><link rel="icon" type="image/svg+xml" href="/favicon.svg" /><link rel="apple-touch-icon" href="/brand/salt-peps-apple-touch-180.png" />';
+  it("uses only Peps Anonymous icons in the vendor document", () => {
+    const document = siteDocument(html, "pepsanonymous.com");
+    expect(document).toContain('/brand/pepsanonymous-favicon.svg');
+    expect(document).toContain('/brand/pepsanonymous-apple-touch-180.png');
+    expect(document).not.toContain('salt-peps');
+    expect(document).not.toContain('href="/favicon.svg"');
+  });
+  it("keeps the main site's original icons", () => {
+    expect(siteDocument(html, "saltandpeps.co.uk")).toBe(html);
+  });
+});

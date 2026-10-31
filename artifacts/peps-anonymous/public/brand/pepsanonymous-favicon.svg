@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Peps Anonymous">
+  <rect width="64" height="64" rx="14" fill="#1B3A7A"/>
+  <path fill="#fff" fill-rule="evenodd" d="M8 17h11c8 0 12 4 12 11s-4 11-12 11h-4v10H8V17zm7 7v8h4c3 0 5-1 5-4s-2-4-5-4h-4z"/>
+  <path fill="#E9A020" fill-rule="evenodd" d="M41 17h7l11 32h-8l-2-7H39l-2 7h-8l12-32zm0 18h6l-3-10-3 10z"/>
+</svg>

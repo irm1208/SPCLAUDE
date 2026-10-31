@@ -12,6 +12,7 @@ import {
 import { createAlert } from "../lib/create-alert";
 import { sendAdminMessage } from "../lib/telegram";
 import { notifyVendor, formatEvent, portalOrderUrl } from "../lib/vendor-telegram";
+import { pushVendorNotification } from "../lib/vendor-notifications";
 import { vendorSubmissionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -73,6 +74,7 @@ router.post("/admin/vendor-portal/issues/:id/resolve", handled(async (req, res) 
   if (!requireAdmin(req, res)) return;
   const row = await db.transaction(tx => resolveOrderIssue(tx, getAdminUsername(res), String(req.params.id), req.body?.resolution));
   const issue = publicIssue(row);
+  pushVendorNotification(db, { vendorId: row.vendorId, kind: "issue_resolved", title: `Problem report answered${issue.reference ? ` · #${issue.reference}` : ""}`, body: issue.resolution || "Marked as resolved by Peps Anonymous.", link: `?order=${encodeURIComponent(row.submissionId)}`, submissionId: row.submissionId }).catch(() => null);
   db.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, row.submissionId)).then(([submission]: any[]) => submission
     ? notifyVendor(row.vendorId, "issue_resolved", formatEvent("issue_resolved", submission, { label: issue.label, note: issue.resolution }), portalOrderUrl(submission.id)) : 0)
     .catch(() => undefined);
@@ -84,6 +86,7 @@ router.put("/admin/vendor-portal/settings/:vendorId", handled(async (req, res) =
   if (!(await getVendors()).some(v => v.id === vendorId)) throw new VendorPortalError("Vendor not found.", 404);
   const input = settingsInput(req.body);
   const row = await db.transaction(tx => saveVendorSettings(tx, vendorId, getAdminUsername(res), input));
+  pushVendorNotification(db, { vendorId, kind: "settings", title: input.closedUntil ? `Peps Anonymous paused your new orders until ${input.closedUntil.toISOString().slice(0, 10)}` : "Peps Anonymous reopened your order routing", body: input.closedNote ?? null, link: "settings" }).catch(() => null);
   res.json({ settings: publicSettings(row, vendorId) });
 }));
 

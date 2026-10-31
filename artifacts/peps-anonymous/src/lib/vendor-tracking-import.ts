@@ -38,7 +38,11 @@ export function previewVendorTrackingImport(text: string, orders: readonly Impor
     if (text.length > 5 * 1024 * 1024) throw new Error("CSV must be 5 MB or smaller.");
     const [header, ...rows] = parseCsv(text);
     if (!header) throw new Error("CSV is empty.");
-    const headers = header.map(value => value.trim().toLowerCase());
+    const aliases: Record<string, string> = { "订单编号": "order reference", "承运商": "carrier", "运单号": "tracking number" };
+    const headers = header.map(value => {
+      const normalized = value.trim().toLowerCase();
+      return aliases[normalized] ?? normalized;
+    });
     if (new Set(headers.filter(Boolean)).size !== headers.filter(Boolean).length) throw new Error("CSV has duplicate column headers.");
     const required = ["Order reference", "Carrier", "Tracking number"];
     const missing = required.filter(value => !headers.includes(value.toLowerCase()));

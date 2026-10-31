@@ -1,3 +1,5 @@
+import vendorWalletsRouter, { vendorWalletSetupGate } from "./vendor-wallets";
+import vendorPaymentsRouter from "./vendor-payments";
 import vendorAuthRouter from "./vendor-auth";
 import vendorAccountsAdminRouter from "./vendor-accounts-admin";
 import { Router, type IRouter } from "express";
@@ -87,6 +89,8 @@ import vendorPortalRouter from "./vendor-portal";
 import vendorPortalExtrasRouter from "./vendor-portal-extras";
 import vendorTelegramRouter from "./vendor-telegram";
 import vendorThreadsRouter from "./vendor-threads";
+import vendorSecurityRouter from "./vendor-security";
+import vendorNotificationsRouter from "./vendor-notifications";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
 const router: IRouter = Router();
@@ -137,11 +141,16 @@ router.use(supplierBatchesRouter);
 router.use(supplierFulfilmentRouter);
 router.use(adminInvoicesRouter);
 router.use(vendorAuthRouter);
+router.use("/vendor", vendorWalletSetupGate);
+router.use(vendorWalletsRouter);
+router.use(vendorPaymentsRouter);
 router.use(vendorAccountsAdminRouter);
 router.use(vendorPortalRouter);
 router.use(vendorPortalExtrasRouter);
 router.use(vendorTelegramRouter);
 router.use(vendorThreadsRouter);
+router.use(vendorSecurityRouter);
+router.use(vendorNotificationsRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them
 // after the scoped admin boundary so their /admin handlers receive the

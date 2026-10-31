@@ -1,17 +1,22 @@
+import VendorLanguageSelect from "@/components/VendorLanguageSelect";
+import { vendorTranslate as t, translateVendorNode as vt, useVendorLanguage, getVendorLanguage } from "@/lib/vendor-language";
+import { vendorPackingSlipHtml } from "@/lib/vendor-packing-slip";
+import { CARRIERS_17TRACK } from "@/lib/carriers";
 import { clearVendorCsrfToken, vendorFetch } from "@/lib/vendor-auth-client";
 import { type CSSProperties, type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
 import { vendorAddressLines } from "@/lib/vendor-address";
 import { downloadVendorOrdersCsv } from "@/lib/vendor-orders-csv";
 import VendorAccountAuth from "@/components/VendorAccountAuth";
+import { useVendorWallets, VendorWalletPanel, VendorPaymentHistory } from "@/components/VendorWallets";
 import VendorTrackingImport from "@/components/VendorTrackingImport";
 import { ClosedBanner, IssueBadge, OrderIssuePanel, SettingsNavIcon, VendorSettingsView, type VendorIssue, useVendorIssues, useVendorSettings } from "@/components/VendorExtras";
 import { VendorMessagesView, type MessageDraft, useVendorThreads } from "@/components/VendorMessages";
+import { CriticalBanner, NotificationBell, type NotificationTarget, useVendorNotifications } from "@/components/VendorNotifications";
 import { MessageSquare } from "lucide-react";
 import { Badge, Banner, Btn, Card, TONES, type Progress, type Tone, cardStyle, field, fieldCls, muted, subtle } from "@/components/vendor-ui";
 import {
   ArrowDownRight, ArrowLeft, ArrowUpRight, Camera, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Copy,
-  Download, ExternalLink, Home, ImagePlus, Loader2, LogOut, Menu, Package, PackageCheck, PauseCircle, Pencil, Printer, RefreshCw, Search, Truck, X,
+  Download, Home, ImagePlus, Loader2, LogOut, Menu, Package, PackageCheck, PauseCircle, Pencil, Printer, RefreshCw, Search, Truck, X,
 } from "lucide-react";
 
 export interface VendorOrderItem { productName: string; quantity: number; unitCost: string; lineTotal: string }
@@ -32,10 +37,10 @@ async function errorText(r: Response, fallback: string) {
 export function money(v: string | number, currency = "USD") {
   const n = Number(v);
   if (!Number.isFinite(n)) return String(v);
-  try { return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n); }
+  try { return new Intl.NumberFormat(getVendorLanguage() === "zh" ? "zh-CN" : "en-US", { style: "currency", currency }).format(n); }
   catch { return `${n.toFixed(2)} ${currency}`; }
 }
-function date(v: string) { const d = new Date(v); return !v || isNaN(d.getTime()) ? "—" : d.toLocaleString(); }
+function date(v: string) { const d = new Date(v); return !v || isNaN(d.getTime()) ? "—" : d.toLocaleString(getVendorLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Europe/London" }); }
 /** Shopify-style relative stamp: "Today at 10:12", "Yesterday at 16:40", "Oct 12 at 09:03". */
 function when(v: string) {
   const d = new Date(v);
@@ -43,11 +48,11 @@ function when(v: string) {
   const now = new Date();
   const dayStart = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diffDays = Math.round((dayStart(now) - dayStart(d)) / 86_400_000);
-  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = d.toLocaleTimeString(getVendorLanguage() === "zh" ? "zh-CN" : "en-GB", { hour: "numeric", minute: "2-digit" });
   if (diffDays === 0) return `Today at ${time}`;
   if (diffDays === 1) return `Yesterday at ${time}`;
-  const day = d.toLocaleDateString([], { month: "short", day: "numeric", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
-  return `${day} at ${time}`;
+  const day = d.toLocaleDateString(getVendorLanguage() === "zh" ? "zh-CN" : "en-GB", { month: "short", day: "numeric", ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+  return getVendorLanguage() === "zh" ? `${day} ${time}` : `${day} at ${time}`;
 }
 function age(v: string) {
   const t = new Date(v).getTime();
@@ -87,11 +92,11 @@ const stageMeta = (s: Stage) => STAGES.find(x => x.key === s)!;
 export function StatusPill({ status, stale, label }: { status: string; stale?: boolean; label?: string }) {
   const st = stage({ status, stale: !!stale, trackingNumber: null } as VendorOrder);
   const m = stageMeta(st);
-  return <Badge tone={m.tone} progress={m.progress} testId="status-order">{label ?? (stale ? "On hold" : status.replace(/_/g, " "))}</Badge>;
+  return <Badge tone={m.tone} progress={m.progress} testId="status-order">{vt(label ?? (stale ? "On hold" : status.replace(/_/g, " ")))}</Badge>;
 }
 const StageBadge = ({ order }: { order: VendorOrder }) => <StatusPill status={order.status} stale={order.stale} label={stageMeta(stage(order)).label} />;
 
-const CARRIERS = ["Royal Mail", "DPD", "DHL", "UPS", "FedEx", "Evri", "USPS", "EMS", "China Post"];
+const CARRIERS = [...new Set(CARRIERS_17TRACK.filter(c => c.code > 0).map(c => c.label))].sort((a, b) => a.localeCompare(b));
 
 /* Shared blocks also used by the admin preview. */
 export function CostBreakdown({ order }: { order: VendorOrder }) {
@@ -99,17 +104,17 @@ export function CostBreakdown({ order }: { order: VendorOrder }) {
     <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--t-border)" }}>
       <table className="w-full text-[13px]">
         <thead><tr style={{ background: "var(--t-surface2)", ...subtle }} className="text-xs">
-          <th className="text-left font-medium p-2.5">Product</th><th className="text-right font-medium p-2.5">Qty</th><th className="text-right font-medium p-2.5 hidden sm:table-cell">Unit cost</th><th className="text-right font-medium p-2.5">Line</th></tr></thead>
+          <th className="text-left font-medium p-2.5">{t("Product")}</th><th className="text-right font-medium p-2.5">{t("Qty")}</th><th className="text-right font-medium p-2.5 hidden sm:table-cell">{t("Unit cost")}</th><th className="text-right font-medium p-2.5">{t("Line")}</th></tr></thead>
         <tbody>{order.items.map((it, i) => (
           <tr key={i} style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-text)" }}>
-            <td className="p-2.5">{it.productName}</td><td className="p-2.5 text-right tabular-nums">{it.quantity}</td>
+            <td className="p-2.5">{it.productName}</td><td className="p-2.5 text-right tabular-nums">{vt(it.quantity)}</td>
             <td className="p-2.5 text-right tabular-nums hidden sm:table-cell">{money(it.unitCost, order.currency)}</td>
             <td className="p-2.5 text-right tabular-nums">{money(it.lineTotal, order.currency)}</td></tr>))}</tbody>
       </table>
       <dl className="text-[13px] p-3 space-y-1" style={{ borderTop: "1px solid var(--t-border)", background: "var(--t-surface2)" }}>
-        <div className="flex justify-between"><dt style={muted}>Product cost</dt><dd className="tabular-nums">{money(order.productCost, order.currency)}</dd></div>
-        <div className="flex justify-between"><dt style={muted}>Shipping cost</dt><dd className="tabular-nums">{money(order.shippingCost, order.currency)}</dd></div>
-        <div className="flex justify-between font-semibold" style={{ color: "var(--t-text)" }}><dt>Total cost</dt><dd className="tabular-nums" data-testid={`text-total-${order.id}`}>{money(order.totalCost, order.currency)}</dd></div>
+        <div className="flex justify-between"><dt style={muted}>{t("Product cost")}</dt><dd className="tabular-nums">{money(order.productCost, order.currency)}</dd></div>
+        <div className="flex justify-between"><dt style={muted}>{t("Shipping cost")}</dt><dd className="tabular-nums">{money(order.shippingCost, order.currency)}</dd></div>
+        <div className="flex justify-between font-semibold" style={{ color: "var(--t-text)" }}><dt>{t("Total cost")}</dt><dd className="tabular-nums" data-testid={`text-total-${order.id}`}>{money(order.totalCost, order.currency)}</dd></div>
       </dl>
     </div>
   );
@@ -118,7 +123,7 @@ export function ShippingBlock({ order }: { order: VendorOrder }) {
   const s = order.shipping;
   return (
     <address className="not-italic text-[13px] rounded-xl p-3 whitespace-pre-line" style={{ border: "1px solid var(--t-border)", color: "var(--t-text)" }}>
-      <strong>{s.name}</strong>{"\n"}{vendorAddressLines(s.address, s.country).join("\n")}{"\n"}{s.country}
+      <strong>{s.name}</strong>{vt("\n")}{vendorAddressLines(s.address, s.country).join("\n")}{vt("\n")}{s.country}
       <span className="block mt-1 text-xs" style={muted}>{s.phone}{s.phone && s.email ? " · " : ""}{s.email}</span>
     </address>
   );
@@ -137,6 +142,12 @@ function patchOrder(id: string, body: object) {
 }
 
 export default function VendorPortal() {
+  const [language] = useVendorLanguage();
+  useEffect(() => {
+    const previous = document.documentElement.lang;
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+    return () => { document.documentElement.lang = previous; };
+  }, [language]);
   const [me, setMe] = useState<VendorMe | null>(null);
   const [authState, setAuthState] = useState<"loading" | "ok" | "401" | "403" | "error">("loading");
   const [orders, setOrders] = useState<VendorOrder[] | null>(null);
@@ -150,11 +161,20 @@ export default function VendorPortal() {
   const [sort, setSort] = useState<"oldest" | "newest" | "value">("oldest");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ busy: boolean; msg: { ok: boolean; text: string } | null }>({ busy: false, msg: null });
+  const wallets = useVendorWallets(authState === "ok");
+  const walletsReady = !!wallets.data?.wallets.length && !wallets.loading && !wallets.error;
   const issues = useVendorIssues(authState === "ok");
   const vendorSettings = useVendorSettings(authState === "ok");
   const threads = useVendorThreads(authState === "ok");
+  const notifications = useVendorNotifications(authState === "ok");
   const [messageDraft, setMessageDraft] = useState<MessageDraft | null>(null);
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
+  const openTarget = useCallback((target: NotificationTarget) => {
+    if (!target) return;
+    if (target.kind === "settings") { setSelected(null); setView("settings"); return; }
+    if (target.kind === "thread") { setOpenThreadId(target.id); setSelected(null); setView("messages"); return; }
+    setView("orders"); setSelected(target.id);
+  }, []);
   // Telegram alerts deep-link to /vendor?order=<id> or /vendor?thread=<id>; open them once data has loaded.
   useEffect(() => {
     if (!orders) return;
@@ -186,19 +206,23 @@ export default function VendorPortal() {
     try {
       const r = await fetch("/api/vendor/orders", { credentials: "include" });
       if (r.status === 401) { clearVendorSession(); return; }
+      if (r.status === 403) {
+        const body = await r.clone().json().catch(() => null);
+        if (body?.error === "vendor_wallet_required") { setOrders(null); setSelected(null); setView("settings"); void wallets.refresh(); return; }
+      }
       if (!r.ok) throw new Error(await errorText(r, "Could not load orders"));
       const b = await r.json();
       setOrders(Array.isArray(b?.orders) ? b.orders : []); setListError(null); setLoadedAt(new Date());
     } catch (e) { setListError(e instanceof Error ? e.message : "Could not load orders"); }
     finally { setRefreshing(false); }
-  }, [clearVendorSession]);
+  }, [clearVendorSession, wallets.refresh]);
 
   useEffect(() => {
-    if (authState !== "ok") return;
+    if (authState !== "ok" || !walletsReady) return;
     load();
     const t = setInterval(load, 30_000);
     return () => clearInterval(t);
-  }, [authState, load]);
+  }, [authState, walletsReady, load]);
 
   const logout = async () => {
     try {
@@ -253,11 +277,21 @@ export default function VendorPortal() {
   // Signed out, unverified, no vendor access yet, or unreachable: the gate explains and offers sign in / apply.
   if (authState !== "ok") return <VendorAccountAuth onAuthenticated={checkMe} />;
 
-  const refreshBtn = <Btn onClick={load} aria-label="Refresh orders" data-testid="button-refresh" className="!px-2"><RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /></Btn>;
+  if (!walletsReady && view !== "settings") return (
+    <Shell me={me} onLogout={logout} nav={nav}>
+      <div className="max-w-[880px] mx-auto space-y-4" data-testid="vendor-wallet-gate">
+        <PageHeader title={t("Set up your payment wallet")} subtitle="Save at least one receiving wallet before using the vendor portal." />
+        <VendorWalletPanel state={wallets} />
+        <Btn onClick={() => onNav("settings")}>{t("Open Settings")}</Btn>
+      </div>
+    </Shell>
+  );
+
+  const refreshBtn = <Btn onClick={load} aria-label={t("Refresh orders")} data-testid="button-refresh" className="!px-2"><RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /></Btn>;
   const updated = loadedAt ? `Updated ${loadedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · refreshes every 30s` : "Loading orders…";
 
-  if (current) return (
-    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery}>
+  if (current && walletsReady && view !== "settings") return (
+    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery} bell={<NotificationBell items={notifications.items} unread={notifications.unread} onOpenTarget={openTarget} markRead={notifications.markRead} markAllRead={notifications.markAllRead} />}>
       <OrderDetail key={current.id} order={current} onBack={() => setSelected(null)} onChanged={load}
         prev={index > 0 ? navList[index - 1] : null} next={index >= 0 && index < navList.length - 1 ? navList[index + 1] : null}
         onOpen={id => setSelected(id)} issue={issues.byOrder[current.id]} issueTypes={issues.types} onIssueChanged={issues.refresh}
@@ -267,40 +301,41 @@ export default function VendorPortal() {
   );
 
   if (view === "messages") return (
-    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery}>
+    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery} bell={<NotificationBell items={notifications.items} unread={notifications.unread} onOpenTarget={openTarget} markRead={notifications.markRead} markAllRead={notifications.markAllRead} />}>
       <VendorMessagesView threads={threads.threads} error={threads.error} refresh={threads.refresh} initialThreadId={openThreadId} draft={messageDraft}
         onDraftConsumed={() => setMessageDraft(null)}
-        header={<PageHeader title="Messages" subtitle="Talk to Peps Anonymous about orders, stock and payments. Replies also reach your connected Telegram chat." />} />
+        header={<PageHeader title={t("Messages")} subtitle="Talk to Peps Anonymous about orders, stock and payments. Replies also reach your connected Telegram chat." />} />
     </Shell>
   );
 
   if (view === "settings") return (
-    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery}>
+    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery} bell={<NotificationBell items={notifications.items} unread={notifications.unread} onOpenTarget={openTarget} markRead={notifications.markRead} markAllRead={notifications.markAllRead} />}>
       <VendorSettingsView vendorName={me?.vendorName ?? "your company"} settings={vendorSettings.data} onSave={vendorSettings.save} loadError={vendorSettings.error}
-        header={<PageHeader title="Settings" subtitle="Holiday mode and fulfilment defaults" />} />
+        paymentContent={<div className="space-y-4 mb-6"><VendorWalletPanel state={wallets} /><VendorPaymentHistory /></div>}
+        header={<PageHeader title={t("Settings")} subtitle="Payment wallets, history, holiday mode and fulfilment defaults" />} />
     </Shell>
   );
 
   if (view === "home") return (
-    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery}>
+    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery} bell={<NotificationBell items={notifications.items} unread={notifications.unread} onOpenTarget={openTarget} markRead={notifications.markRead} markAllRead={notifications.markAllRead} />}>
       <HomeView me={me} orders={orders} counts={counts} attention={attention} updated={updated} refreshBtn={refreshBtn} listError={listError} onRetry={load}
         onNav={onNav} onOpen={id => setSelected(id)} flagged={issues.openIds}
-        banner={<ClosedBanner settings={vendorSettings.data} onOpenSettings={() => onNav("settings")} />} />
+        banner={<><CriticalBanner items={notifications.items} onOpenTarget={openTarget} markRead={notifications.markRead} /><ClosedBanner settings={vendorSettings.data} onOpenSettings={() => onNav("settings")} /></>} />
     </Shell>
   );
 
   return (
-    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery}>
+    <Shell me={me} onLogout={logout} nav={nav} query={query} onQuery={onGlobalQuery} bell={<NotificationBell items={notifications.items} unread={notifications.unread} onOpenTarget={openTarget} markRead={notifications.markRead} markAllRead={notifications.markAllRead} />}>
       <div className="max-w-[1120px] mx-auto">
-        <PageHeader title="Orders" subtitle={updated} actions={<>
-          <Btn onClick={() => downloadVendorOrdersCsv(picked.size ? visible.filter(order => picked.has(order.id)) : visible)} disabled={!visible.length} data-testid="button-export-csv" title="Exports selected orders, or all orders in the current view">
-            <Download className="w-4 h-4" />{picked.size ? `Export ${picked.size} selected` : "Export"}</Btn>
-          {refreshBtn}
+        <PageHeader title={t("Orders")} subtitle={updated} actions={<>
+          <Btn onClick={() => downloadVendorOrdersCsv(picked.size ? visible.filter(order => picked.has(order.id)) : visible)} disabled={!visible.length} data-testid="button-export-csv" title={t("Exports selected orders, or all orders in the current view")}>
+            <Download className="w-4 h-4" />{vt(picked.size ? `Export ${picked.size} selected` : "Export")}</Btn>
+          {vt(refreshBtn)}
         </>} />
 
         <VendorTrackingImport orders={orders ?? []} onChanged={load} />
 
-        {counts.overdue > 0 && <div className="mb-4"><Banner tone="critical" testId="text-overdue">{counts.overdue} order{counts.overdue === 1 ? " has" : "s have"} been waiting more than {OVERDUE_HOURS} hours without tracking.</Banner></div>}
+        {counts.overdue > 0 && <div className="mb-4"><Banner tone="critical" testId="text-overdue">{vt(counts.overdue)}  {t("order")}{vt(counts.overdue === 1 ? " has" : "s have")}  {t("been waiting more than")} {vt(OVERDUE_HOURS)}  {t("hours without tracking.")}</Banner></div>}
 
         <Card flush>
           <div className="flex items-center gap-1 overflow-x-auto px-3 pt-3 pb-2" role="tablist">
@@ -310,35 +345,35 @@ export default function VendorPortal() {
                 <button key={t} role="tab" aria-selected={on} onClick={() => setTab(t)} data-testid={`button-filter-${t}`}
                   className="h-8 px-3 rounded-lg text-[13px] whitespace-nowrap flex items-center gap-1.5 hover:bg-[var(--t-surface2)]"
                   style={{ background: on ? "var(--t-surface2)" : undefined, color: on ? "var(--t-text)" : "var(--t-muted)", fontWeight: on ? 600 : 500 }}>
-                  {t === "all" ? "All" : stageMeta(t).label}
-                  <span className="tabular-nums text-xs px-1.5 rounded-md" style={{ background: on ? "var(--t-surface)" : "var(--t-surface2)", border: "1px solid var(--t-border)", ...subtle }}>{counts[t]}</span>
+                  {vt(t === "all" ? "All" : stageMeta(t).label)}
+                  <span className="tabular-nums text-xs px-1.5 rounded-md" style={{ background: on ? "var(--t-surface)" : "var(--t-surface2)", border: "1px solid var(--t-border)", ...subtle }}>{vt(counts[t])}</span>
                 </button>);
             })}
           </div>
           <div className="flex flex-col sm:flex-row gap-2 px-3 pb-3" style={{ borderBottom: "1px solid var(--t-border)" }}>
             <label className="relative flex-1">
-              <span className="sr-only">Search orders</span>
+              <span className="sr-only">{t("Search orders")}</span>
               <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2" style={subtle} />
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by reference, recipient, product or tracking" className={`${fieldCls} pl-8`} style={field} data-testid="input-search" />
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t("Search by reference, recipient, product or tracking")} className={`${fieldCls} pl-8`} style={field} data-testid="input-search" />
             </label>
-            <select value={sort} onChange={e => setSort(e.target.value as typeof sort)} aria-label="Sort orders" className={`${fieldCls} sm:w-44`} style={field} data-testid="select-sort">
-              <option value="oldest">Oldest first</option><option value="newest">Newest first</option><option value="value">Highest value</option>
+            <select value={sort} onChange={e => setSort(e.target.value as typeof sort)} aria-label={t("Sort orders")} className={`${fieldCls} sm:w-44`} style={field} data-testid="select-sort">
+              <option value="oldest">{t("Oldest first")}</option><option value="newest">{t("Newest first")}</option><option value="value">{t("Highest value")}</option>
             </select>
           </div>
 
           {picked.size > 0 && (
             <div className="flex flex-wrap items-center gap-3 px-4 py-2 text-[13px]" style={{ background: "var(--t-surface2)", borderBottom: "1px solid var(--t-border)" }} data-testid="bar-bulk">
-              <span className="font-semibold" style={{ color: "var(--t-text)" }}>{picked.size} selected</span>
+              <span className="font-semibold" style={{ color: "var(--t-text)" }}>{vt(picked.size)}  {t("selected")}</span>
               <Btn variant="primary" onClick={bulkProcess} disabled={bulk.busy} data-testid="button-bulk-processing">
-                {bulk.busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}Mark as processing</Btn>
-              <Btn variant="plain" onClick={() => setPicked(new Set())}>Clear</Btn>
+                {bulk.busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}{t("Mark as processing")}</Btn>
+              <Btn variant="plain" onClick={() => setPicked(new Set())}>{t("Clear")}</Btn>
             </div>)}
-          {bulk.msg && <div className="p-3 pb-0"><Banner tone={bulk.msg.ok ? "success" : "critical"} role={bulk.msg.ok ? "status" : "alert"} onDismiss={() => setBulk(b => ({ ...b, msg: null }))}>{bulk.msg.text}</Banner></div>}
-          {listError && <div className="p-3 pb-0"><Banner tone="critical" role="alert" testId="text-list-error">{listError} <button onClick={load} className="font-semibold underline ml-1">Retry</button></Banner></div>}
+          {bulk.msg && <div className="p-3 pb-0"><Banner tone={bulk.msg.ok ? "success" : "critical"} role={bulk.msg.ok ? "status" : "alert"} onDismiss={() => setBulk(b => ({ ...b, msg: null }))}>{vt(bulk.msg.text)}</Banner></div>}
+          {listError && <div className="p-3 pb-0"><Banner tone="critical" role="alert" testId="text-list-error">{vt(listError)} <button onClick={load} className="font-semibold underline ml-1">{t("Retry")}</button></Banner></div>}
 
           {orders === null && !listError ? <div className="p-3 space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "var(--t-surface2)" }} />)}</div>
             : visible.length === 0 ? (
-              <EmptyState icon={Package} title={query ? "No orders match your search" : tab === "new" ? "Nothing waiting on you" : "No orders here"}
+              <EmptyState icon={Package} title={t(query ? "No orders match your search" : tab === "new" ? "Nothing waiting on you" : "No orders here")}
                 body={query ? "Try a different reference, name or product." : "New shipments appear here automatically. This list refreshes every 30 seconds."} />
             ) : (
               <OrdersTable orders={visible} selectable flagged={issues.openIds} pickable={pickable} picked={picked} setPicked={setPicked} onOpen={id => setSelected(id)}
@@ -371,7 +406,7 @@ function HomeView({ me, orders, counts, attention, updated, refreshBtn, listErro
   }, [orders]);
   const hour = new Date().getHours();
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const today = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  const today = new Date().toLocaleDateString(getVendorLanguage() === "zh" ? "zh-CN" : "en-GB", { weekday: "long", month: "long", day: "numeric" });
   const delta = m.prior ? Math.round(((m.recent - m.prior) / m.prior) * 100) : null;
   const ready = orders !== null;
 
@@ -385,37 +420,37 @@ function HomeView({ me, orders, counts, attention, updated, refreshBtn, listErro
 
   return (
     <div className="max-w-[1120px] mx-auto">
-      <PageHeader title={`${greet}${me ? `, ${me.vendorName}` : ""}`} subtitle={`${today} · ${updated}`} actions={refreshBtn} />
-      {listError && <div className="mb-4"><Banner tone="critical" role="alert" testId="text-list-error">{listError} <button onClick={onRetry} className="font-semibold underline ml-1">Retry</button></Banner></div>}
-      {banner}
+      <PageHeader title={`${t(greet)}${me ? `, ${me.vendorName}` : ""}`} subtitle={`${today} · ${updated}`} actions={refreshBtn} />
+      {listError && <div className="mb-4"><Banner tone="critical" role="alert" testId="text-list-error">{vt(listError)} <button onClick={onRetry} className="font-semibold underline ml-1">{t("Retry")}</button></Banner></div>}
+      {vt(banner)}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <Metric label="Awaiting fulfilment" value={ready ? String(m.open) : "–"} onClick={() => onNav("orders", "all")}
-          foot={counts.overdue ? <span style={{ color: TONES.critical.fg }}>{counts.overdue} overdue</span> : "All within 48h"} />
+          foot={counts.overdue ? <span style={{ color: TONES.critical.fg }}>{vt(counts.overdue)}  {t("overdue")}</span> : "All within 48h"} />
         <Metric label="Received · last 7 days" value={ready ? String(m.recent) : "–"}
           foot={delta === null ? `${m.prior} the week before` : <span className="inline-flex items-center gap-0.5" style={{ color: delta >= 0 ? "#0C5132" : "#8E1F0B" }}>
-            {delta >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}{Math.abs(delta)}% vs prior week</span>} />
+            {delta >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}{vt(Math.abs(delta))}{t("% vs prior week")}</span>} />
         <Metric label="Fulfilled" value={ready ? String(counts.shipped) : "–"} foot="Tracking added" onClick={() => onNav("orders", "shipped")} />
         <Metric label="Open order value" value={ready ? (m.mixed ? "Mixed" : money(m.value, m.cur)) : "–"} foot={`${m.openUnits} units to pack`} />
       </div>
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
-        <Card title="Needs attention" actions={<Btn variant="plain" onClick={() => onNav("orders", "all")}>View all orders<ChevronRight className="w-4 h-4" /></Btn>} flush>
+        <Card title={t("Needs attention")} actions={<Btn variant="plain" onClick={() => onNav("orders", "all")}>{t("View all orders")}<ChevronRight className="w-4 h-4" /></Btn>} flush>
           {!ready ? <div className="p-3 space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-12 rounded-lg animate-pulse" style={{ background: "var(--t-surface2)" }} />)}</div>
-            : attention.length === 0 ? <EmptyState icon={CheckCircle2} title="You're all caught up" body="Every assigned shipment has tracking. New orders appear here automatically." testId="state-empty" />
+            : attention.length === 0 ? <EmptyState icon={CheckCircle2} title={t("You're all caught up")} body="Every assigned shipment has tracking. New orders appear here automatically." testId="state-empty" />
             : <OrdersTable orders={attention} compact flagged={flagged} onOpen={onOpen} footer={attention.length < counts.new + counts.processing ? `Showing the ${attention.length} oldest of ${counts.new + counts.processing} open orders` : undefined} />}
         </Card>
 
-        <Card title="Things to do today">
+        <Card title={t("Things to do today")}>
           {!ready ? <div className="h-16 rounded-lg animate-pulse" style={{ background: "var(--t-surface2)" }} />
-            : todos.length === 0 ? <p className="text-[13px]" style={muted}>Nothing outstanding. Enjoy the quiet.</p>
-            : <ul className="-mx-2">{todos.map(t => {
-              const Icon = t.icon;
+            : todos.length === 0 ? <p className="text-[13px]" style={muted}>{t("Nothing outstanding. Enjoy the quiet.")}</p>
+            : <ul className="-mx-2">{todos.map(todo => {
+              const Icon = todo.icon;
               return (
-                <li key={t.text}>
-                  <button onClick={() => onNav("orders", t.tab)} className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left hover:bg-[var(--t-surface2)]">
-                    <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0" style={{ background: TONES[t.tone].bg, color: TONES[t.tone].fg }}><Icon className="w-4 h-4" /></span>
-                    <span className="text-[13px] min-w-0" style={{ color: "var(--t-text)" }}><strong className="tabular-nums">{t.n}</strong> order{t.n === 1 ? "" : "s"} {t.text}</span>
+                <li key={todo.text}>
+                  <button onClick={() => onNav("orders", todo.tab)} className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left hover:bg-[var(--t-surface2)]">
+                    <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0" style={{ background: TONES[todo.tone].bg, color: TONES[todo.tone].fg }}><Icon className="w-4 h-4" /></span>
+                    <span className="text-[13px] min-w-0" style={{ color: "var(--t-text)" }}><strong className="tabular-nums">{vt(todo.n)}</strong>  {t("order")}{vt(todo.n === 1 || getVendorLanguage() === "zh" ? "" : "s")} {vt(todo.text)}</span>
                     <ChevronRight className="w-4 h-4 ml-auto shrink-0" style={subtle} />
                   </button>
                 </li>);
@@ -430,9 +465,9 @@ function Metric({ label, value, foot, onClick }: { label: string; value: string;
   const Tag = onClick ? "button" : "div";
   return (
     <Tag onClick={onClick} className={`text-left p-4 ${onClick ? "hover:bg-[var(--t-surface2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6BCC]" : ""}`} style={cardStyle}>
-      <p className="text-[13px] font-medium" style={muted}>{label}</p>
-      <p className="text-2xl font-semibold tabular-nums mt-1 tracking-tight" style={{ color: "var(--t-text)" }}>{value}</p>
-      <p className="text-xs mt-1 truncate" style={subtle}>{foot}</p>
+      <p className="text-[13px] font-medium" style={muted}>{vt(label)}</p>
+      <p className="text-2xl font-semibold tabular-nums mt-1 tracking-tight" style={{ color: "var(--t-text)" }}>{vt(value)}</p>
+      <p className="text-xs mt-1 truncate" style={subtle}>{vt(foot)}</p>
     </Tag>
   );
 }
@@ -441,10 +476,10 @@ function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: st
   return (
     <div className="flex items-start justify-between gap-3 mb-4">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--t-text)" }}>{title}</h1>
-        {subtitle && <p className="text-xs mt-0.5" style={subtle}>{subtitle}</p>}
+        <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--t-text)" }}>{vt(title)}</h1>
+        {subtitle && <p className="text-xs mt-0.5" style={subtle}>{vt(subtitle)}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 shrink-0">{vt(actions)}</div>}
     </div>
   );
 }
@@ -453,8 +488,8 @@ function EmptyState({ icon: Icon, title, body, testId = "state-empty" }: { icon:
   return (
     <div className="text-center py-14 px-4" data-testid={testId}>
       <span className="w-12 h-12 rounded-full grid place-items-center mx-auto mb-3" style={{ background: "var(--t-surface2)" }}><Icon className="w-5 h-5" style={muted} /></span>
-      <p className="font-semibold text-[13px]" style={{ color: "var(--t-text)" }}>{title}</p>
-      <p className="text-[13px] mt-1 max-w-sm mx-auto" style={muted}>{body}</p>
+      <p className="font-semibold text-[13px]" style={{ color: "var(--t-text)" }}>{vt(title)}</p>
+      <p className="text-[13px] mt-1 max-w-sm mx-auto" style={muted}>{vt(body)}</p>
     </div>
   );
 }
@@ -475,14 +510,14 @@ function OrdersTable({ orders, selectable, compact, flagged, pickable = [], pick
   return (
     <>
       {!compact && <div className={`hidden md:grid ${cols} gap-3 px-4 h-9 items-center text-xs font-medium`} style={{ borderBottom: "1px solid var(--t-border)", ...subtle }}>
-        {selectable && <span>{pickable.length > 0 && <input type="checkbox" aria-label="Select all unfulfilled orders" checked={allPicked}
+        {selectable && <span>{pickable.length > 0 && <input type="checkbox" aria-label={t("Select all unfulfilled orders")} checked={allPicked}
           onChange={e => setPicked?.(() => e.target.checked ? new Set(pickable.map(o => o.id)) : new Set())} className="w-4 h-4 accent-[#1A1A1A]" />}</span>}
-        {HEADERS.map((h, i) => <span key={i} className={i === 3 || i === 4 ? "text-right" : ""}>{h}</span>)}
+        {HEADERS.map((h, i) => <span key={i} className={i === 3 || i === 4 ? "text-right" : ""}>{vt(h)}</span>)}
       </div>}
       <ul>{orders.map(o => compact ? <CompactRow key={o.id} order={o} flagged={flagged?.has(o.id)} onOpen={() => onOpen(o.id)} /> : <OrderRow key={o.id} order={o} cols={cols} selectable={selectable} flagged={flagged?.has(o.id)} picked={!!picked?.has(o.id)}
         onPick={selectable && stage(o) === "new" ? v => setPicked?.(p => { const n = new Set(p); v ? n.add(o.id) : n.delete(o.id); return n; }) : undefined}
         onOpen={() => onOpen(o.id)} />)}</ul>
-      {footer && <div className="px-4 py-2.5 text-xs" style={{ borderTop: "1px solid var(--t-border)", ...subtle }}>{footer}</div>}
+      {footer && <div className="px-4 py-2.5 text-xs" style={{ borderTop: "1px solid var(--t-border)", ...subtle }}>{vt(footer)}</div>}
     </>
   );
 }
@@ -497,13 +532,13 @@ function CompactRow({ order: o, flagged, onOpen }: { order: VendorOrder; flagged
       <button onClick={onOpen} className="text-left min-w-0 flex-1 after:absolute after:inset-0 focus-visible:outline-none" data-testid={`card-order-${o.id}`}>
         <span className="flex items-center gap-2 flex-wrap">
           <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>#{o.reference}</span>
-          {overdue(o) && <Badge tone="critical">Overdue</Badge>}
-          {flagged && <Badge tone="critical">Problem</Badge>}
+          {overdue(o) && <Badge tone="critical">{t("Overdue")}</Badge>}
+          {flagged && <Badge tone="critical">{t("Problem")}</Badge>}
         </span>
-        <span className="block text-xs mt-0.5 truncate" style={muted}>{when(o.submittedAt)} · {o.shipping.name}, {o.shipping.country} · {units(o)} item{units(o) === 1 ? "" : "s"} · {money(o.totalCost, o.currency)}</span>
+        <span className="block text-xs mt-0.5 truncate" style={muted}>{vt(when(o.submittedAt))} · {o.shipping.name}, {o.shipping.country} · {vt(units(o))}  {t("item")}{vt(units(o) === 1 || getVendorLanguage() === "zh" ? "" : "s")} · {money(o.totalCost, o.currency)}</span>
       </button>
       <StageBadge order={o} />
-      <span className="hidden sm:flex text-xs font-semibold items-center gap-0.5 w-24 justify-end whitespace-nowrap" style={{ color: "var(--t-blue)" }}>{ctaFor(st)}<ChevronRight className="w-3.5 h-3.5" /></span>
+      <span className="hidden sm:flex text-xs font-semibold items-center gap-0.5 w-24 justify-end whitespace-nowrap" style={{ color: "var(--t-blue)" }}>{vt(ctaFor(st))}<ChevronRight className="w-3.5 h-3.5" /></span>
     </li>
   );
 }
@@ -513,24 +548,24 @@ function OrderRow({ order: o, cols, selectable, flagged, picked, onPick, onOpen 
   return (
     <li className={`relative grid ${selectable ? "grid-cols-[28px_minmax(0,1fr)]" : "grid-cols-1"} ${cols} gap-x-3 gap-y-1 px-4 py-3 items-center hover:bg-[var(--t-surface2)]`}
       style={{ borderBottom: "1px solid var(--t-border)", background: picked ? "var(--t-blue-06)" : undefined, opacity: o.stale ? 0.85 : 1 }}>
-      {selectable && <span className="relative z-10 self-start md:self-center pt-0.5 md:pt-0">{onPick && <input type="checkbox" aria-label={`Select ${o.reference}`} checked={picked} onChange={e => onPick(e.target.checked)} className="w-4 h-4 accent-[#1A1A1A]" />}</span>}
+      {selectable && <span className="relative z-10 self-start md:self-center pt-0.5 md:pt-0">{onPick && <input type="checkbox" aria-label={t(`Select ${o.reference}`)} checked={picked} onChange={e => onPick(e.target.checked)} className="w-4 h-4 accent-[#1A1A1A]" />}</span>}
       <button onClick={onOpen} className="text-left min-w-0 after:absolute after:inset-0 focus-visible:outline-none" data-testid={`card-order-${o.id}`}>
         <span className="flex items-center gap-2 flex-wrap">
           <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>#{o.reference}</span>
-          {late && <Badge tone="critical">Overdue</Badge>}
-          {flagged && <Badge tone="critical">Problem</Badge>}
+          {late && <Badge tone="critical">{t("Overdue")}</Badge>}
+          {flagged && <Badge tone="critical">{t("Problem")}</Badge>}
           <span className="md:hidden ml-auto"><StageBadge order={o} /></span>
         </span>
-        <span className="block text-xs mt-0.5 md:hidden" style={muted}>{when(o.submittedAt)} · {o.shipping.name}, {o.shipping.country} · {units(o)} items · {money(o.totalCost, o.currency)}</span>
+        <span className="block text-xs mt-0.5 md:hidden" style={muted}>{vt(when(o.submittedAt))} · {o.shipping.name}, {o.shipping.country} · {vt(units(o))}  {t("items ·")} {money(o.totalCost, o.currency)}</span>
       </button>
-      <span className="hidden md:block text-[13px] truncate" style={{ color: "var(--t-text)" }}>{when(o.submittedAt)}<span className="block text-xs" style={subtle}>{age(o.submittedAt)}</span></span>
+      <span className="hidden md:block text-[13px] truncate" style={{ color: "var(--t-text)" }}>{vt(when(o.submittedAt))}<span className="block text-xs" style={subtle}>{vt(age(o.submittedAt))}</span></span>
       <span className="hidden md:block min-w-0 text-[13px] truncate" style={{ color: "var(--t-text)" }}>{o.shipping.name}<span className="block text-xs truncate" style={subtle}>{o.shipping.country}</span></span>
-      <span className="hidden md:block text-[13px] text-right tabular-nums" style={{ color: "var(--t-text)" }}>{units(o)}</span>
+      <span className="hidden md:block text-[13px] text-right tabular-nums" style={{ color: "var(--t-text)" }}>{vt(units(o))}</span>
       <span className="hidden md:block text-[13px] text-right tabular-nums font-medium" style={{ color: "var(--t-text)" }}>{money(o.totalCost, o.currency)}</span>
       <span className="hidden md:block"><StageBadge order={o} /></span>
       <span className="hidden md:flex justify-end items-center gap-2 min-w-0">
-        {st === "shipped" && o.trackingNumber ? <span className="text-xs font-mono truncate" style={subtle} title={`${o.carrier ?? ""} ${o.trackingNumber}`}>{o.trackingNumber}</span>
-          : <span className="text-xs font-semibold flex items-center gap-0.5" style={{ color: st === "new" || st === "processing" ? "var(--t-blue)" : "var(--t-subtle)" }}>{cta}<ChevronRight className="w-3.5 h-3.5" /></span>}
+        {st === "shipped" && o.trackingNumber ? <span className="text-xs font-mono truncate" style={subtle} title={t(`${o.carrier ?? ""} ${o.trackingNumber}`)}>{o.trackingNumber}</span>
+          : <span className="text-xs font-semibold flex items-center gap-0.5" style={{ color: st === "new" || st === "processing" ? "var(--t-blue)" : "var(--t-subtle)" }}>{vt(cta)}<ChevronRight className="w-3.5 h-3.5" /></span>}
       </span>
     </li>
   );
@@ -539,9 +574,10 @@ function OrderRow({ order: o, cols, selectable, flagged, picked, onPick, onOpen 
 /* ---------------------------------------------------------------------------
  * Shell: top bar + sidebar
  * ------------------------------------------------------------------------- */
-function Shell({ children, me, onLogout, nav, query, onQuery }: {
-  children: ReactNode; me?: VendorMe | null; onLogout?: () => void; nav?: NavProps; query?: string; onQuery?: (q: string) => void;
+function Shell({ children, me, onLogout, nav, query, onQuery, bell }: {
+  children: ReactNode; me?: VendorMe | null; onLogout?: () => void; nav?: NavProps; query?: string; onQuery?: (q: string) => void; bell?: ReactNode;
 }) {
+  useVendorLanguage();
   const [menu, setMenu] = useState(false);
   useEffect(() => { setMenu(false); }, [nav?.view, nav?.tab]);
   const initials = me ? me.vendorName.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() : "";
@@ -549,24 +585,25 @@ function Shell({ children, me, onLogout, nav, query, onQuery }: {
   return (
     <div className="min-h-[100dvh] text-[13px]" style={{ background: "var(--t-bg)", color: "var(--t-text)" }}>
       <header className="sticky top-0 z-40 h-14 flex items-center gap-2 md:gap-3 px-3 md:px-4 text-white print:hidden" style={{ background: "#1A1A1A" }}>
-        {nav && <button onClick={() => setMenu(true)} className="md:hidden p-2 -ml-1 rounded-lg hover:bg-white/10" aria-label="Open menu"><Menu className="w-5 h-5" /></button>}
+        {nav && <button onClick={() => setMenu(true)} className="md:hidden p-2 -ml-1 rounded-lg hover:bg-white/10" aria-label={t("Open menu")}><Menu className="w-5 h-5" /></button>}
         <div className="flex items-center gap-2 min-w-0 md:min-w-[224px] shrink-0">
-          <span className="w-8 h-8 rounded-lg grid place-items-center font-bold text-sm shrink-0" style={{ background: "#E9A020", color: "#1A1A1A" }}>P</span>
-          <span className="font-semibold whitespace-nowrap hidden sm:block">Peps Anonymous <span style={{ color: "rgba(255,255,255,0.55)" }}>· Vendor</span></span>
+          <span className="w-8 h-8 rounded-lg grid place-items-center font-bold text-sm shrink-0" style={{ background: "#E9A020", color: "#1A1A1A" }}>{t("P")}</span>
+          <span className="font-semibold whitespace-nowrap hidden sm:block">{t("Peps Anonymous")} <span style={{ color: "rgba(255,255,255,0.55)" }}>{t("· Vendor")}</span></span>
         </div>
         {onQuery && (
           <label className="hidden md:flex flex-1 max-w-[560px] mx-auto relative">
-            <span className="sr-only">Search orders</span>
+            <span className="sr-only">{t("Search orders")}</span>
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "rgba(255,255,255,0.6)" }} />
-            <input value={query ?? ""} onChange={e => onQuery(e.target.value)} placeholder="Search orders" aria-label="Search orders"
+            <input value={query ?? ""} onChange={e => onQuery(e.target.value)} placeholder={t("Search orders")} aria-label={t("Search orders")}
               className="w-full h-8 rounded-lg pl-9 pr-3 text-[13px] text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-white/40"
               style={{ background: "#303030", border: "1px solid #4A4A4A" }} />
           </label>)}
         <div className="ml-auto flex items-center gap-2 min-w-0">
-          {!nav && <Link href="/" className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg hover:bg-white/10" data-testid="link-home-header"><Home className="w-4 h-4" /><span className="hidden sm:inline">Home</span></Link>}
+          <VendorLanguageSelect dark />
+          {bell}
           <div className="flex items-center gap-2 pl-3 pr-1 h-9 rounded-lg min-w-0" style={{ background: "rgba(255,255,255,0.08)" }}>
             {me && <span className="hidden lg:block text-xs truncate" style={{ color: "rgba(255,255,255,0.6)" }} data-testid="text-username">{me.username}</span>}
-            <span className="font-semibold truncate max-w-[160px]" data-testid="text-vendor-name">{me ? me.vendorName : "Wholesale portal"}</span>
+            <span className="font-semibold truncate max-w-[160px]" data-testid="text-vendor-name">{me ? me.vendorName : t("Wholesale portal")}</span>
             <span className="w-7 h-7 rounded-md grid place-items-center text-xs font-bold shrink-0" style={{ background: "#B5E5B7", color: "#0C5132" }}>{initials || <Truck className="w-3.5 h-3.5" />}</span>
           </div>
         </div>
@@ -575,18 +612,18 @@ function Shell({ children, me, onLogout, nav, query, onQuery }: {
       <div className={nav ? "md:grid md:grid-cols-[240px_minmax(0,1fr)]" : ""}>
         {nav && (
           <aside className="hidden md:block sticky top-14 h-[calc(100dvh-56px)] overflow-y-auto print:hidden"
-            style={{ background: "color-mix(in srgb, var(--t-bg) 94%, var(--t-text))", borderRight: "1px solid var(--t-border)" }}>{sidebar}</aside>)}
+            style={{ background: "color-mix(in srgb, var(--t-bg) 94%, var(--t-text))", borderRight: "1px solid var(--t-border)" }}>{vt(sidebar)}</aside>)}
         {nav && menu && (
           <div className="fixed inset-0 z-50 md:hidden print:hidden">
             <div className="absolute inset-0 bg-black/40" onClick={() => setMenu(false)} />
             <div className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] shadow-2xl overflow-y-auto flex flex-col" style={{ background: "var(--t-surface)" }}>
               <div className="flex items-center justify-between px-4 h-14" style={{ borderBottom: "1px solid var(--t-border)" }}>
-                <span className="font-semibold">Menu</span><button onClick={() => setMenu(false)} aria-label="Close menu" className="p-2 -mr-2 rounded-lg hover:bg-[var(--t-surface2)]"><X className="w-5 h-5" /></button>
+                <span className="font-semibold">{t("Menu")}</span><button onClick={() => setMenu(false)} aria-label={t("Close menu")} className="p-2 -mr-2 rounded-lg hover:bg-[var(--t-surface2)]"><X className="w-5 h-5" /></button>
               </div>
-              {sidebar}
+              {vt(sidebar)}
             </div>
           </div>)}
-        <main className="min-w-0 px-4 md:px-8 py-5 md:py-7 pb-24">{children}</main>
+        <main className="min-w-0 px-4 md:px-8 py-5 md:py-7 pb-24">{vt(children)}</main>
       </div>
     </div>
   );
@@ -598,28 +635,27 @@ function Sidebar({ nav, onLogout }: { nav: NavProps; onLogout?: () => void }) {
     : { color: "var(--t-muted)", fontWeight: 500 };
   const cls = "w-full flex items-center gap-2.5 h-8 px-2 rounded-lg text-[13px] text-left hover:bg-[color-mix(in_srgb,var(--t-text)_6%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2D6BCC]";
   return (
-    <nav className="flex flex-col flex-1 h-full p-3 gap-0.5" aria-label="Vendor portal">
-      <button onClick={() => nav.onNav("home")} className={cls} style={item(nav.view === "home")} aria-current={nav.view === "home" ? "page" : undefined}><Home className="w-4 h-4" />Home</button>
+    <nav className="flex flex-col flex-1 h-full p-3 gap-0.5" aria-label={t("Vendor portal")}>
+      <button onClick={() => nav.onNav("home")} className={cls} style={item(nav.view === "home")} aria-current={nav.view === "home" ? "page" : undefined}><Home className="w-4 h-4" />{t("Home")}</button>
       <button onClick={() => nav.onNav("orders", "all")} className={cls} style={item(nav.view === "orders")} aria-current={nav.view === "orders" ? "page" : undefined}>
-        <ClipboardList className="w-4 h-4" />Orders
-        {nav.counts.new > 0 && <span className="ml-auto tabular-nums text-[11px] font-semibold px-1.5 rounded-md" style={{ background: TONES.attention.bg, color: TONES.attention.fg }}>{nav.counts.new}</span>}
+        <ClipboardList className="w-4 h-4" />{t("Orders")}
+        {nav.counts.new > 0 && <span className="ml-auto tabular-nums text-[11px] font-semibold px-1.5 rounded-md" style={{ background: TONES.attention.bg, color: TONES.attention.fg }}>{vt(nav.counts.new)}</span>}
       </button>
       {nav.view === "orders" && (
         <div className="ml-4 pl-2.5 my-0.5 flex flex-col gap-0.5" style={{ borderLeft: "1px solid var(--t-border)" }}>
           {STAGES.map(s => {
             const on = nav.tab === s.key;
             return <button key={s.key} onClick={() => nav.onNav("orders", s.key)} className={`${cls} h-7`} style={item(on)}>
-              {s.label}<span className="ml-auto tabular-nums text-xs" style={subtle}>{nav.counts[s.key]}</span></button>;
+              {vt(s.label)}<span className="ml-auto tabular-nums text-xs" style={subtle}>{vt(nav.counts[s.key])}</span></button>;
           })}
         </div>)}
       <button onClick={() => nav.onNav("messages")} className={cls} style={item(nav.view === "messages")} aria-current={nav.view === "messages" ? "page" : undefined} data-testid="nav-messages">
-        <MessageSquare className="w-4 h-4" />Messages
-        {(nav.unreadMessages ?? 0) > 0 && <span className="ml-auto tabular-nums text-[11px] font-semibold px-1.5 rounded-md" style={{ background: TONES.info.bg, color: TONES.info.fg }} data-testid="badge-unread-messages">{nav.unreadMessages}</span>}
+        <MessageSquare className="w-4 h-4" />{t("Messages")}
+        {(nav.unreadMessages ?? 0) > 0 && <span className="ml-auto tabular-nums text-[11px] font-semibold px-1.5 rounded-md" style={{ background: TONES.info.bg, color: TONES.info.fg }} data-testid="badge-unread-messages">{vt(nav.unreadMessages)}</span>}
       </button>
-      <button onClick={() => nav.onNav("settings")} className={cls} style={item(nav.view === "settings")} aria-current={nav.view === "settings" ? "page" : undefined} data-testid="nav-settings"><SettingsNavIcon className="w-4 h-4" />Settings</button>
+      <button onClick={() => nav.onNav("settings")} className={cls} style={item(nav.view === "settings")} aria-current={nav.view === "settings" ? "page" : undefined} data-testid="nav-settings"><SettingsNavIcon className="w-4 h-4" />{t("Settings")}</button>
       <div className="mt-auto pt-3 flex flex-col gap-0.5" style={{ borderTop: "1px solid var(--t-border)" }}>
-        <Link href="/" className={cls} style={item(false)} data-testid="link-home-header"><ExternalLink className="w-4 h-4" />Peps Anonymous</Link>
-        {onLogout && <button onClick={onLogout} className={cls} style={item(false)} data-testid="button-logout"><LogOut className="w-4 h-4" />Log out</button>}
+        {onLogout && <button onClick={onLogout} className={cls} style={item(false)} data-testid="button-logout"><LogOut className="w-4 h-4" />{t("Log out")}</button>}
       </div>
     </nav>
   );
@@ -628,28 +664,17 @@ function Sidebar({ nav, onLogout }: { nav: NavProps; onLogout?: () => void }) {
 /* ---------------------------------------------------------------------------
  * Packing slip
  * ------------------------------------------------------------------------- */
-function esc(s: string) { return s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!); }
 function printPackingSlip(o: VendorOrder) {
-  const w = window.open("", "_blank", "width=720,height=900");
+  const w = window.open("", "_blank", "width=440,height=720");
   if (!w) return;
-  const s = o.shipping;
-  w.document.write(`<!doctype html><html><head><title>Packing slip ${esc(o.reference)}</title><style>
-    body{font:14px/1.45 -apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:32px}h1{font-size:20px;margin:0 0 4px}
-    .muted{color:#555;font-size:12px}table{width:100%;border-collapse:collapse;margin:20px 0}th,td{border-bottom:1px solid #ddd;padding:8px;text-align:left}
-    th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#555}td.q{text-align:right;width:60px;font-variant-numeric:tabular-nums}td.c{width:28px}
-    .box{display:inline-block;width:14px;height:14px;border:1.5px solid #333;border-radius:3px}address{font-style:normal;white-space:pre-line;border:1px solid #ccc;border-radius:8px;padding:12px;margin-top:16px}
-  </style></head><body><h1>Packing slip · ${esc(o.reference)}</h1><div class="muted">${esc(date(o.submittedAt))} · ${o.items.length} lines · ${units(o)} units</div>
-  <address><strong>${esc(s.name)}</strong>\n${esc(vendorAddressLines(s.address, s.country).join("\n"))}\n${esc(s.country)}\n${esc([s.phone, s.email].filter(Boolean).join(" · "))}</address>
-  <table><thead><tr><th></th><th>Product</th><th style="text-align:right">Qty</th></tr></thead><tbody>
-  ${o.items.map(i => `<tr><td class="c"><span class="box"></span></td><td>${esc(i.productName)}</td><td class="q">${i.quantity}</td></tr>`).join("")}
-  </tbody></table><div class="muted">Packed by: ____________________ &nbsp; Date: ____________</div></body></html>`);
+  w.document.write(vendorPackingSlipHtml(o));
   w.document.close(); w.focus(); setTimeout(() => w.print(), 200);
 }
 
 /* ---------------------------------------------------------------------------
  * Order detail
  * ------------------------------------------------------------------------- */
-function OrderDetail({ order, onBack, onChanged, prev, next, onOpen, issue, issueTypes, onIssueChanged, defaultCarrier, onMessage }: {
+export function OrderDetail({ order, onBack, onChanged, prev, next, onOpen, issue, issueTypes, onIssueChanged, defaultCarrier, onMessage }: {
   order: VendorOrder; onBack: () => void; onChanged: () => Promise<void>;
   prev: VendorOrder | null; next: VendorOrder | null; onOpen: (id: string) => void;
   issue?: VendorIssue; issueTypes?: Record<string, string>; onIssueChanged?: () => Promise<void>; defaultCarrier?: string | null; onMessage?: () => void;
@@ -667,6 +692,34 @@ function OrderDetail({ order, onBack, onChanged, prev, next, onOpen, issue, issu
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const trackingRef = useRef<HTMLInputElement>(null);
+  const detectionVersion = useRef(0);
+  const lastDetected = useRef("");
+  const [detectingCarrier, setDetectingCarrier] = useState(false);
+  const [carrierHint, setCarrierHint] = useState("");
+  useEffect(() => () => { detectionVersion.current++; }, []);
+  const detectCarrier = async () => {
+    const number = tracking.trim();
+    if (order.stale || number.length < 3 || number === lastDetected.current) return;
+    const version = ++detectionVersion.current;
+    lastDetected.current = number;
+    setDetectingCarrier(true); setCarrierHint("");
+    try {
+      const response = await vendorFetch(`/api/vendor/orders/${encodeURIComponent(order.id)}/detect-carrier`, {
+        method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ trackingNumber: number }),
+      });
+      if (!response.ok) throw new Error("Detection unavailable");
+      const result = await response.json();
+      if (version !== detectionVersion.current) return;
+      const match = CARRIERS_17TRACK.find(c => c.code > 0 && c.code === result.carrierCode);
+      if (match) { setCarrierPick(match.label); setCarrierHint(`Detected ${match.label}. You can change this if needed.`); }
+      else setCarrierHint("Carrier could not be identified. Please select it manually.");
+    } catch {
+      if (version === detectionVersion.current) { lastDetected.current = ""; setCarrierHint("Detection unavailable. Please select a carrier manually."); }
+    } finally {
+      if (version === detectionVersion.current) setDetectingCarrier(false);
+    }
+  };
   const locked = order.stale;
   const st = stage(order);
   const started = st === "processing" || st === "shipped";
@@ -751,59 +804,59 @@ function OrderDetail({ order, onBack, onChanged, prev, next, onOpen, issue, issu
   return (
     <div className="max-w-[1120px] mx-auto">
       <div className="flex flex-wrap items-start gap-3 mb-4">
-        <Btn onClick={onBack} aria-label="Back to orders" data-testid="button-back" className="!px-2 shrink-0"><ArrowLeft className="w-4 h-4" /></Btn>
+        <Btn onClick={onBack} aria-label={t("Back to orders")} data-testid="button-back" className="!px-2 shrink-0"><ArrowLeft className="w-4 h-4" /></Btn>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight" style={{ color: "var(--t-text)" }} data-testid="text-reference">#{order.reference}</h1>
             <StageBadge order={order} />
-            {overdue(order) && <Badge tone="critical">Overdue</Badge>}
+            {overdue(order) && <Badge tone="critical">{t("Overdue")}</Badge>}
             <IssueBadge issue={issue} />
           </div>
-          <p className="text-xs mt-0.5" style={subtle} title={date(order.submittedAt)}>Submitted {when(order.submittedAt)} · {order.items.length} line{order.items.length === 1 ? "" : "s"} · {units(order)} units</p>
+          <p className="text-xs mt-0.5" style={subtle} title={t(date(order.submittedAt))}>{t("Submitted")} {vt(when(order.submittedAt))} · {vt(order.items.length)}  {t("line")}{vt(order.items.length === 1 || getVendorLanguage() === "zh" ? "" : "s")} · {vt(units(order))}  {t("units")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          {onMessage && <Btn onClick={onMessage} data-testid="button-message-order"><MessageSquare className="w-4 h-4" />Message Peps</Btn>}
-          <Btn onClick={() => downloadVendorOrdersCsv([order])} data-testid="button-export-order-csv"><Download className="w-4 h-4" />Export</Btn>
-          <Btn onClick={() => printPackingSlip(order)} data-testid="button-print-slip"><Printer className="w-4 h-4" />Print packing slip</Btn>
+          {onMessage && <Btn onClick={onMessage} data-testid="button-message-order"><MessageSquare className="w-4 h-4" />{t("Message Peps")}</Btn>}
+          <Btn onClick={() => downloadVendorOrdersCsv([order])} data-testid="button-export-order-csv"><Download className="w-4 h-4" />{t("Export")}</Btn>
+          <Btn onClick={() => printPackingSlip(order)} data-testid="button-print-slip"><Printer className="w-4 h-4" />{t("Print packing slip")}</Btn>
           <span className="inline-flex rounded-lg overflow-hidden ml-auto sm:ml-0" style={{ border: "1px solid var(--t-border)", boxShadow: "0 1px 0 rgba(26,26,26,0.07)", background: "var(--t-surface)" }}>
-            <button disabled={!prev} onClick={() => prev && onOpen(prev.id)} className="h-[30px] px-2 disabled:opacity-40 hover:bg-[var(--t-surface2)]" aria-label="Previous order" data-testid="button-prev-order"><ChevronLeft className="w-4 h-4" /></button>
-            <button disabled={!next} onClick={() => next && onOpen(next.id)} className="h-[30px] px-2 disabled:opacity-40 hover:bg-[var(--t-surface2)]" aria-label="Next order" data-testid="button-next-order" style={{ borderLeft: "1px solid var(--t-border)" }}><ChevronRight className="w-4 h-4" /></button>
+            <button disabled={!prev} onClick={() => prev && onOpen(prev.id)} className="h-[30px] px-2 disabled:opacity-40 hover:bg-[var(--t-surface2)]" aria-label={t("Previous order")} data-testid="button-prev-order"><ChevronLeft className="w-4 h-4" /></button>
+            <button disabled={!next} onClick={() => next && onOpen(next.id)} className="h-[30px] px-2 disabled:opacity-40 hover:bg-[var(--t-surface2)]" aria-label={t("Next order")} data-testid="button-next-order" style={{ borderLeft: "1px solid var(--t-border)" }}><ChevronRight className="w-4 h-4" /></button>
           </span>
         </div>
       </div>
 
       <div className="space-y-3 mb-4 empty:hidden">
-        {locked && <Banner tone="warning" testId="text-stale">This shipment changed after it was sent to you. Actions are locked until Peps Anonymous resubmits it.</Banner>}
-        {msg && <Banner tone={msg.ok ? "success" : "critical"} role={msg.ok ? "status" : "alert"} testId="text-action-result" onDismiss={() => setMsg(null)}>{msg.text}</Banner>}
+        {locked && <Banner tone="warning" testId="text-stale">{t("This shipment changed after it was sent to you. Actions are locked until Peps Anonymous resubmits it.")}</Banner>}
+        {msg && <Banner tone={msg.ok ? "success" : "critical"} role={msg.ok ? "status" : "alert"} testId="text-action-result" onDismiss={() => setMsg(null)}>{vt(msg.text)}</Banner>}
       </div>
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
         <div className="space-y-4 min-w-0">
-          <Card flush title={<><Badge tone={meta.tone} progress={meta.progress}>{meta.label} ({units(order)})</Badge></>}
+          <Card flush title={<><Badge tone={meta.tone} progress={meta.progress}>{t(meta.label)} ({units(order)})</Badge></>}
             actions={shipped && order.trackingNumber ? <span className="text-xs font-mono truncate max-w-[180px]" style={subtle}>{order.trackingNumber}</span> : undefined}
-            footer={locked ? <span className="text-xs mr-auto" style={muted}>Locked while on hold.</span>
+            footer={locked ? <span className="text-xs mr-auto" style={muted}>{t("Locked while on hold.")}</span>
               : st === "new" ? <>
-                <span className="text-xs mr-auto hidden sm:inline" style={muted}>Let Peps Anonymous and the customer know packing has started.</span>
+                <span className="text-xs mr-auto hidden sm:inline" style={muted}>{t("Let Peps Anonymous and the customer know packing has started.")}</span>
                 <Btn variant="primary" disabled={!!busy} onClick={() => run("processing", () => patchOrder(order.id, { action: "processing" }), "Marked as processing.")} data-testid="button-mark-processing">
-                  {busy === "processing" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}Mark as processing</Btn></>
+                  {busy === "processing" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}{t("Mark as processing")}</Btn></>
               : st === "processing" ? <>
-                <span className="text-xs mr-auto hidden sm:inline" style={muted}>Being packed. Add a tracking number to mark it fulfilled.</span>
-                <Btn variant="primary" onClick={() => trackingRef.current?.focus()}><Truck className="w-4 h-4" />Add tracking</Btn></>
-              : <span className="text-xs mr-auto" style={muted}>Fulfilled{order.carrier ? ` via ${order.carrier}` : ""}.</span>}>
+                <span className="text-xs mr-auto hidden sm:inline" style={muted}>{t("Being packed. Add a tracking number to mark it fulfilled.")}</span>
+                <Btn variant="primary" onClick={() => trackingRef.current?.focus()}><Truck className="w-4 h-4" />{t("Add tracking")}</Btn></>
+              : <span className="text-xs mr-auto" style={muted}>{t("Fulfilled")}{order.carrier ? ` via ${order.carrier}` : ""}.</span>}>
             <ul className="px-4 pb-1">
               {order.items.map((it, i) => (
                 <li key={i} className="flex items-center gap-3 py-3" style={{ borderTop: i ? "1px solid var(--t-border)" : undefined }}>
                   <span className="w-10 h-10 rounded-lg grid place-items-center shrink-0" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}><Package className="w-4 h-4" style={subtle} /></span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-[13px] font-medium truncate" style={{ color: "var(--t-text)" }}>{it.productName}</span>
-                    <span className="block text-xs tabular-nums" style={subtle}>{money(it.unitCost, order.currency)} × {it.quantity}</span>
+                    <span className="block text-xs tabular-nums" style={subtle}>{money(it.unitCost, order.currency)} × {vt(it.quantity)}</span>
                   </span>
                   <span className="text-[13px] tabular-nums" style={{ color: "var(--t-text)" }}>{money(it.lineTotal, order.currency)}</span>
                 </li>))}
             </ul>
           </Card>
 
-          <Card title="Shipment" actions={shipped && !editTracking && !locked ? <Btn variant="plain" onClick={() => setEditTracking(true)} data-testid="button-edit-tracking"><Pencil className="w-3.5 h-3.5" />Edit</Btn> : undefined}>
+          <Card title={t("Shipment")} actions={shipped && !editTracking && !locked ? <Btn variant="plain" onClick={() => setEditTracking(true)} data-testid="button-edit-tracking"><Pencil className="w-3.5 h-3.5" />{t("Edit")}</Btn> : undefined}>
             {shipped && !editTracking ? (
               <div className="flex items-center gap-3 rounded-lg p-3" style={{ background: "var(--t-surface2)" }}>
                 <span className="w-9 h-9 rounded-lg grid place-items-center shrink-0" style={{ background: TONES.success.bg, color: TONES.success.fg }}><Truck className="w-4 h-4" /></span>
@@ -814,19 +867,23 @@ function OrderDetail({ order, onBack, onChanged, prev, next, onOpen, issue, issu
               </div>
             ) : (
               <form className="grid sm:grid-cols-2 gap-3" onSubmit={saveTracking}>
-                <label className="text-xs font-medium" style={muted}>Carrier
-                  <select value={carrierPick} onChange={e => setCarrierPick(e.target.value)} disabled={locked} required className={`${fieldCls} mt-1`} style={field} data-testid="select-carrier">
-                    <option value="" disabled>Choose carrier</option>
-                    {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}<option value="other">Other…</option>
+                <label className="text-xs font-medium" style={muted}>{t("Carrier")}
+                  <select value={carrierPick} onChange={e => { detectionVersion.current++; setDetectingCarrier(false); setCarrierHint(""); setCarrierPick(e.target.value); }} disabled={locked} required className={`${fieldCls} mt-1`} style={field} data-testid="select-carrier">
+                    <option value="" disabled>{t("Choose carrier")}</option>
+                    {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}<option value="other">{t("Other…")}</option>
                   </select></label>
-                <label className="text-xs font-medium" style={muted}>Tracking number
-                  <input ref={trackingRef} value={tracking} onChange={e => setTracking(e.target.value)} disabled={locked} required autoComplete="off" className={`${fieldCls} mt-1 font-mono`} style={field} data-testid="input-tracking" /></label>
-                {carrierPick === "other" && <label className="text-xs font-medium sm:col-span-2" style={muted}>Carrier name
+                <label className="text-xs font-medium" style={muted}>{t("Tracking number")}
+                  <input ref={trackingRef} value={tracking} onChange={e => { detectionVersion.current++; setDetectingCarrier(false); setCarrierHint(""); lastDetected.current = ""; setTracking(e.target.value); }} onBlur={() => void detectCarrier()} disabled={locked} required autoComplete="off" className={`${fieldCls} mt-1 font-mono`} style={field} data-testid="input-tracking" /></label>
+                <div className="sm:col-span-2 text-xs" style={muted} aria-live="polite">
+                  {t(detectingCarrier ? "Finding carrier with 17TRACK…" : carrierHint)}
+                  <button type="button" disabled={locked || detectingCarrier || tracking.trim().length < 3} className="ml-2 underline" onClick={() => { lastDetected.current = ""; void detectCarrier(); }}>{t("Detect carrier")}</button>
+                </div>
+                {carrierPick === "other" && <label className="text-xs font-medium sm:col-span-2" style={muted}>{t("Carrier name")}
                   <input value={carrierOther} onChange={e => setCarrierOther(e.target.value)} disabled={locked} required maxLength={120} className={`${fieldCls} mt-1`} style={field} data-testid="input-carrier" /></label>}
                 <div className="sm:col-span-2 flex flex-wrap items-center justify-end gap-2">
-                  {shipped && <Btn onClick={() => { setEditTracking(false); setTracking(order.trackingNumber ?? ""); }}>Cancel</Btn>}
-                  <Btn type="submit" variant="primary" disabled={locked || !!busy} data-testid="button-save-tracking">
-                    {busy === "tracking" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}{shipped ? "Update tracking" : "Save tracking and mark fulfilled"}</Btn>
+                  {shipped && <Btn onClick={() => { setEditTracking(false); setTracking(order.trackingNumber ?? ""); }}>{t("Cancel")}</Btn>}
+                  <Btn type="submit" variant="primary" disabled={locked || !!busy || detectingCarrier} data-testid="button-save-tracking">
+                    {busy === "tracking" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}{t(shipped ? "Update tracking" : "Save tracking and mark fulfilled")}</Btn>
                 </div>
               </form>
             )}
@@ -834,7 +891,7 @@ function OrderDetail({ order, onBack, onChanged, prev, next, onOpen, issue, issu
 
           <OrderIssuePanel orderId={order.id} issue={issue} types={issueTypes ?? {}} locked={locked} onChanged={async () => { await onIssueChanged?.(); await onChanged(); }} />
 
-          <Card title="Packing photos" actions={<span className="text-xs tabular-nums" style={subtle}>{order.images.length} / 30</span>}>
+          <Card title={t("Packing photos")} actions={<span className="text-xs tabular-nums" style={subtle}>{vt(order.images.length)} / 30</span>}>
             <input ref={fileRef} type="file" accept="image/*" multiple className="sr-only" id={`file-${order.id}`} disabled={locked || !!busy}
               onChange={e => { const f = [...(e.target.files ?? [])]; if (f.length) uploadFiles(f); }} data-testid="input-image" />
             <label htmlFor={`file-${order.id}`}
@@ -843,69 +900,69 @@ function OrderDetail({ order, onBack, onChanged, prev, next, onOpen, issue, issu
               className={`flex flex-col items-center justify-center gap-1 rounded-lg px-4 py-6 text-center transition-colors ${locked || busy ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
               style={{ border: `1.5px dashed ${drag ? "var(--t-blue)" : "var(--t-border)"}`, background: drag ? "var(--t-blue-06)" : "var(--t-surface2)" }} data-testid="dropzone-image">
               {busy === "image" ? <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--t-text)" }} /> : <ImagePlus className="w-5 h-5" style={{ color: "var(--t-text)" }} />}
-              <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{progress ?? <><span className="hidden sm:inline">Drop photos here or click to upload</span><span className="sm:hidden inline-flex items-center gap-1.5"><Camera className="w-4 h-4" />Take or choose photos</span></>}</span>
-              <span className="text-xs" style={subtle}>Products, sealed parcel and shipping label · JPG or PNG up to 5 MB each</span>
+              <span className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{progress ? t(progress) : <><span className="hidden sm:inline">{t("Drop photos here or click to upload")}</span><span className="sm:hidden inline-flex items-center gap-1.5"><Camera className="w-4 h-4" />{t("Take or choose photos")}</span></>}</span>
+              <span className="text-xs" style={subtle}>{t("Products, sealed parcel and shipping label · JPG or PNG up to 5 MB each")}</span>
             </label>
             {order.images.length > 0 && <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mt-3">{order.images.map((img, i) => (
-              <button key={img.id} onClick={() => setLightbox(i)} className="aspect-square rounded-lg overflow-hidden block hover:opacity-90" style={{ border: "1px solid var(--t-border)" }} data-testid={`img-order-${img.id}`} aria-label={`View ${img.filename}`}>
+              <button key={img.id} onClick={() => setLightbox(i)} className="aspect-square rounded-lg overflow-hidden block hover:opacity-90" style={{ border: "1px solid var(--t-border)" }} data-testid={`img-order-${img.id}`} aria-label={t(`View ${img.filename}`)}>
                 <img src={img.url} alt={img.filename} className="w-full h-full object-cover" loading="lazy" /></button>))}</div>}
           </Card>
 
-          <Card title="Timeline">
+          <Card title={t("Timeline")}>
             <ol className="relative ml-2">
               {timeline.map((ev, i) => (
                 <li key={i} className="relative pl-6 pb-4 last:pb-0">
                   {i < timeline.length - 1 && <span className="absolute left-[5px] top-4 bottom-0 w-px" style={{ background: "var(--t-border)" }} aria-hidden />}
                   <span className="absolute left-0 top-1.5 w-[11px] h-[11px] rounded-full" style={{ background: "var(--t-surface)", border: "2px solid var(--t-subtle)" }} aria-hidden />
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                    <p className="text-[13px]" style={{ color: "var(--t-text)" }}>{ev.label}</p>
-                    {ev.when && <span className="text-xs ml-auto tabular-nums" style={subtle}>{ev.when}</span>}
+                    <p className="text-[13px]" style={{ color: "var(--t-text)" }}>{vt(ev.label)}</p>
+                    {ev.when && <span className="text-xs ml-auto tabular-nums" style={subtle}>{vt(ev.when)}</span>}
                   </div>
-                  {ev.detail && <p className="text-xs mt-0.5 break-all" style={muted}>{ev.detail}</p>}
+                  {ev.detail && <p className="text-xs mt-0.5 break-all" style={muted}>{vt(ev.detail)}</p>}
                 </li>))}
             </ol>
           </Card>
 
-          {shipped && next && <Btn variant="primary" onClick={() => onOpen(next.id)} className="w-full h-10" data-testid="button-next-cta">Next order: #{next.reference}<ChevronRight className="w-4 h-4" /></Btn>}
+          {shipped && next && <Btn variant="primary" onClick={() => onOpen(next.id)} className="w-full h-10" data-testid="button-next-cta">{t("Next order: #")}{next.reference}<ChevronRight className="w-4 h-4" /></Btn>}
         </div>
 
         <aside className="space-y-4 min-w-0">
-          <Card title="Customer">
+          <Card title={t("Customer")}>
             <p className="text-[13px] font-medium" style={{ color: "var(--t-text)" }}>{s.name}</p>
             <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--t-border)" }}>
-              <h3 className="text-[13px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>Contact information</h3>
-              <p className="text-[13px] break-all" style={s.email ? { color: "var(--t-blue)" } : subtle}>{s.email || "No email provided"}</p>
-              <p className="text-[13px]" style={s.phone ? muted : subtle}>{s.phone || "No phone number"}</p>
+              <h3 className="text-[13px] font-semibold mb-1" style={{ color: "var(--t-text)" }}>{t("Contact information")}</h3>
+              <p className="text-[13px] break-all" style={s.email ? { color: "var(--t-blue)" } : subtle}>{s.email || t("No email provided")}</p>
+              <p className="text-[13px]" style={s.phone ? muted : subtle}>{s.phone || t("No phone number")}</p>
             </div>
             <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--t-border)" }}>
               <div className="flex items-center justify-between mb-1">
-                <h3 className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>Shipping address</h3>
-                <Btn variant="plain" onClick={copyAddress} data-testid="button-copy-address">{copied ? <><Check className="w-3.5 h-3.5" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy</>}</Btn>
+                <h3 className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{t("Shipping address")}</h3>
+                <Btn variant="plain" onClick={copyAddress} data-testid="button-copy-address">{copied ? <><Check className="w-3.5 h-3.5" />{t("Copied")}</> : <><Copy className="w-3.5 h-3.5" />{t("Copy")}</>}</Btn>
               </div>
               <address className="not-italic text-[13px] whitespace-pre-line" style={muted}>{[s.name, ...addressLines, s.country].join("\n")}</address>
             </div>
           </Card>
 
-          <Card title="Cost summary">
+          <Card title={t("Cost summary")}>
             <dl className="text-[13px] space-y-2">
-              <div className="flex justify-between gap-3"><dt style={muted}>Subtotal <span style={subtle}>· {units(order)} item{units(order) === 1 ? "" : "s"}</span></dt><dd className="tabular-nums" style={{ color: "var(--t-text)" }}>{money(order.productCost, order.currency)}</dd></div>
-              <div className="flex justify-between gap-3"><dt style={muted}>Shipping</dt><dd className="tabular-nums" style={{ color: "var(--t-text)" }}>{money(order.shippingCost, order.currency)}</dd></div>
-              <div className="flex justify-between gap-3 pt-2 font-semibold" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-text)" }}><dt>Total cost</dt><dd className="tabular-nums" data-testid={`text-total-${order.id}`}>{money(order.totalCost, order.currency)}</dd></div>
+              <div className="flex justify-between gap-3"><dt style={muted}>{t("Subtotal")} <span style={subtle}>· {vt(units(order))}  {t("item")}{vt(units(order) === 1 || getVendorLanguage() === "zh" ? "" : "s")}</span></dt><dd className="tabular-nums" style={{ color: "var(--t-text)" }}>{money(order.productCost, order.currency)}</dd></div>
+              <div className="flex justify-between gap-3"><dt style={muted}>{t("Shipping")}</dt><dd className="tabular-nums" style={{ color: "var(--t-text)" }}>{money(order.shippingCost, order.currency)}</dd></div>
+              <div className="flex justify-between gap-3 pt-2 font-semibold" style={{ borderTop: "1px solid var(--t-border)", color: "var(--t-text)" }}><dt>{t("Total cost")}</dt><dd className="tabular-nums" data-testid={`text-total-${order.id}`}>{money(order.totalCost, order.currency)}</dd></div>
             </dl>
-            <p className="text-xs mt-3" style={subtle}>Wholesale cost payable by Peps Anonymous. Customer pricing is not shown.</p>
+            <p className="text-xs mt-3" style={subtle}>{t("Wholesale cost payable by Peps Anonymous. Customer pricing is not shown.")}</p>
           </Card>
         </aside>
       </div>
 
       {lightbox !== null && order.images[lightbox] && (
-        <div role="dialog" aria-modal="true" aria-label="Photo preview" className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(5,12,28,0.85)" }} onClick={() => setLightbox(null)}>
+        <div role="dialog" aria-modal="true" aria-label={t("Photo preview")} className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(5,12,28,0.85)" }} onClick={() => setLightbox(null)}>
           <img src={order.images[lightbox].url} alt={order.images[lightbox].filename} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
-          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white" aria-label="Close"><X className="w-5 h-5" /></button>
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white" aria-label={t("Close")}><X className="w-5 h-5" /></button>
           {order.images.length > 1 && <>
-            <button onClick={e => { e.stopPropagation(); setLightbox((lightbox - 1 + order.images.length) % order.images.length); }} className="absolute left-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white" aria-label="Previous photo"><ChevronLeft className="w-5 h-5" /></button>
-            <button onClick={e => { e.stopPropagation(); setLightbox((lightbox + 1) % order.images.length); }} className="absolute right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white" aria-label="Next photo"><ChevronRight className="w-5 h-5" /></button>
+            <button onClick={e => { e.stopPropagation(); setLightbox((lightbox - 1 + order.images.length) % order.images.length); }} className="absolute left-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white" aria-label={t("Previous photo")}><ChevronLeft className="w-5 h-5" /></button>
+            <button onClick={e => { e.stopPropagation(); setLightbox((lightbox + 1) % order.images.length); }} className="absolute right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white" aria-label={t("Next photo")}><ChevronRight className="w-5 h-5" /></button>
           </>}
-          <p className="absolute bottom-4 text-xs text-white/70">{lightbox + 1} / {order.images.length} · {order.images[lightbox].filename}</p>
+          <p className="absolute bottom-4 text-xs text-white/70">{vt(lightbox + 1)} / {vt(order.images.length)} · {order.images[lightbox].filename}</p>
         </div>)}
     </div>
   );

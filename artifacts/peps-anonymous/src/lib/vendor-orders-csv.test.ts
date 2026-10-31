@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vitest";
 import { vendorOrdersCsv } from "./vendor-orders-csv.ts";
 
 const order = {
@@ -47,4 +47,14 @@ test("multiple orders each occupy one CSV record and totals occur once per order
 test("uses London dates and leaves an unavailable date blank", () => {
   assert.ok(vendorOrdersCsv([{ ...order, submittedAt: "2026-07-01T23:30:00Z" }]).includes('"02/07/2026"'));
   assert.ok(!vendorOrdersCsv([{ ...order, submittedAt: "" }]).includes("Invalid Date"));
+});
+
+test("Chinese export translates labels and flags while preserving order data", () => {
+  const csv = vendorOrdersCsv([order, { ...order, reference: "12615", stale: true }], "zh");
+  assert.ok(csv.startsWith('\uFEFF"订单编号","状态","暂缓"'));
+  assert.ok(csv.includes('"已付款","否"'));
+  assert.ok(csv.includes('"已付款","是"'));
+  assert.ok(csv.includes('"承运商","运单号"'));
+  assert.ok(csv.includes('"1x Product, one\n2x Product two"'));
+  assert.equal(csv.split("\r\n").filter(Boolean).length, 3);
 });

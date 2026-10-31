@@ -1,3 +1,4 @@
+import { vendorTranslate as vt, useVendorLanguage } from "@/lib/vendor-language";
 import type { CSSProperties, ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Clock, X } from "lucide-react";
 
@@ -14,6 +15,7 @@ export const TONES: Record<Tone, { bg: string; fg: string }> = {
 };
 export type Progress = "incomplete" | "partial" | "complete";
 export function ProgressDot({ kind }: { kind: Progress }) {
+  useVendorLanguage();
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden className="shrink-0">
       <circle cx="5" cy="5" r="3.5" fill={kind === "complete" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" />
@@ -22,6 +24,7 @@ export function ProgressDot({ kind }: { kind: Progress }) {
   );
 }
 export function Badge({ tone = "neutral", progress, children, testId, className = "" }: { tone?: Tone; progress?: Progress; children: ReactNode; testId?: string; className?: string }) {
+  useVendorLanguage();
   return (
     <span className={`inline-flex items-center gap-1 h-5 px-2 rounded-lg text-xs font-medium whitespace-nowrap ${className}`}
       style={{ background: TONES[tone].bg, color: TONES[tone].fg }} data-testid={testId}>
@@ -31,11 +34,12 @@ export function Badge({ tone = "neutral", progress, children, testId, className 
 }
 
 export function Banner({ tone, children, role = "status", testId, onDismiss }: { tone: Tone; children: ReactNode; role?: "status" | "alert"; testId?: string; onDismiss?: () => void }) {
+  useVendorLanguage();
   const Icon = tone === "success" ? CheckCircle2 : tone === "info" ? Clock : AlertTriangle;
   return (
     <div role={role} className="rounded-xl px-3 py-2.5 text-[13px] flex gap-2 items-start" style={{ background: TONES[tone].bg, color: TONES[tone].fg }} data-testid={testId}>
       <Icon className="w-4 h-4 shrink-0 mt-0.5" /><div className="flex-1 min-w-0">{children}</div>
-      {onDismiss && <button type="button" onClick={onDismiss} aria-label="Dismiss" className="shrink-0 -m-1 p-1 rounded hover:bg-black/5"><X className="w-4 h-4" /></button>}
+      {onDismiss && <button type="button" onClick={onDismiss} aria-label={vt("Dismiss")} className="shrink-0 -m-1 p-1 rounded hover:bg-black/5"><X className="w-4 h-4" /></button>}
     </div>
   );
 }
@@ -53,6 +57,7 @@ export interface BtnProps {
   onClick?: () => void; disabled?: boolean; title?: string; "aria-label"?: string; "data-testid"?: string;
 }
 export function Btn({ variant = "secondary", className = "", style, children, type = "button", ...rest }: BtnProps) {
+  useVendorLanguage();
   return <button type={type} className={`${btnBase} ${variant === "plain" ? "px-1 h-7" : ""} ${className}`} style={{ ...btnStyle(variant), ...style }} {...rest}>{children}</button>;
 }
 export const aBtnPrimary = `${btnBase} h-9`;
@@ -61,6 +66,7 @@ export const cardStyle: CSSProperties = { background: "var(--t-surface)", border
 export function Card({ title, actions, children, footer, flush, className = "", testId }: {
   title?: ReactNode; actions?: ReactNode; children: ReactNode; footer?: ReactNode; flush?: boolean; className?: string; testId?: string;
 }) {
+  useVendorLanguage();
   return (
     <section className={`overflow-hidden ${className}`} style={cardStyle} data-testid={testId}>
       {(title || actions) && (
@@ -80,6 +86,7 @@ export const subtle: CSSProperties = { color: "var(--t-subtle)" };
 
 /** Labelled form field in the Shopify style: small medium-weight label above a 32px input. */
 export function Field({ label, children, hint, className = "" }: { label: string; children: ReactNode; hint?: string; className?: string }) {
+  useVendorLanguage();
   return (
     <label className={`block text-xs font-medium ${className}`} style={muted}>
       {label}

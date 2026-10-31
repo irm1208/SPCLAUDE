@@ -85,3 +85,16 @@ test("rejects passwords that exceed the Unicode password length limit before sen
   assert.ok(!requests.some(request => request.method === "POST"));
   assert.match(document.querySelector('[role="alert"]')?.textContent ?? "", /shorten passwords/);
 });
+test("saves an account-specific portal display name with the vendor link", async () => {
+  await mount([{ ...accounts[0], status: "active", vendorId: "v1" }]);
+  await change("input-display-name-supplier", "  Northstar Labs  ");
+  await act(async () => { fireEvent.click(el("button-activate-supplier")); });
+  assert.deepEqual(requests.find(request => request.method === "PUT")?.body, { vendorId: "v1", status: "active", displayName: "Northstar Labs" });
+});
+test("allows clearing the display name to restore the vendor profile name", async () => {
+  await mount([{ ...accounts[0], status: "active", vendorId: "v1", displayName: "Northstar" } as any]);
+  assert.equal((el("input-display-name-supplier") as HTMLInputElement).value, "Northstar");
+  await change("input-display-name-supplier", "");
+  await act(async () => { fireEvent.click(el("button-activate-supplier")); });
+  assert.equal(requests.find(request => request.method === "PUT")?.body.displayName, null);
+});

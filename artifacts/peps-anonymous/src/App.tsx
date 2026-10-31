@@ -321,6 +321,8 @@ function SiteContent() {
     (import.meta.env.VITE_VENDOR_DEV_HOSTS ?? "").split(",").filter(Boolean));
   useEffect(() => {
     document.title = surface === "vendor" ? "Peps Anonymous · Vendor portal" : "Salt & Peps";
+    document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.setAttribute("href", surface === "vendor" ? "/brand/pepsanonymous-favicon.svg" : "/favicon.svg");
+    document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')?.setAttribute("href", surface === "vendor" ? "/brand/pepsanonymous-apple-touch-180.png" : "/brand/salt-peps-apple-touch-180.png");
   }, [surface]);
   if (surface === "blocked") return <SiteNotFound />;
   if (surface === "vendor") return (

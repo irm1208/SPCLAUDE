@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@google/genai": "workspace:*",
+    "@noble/hashes": "1.8.0",
     "@replit/connectors-sdk": "^0.4.2",
     "@replit/object-storage": "^1.0.0",
     "@solana/web3.js": "1.98.4",
@@ -26,6 +27,7 @@
     "@workspace/payout-assets": "workspace:*",
     "@workspace/shipping": "workspace:*",
     "bcryptjs": "^3.0.3",
+    "bech32": "2.0.0",
     "bs58": "6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2",

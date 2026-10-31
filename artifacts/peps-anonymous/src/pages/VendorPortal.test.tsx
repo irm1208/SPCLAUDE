@@ -28,6 +28,7 @@ function setup() {
   root = createRoot(el); return el;
 }
 // The vendor gate uses the shared query client to clear cached account state after sign-in.
+const walletFixture = { wallets: [{ id: "wallet-a", vendorId: "a", currency: "ETH", network: "Ethereum", address: "0x123", label: null }], options: [{ currency: "ETH", network: "Ethereum", family: "evm", decimals: 18 }] };
 const withQuery = (node: ReturnType<typeof createElement>) => createElement(QueryClientProvider, { client: new QueryClient() }, node);
 async function settle() {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 15)); });
@@ -81,7 +82,7 @@ it("vendor sees only cost and delivery fields, without member price or payment",
   };
   const fetchMock = vi.fn().mockImplementation((url: string) => Promise.resolve({
     ok: true, status: 200,
-    json: async () => url.endsWith("/me") ? { username: "vendor-a", vendorName: "Vendor A", vendorId: "a" } : { orders: [order] },
+    json: async () => url.endsWith("/wallets") ? walletFixture : url.endsWith("/me") ? { username: "vendor-a", vendorName: "Vendor A", vendorId: "a" } : { orders: [order] },
   }));
   vi.stubGlobal("fetch", fetchMock);
   const el = setup();
@@ -112,7 +113,7 @@ it("Admin manages dedicated pending accounts while keeping manual submission con
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ vendors, submissions: [] }) });
   vi.stubGlobal("fetch", fetchMock);
   const { adminAuth } = await import("../lib/admin-auth");
-  const accountRequest = vi.spyOn(adminAuth, "request").mockImplementation(async () => new Response(JSON.stringify({ accounts, vendors })));
+  const accountRequest = vi.spyOn(adminAuth, "request").mockImplementation(async () => new Response(JSON.stringify({ accounts, vendors, wallets: [], orders: [], payments: [] })));
   try {
     const el = setup();
     await act(async () => root.render(createElement(VendorPortalAdmin, { secret: "synthetic-admin-secret" })));
@@ -140,6 +141,7 @@ it("Admin manages dedicated pending accounts while keeping manual submission con
 it.each([401, 503])('refreshing orders handles status %s without retaining revoked vendor access', async status => {
   let refresh = false;
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/vendor/wallets') return new Response(JSON.stringify(walletFixture));
     if (url === '/api/vendor/me') return new Response(JSON.stringify({ vendorId: 'a', vendorName: 'Vendor A', username: 'vendor-a' }));
     if (url === '/api/vendor/orders') return refresh ? new Response(JSON.stringify({ error: 'Unavailable' }), { status }) : new Response(JSON.stringify({ orders: [] }));
     if (url === '/api/vendor/auth/session') return new Response('{}', { status: 401 });
@@ -159,4 +161,141 @@ it.each([401, 503])('refreshing orders handles status %s without retaining revok
     expect(el.textContent).toContain('Unavailable');
     expect(el.querySelector('[data-testid="button-logout"]')).not.toBeNull();
   }
+});
+
+it.each(["empty", "error"])("blocks orders when wallet setup is %s", async mode => {
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === "/api/vendor/me") return new Response(JSON.stringify({ vendorId: "a", vendorName: "Vendor A", username: "vendor-a" }));
+    if (url === "/api/vendor/wallets") return mode === "empty" ? new Response(JSON.stringify({ wallets: [], options: walletFixture.options })) : new Response(JSON.stringify({ error: "Wallet service unavailable" }), { status: 503 });
+    return new Response("{}", { status: 503 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const el = setup();
+  await act(async () => root.render(withQuery(createElement(VendorPortal))));
+  await settle();
+  expect(el.querySelector('[data-testid="vendor-wallet-gate"]')).not.toBeNull();
+  expect(el.textContent).toContain(mode === "empty" ? "Add wallet" : "Wallet service unavailable");
+  expect(fetchMock.mock.calls.some(([url]) => url === "/api/vendor/orders")).toBe(false);
+  expect(el.querySelector('[data-testid="button-logout"]')).not.toBeNull();
+});
+
+it("does not load orders before the wallet check resolves", async () => {
+  let resolveWallet!: (r: Response) => void;
+  const walletRequest = new Promise<Response>(resolve => { resolveWallet = resolve; });
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === "/api/vendor/me") return new Response(JSON.stringify({ vendorId: "a", vendorName: "Vendor A", username: "vendor-a" }));
+    if (url === "/api/vendor/wallets") return walletRequest;
+    return new Response(JSON.stringify({ orders: [] }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const el = setup();
+  await act(async () => root.render(withQuery(createElement(VendorPortal))));
+  await settle();
+  expect(el.textContent).toContain("Loading payment wallets");
+  expect(fetchMock.mock.calls.some(([url]) => url === "/api/vendor/orders")).toBe(false);
+  await act(async () => resolveWallet(new Response(JSON.stringify(walletFixture))));
+  await settle();
+  expect(fetchMock.mock.calls.filter(([url]) => url === "/api/vendor/orders")).toHaveLength(1);
+});
+
+it("refreshes orders after the first wallet is saved", async () => {
+  const { setVendorCsrfToken } = await import("../lib/vendor-auth-client");
+  setVendorCsrfToken("wallet-save-token");
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/api/vendor/me") return new Response(JSON.stringify({ vendorId: "a", vendorName: "Vendor A", username: "vendor-a" }));
+    if (url === "/api/vendor/wallets") return new Response(JSON.stringify(init?.method === "PUT" ? walletFixture : { wallets: [], options: walletFixture.options }));
+    return new Response(JSON.stringify({ orders: [] }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const el = setup();
+  await act(async () => root.render(withQuery(createElement(VendorPortal))));
+  await settle();
+  await act(async () => [...el.querySelectorAll("button")].find(button => button.textContent === "Add wallet")!.click());
+  const address = el.querySelector('input[autocomplete="off"]') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(address, "0x1111111111111111111111111111111111111111");
+    address.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  });
+  await act(async () => el.querySelector('[data-testid="form-vendor-wallets"]')!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  await settle();
+  expect(el.querySelector('[data-testid="vendor-wallet-gate"]')).toBeNull();
+  expect(fetchMock.mock.calls.filter(([url]) => url === "/api/vendor/orders")).toHaveLength(1);
+  const saved = fetchMock.mock.calls.find(([url, init]) => url === "/api/vendor/wallets" && init?.method === "PUT")![1]!;
+  expect(JSON.parse(saved.body as string).wallets[0].id).toBeUndefined();
+});
+
+it("opens wallet Settings when the orders API requires wallet setup", async () => {
+  let walletLoads = 0;
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === "/api/vendor/me") return new Response(JSON.stringify({ vendorId: "a", vendorName: "Vendor A", username: "vendor-a" }));
+    if (url === "/api/vendor/wallets") return new Response(JSON.stringify(++walletLoads === 1 ? walletFixture : { wallets: [], options: walletFixture.options }));
+    if (url === "/api/vendor/orders") return new Response(JSON.stringify({ error: "vendor_wallet_required", message: "Add a payment wallet in Settings before using orders." }), { status: 403 });
+    return new Response("{}", { status: 503 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const el = setup();
+  await act(async () => root.render(withQuery(createElement(VendorPortal))));
+  await settle();
+  expect(walletLoads).toBe(2);
+  expect(el.querySelector('[data-testid="form-vendor-wallets"]')).not.toBeNull();
+  expect(el.querySelector('[data-testid="form-vendor-settings"]')).not.toBeNull();
+  expect(el.textContent).not.toContain("vendor_wallet_required");
+  expect(fetchMock.mock.calls.filter(([url]) => url === "/api/vendor/orders")).toHaveLength(1);
+});
+
+ it("offers the 17TRACK catalogue and detects the carrier on tracking blur", async () => {
+  const { OrderDetail } = await import("./VendorPortal");
+  const { CARRIERS_17TRACK } = await import("../lib/carriers");
+  const match = CARRIERS_17TRACK.find(c => c.code > 0)!;
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+    url.includes("detect-carrier") ? { carrierCode: match.code } : { csrfToken: "test" }
+  ))));
+  const el = setup();
+  const order = { id: "one", reference: "123", status: "submitted", submittedAt: new Date().toISOString(), stale: false,
+    items: [], currency: "USD", productCost: "0", shippingCost: "0", totalCost: "0", shipping: { name: "Test", address: "Street", country: "UK", phone: "", email: "" },
+    trackingNumber: "ABC123", carrier: null, images: [] };
+  await act(async () => root.render(createElement(OrderDetail, { order, onBack: () => {}, onChanged: async () => {}, prev: null, next: null, onOpen: () => {} })));
+  await act(async () => { (el.querySelector('[data-testid="button-edit-tracking"]') as HTMLButtonElement)?.click(); });
+  const select = el.querySelector('[data-testid="select-carrier"]') as HTMLSelectElement;
+  expect(select.options.length).toBeGreaterThan(1000);
+  await act(async () => { el.querySelector('[data-testid="input-tracking"]')!.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true })); });
+  await settle();
+  expect(select.value).toBe(match.label);
+  expect(el.textContent).toContain(`Detected ${match.label}`);
+});
+
+it("switches the entire vendor view and documents to Chinese without translating products", async () => {
+  const { setVendorLanguage, getVendorLanguage } = await import("../lib/vendor-language");
+  const { vendorOrdersCsv } = await import("../lib/vendor-orders-csv");
+  const { vendorPackingSlipHtml } = await import("../lib/vendor-packing-slip");
+  const order = { id: "language-order", reference: "12614", status: "Submitted", submittedAt: new Date().toISOString(), stale: false,
+    items: [{ productName: "Order", quantity: 2, unitCost: "10", lineTotal: "20" }], currency: "USD", productCost: "20", shippingCost: "5", totalCost: "25",
+    shipping: { name: "Benjamin Bateman", address: "55 High Street", country: "Australia", phone: "+6112345", email: "" }, trackingNumber: null, carrier: null, images: [] };
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+    url.endsWith("/wallets") ? walletFixture : url.endsWith("/me") ? { username: "vendor-a", vendorName: "Vendor A", vendorId: "a" } : { orders: [order] }
+  ))));
+  const el = setup();
+  try {
+    await act(async () => root.render(withQuery(createElement(VendorPortal)))); await settle();
+    const dropdown = el.querySelector('[data-testid="select-vendor-language"]') as HTMLSelectElement;
+    expect(dropdown.value).toBe("en");
+    await act(async () => { dropdown.value = "zh"; dropdown.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+    expect(getVendorLanguage()).toBe("zh");
+    expect(dom.window.localStorage.getItem("peps-vendor-language")).toBe("zh");
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(el.textContent).toContain("今日待办");
+    expect(el.textContent).toContain("Vendor A");
+    await act(async () => (el.querySelector('[data-testid="card-order-language-order"]') as HTMLButtonElement).click());
+    expect(el.textContent).toContain("打印装箱单");
+    expect(el.textContent).toContain("保存物流信息并标记为已发货");
+    expect(el.textContent).toContain("Order"); // Even a product named like a UI label remains unchanged.
+    expect(el.textContent).toContain("Benjamin Bateman");
+    expect(vendorOrdersCsv([order])).toContain('"已付款"');
+    expect(vendorOrdersCsv([order])).toContain("2x Order");
+    expect(vendorPackingSlipHtml(order)).toContain("收件人:");
+    const current = el.querySelector('[data-testid="select-vendor-language"]') as HTMLSelectElement;
+    await act(async () => { current.value = "en"; current.dispatchEvent(new dom.window.Event("change", { bubbles: true })); });
+    expect(el.textContent).toContain("Print packing slip");
+    expect(vendorOrdersCsv([order])).toContain('"Paid"');
+  } finally { await act(async () => setVendorLanguage("en")); }
 });

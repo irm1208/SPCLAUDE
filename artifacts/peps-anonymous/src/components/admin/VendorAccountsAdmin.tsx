@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, ShieldCheck } from "lu
 import { adminAuth } from "@/lib/admin-auth";
 
 type Status = "pending" | "active" | "disabled";
-interface VendorAccount { username: string; status: Status; vendorId: string | null; companyName: string; contactName: string; email: string | null; createdAt: string }
+interface VendorAccount { displayName?: string | null; username: string; status: Status; vendorId: string | null; companyName: string; contactName: string; email: string | null; createdAt: string }
 interface AccountData { accounts: VendorAccount[]; vendors: { id: string; name: string }[] }
 type Message = { ok: boolean; text: string } | null;
 const card = { background: "var(--t-surface)", border: "1px solid var(--t-border)" };
@@ -24,6 +24,8 @@ export default function VendorAccountsAdmin() {
   const [password, setPassword] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [links, setLinks] = useState<Record<string, string>>({});
@@ -42,9 +44,9 @@ export default function VendorAccountsAdmin() {
     if (!vendorId) return setMessage({ ok: false, text: "Select a vendor profile first." });
     setBusy("create"); setMessage(null);
     try {
-      const response = await adminAuth.request("/api/admin/vendor-accounts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: username.trim(), password, vendorId, companyName: companyName.trim(), contactName: contactName.trim(), ...(email.trim() ? { email: email.trim() } : {}) }) });
+      const response = await adminAuth.request("/api/admin/vendor-accounts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: username.trim(), password, vendorId, companyName: companyName.trim(), ...(displayName.trim() ? { displayName: displayName.trim() } : {}), contactName: contactName.trim(), ...(email.trim() ? { email: email.trim() } : {}) }) });
       if (!response.ok) throw new Error(await failure(response, "Could not create vendor account."));
-      setUsername(""); setPassword(""); setVendorId(""); setCompanyName(""); setContactName(""); setEmail("");
+      setUsername(""); setPassword(""); setVendorId(""); setCompanyName(""); setDisplayName(""); setContactName(""); setEmail("");
       setMessage({ ok: true, text: "Vendor account created and activated." }); await load();
     } catch (error) { setMessage({ ok: false, text: error instanceof Error ? error.message : "Could not create vendor account." }); }
     finally { setBusy(null); }
@@ -56,10 +58,10 @@ export default function VendorAccountsAdmin() {
     if (reset && !passwordValid(nextPassword)) return setMessage({ ok: false, text: "Use 12–72 characters; shorten passwords containing special Unicode characters." });
     setBusy(account.username); setMessage(null);
     try {
-      const response = await adminAuth.request(`/api/admin/vendor-accounts/${encodeURIComponent(account.username)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ vendorId: selected || null, status, ...(reset ? { password: nextPassword } : {}) }) });
+      const response = await adminAuth.request(`/api/admin/vendor-accounts/${encodeURIComponent(account.username)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ vendorId: selected || null, status, ...(displayNames[account.username] !== undefined ? { displayName: displayNames[account.username].trim() || null } : {}), ...(reset ? { password: nextPassword } : {}) }) });
       if (!response.ok) throw new Error(await failure(response, "Could not update vendor account."));
       if (reset) setPasswords(previous => ({ ...previous, [account.username]: "" }));
-      setMessage({ ok: true, text: reset ? `Password reset for ${account.username}. Existing sessions have been revoked.` : `Account updated for ${account.username}. Existing sessions have been revoked.` });
+      setMessage({ ok: true, text: reset ? `Password reset for ${account.username}. Existing sessions have been revoked.` : `Account updated for ${account.username}.` });
       await load();
     } catch (error) { setMessage({ ok: false, text: error instanceof Error ? error.message : "Could not update vendor account." }); }
     finally { setBusy(null); }
@@ -78,6 +80,7 @@ export default function VendorAccountsAdmin() {
           <label className="text-xs space-y-1"><span>Vendor profile</span><select required value={vendorId} onChange={event => setVendorId(event.target.value)} className={field} style={card} data-testid="select-new-vendor"><option value="">Select vendor profile</option>{data.vendors.map(vendor => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></label>
           <label className="text-xs space-y-1"><span>Company name (optional)</span><input value={companyName} onChange={event => setCompanyName(event.target.value)} className={field} style={card} /></label>
           <label className="text-xs space-y-1"><span>Contact name (optional)</span><input value={contactName} onChange={event => setContactName(event.target.value)} className={field} style={card} /></label>
+          <label className="text-xs space-y-1"><span>Portal display name (optional)</span><input maxLength={100} value={displayName} onChange={event => setDisplayName(event.target.value)} className={field} style={card} placeholder="Uses the linked vendor name if blank" data-testid="input-vendor-display-name" /></label>
           <label className="text-xs space-y-1"><span>Email (optional)</span><input type="email" value={email} onChange={event => setEmail(event.target.value)} className={field} style={card} /></label>
         </div>
         <button disabled={!!busy || !data.vendors.length} className={button} style={primary}>{busy === "create" && <Loader2 className="w-4 h-4 animate-spin" />}Create active account</button>
@@ -90,7 +93,8 @@ export default function VendorAccountsAdmin() {
             <div className="flex flex-wrap gap-2 items-center"><strong className="text-sm">{account.companyName || account.username}</strong><span className="text-sm" style={{ color: "var(--t-muted)" }}>@{account.username}</span><span className="rounded-full px-2 py-1 text-xs font-semibold capitalize" style={{ background: "var(--t-surface2)", color: account.status === "active" ? "#15803D" : account.status === "pending" ? "#B45309" : "#B91C1C" }}>{account.status}</span><span className="text-xs sm:ml-auto" style={{ color: "var(--t-muted)" }}>Created {new Date(account.createdAt).toLocaleDateString()}</span></div>
             {(account.contactName || account.email) && <p className="text-sm break-words" style={{ color: "var(--t-muted)" }}>{account.contactName}{account.contactName && account.email ? " · " : ""}{account.email}</p>}
             <div className="flex flex-wrap gap-2 items-end"><label className="text-xs space-y-1 flex-1 min-w-48"><span>Linked vendor profile</span><select value={selected} disabled={!!busy} onChange={event => setLinks(previous => ({ ...previous, [account.username]: event.target.value }))} className={field} style={card} data-testid={`select-vendor-${account.username}`}><option value="">No linked vendor</option>{data.vendors.map(vendor => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select></label>
-              <button type="button" disabled={!!busy || !selected} onClick={() => void update(account, "active")} className={button} style={primary} data-testid={`button-activate-${account.username}`}>{busy === account.username && <Loader2 className="w-4 h-4 animate-spin" />}{account.status === "pending" ? "Approve & activate" : account.status === "disabled" ? "Reactivate" : "Save vendor link"}</button>
+              <label className="text-xs space-y-1 flex-1 min-w-48"><span>Portal display name (optional)</span><input maxLength={100} value={displayNames[account.username] ?? account.displayName ?? ""} disabled={!!busy} onChange={event => setDisplayNames(previous => ({ ...previous, [account.username]: event.target.value }))} className={field} style={card} placeholder={data.vendors.find(vendor => vendor.id === selected)?.name ?? "Linked vendor name"} data-testid={`input-display-name-${account.username}`} /><span className="block" style={{ color: "var(--t-muted)" }}>Shown in this account’s portal. Leave blank to use the vendor profile name.</span></label>
+              <button type="button" disabled={!!busy || !selected} onClick={() => void update(account, "active")} className={button} style={primary} data-testid={`button-activate-${account.username}`}>{busy === account.username && <Loader2 className="w-4 h-4 animate-spin" />}{account.status === "pending" ? "Approve & activate" : account.status === "disabled" ? "Reactivate" : "Save link & display name"}</button>
               {account.status !== "disabled" && <button type="button" disabled={!!busy} onClick={() => void update(account, "disabled")} className={button} style={{ color: "#B91C1C", border: "1px solid var(--t-border)" }} data-testid={`button-suspend-${account.username}`}>{account.status === "pending" ? "Decline" : "Suspend"}</button>}
             </div>
             <div className="flex flex-wrap gap-2 items-end"><label className="text-xs space-y-1 flex-1 min-w-48"><span>New password (12–72 characters)</span><input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={passwords[account.username] ?? ""} onChange={event => setPasswords(previous => ({ ...previous, [account.username]: event.target.value }))} className={field} style={card} data-testid={`input-reset-${account.username}`} /></label><button type="button" disabled={!!busy || !passwordValid(passwords[account.username] ?? "")} onClick={() => void update(account, account.status, true)} className={button} style={card} data-testid={`button-reset-${account.username}`}>Reset password</button></div>

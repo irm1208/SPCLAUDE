@@ -51,7 +51,7 @@ export function siteDomainPolicy(options: { production: boolean; developmentHost
     }
     if (vendorHost) {
       const staticAsset = /^\/assets\/[a-z0-9_./-]+\.(?:js|css|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|mp3|mp4|wasm)$/i.test(path)
-        || path === "/favicon.svg" || /^\/brand\/[a-z0-9_-]+\.(?:svg|png)$/i.test(path);
+        || (path === "/favicon.svg" || path === "/favicon.ico") || /^\/brand\/[a-z0-9_-]+\.(?:svg|png)$/i.test(path);
       if (!vendorApi && !VENDOR_PAGES.has(path) && !HEALTH_PATHS.has(path) && !staticAsset) {
         res.status(404).json({ error: "Not found" }); return;
       }
@@ -60,10 +60,18 @@ export function siteDomainPolicy(options: { production: boolean; developmentHost
   };
 }
 
+export function isVendorHost(hostHeader: string): boolean {
+  const host = authority(hostHeader);
+  return !!host && VENDOR_HOSTS.has(host.host);
+}
+
 /** Shared build, distinct vendor document: no member Mini App bootstrap. */
 export function siteDocument(html: string, hostHeader: string): string {
   const host = authority(hostHeader);
   if (!host || !VENDOR_HOSTS.has(host.host)) return html;
-  return html.replace(/<title>[^<]*<\/title>/i, "<title>Peps Anonymous · Vendor portal</title>")
+  return html
+    .replace(/<link\b[^>]*\brel=["'](?:shortcut )?icon["'][^>]*>/gi, '<link rel="icon" type="image/svg+xml" href="/brand/pepsanonymous-favicon.svg" />')
+    .replace(/<link\b[^>]*\brel=["']apple-touch-icon["'][^>]*>/gi, '<link rel="apple-touch-icon" href="/brand/pepsanonymous-apple-touch-180.png" />')
+    .replace(/<title>[^<]*<\/title>/i, "<title>Peps Anonymous · Vendor portal</title>")
     .replace(/<script\b[^>]*\bsrc=["']https:\/\/telegram\.org\/js\/telegram-web-app\.js["'][^>]*>\s*<\/script>/gi, "");
 }

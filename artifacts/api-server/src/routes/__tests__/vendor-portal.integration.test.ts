@@ -19,13 +19,27 @@ vi.mock("../../middleware/account-auth", () => ({
     req.account = { telegramUsername: req.get("x-test-user") }; next();
   },
 }));
-vi.mock("../../middleware/vendor-auth", () => ({
+vi.mock("../../middleware/vendor-auth", async () => {
+  const bcrypt = (await import("bcryptjs")).default;
+  const passwordHash = bcrypt.hashSync("fixture-password-1234", 4);
+  const identity = (req: any, res: any, next: any) => {
+    if (!req.get("x-test-user")) return res.status(401).json({ error: "Vendor sign-in required" });
+    const username = req.get("x-test-user");
+    req.vendor = { username, vendorId: "vendor-a", tokenHash: "fixture-token", csrfToken: "fixture-csrf", account: { username, passwordHash, status: "active", vendorId: "vendor-a", companyName: "Fixture Co" } }; next();
+  };
+  return {
   vendorSameOrigin: (_req: any, _res: any, next: any) => next(),
+  requireVendorIdentity: identity,
+  VENDOR_SESSION_COOKIE: "peps_vendor_session",
+  vendorCookieOptions: () => ({ httpOnly: true, sameSite: "lax", path: "/" }),
+  vendorTokenHash: (token: string) => require("node:crypto").createHash("sha256").update(token).digest("hex"),
+  vendorCsrfToken: (token: string) => require("node:crypto").createHash("sha256").update(`vendor-csrf:${token}`).digest("hex"),
+  createVendorAuthentication: () => ({ identity, active: identity }),
   requireVendorAccount: (req: any, res: any, next: any) => {
     if (!req.get("x-test-user")) return res.status(401).json({ error: "Vendor sign-in required" });
     req.vendor = { username: req.get("x-test-user") }; next();
   },
-}));
+  }; });
 vi.mock("../../middleware/require-admin", () => ({
   requireAdmin: (req: any, res: any) => {
     if (req.get("x-test-admin") === "yes") return true;
@@ -59,9 +73,13 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     lockShare = (await import("../wholesale-shares")).attemptLockShare;
     const app = express(); app.use(express.json()); app.use(router);
     app.use((await import("../vendor-accounts-admin")).default);
+    app.use((await import("../vendor-payments")).default);
     app.use((await import("../vendor-portal-extras")).default);
     app.use((await import("../vendor-telegram")).default);
     app.use((await import("../vendor-threads")).default);
+    app.use((await import("../vendor-auth")).createVendorAuthRouter(undefined, { rateLimit: false }));
+    app.use((await import("../vendor-security")).default);
+    app.use((await import("../vendor-notifications")).default);
     server = app.listen(0);
     await new Promise<void>(resolve => server.once("listening", resolve));
     base = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -81,6 +99,9 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     await realDb.transaction(async (tx: any) => {
       state.tx = tx;
       await (await import("../../lib/vendor-account-schema")).ensureVendorAccountSchema(tx);
+      await (await import("../../lib/vendor-payment-schema")).ensureVendorPaymentSchema(tx);
+      // Keep older local databases compatible inside this rollback-only fixture.
+      await tx.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS addition_display_reference text`);
       const suffix = randomUUID().slice(0, 8);
       const a = `fixture-vendor-a-${suffix}`, b = `fixture-vendor-b-${suffix}`, member = `fixture-member-${suffix}`, other = `fixture-other-${suffix}`;
       await tx.insert(store.accountsTable).values([a, b, member, other].map(telegramUsername => ({ telegramUsername })));
@@ -106,6 +127,20 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
       });
       try { await run({ a, b, member, other, orderId, code, name, tx }); }
       catch (error) { throw error; }
+      throw rollback;
+    }).catch((error: unknown) => { if (error !== rollback) throw error; });
+    state.tx = null;
+  }
+  /** Account-only fixture for security tests: no orders, so it does not depend on the full orders schema. */
+  async function accountFixture(run: (f: any) => Promise<void>) {
+    const rollback = new Error("fixture rollback");
+    await realDb.transaction(async (tx: any) => {
+      state.tx = tx;
+      await (await import("../../lib/vendor-account-schema")).ensureVendorAccountSchema(tx);
+      await (await import("../../lib/vendor-payment-schema")).ensureVendorPaymentSchema(tx);
+      // Keep older local databases compatible inside this rollback-only fixture.
+      await tx.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS addition_display_reference text`);
+      await run({ tx });
       throw rollback;
     }).catch((error: unknown) => { if (error !== rollback) throw error; });
     state.tx = null;
@@ -185,6 +220,38 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect(rows).toHaveLength(1);
     expect(rows[0].vendorId).toBe("vendor-b");
     expect(rows[0].snapshot.shipping.email).toBe("");
+  }), 60000);
+  it("records admin supplier payments against real source orders without changing customer payment state", () => fixture(async f => {
+    const { row } = await submit(f);
+    const walletId = randomUUID(), address = "0x" + "1".repeat(40);
+    await f.tx.insert(store.vendorWalletsTable).values({ id: walletId, vendorId: "vendor-a", currency: "USDT", network: "ERC-20", address });
+    const before = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
+    const input = { vendorId: "vendor-a", walletId, walletSnapshot: { currency: "USDT", network: "ERC-20", address }, submissionIds: [row.id], txid: "0x" + randomUUID().replaceAll("-", "").padEnd(64, "a"), cryptoAmount: "90" };
+    expect((await request("/admin/vendor-payments", f.a, input)).status).toBe(403);
+    const recorded = await request("/admin/vendor-payments", undefined, input, true);
+    expect(recorded.status).toBe(201);
+    expect(recorded.data.payment.usdAmount).toBe("90.00");
+    expect(recorded.data.payment.orders).toEqual([{ submissionId: row.id, reference: f.code, amountUsd: "90.00" }]);
+    expect((await request("/vendor/payments", f.a)).data.payments.some((p: any) => p.id === recorded.data.payment.id)).toBe(true);
+    expect((await request("/vendor/payments", f.b)).data.payments.some((p: any) => p.id === recorded.data.payment.id)).toBe(false);
+    const after = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
+    for (const field of ["status", "paymentStatus", "balancePaymentStatus", "grandTotal", "amountDue"]) expect(after[field]).toEqual(before[field]);
+    expect((await request(`/admin/vendor-portal/orders/${row.id}`, undefined, undefined, true, "DELETE")).status).toBe(409);
+    expect((await request(`/admin/vendor-payments/${recorded.data.payment.id}/void`, undefined, { reason: "Fixture correction" }, true)).status).toBe(200);
+    expect((await request(`/admin/vendor-portal/orders/${row.id}`, undefined, undefined, true, "DELETE")).status).toBe(200);
+  }), 60000);
+  it("saves a portal display name without changing vendor ownership or revoking a name-only session", () => fixture(async f => {
+    const tokenHash = `display-name-${randomUUID()}`;
+    await f.tx.insert(store.vendorSessionsTable).values({ username: f.a, tokenHash, expiresAt: new Date(Date.now() + 60000) });
+    const path = `/admin/vendor-accounts/${encodeURIComponent(f.a)}`;
+    const updated = await request(path, undefined, { status: "active", vendorId: "vendor-a", displayName: "  Northstar Labs  " }, true, "PUT");
+    expect(updated.status).toBe(200);
+    expect(updated.data.account.displayName).toBe("Northstar Labs");
+    expect((await request("/vendor/me", f.a)).data).toMatchObject({ vendorId: "vendor-a", vendorName: "Northstar Labs", username: f.a });
+    expect(await f.tx.select().from(store.vendorSessionsTable).where(eq(store.vendorSessionsTable.tokenHash, tokenHash))).toHaveLength(1);
+    expect((await request(path, undefined, { status: "active", vendorId: "vendor-a", displayName: "a".repeat(101) }, true, "PUT")).status).toBe(400);
+    expect((await request(path, undefined, { status: "active", vendorId: "vendor-a", displayName: "" }, true, "PUT")).status).toBe(200);
+    expect((await request("/vendor/me", f.a)).data.vendorName).toBe("vendor-a");
   }), 60000);
   it("upgrades an older database twice without changing legacy rows or money",()=>fixture(async f=>{
     const namespace=`mv_migration_${randomUUID().replaceAll("-","")}`;
@@ -533,6 +600,124 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
       tg.setVendorTelegramTransport(null);
       if (previousToken === undefined) delete process.env.VENDOR_TELEGRAM_BOT_TOKEN; else process.env.VENDOR_TELEGRAM_BOT_TOKEN = previousToken;
     }
+  }));
+
+  it("adds an authenticator app and a passkey to a vendor account, then requires them at sign-in", () => accountFixture(async f => {
+    const previousKey = process.env.ADMIN_TOTP_ENCRYPTION_KEY; process.env.ADMIN_TOTP_ENCRYPTION_KEY = "integration-key";
+    const { generateTotp, base32Decode } = await import("../../lib/admin-2fa");
+    const { syntheticAuthenticator } = await import("../../lib/vendor-security.test-helpers");
+    const bcrypt = (await import("bcryptjs")).default;
+    const user = `fixture-secure-${randomUUID().slice(0, 8)}`, password = "fixture-password-1234";
+    await f.tx.insert(store.vendorAccountsTable).values({ username: user, vendorId: "vendor-a", passwordHash: await bcrypt.hash(password, 4), status: "active", companyName: "Secure Co" });
+    try {
+      // Nothing enrolled: plain sign-in works.
+      const plain = await request("/vendor/auth/login", undefined, { username: user, password });
+      expect(plain.status).toBe(200); expect(plain.data.account.username).toBe(user); expect(plain.data.csrfToken).toBeTruthy();
+      expect((await request("/vendor/security", user)).data).toMatchObject({ available: true, totp: { enabled: false }, passkeys: [] });
+      // Authenticator app: begin, wrong code refused, right code enables and hands out recovery codes.
+      const begin = await request("/vendor/security/totp/begin", user, {});
+      expect(begin.status).toBe(200); expect(begin.data.otpauthUri).toContain("otpauth://totp/");
+      const secret = base32Decode(new URL(begin.data.otpauthUri).searchParams.get("secret")!);
+      expect((await request("/vendor/security/totp/confirm", user, { code: "000000" })).status).toBe(400);
+      const confirm = await request("/vendor/security/totp/confirm", user, { code: generateTotp(secret) });
+      expect(confirm.status).toBe(200); expect(confirm.data.recoveryCodes).toHaveLength(8); expect(confirm.data.methods).toEqual({ totp: true, passkeys: 0 });
+      // Sign-in now stops for the second step; the token completes it once, replayed codes are refused.
+      const gated = await request("/vendor/auth/login", undefined, { username: user, password, rememberMe: true });
+      expect(gated.status).toBe(200); expect(gated.data).toMatchObject({ mfaRequired: true, methods: { totp: true, passkeys: 0 } }); expect(gated.data.csrfToken).toBeUndefined();
+      const wrong = await request("/vendor/auth/mfa/totp", undefined, { mfaToken: gated.data.mfaToken, code: "123456" });
+      expect(wrong.status).toBe(401); expect(wrong.data.mfaToken).toBeTruthy();
+      const code = generateTotp(secret, Date.now() + 30_000);
+      const done = await request("/vendor/auth/mfa/totp", undefined, { mfaToken: wrong.data.mfaToken, code });
+      expect(done.status).toBe(200); expect(done.data.csrfToken).toBeTruthy();
+      expect((await request("/vendor/auth/mfa/totp", undefined, { mfaToken: wrong.data.mfaToken, code })).status).toBe(401);
+      const again = await request("/vendor/auth/login", undefined, { username: user, password });
+      expect((await request("/vendor/auth/mfa/totp", undefined, { mfaToken: again.data.mfaToken, code })).status).toBe(401);
+      // Recovery code works once.
+      const second = await request("/vendor/auth/login", undefined, { username: user, password });
+      const recovered = await request("/vendor/auth/mfa/totp", undefined, { mfaToken: second.data.mfaToken, code: confirm.data.recoveryCodes[0].toLowerCase() });
+      expect(recovered.status).toBe(200);
+      expect((await request("/vendor/security", user)).data.totp.recoveryCodesRemaining).toBe(7);
+      // Passkey registration with a synthetic authenticator, then passkey-only sign-in.
+      const rpHost = new URL(base).host;
+      const auth = await syntheticAuthenticator(rpHost.replace(/:\d+$/, ""));
+      const reg = await request("/vendor/security/passkeys/options", user, {});
+      expect(reg.status).toBe(200); expect(reg.data.options.rp.id).toBe(rpHost.replace(/:\d+$/, "")); expect(reg.data.options.user.name).toBe(user);
+      const clientCreate = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: reg.data.options.challenge, origin: base }));
+      const badOrigin = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: reg.data.options.challenge, origin: "https://evil.example" }));
+      expect((await request("/vendor/security/passkeys/verify", user, { credential: { response: { clientDataJSON: badOrigin.toString("base64url"), attestationObject: auth.attestationObject().toString("base64url") } } })).status).toBe(400);
+      const reg2 = await request("/vendor/security/passkeys/options", user, {});
+      const clientCreate2 = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: reg2.data.options.challenge, origin: base }));
+      const registered = await request("/vendor/security/passkeys/verify", user, { name: "Work laptop", credential: { id: auth.credentialId.toString("base64url"), rawId: auth.credentialId.toString("base64url"), response: { clientDataJSON: clientCreate2.toString("base64url"), attestationObject: auth.attestationObject().toString("base64url"), transports: ["internal"] } } });
+      expect(registered.status).toBe(201); expect(registered.data.passkey.name).toBe("Work laptop"); expect(registered.data.methods).toEqual({ totp: true, passkeys: 1 });
+      void clientCreate;
+      const opts = await request("/vendor/auth/passkey/options", undefined, { username: user });
+      expect(opts.data.options.allowCredentials[0].id).toBe(auth.credentialId.toString("base64url"));
+      const clientGet = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: opts.data.options.challenge, origin: base }));
+      const assertion = await auth.assertion(clientGet);
+      const signedIn = await request("/vendor/auth/passkey/verify", undefined, { rememberMe: true, credential: { id: auth.credentialId.toString("base64url"), rawId: auth.credentialId.toString("base64url"), response: { clientDataJSON: clientGet.toString("base64url"), ...assertion } } });
+      expect(signedIn.status).toBe(200); expect(signedIn.data.account.username).toBe(user);
+      // The same assertion cannot be replayed (challenge consumed), and a tampered signature fails.
+      expect((await request("/vendor/auth/passkey/verify", undefined, { credential: { id: auth.credentialId.toString("base64url"), rawId: auth.credentialId.toString("base64url"), response: { clientDataJSON: clientGet.toString("base64url"), ...assertion } } })).status).toBe(400);
+      const opts2 = await request("/vendor/auth/passkey/options", undefined, {});
+      const clientGet2 = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: opts2.data.options.challenge, origin: base }));
+      const good = await auth.assertion(clientGet2);
+      const tampered = { ...good, signature: Buffer.from(good.signature, "base64url").map((b, i) => (i === 10 ? b ^ 0xff : b)) };
+      expect((await request("/vendor/auth/passkey/verify", undefined, { credential: { id: auth.credentialId.toString("base64url"), rawId: auth.credentialId.toString("base64url"), response: { clientDataJSON: clientGet2.toString("base64url"), authenticatorData: good.authenticatorData, signature: Buffer.from(tampered.signature).toString("base64url") } } })).status).toBe(401);
+      // Sensitive changes need the password; admin can reset everything.
+      expect((await request("/vendor/security/totp/disable", user, { password: "wrong" })).status).toBe(403);
+      expect((await request(`/vendor/security/passkeys/${registered.data.passkey.id}`, user, { password: "fixture-password-1234" }, false, "DELETE")).status).toBe(200);
+      expect((await request("/admin/vendor-accounts/security", undefined, undefined, true)).data.security[user]).toEqual({ totp: true, passkeys: 0 });
+      expect((await request(`/admin/vendor-accounts/${user}/security/reset`, undefined, {}, true)).status).toBe(200);
+      expect((await request("/vendor/auth/login", undefined, { username: user, password })).data.csrfToken).toBeTruthy();
+    } finally {
+      if (previousKey === undefined) delete process.env.ADMIN_TOTP_ENCRYPTION_KEY; else process.env.ADMIN_TOTP_ENCRYPTION_KEY = previousKey;
+    }
+  }));
+
+  it("feeds prioritised in-app notifications from orders, messages and announcements, with read tracking", () => fixture(async f => {
+    const tg = await import("../../lib/vendor-telegram");
+    tg.setVendorTelegramTransport(async () => ({ ok: true, result: { message_id: 1 } }));
+    try {
+      expect((await request("/vendor/notifications")).status).toBe(401);
+      const empty = await request("/vendor/notifications", f.a);
+      expect(empty.status).toBe(200); expect(empty.data.unread.total).toBe(0);
+      // New shipment -> high priority, once.
+      const { row } = await submit(f);
+      await tg.notifyVendorEvents(new Date(), { vendorIds: ["vendor-a", "vendor-b"] });
+      await tg.notifyVendorEvents(new Date(), { vendorIds: ["vendor-a", "vendor-b"] });
+      let feed = await request("/vendor/notifications", f.a);
+      const fresh = feed.data.notifications.filter((n: any) => n.submissionId === row.id);
+      expect(fresh).toHaveLength(1); expect(fresh[0]).toMatchObject({ priority: "high", kind: "new_order", read: false, link: `?order=${row.id}` });
+      expect(feed.data.unread).toMatchObject({ high: 1, total: 1 });
+      expect((await request("/vendor/notifications", f.b)).data.unread.total).toBe(0);
+      // Admin message -> normal; 96h without tracking -> critical escalation on top of the 48h high reminder.
+      await request("/admin/vendor-threads", undefined, { vendorId: "vendor-a", subject: "Collection times", body: "Courier now collects at 3pm." }, true);
+      await tg.notifyVendorEvents(new Date(Date.now() + 5 * 86_400_000), { vendorIds: ["vendor-a", "vendor-b"] });
+      feed = await request("/vendor/notifications", f.a);
+      const kinds = feed.data.notifications.map((n: any) => n.kind);
+      expect(kinds).toEqual(expect.arrayContaining(["new_order", "message", "overdue", "overdue_critical"]));
+      expect(feed.data.unread).toMatchObject({ critical: 1, high: 2, normal: 1, total: 4 });
+      // Unread items come first ordered by priority.
+      expect(feed.data.notifications.slice(0, 4).map((n: any) => n.priority)).toEqual(["critical", "high", "high", "normal"]);
+      // Mark one read, then everything at or below high.
+      const critical = feed.data.notifications.find((n: any) => n.priority === "critical");
+      const one = await request("/vendor/notifications/read", f.a, { ids: [critical.id] });
+      expect(one.data.updated).toBe(1); expect(one.data.unread).toMatchObject({ critical: 0, total: 3 });
+      expect((await request("/vendor/notifications/read", f.b, { ids: [critical.id] })).data.updated).toBe(0);
+      const rest = await request("/vendor/notifications/read", f.a, { all: true, upToPriority: "high" });
+      expect(rest.data.updated).toBe(2); expect(rest.data.unread).toMatchObject({ high: 0, normal: 1, total: 1 });
+      expect((await request("/vendor/notifications?unread=1", f.a)).data.notifications).toHaveLength(1);
+      // Admin broadcast to everyone with a chosen priority; invalid priority refused.
+      expect((await request("/admin/vendor-notifications/broadcast", undefined, { priority: "urgent", title: "Nope" }, true)).status).toBe(400);
+      expect((await request("/admin/vendor-notifications/broadcast", undefined, { priority: "critical", title: "Bank holiday Monday", body: "No collections." }, false)).status).toBe(403);
+      const sent = await request("/admin/vendor-notifications/broadcast", undefined, { priority: "critical", title: "Bank holiday Monday", body: "No collections." }, true);
+      expect(sent.status).toBe(201); expect(sent.data.sent).toBe(2);
+      expect((await request("/vendor/notifications", f.b)).data.unread).toMatchObject({ critical: 1, total: 1 });
+      const targeted = await request("/admin/vendor-notifications/broadcast", undefined, { priority: "low", title: "Price list updated", vendorIds: ["vendor-b"] }, true);
+      expect(targeted.data.sent).toBe(1);
+      expect((await request("/vendor/notifications", f.a)).data.unread.low).toBe(0);
+      expect((await request("/vendor/notifications", f.b)).data.unread).toMatchObject({ critical: 1, low: 1, total: 2 });
+    } finally { tg.setVendorTelegramTransport(null); }
   }));
 
   it("holiday mode pauses automatic routing until the vendor reopens, and Admin can see and override it", () => fixture(async f => {

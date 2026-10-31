@@ -1,3 +1,5 @@
+import { track17Client } from "../lib/track17-service";
+import { assertVendorSubmissionUnpaid } from "../lib/vendor-payments";
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
@@ -87,6 +89,25 @@ router.get("/vendor/orders", requireVendorAccount, handled(async (req, res) => {
   const orders = [];
   for (const row of rows) orders.push(publicVendorOrder(row, await isVendorSubmissionStale(db, row), await imageList(row, "vendor")));
   res.set("Cache-Control", "no-store").json({ orders });
+}));
+// Authentication and ownership are checked before any provider quota is used.
+const carrierDetectionLimits = new Map<string, number>();
+router.post("/vendor/orders/:id/detect-carrier", requireVendorAccount, sameOrigin, handled(async (req, res) => {
+  const access = await vendorAccess(db, username(req), false, req.vendor!.tokenHash);
+  await ownedSubmission(db, String(req.params.id), access.vendorId);
+  const number = req.body?.trackingNumber;
+  if (typeof number !== "string" || !/^[a-z0-9][a-z0-9 ._/-]{2,199}$/i.test(number.trim())) {
+    throw new VendorPortalError("Enter a valid tracking number.");
+  }
+  const key = username(req);
+  const now = Date.now();
+  if (now - (carrierDetectionLimits.get(key) ?? 0) < 3000) {
+    res.status(429).json({ error: "Please wait a few seconds before detecting again." }); return;
+  }
+  carrierDetectionLimits.set(key, now);
+  if (carrierDetectionLimits.size > 1000) carrierDetectionLimits.delete(carrierDetectionLimits.keys().next().value!);
+  const carrierCode = await track17Client.detectCarrier(number.trim());
+  res.set("Cache-Control", "no-store").json({ carrierCode });
 }));
 router.patch("/vendor/orders/:id", requireVendorAccount, sameOrigin, handled(async (req, res) => {
   const body = req.body ?? {};
@@ -243,6 +264,7 @@ router.delete("/admin/vendor-portal/orders/:id", handled(async (req, res) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`vendor-submit:${candidate.sourceKey}`}))`);
     const [row] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, candidate.id)).for("update");
     if (!row) throw new VendorPortalError("Submission not found.", 404);
+    await assertVendorSubmissionUnpaid(tx, row.id);
     if (row.status !== "Submitted") throw new VendorPortalError("Vendor has started this shipment. It cannot be recalled here; coordinate fulfilment before editing.", 409);
     const images = await tx.select({ id: vendorImagesTable.id }).from(vendorImagesTable).where(eq(vendorImagesTable.submissionId, row.id));
     if (images.length) throw new VendorPortalError("Vendor has uploaded photos. Coordinate with them before changing this shipment.", 409);

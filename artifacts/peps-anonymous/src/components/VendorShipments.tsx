@@ -1,3 +1,4 @@
+import { vendorTranslate as vt, useVendorLanguage, getVendorLanguage } from "@/lib/vendor-language";
 import { useEffect, useState } from "react";
 import { Package, AlertTriangle, ExternalLink } from "lucide-react";
 
@@ -23,6 +24,7 @@ export const shipmentStatusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/
 // Renders nothing for single-shipment orders unless they carry tracking/images,
 // so existing order views (and VendorOrderImages) are unaffected.
 export function VendorShipments({ orderId, showImages = true }: { orderId: string; showImages?: boolean }) {
+  useVendorLanguage();
   const [shipments, setShipments] = useState<VendorShipment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -33,19 +35,19 @@ export function VendorShipments({ orderId, showImages = true }: { orderId: strin
     fetch(`/api/account/orders/${encodeURIComponent(orderId)}/vendor-shipments`, { credentials: "include" })
       .then(async r => {
         if (r.status === 404) return { shipments: [] };
-        if (!r.ok) throw new Error(`Could not load vendor shipments (${r.status})`);
+        if (!r.ok) throw new Error((getVendorLanguage() === "zh" ? `无法加载供应商货件（${r.status}）` : `Could not load vendor shipments (${r.status})`));
         return r.json().catch(() => ({}));
       })
       .then(body => { if (!cancelled) setShipments(Array.isArray(body?.shipments) ? body.shipments : []); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Could not load vendor shipments"); });
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : vt("Could not load vendor shipments")); });
     return () => { cancelled = true; };
   }, [orderId, nonce]);
 
   if (error) {
     return (
       <div role="alert" data-testid="vendor-shipments-error" className="rounded-xl p-3 text-xs flex items-center gap-2" style={{ border: "1px solid rgba(239,68,68,0.3)", color: "#DC2626" }}>
-        <AlertTriangle className="w-4 h-4 shrink-0" />{error}
-        <button type="button" className="ml-auto font-bold underline" onClick={() => setNonce(n => n + 1)} data-testid="button-retry-vendor-shipments">Retry</button>
+        <AlertTriangle className="w-4 h-4 shrink-0" />{vt(error)}
+        <button type="button" className="ml-auto font-bold underline" onClick={() => setNonce(n => n + 1)} data-testid="button-retry-vendor-shipments">{vt("Retry")}</button>
       </div>
     );
   }
@@ -53,15 +55,14 @@ export function VendorShipments({ orderId, showImages = true }: { orderId: strin
   if (!shipments.length) return null;
 
   return (
-    <section aria-label="Vendor shipments" data-testid="vendor-shipments" className="space-y-2">
+    <section aria-label={vt("Vendor shipments")} data-testid="vendor-shipments" className="space-y-2">
       <p className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5" style={{ color: "var(--t-subtle)" }}>
-        <Package className="w-3.5 h-3.5" /> Shipments by vendor
-      </p>
+        <Package className="w-3.5 h-3.5" /> {vt("Shipments by vendor")} </p>
       {shipments.map(s => (
         <div key={s.id} className="rounded-xl p-3 space-y-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }} data-testid={`vendor-shipment-${s.id}`}>
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{s.vendorName}</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}>{shipmentStatusLabel(s.status)}</span>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full capitalize" style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}>{vt(shipmentStatusLabel(s.status))}</span>
           </div>
           {s.trackingNumber ? (
             <div className="text-xs flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--t-muted)" }}>
@@ -69,12 +70,11 @@ export function VendorShipments({ orderId, showImages = true }: { orderId: strin
               {s.carrier && <span>· {s.carrier}</span>}
               {!s.trackingMasked && (
                 <a href={`https://t.17track.net/en#nums=${encodeURIComponent(s.trackingNumber)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold underline" style={{ color: "var(--t-blue)" }}>
-                  <ExternalLink className="w-3 h-3" /> Track
-                </a>
+                  <ExternalLink className="w-3 h-3" /> {vt("Track")} </a>
               )}
             </div>
           ) : (
-            <p className="text-xs" style={{ color: "var(--t-muted)" }}>No tracking yet</p>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>{vt("No tracking yet")}</p>
           )}
           {showImages && s.images.length > 0 && (
             <div className="grid grid-cols-4 gap-1.5">

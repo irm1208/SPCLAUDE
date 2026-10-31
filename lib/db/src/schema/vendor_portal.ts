@@ -1,5 +1,6 @@
 import { pgTable, text, jsonb, timestamp, unique, index, integer } from "drizzle-orm/pg-core";
 import { accountsTable } from "./accounts";
+import { vendorAccountsTable } from "./vendor_accounts";
 
 export type VendorCostItem = { productName: string; quantity: number; unitCost: string; lineTotal: string };
 export type VendorShipping = { name: string; address: string; country: string; phone: string; email: string };
@@ -171,3 +172,54 @@ export const vendorThreadTelegramMessagesTable = pgTable("vendor_thread_telegram
   threadId: text("thread_id").notNull().references(() => vendorThreadsTable.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, t => [unique("vendor_thread_telegram_messages_unique").on(t.telegramMessageId, t.chatId)]);
+
+/* ---------------------------------------------------------------------------
+ * Vendor account security: authenticator app (TOTP), passkeys, MFA challenges
+ * ------------------------------------------------------------------------- */
+export const vendorTotpTable = pgTable("vendor_totp", {
+  username: text("username").primaryKey().references(() => vendorAccountsTable.username, { onDelete: "cascade", onUpdate: "cascade" }),
+  secretEnc: text("secret_enc").notNull(),
+  enabledAt: timestamp("enabled_at", { withTimezone: true }),
+  lastStep: integer("last_step"),
+  recoveryCodes: jsonb("recovery_codes").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const vendorPasskeysTable = pgTable("vendor_passkeys", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull().references(() => vendorAccountsTable.username, { onDelete: "cascade", onUpdate: "cascade" }),
+  credentialId: text("credential_id").notNull(),
+  publicKey: jsonb("public_key").$type<Record<string, unknown>>().notNull(),
+  algorithm: integer("algorithm").notNull(),
+  counter: integer("counter").notNull().default(0),
+  transports: jsonb("transports").$type<string[]>().notNull().default([]),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+}, t => [unique("vendor_passkeys_credential_unique").on(t.credentialId), index("vendor_passkeys_username_idx").on(t.username)]);
+export const vendorMfaChallengesTable = pgTable("vendor_mfa_challenges", {
+  tokenHash: text("token_hash").primaryKey(),
+  username: text("username"),
+  kind: text("kind").notNull(),
+  data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ---------------------------------------------------------------------------
+ * In-app vendor notifications with priorities (critical > high > normal > low)
+ * ------------------------------------------------------------------------- */
+export type VendorNotificationPriority = "critical" | "high" | "normal" | "low";
+export const vendorNotificationsTable = pgTable("vendor_notifications", {
+  id: text("id").primaryKey(),
+  vendorId: text("vendor_id").notNull(),
+  priority: text("priority").$type<VendorNotificationPriority>().notNull().default("normal"),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  link: text("link"),
+  submissionId: text("submission_id"),
+  dedupeKey: text("dedupe_key"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [index("vendor_notifications_vendor_idx").on(t.vendorId, t.createdAt), unique("vendor_notifications_dedupe_unique").on(t.dedupeKey)]);

@@ -4,6 +4,7 @@ import { db, vendorSubmissionsTable, vendorThreadMessagesTable, vendorThreadTele
 import { VendorPortalError } from "./vendor-portal-model";
 import { getVendors } from "../routes/config";
 import { esc, portalThreadUrl, sendToChatFull, vendorChats, prefEnabled } from "./vendor-telegram";
+import { pushVendorNotification } from "./vendor-notifications";
 
 /* ---------------------------------------------------------------------------
  * Vendor <-> Admin message threads.
@@ -113,6 +114,7 @@ export async function openThread(tx: Executor, input: {
     id: randomUUID(), threadId: thread.id, authorRole: input.authorRole, authorName: input.authorName, body: input.body,
     imagePath: input.image?.path ?? null, imageName: input.image?.name ?? null, via: input.via ?? "portal", createdAt: now,
   }).returning();
+  if (input.authorRole === "admin") await pushVendorNotification(tx, { vendorId: input.vendorId, kind: "message", title: `New message: ${input.subject}`, body: preview(input.body, input.image), link: `?thread=${encodeURIComponent(thread.id)}`, submissionId });
   return { thread, message };
 }
 /** Adds a message. A vendor reply reopens a closed thread; the other side's unread counter goes up. */
@@ -130,6 +132,7 @@ export async function postMessage(tx: Executor, input: {
     status: "open", closedAt: null, closedBy: null, lastMessageAt: now, lastMessagePreview: preview(input.body, input.image), updatedAt: now,
     ...(input.authorRole === "vendor" ? { adminUnread: sql`${vendorThreadsTable.adminUnread} + 1` } : { vendorUnread: sql`${vendorThreadsTable.vendorUnread} + 1` }),
   }).where(eq(vendorThreadsTable.id, thread.id));
+  if (input.authorRole === "admin") await pushVendorNotification(tx, { vendorId: thread.vendorId, kind: "message", title: `Reply: ${thread.subject}`, body: preview(input.body, input.image), link: `?thread=${encodeURIComponent(thread.id)}`, submissionId: thread.submissionId ?? null });
   return { thread, message };
 }
 export async function setThreadStatus(tx: Executor, threadId: string, status: unknown, actor: string) {
