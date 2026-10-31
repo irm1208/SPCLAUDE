@@ -18,6 +18,15 @@ helpers in `artifacts/peps-anonymous/src/hooks/use-account.ts` for any new
 user-facing display of the logged-in user's own handle. Do NOT change
 `telegramUsername`-derived values used purely as localStorage key scoping
 (those must stay stable/raw to avoid breaking existing stored keys) — only
-swap *display* strings. Admin-facing views of *other* customers'
-`telegramUsername` are out of scope and must stay as real Telegram handles
-(used for support/contact), never swapped to Discord display logic.
+swap *display* strings.
+
+Admin-facing account and order labels should also resolve synthetic Discord
+identities to their linked Discord username. Keep real Telegram handles
+unchanged, even when those accounts also link Discord.
+
+**Why:** the user explicitly requested readable Discord names for other members;
+numeric synthetic identifiers were confusing in staff views.
+
+**How to apply:** resolve display labels only through Admin-authenticated name
+metadata. Preserve raw identity in action requests, ownership comparisons,
+exports and storage keys. Never expose the Admin name directory to public users.

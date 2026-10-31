@@ -1,4 +1,5 @@
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { AccountHandle, AdminAccountNames } from "@/components/admin/AccountHandle";
 import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { aggregateFs3Orders, findFs3SavedCost, fs3ProductCost, fs3ProfitRowKey, inferFs3Supplier, matchesFs3Order, type Fs3Product, type Fs3Supplier } from "@/lib/fs3-order-tools";
@@ -1690,7 +1691,7 @@ function OrdersTab({ secret }: { secret: string }) {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2 min-w-0">
                           <User className="w-3 h-3 shrink-0 opacity-50" />
-                          <span className="font-medium text-sm truncate">{m.telegramUsername}</span>
+                          <span className="font-medium text-sm truncate"><AccountHandle username={m.telegramUsername} /></span>
                           <span className="font-mono text-[11px] text-muted-foreground shrink-0">{m.code}</span>
                           <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0", PAYMENT_COLORS[m.paymentStatus] ?? "bg-slate-100 text-slate-500")}>
                             {PAYMENT_LABELS[m.paymentStatus] ?? m.paymentStatus}
@@ -2934,7 +2935,7 @@ function OrdersTab({ secret }: { secret: string }) {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono font-bold text-sm text-foreground">#{o.code}</span>
-                            <span className="text-xs text-muted-foreground">{o.telegramUsername}</span>
+                            <span className="text-xs text-muted-foreground"><AccountHandle username={o.telegramUsername} /></span>
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 uppercase">{deletedByLabel}</span>
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
@@ -3329,7 +3330,7 @@ function OrdersTab({ secret }: { secret: string }) {
                 </span>
                 <span className="text-sm text-muted-foreground flex-1 flex flex-wrap items-center gap-1 min-w-0">
                   <User className="w-3 h-3 shrink-0 opacity-50" />
-                  <span className="truncate">{order.telegramUsername}</span>
+                  <span className="truncate"><AccountHandle username={order.telegramUsername} /></span>
                   <GbMultipleOrderBadge order={order} />
                   {!gbFilter && order.groupBuyId && (() => {
                     const gbName = gbs.find(g => g.id === order.groupBuyId)?.name ?? order.groupBuyId;
@@ -3423,7 +3424,7 @@ function OrdersTab({ secret }: { secret: string }) {
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors"
                         >
                           {impersonatingOrderId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
-                          View as {order.telegramUsername}
+                          View as <AccountHandle username={order.telegramUsername} />
                         </button>
                         <span className="text-[10px] text-amber-700">Opens their account in a new tab</span>
                         {impersonateOrderErr[order.id] && <span className="text-xs text-red-600 font-semibold ml-2">{impersonateOrderErr[order.id]}</span>}
@@ -7214,7 +7215,7 @@ function PaymentsTab({ secret }: { secret: string }) {
                   {PAYMENT_LABELS[o.paymentStatus]}
                 </span>
                 <span className="font-mono font-bold text-sm">{o.code}</span>
-                <span className="text-sm text-muted-foreground truncate flex-1">{o.telegramUsername}</span>
+                <span className="text-sm text-muted-foreground truncate flex-1"><AccountHandle username={o.telegramUsername} /></span>
                 <span className="font-semibold text-sm shrink-0">{fmt(o.grandTotal)}</span>
               </div>
               {o.paymentTestAmount && o.testPaymentTxHash && (
@@ -8674,7 +8675,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           })}
           className="rounded border-input accent-primary"
         />
-        <span className="text-xs font-medium text-foreground min-w-0 truncate">{o.telegramUsername}</span>
+        <span className="text-xs font-medium text-foreground min-w-0 truncate"><AccountHandle username={o.telegramUsername} /></span>
         <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap inline-flex items-center gap-0.5">
           <CalendarDays className="w-2.5 h-2.5" />
           {new Date(o.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
@@ -9267,7 +9268,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                           })}
                           className="rounded border-input accent-primary"
                         />
-                        <span className="text-xs font-medium text-foreground min-w-0 truncate">{o.telegramUsername}</span>
+                        <span className="text-xs font-medium text-foreground min-w-0 truncate"><AccountHandle username={o.telegramUsername} /></span>
                         {(o.vendorShipping != null && o.vendorShipping > 0) && (
                           <span className="text-[10px] text-slate-500 shrink-0">+${parseFloat(String(o.vendorShipping)).toFixed(2)} ship</span>
                         )}
@@ -12506,7 +12507,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors"
         >
           {impersonating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
-          View as @{username}
+          View as @<AccountHandle username={username} />
         </button>
         <span className="text-[10px] text-amber-700">Opens their account in a new tab — session lasts 7 days</span>
         {impersonateErr && <span className="text-xs text-red-600 font-semibold ml-2">{impersonateErr}</span>}
@@ -18074,7 +18075,7 @@ function DashboardTab({ secret, onNavigate, openTickets }: { secret: string; onN
                       <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full", statusColors[o.status] ?? "bg-slate-100 text-slate-600")}>{o.status}</span>
                       <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full", payColors[o.paymentStatus] ?? "bg-slate-100 text-slate-500")}>{o.paymentStatus?.replace(/_/g, " ")}</span>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{o.telegramUsername}{o.trackingNumber ? ` · 📦 ${o.trackingNumber}` : ""}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate"><AccountHandle username={o.telegramUsername} />{o.trackingNumber ? ` · 📦 ${o.trackingNumber}` : ""}</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-xs font-medium text-foreground">${parseFloat(String(o.grandTotal ?? "0")).toFixed(2)}</p>
@@ -18826,7 +18827,7 @@ function AccountsTab({ secret }: { secret: string }) {
                       >
                         <td className="px-4 py-3 font-semibold text-foreground flex items-center gap-1.5">
                           <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform shrink-0", isExpanded && "rotate-180")} />
-                          @{a.telegramUsername.replace(/^@/, "")}
+                          @<AccountHandle username={a.telegramUsername.replace(/^@/, "")} />
                         </td>
                         <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell truncate max-w-[140px]">{a.email ?? "—"}</td>
                         <td className="px-4 py-3">
@@ -28931,9 +28932,11 @@ export default function Admin() {
 
   if (authenticated) return (
     <div data-admin-theme={adminTheme} className={adminTheme === "dark" ? "dark" : ""}>
+      <AdminAccountNames key={adminAuth.sessionBacked ? "__admin_session__" : gateSecret} secret={adminAuth.sessionBacked ? "__admin_session__" : gateSecret}>
       <AdminInner initialSecret={adminAuth.sessionBacked ? "__admin_session__" : gateSecret} theme={adminTheme} onToggleTheme={toggleTheme} admin2fa={mode} rememberedSession={adminAuth.rememberMe}
         recoveryCodes={freshRecoveryCodes} onRecoveryCodesDismissed={() => setFreshRecoveryCodes([])}
         onEnabled={handleEnabled} onDisabled={handleDisabled} />
+      </AdminAccountNames>
       {stepUpRequest !== undefined && <AdminStepUpDialog request={stepUpRequest} onComplete={code => {
         const resolve = stepUpResolve.current; stepUpResolve.current = null; setStepUpRequest(undefined); resolve?.(code);
       }} />}

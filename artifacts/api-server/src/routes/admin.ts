@@ -346,6 +346,18 @@ router.get("/admin/auth-check", (req, res): void => {
 });
 
 // GET /api/admin/search-users?q= — autocomplete: usernames starting with q
+router.get("/admin/discord-handles", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const rows = await db.select({
+    telegramUsername: accountsTable.telegramUsername,
+    discordUsername: accountsTable.discordUsername,
+  }).from(accountsTable).where(and(
+    like(accountsTable.telegramUsername, "discord:%"),
+    isNotNull(accountsTable.discordUsername),
+  ));
+  res.json({ handles: Object.fromEntries(rows.map(row => [row.telegramUsername, row.discordUsername])) });
+});
+
 router.get("/admin/search-users", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const q = String(req.query["q"] ?? "").toLowerCase().trim().replace(/^@/, "");

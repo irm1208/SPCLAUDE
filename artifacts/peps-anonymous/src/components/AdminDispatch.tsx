@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { AccountHandle } from "@/components/admin/AccountHandle";
 import {
   Loader2, Package, PackageCheck, Printer, Check, AlertTriangle,
   ChevronRight, RefreshCw, Truck, X, CheckSquare, Square,
@@ -394,7 +395,7 @@ function HalfKitsTab({
                   <span className="text-xs font-mono font-bold text-foreground">
                     {order.code ? `@${order.code}` : order.id.slice(0, 8)}
                   </span>
-                  <span className="text-xs text-muted-foreground">{order.telegramUsername}</span>
+                  <span className="text-xs text-muted-foreground"><AccountHandle username={order.telegramUsername} /></span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                     order.status === "Shipped" || order.status === "Completed"
                       ? "bg-green-100 text-green-700"
@@ -1055,7 +1056,7 @@ function PackingSlipsTab({
                     ) : ovDispatched.map(o => (
                       <div key={o.id} className="flex items-center gap-2 px-4 py-2 text-xs">
                         <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
-                        {o.telegramUsername && <span className="text-slate-500 shrink-0">@{o.telegramUsername.replace(/^@/, "")}</span>}
+                        {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                         {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                         <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">{o.status}</span>
                       </div>
@@ -1087,7 +1088,7 @@ function PackingSlipsTab({
                     ) : ovReady.map(o => (
                       <div key={o.id} className="flex items-center gap-2 px-4 py-2 text-xs">
                         <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
-                        {o.telegramUsername && <span className="text-slate-500 shrink-0">@{o.telegramUsername.replace(/^@/, "")}</span>}
+                        {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                         {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                         <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">{o.status}</span>
                       </div>
@@ -1168,7 +1169,7 @@ function PackingSlipsTab({
                                   {sel && <Check className="w-2 h-2 text-white" />}
                                 </div>
                                 <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
-                                {o.telegramUsername && <span className="text-slate-500 shrink-0">@{o.telegramUsername.replace(/^@/, "")}</span>}
+                                {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                                 {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                                 <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">{o.status}</span>
                               </div>
@@ -1255,7 +1256,7 @@ function PackingSlipsTab({
                                   {sel && <Check className="w-2 h-2 text-white" />}
                                 </div>
                                 <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
-                                {o.telegramUsername && <span className="text-slate-500 shrink-0">@{o.telegramUsername.replace(/^@/, "")}</span>}
+                                {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                                 {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                                 <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{o.status}</span>
                               </div>
@@ -1472,7 +1473,7 @@ function OrderSummary({ o }: { o: DispatchOrder }) {
         <span className="text-xs font-mono font-bold text-foreground">
           {o.code ? `@${o.code}` : o.id.slice(0, 8)}
         </span>
-        <span className="text-xs text-muted-foreground">{o.telegramUsername}</span>
+        <span className="text-xs text-muted-foreground"><AccountHandle username={o.telegramUsername} /></span>
         {o.reshipperUsername && (
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
             {o.reshipperUsername}
@@ -1696,7 +1697,7 @@ function LabelSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string
         </div>
         {o.code && o.telegramUsername && (
           <div className="order-username" style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
-            {o.telegramUsername}
+            <AccountHandle username={o.telegramUsername} />
           </div>
         )}
       </div>
@@ -1775,7 +1776,7 @@ function PackingSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: stri
         </div>
         {o.code && o.telegramUsername && (
           <div className="order-username" style={{ fontSize: "9px", color: "#6b7280", marginTop: "1px" }}>
-            {o.telegramUsername}
+            <AccountHandle username={o.telegramUsername} />
           </div>
         )}
       </div>
