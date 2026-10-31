@@ -37,3 +37,9 @@ export function AccountHandle({ username }: { username: string | null | undefine
   // Shared staff components also run outside Admin; keep their existing labels there.
   return <>{names ? accountDisplayName(username, names) : username}</>;
 }
+
+export function DiscordAccountId({ username }: { username: string | null | undefined }) {
+  const id = username?.match(/^@?discord:(\d+)$/)?.[1];
+  if (!id) return null;
+  return <span className="block text-[11px] font-normal text-muted-foreground break-all select-text">Discord ID: {id}</span>;
+}

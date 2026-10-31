@@ -8,11 +8,25 @@ Object.assign(globalThis, { window: dom.window, document: dom.window.document, H
 Object.defineProperty(globalThis, "navigator", { configurable: true, value: dom.window.navigator });
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { AccountHandle, AdminAccountNames } = await import("./AccountHandle");
+const { AccountHandle, AdminAccountNames, DiscordAccountId } = await import("./AccountHandle");
 
 it("uses readable account handles in the actual Admin customer-card heading", () => {
   const page = readFileSync(new URL("../../pages/Admin.tsx", import.meta.url), "utf8");
   expect(/<p className="text-sm font-semibold text-foreground truncate"><AccountHandle username=\{row\.telegramUsername\} \/><\/p>/.test(page)).toBe(true);
+  expect(page.includes("<DiscordAccountId username={row.telegramUsername} />")).toBe(true);
+});
+
+it("shows the exact numeric Discord ID separately and omits it for Telegram accounts", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await React.act(async () => root.render(<DiscordAccountId username="@discord:1528489165962871026" />));
+    expect(container.textContent).toBe("Discord ID: 1528489165962871026");
+    await React.act(async () => root.render(<DiscordAccountId username="telegram_member" />));
+    expect(container.textContent).toBe("");
+  } finally {
+    await React.act(async () => root.unmount());
+  }
 });
 
 it("loads names once for admin labels while actions retain the original account ID", async () => {

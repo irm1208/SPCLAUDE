@@ -26,6 +26,11 @@ unchanged, even when those accounts also link Discord.
 
 This includes the main Customers cards, not just the separate Accounts table.
 The user repeated that they need actual usernames, never `discord:<id>` labels.
+Keep the Discord username as the primary label, with the numeric Discord ID
+visible separately as secondary information in Customers.
+
+**Why:** the user subsequently requested the Discord ID also be shown somewhere,
+without replacing the readable usernames.
 
 **Why:** the user explicitly requested readable Discord names for other members;
 numeric synthetic identifiers were confusing in staff views.
