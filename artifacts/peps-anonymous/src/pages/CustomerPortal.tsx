@@ -532,7 +532,6 @@ function OrderGridCard({
               memberReceivedAt={order.memberReceivedAt} onReceived={onReceived} />
           </div>
         )}
-        {order.id && !order.current && <SupplierTesting orderId={order.id} compact />}
       </div>
       </div>
     </div>

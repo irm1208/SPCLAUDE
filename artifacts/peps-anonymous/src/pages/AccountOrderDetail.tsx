@@ -1,7 +1,6 @@
 import { OnwardPaymentCard } from "@/components/onward-delivery/OnwardPayments";
 import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { VendorShipments } from "@/components/VendorShipments";
-import { SupplierTesting } from "@/components/supplier-testing/SupplierTesting";
 import React, { useState, useRef, useEffect } from "react";
 import { OnwardDeliveryOrderCard } from "@/components/onward-delivery/OnwardDelivery";
 import { submittedTimelineLabel, wholesaleStatusLabel } from "@/lib/wholesale-status-label";
@@ -2804,7 +2803,6 @@ export default function AccountOrderDetail() {
 
                       {/* Dispatch photos uploaded by admin */}
                       <MemberDispatchImages orderId={order.id} />
-                      <SupplierTesting orderId={order.id} compact />
                       <VendorOrderImages orderId={order.id} />
                       {order.orderType === "wholesale" && <VendorShipments orderId={order.id} showImages={false} />}
                     </div>
