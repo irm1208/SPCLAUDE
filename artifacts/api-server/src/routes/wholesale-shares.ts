@@ -29,7 +29,7 @@ import { requireAdmin } from "../middleware/require-admin";
 import { requireAccount, issueAccountCookieForAccount } from "../middleware/account-auth";
 import bcrypt from "bcryptjs";
 import { getActiveWholesaleVendor, getEnabledWholesaleVendors, getVendors } from "./config";
-import { quoteVendorShipping, resolveProductVendor } from "../lib/multi-vendor-shipping";
+import { quoteVendorShipping, resolveProductVendor, parseVendorShippingSplit, vendorShippingWeight, type VendorShippingSplit } from "../lib/multi-vendor-shipping";
 import { normalizeTg } from "../lib/normalize";
 import {
   calcTotalShipping,
@@ -433,7 +433,7 @@ async function buildShareResponse(
 
   const vendorQuote = quoteVendorShipping(configuredVendors, members.map(m => m.items ?? []),
     share.shippingCountry ?? "", splitMode, share.vendorId,
-    share.shippingOverride == null ? null : Number(share.shippingOverride));
+    share.shippingOverride == null ? null : Number(share.shippingOverride), share.vendorShippingSplit);
   if (!isLocked) {
     shippingEstimate = vendorQuote.total;
     estimateCalculable = vendorQuote.total !== null;
@@ -627,6 +627,7 @@ async function buildShareResponse(
     id: share.id,
     status: share.status,
     splitMode,
+    vendorShippingSplit: share.vendorShippingSplit ?? {},
     maxMembers: share.maxMembers,
     vendorId: share.vendorId ?? null,
     creatorUsername: share.creatorUsername,
@@ -949,7 +950,7 @@ router.get("/wholesale-shares/public", requireWholesale, async (req, res): Promi
 // POST /api/wholesale-shares — create a new shared order; creator becomes first member
 router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
-  const body = (req.body ?? {}) as { splitMode?: string; allowedVendorIds?: unknown };
+  const body = (req.body ?? {}) as { splitMode?: string; allowedVendorIds?: unknown; vendorShippingSplit?: unknown };
   const splitMode: WholesaleShareSplitMode =
     body.splitMode && (WHOLESALE_SHARE_SPLIT_MODES as readonly string[]).includes(body.splitMode)
       ? (body.splitMode as WholesaleShareSplitMode)
@@ -958,11 +959,13 @@ router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<voi
   const vendor = await getActiveWholesaleVendor();
   const enabledVendors = await getEnabledWholesaleVendors();
   let allowedVendorIds: string[];
+  let vendorShippingSplit: VendorShippingSplit;
   try {
     allowedVendorIds = parseSharedOrderVendors(
       body.allowedVendorIds === undefined ? enabledVendors.map(v => v.id) : body.allowedVendorIds,
       enabledVendors,
     );
+    vendorShippingSplit = parseVendorShippingSplit(body.vendorShippingSplit ?? {}, enabledVendors);
   } catch (error) {
     res.status(400).json({ error: (error as Error).message }); return;
   }
@@ -975,6 +978,7 @@ router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<voi
     splitMode,
     vendorId: vendor?.id ?? null,
     allowedVendorIds,
+    vendorShippingSplit,
   });
 
   await db.insert(wholesaleShareMembersTable).values({
@@ -1461,7 +1465,7 @@ router.put("/wholesale-shares/:id/delivery-address", requireWholesaleOrAdmin, as
   // priced or locked — reject early so the recipient gets immediate feedback.
   const shippingMembers = await db.select().from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId,share.id));
   const shippingVendors = await getVendors();
-  const shippingQuote = quoteVendorShipping(shippingVendors,shippingMembers.map(m=>m.items ?? []),country,share.splitMode ?? "even",share.vendorId);
+  const shippingQuote = quoteVendorShipping(shippingVendors,shippingMembers.map(m=>m.items ?? []),country,share.splitMode ?? "even",share.vendorId,null,share.vendorShippingSplit);
   if (shippingQuote.breakdown.some(p => !shippingVendors.some(v=>v.id===p.vendorId && pickRegionForCountry(v,country)))) {
     res.status(400).json({ error: `One of the selected vendors doesn't ship to "${country}". Choose another destination or remove that vendor's items.` });
     return;
@@ -1699,15 +1703,45 @@ router.put("/wholesale-shares/:id/split", requireWholesale, async (req, res): Pr
   }
   if (share.status !== "open") { res.status(409).json({ error: "This shared order is locked." }); return; }
 
-  const body = (req.body ?? {}) as { splitMode?: string };
+  const body = (req.body ?? {}) as { splitMode?: string; vendorShippingSplit?: unknown };
   if (!body.splitMode || !(WHOLESALE_SHARE_SPLIT_MODES as readonly string[]).includes(body.splitMode)) {
     res.status(400).json({ error: `splitMode must be one of: ${WHOLESALE_SHARE_SPLIT_MODES.join(", ")}` });
     return;
   }
 
-  await db.update(wholesaleSharesTable)
-    .set({ splitMode: body.splitMode })
-    .where(eq(wholesaleSharesTable.id, share.id));
+  let requestedRules: VendorShippingSplit | undefined;
+  if (body.vendorShippingSplit !== undefined) {
+    try { requestedRules = parseVendorShippingSplit(body.vendorShippingSplit, await getVendors()); }
+    catch (error) { res.status(400).json({ error: (error as Error).message }); return; }
+  }
+  const result = await db.transaction(async tx => {
+    const [locked] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, share.id)).for("update");
+    if (!locked || locked.status !== "open") return "locked";
+    const rules = requestedRules ?? locked.vendorShippingSplit ?? {};
+    const keys = [...new Set([...Object.keys(rules), ...Object.keys(locked.vendorShippingSplit ?? {})])];
+    const changed = locked.splitMode !== body.splitMode ||
+      keys.some(key => (rules[key] ?? "buyers") !== (locked.vendorShippingSplit?.[key] ?? "buyers"));
+    if (!changed) return "ok";
+    const existingOrders = await tx.select({ id: ordersTable.id, paymentStatus: ordersTable.paymentStatus }).from(ordersTable)
+      .innerJoin(wholesaleShareMembersTable, eq(wholesaleShareMembersTable.orderId, ordersTable.id))
+      .where(eq(wholesaleShareMembersTable.shareId, share.id)).for("update", { of: ordersTable });
+    if (existingOrders.some(order => order.paymentStatus !== "unpaid")) return "payment";
+    await tx.update(wholesaleSharesTable).set({ splitMode: body.splitMode!, vendorShippingSplit: rules })
+      .where(eq(wholesaleSharesTable.id, share.id));
+    // Shipping affects what everyone agrees to pay. Require fresh confirmation.
+    await tx.update(wholesaleShareMembersTable).set({ confirmedAt: null })
+      .where(eq(wholesaleShareMembersTable.shareId, share.id));
+    return "ok";
+  });
+  if (result !== "ok") {
+    res.status(409).json({ error: result === "payment"
+      ? "Shipping splits cannot change after a member has started payment."
+      : "This shared order is locked." }); return;
+  }
+  await writeLog("order", "info", "wholesale_share_shipping_split_updated",
+    `Wholesale share ${share.id} shipping split updated by ${me}`,
+    { shareId: share.id, splitMode: body.splitMode, vendorShippingSplit: requestedRules }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
@@ -2502,7 +2536,7 @@ export async function attemptLockShare(
   // ── Shipping ──
   const vendors = await getVendors();
   const quote = quoteVendorShipping(vendors, members.map(m => m.items ?? []), share.shippingCountry,
-    share.splitMode ?? "even", share.vendorId, share.shippingOverride == null ? null : Number(share.shippingOverride));
+    share.splitMode ?? "even", share.vendorId, share.shippingOverride == null ? null : Number(share.shippingOverride), share.vendorShippingSplit);
   const picked = {region:{name: quote.breakdown.map(p => p.vendorName).join(", ")}};
   const combinedKits = members.reduce((s, m) => s + memberKits(m.items ?? []), 0);
   // Total kit cap (also enforced as members add items, re-checked here for safety).
@@ -2559,14 +2593,15 @@ export async function attemptLockShare(
       });
       const partsByMember = new Map(members.map(m => [m.id, [] as typeof quote.breakdown]));
       for (const part of quote.breakdown) {
-        const uses = (m: MemberRow) => (m.items ?? []).some(it => (it.vendorId ?? share.vendorId) === part.vendorId);
+        const uses = (m: MemberRow) => vendorShippingWeight(m.items ?? [], part.vendorId, share.vendorId, share.vendorShippingSplit) > 0;
         let frozen = 0;
         for (const m of members.filter(uses)) {
           const order = m.orderId ? existingOrderById.get(m.orderId) : undefined;
           if (!order || !preservedOrderIds.has(order.id)) continue;
           const saved = m.vendorShippingShares?.find(p => p.vendorId === part.vendorId);
           const memberVendorIds=new Set((m.items ?? []).map(it=>it.vendorId ?? share.vendorId));
-          const value = saved?.shipping ?? (memberVendorIds.size === 1 ? Number(order.vendorShipping ?? 0) : null);
+          const singlePart = quote.breakdown.length === 1 || (share.vendorShippingSplit?.[part.vendorId] !== "all_members" && memberVendorIds.size === 1);
+          const value = saved?.shipping ?? (singlePart ? Number(order.vendorShipping ?? 0) : null);
           if (value == null) throw LOCK_PROTECTED_TOTAL_DECREASE;
           frozen += value;
           partsByMember.get(m.id)!.push({...part, kits: (m.items ?? []).filter(it => (it.vendorId ?? share.vendorId) === part.vendorId).reduce((s,it)=>s+it.quantity,0), shipping:value});
@@ -2575,9 +2610,11 @@ export async function attemptLockShare(
         if (remaining < 0) throw LOCK_PROTECTED_TOTAL_DECREASE;
         const buyers = mutableMembers.filter(uses);
         if (!buyers.length && remaining > 0) throw LOCK_PROTECTED_TOTAL_DECREASE;
-        const weights = buyers.map(m => (m.items ?? []).filter(it => (it.vendorId ?? share.vendorId) === part.vendorId).reduce((s,it)=>s+it.quantity,0));
+        const weights = buyers.map(m => vendorShippingWeight(m.items ?? [], part.vendorId, share.vendorId, share.vendorShippingSplit));
         const splits = splitShipping(remaining, weights, share.splitMode === "by_size" ? "by_size" : "even");
-        buyers.forEach((m,i) => partsByMember.get(m.id)!.push({...part,kits:weights[i],shipping:splits[i]}));
+        buyers.forEach((m,i) => partsByMember.get(m.id)!.push({...part,
+          kits: (m.items ?? []).filter(it => (it.vendorId ?? share.vendorId) === part.vendorId).reduce((s,it)=>s+it.quantity,0),
+          shipping:splits[i]}));
       }
       const mutableShares = mutableMembers.map(m => partsByMember.get(m.id)!.reduce((s,p)=>s+(p.shipping ?? 0),0));
       const shippingByMemberId = new Map<string, number>();
@@ -3695,7 +3732,7 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
 
       const adjustmentQuote = quoteVendorShipping(await getVendors(),updatedMembers.map(m=>m.items ?? []),
         share.shippingCountry ?? "",share.splitMode ?? "even",share.vendorId,
-        shippingInput ?? (share.shippingOverride == null ? null : Number(share.shippingOverride)));
+        shippingInput ?? (share.shippingOverride == null ? null : Number(share.shippingOverride)),share.vendorShippingSplit);
       if (adjustmentQuote.breakdown.length > 1 && shippingInput !== undefined) throw new Error("Mixed-vendor shipping is calculated separately for each vendor. A single combined override cannot be applied.");
       let totalShipping: number;
       if (shippingInput !== undefined) {

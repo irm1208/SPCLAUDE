@@ -7,6 +7,7 @@ import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { useAccount } from "@/hooks/use-account";
 import { SupplierSelection, type SharedSupplier } from "@/components/wholesale-shared/SupplierSelection";
+import { SupplierShippingSplit, type SupplierShippingRules } from "@/components/wholesale-shared/SupplierShippingSplit";
 import { useWholesaleShares, useWholesalePublicGroups, createWholesaleShare, joinWholesaleShare, setWholesaleShareHidden } from "@/hooks/use-wholesale-shares";
 
 export default function WholesaleShareEntry() {
@@ -25,6 +26,7 @@ export default function WholesaleShareEntry() {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [supplierOptions, setSupplierOptions] = useState<SharedSupplier[]>([]);
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
+  const [shippingRules, setShippingRules] = useState<SupplierShippingRules>({});
   const [suppliersLoading, setSuppliersLoading] = useState(true);
   const [supplierError, setSupplierError] = useState("");
 
@@ -82,7 +84,7 @@ export default function WholesaleShareEntry() {
   const startShare = async () => {
     setError(""); setBusy(true);
     try {
-      const share = await createWholesaleShare("even", selectedSuppliers);
+      const share = await createWholesaleShare("even", selectedSuppliers, shippingRules);
       setLocation(`/wholesale/shared/${share.id}`);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   };
@@ -159,6 +161,8 @@ export default function WholesaleShareEntry() {
                 {suppliersLoading ? <p className="text-xs">Loading suppliers…</p> :
                   <SupplierSelection vendors={supplierOptions} selected={selectedSuppliers} onChange={setSelectedSuppliers} disabled={busy} />}
                 {supplierError && <p role="alert" className="text-xs" style={{ color: "#dc2626" }}>{supplierError}</p>}
+                <SupplierShippingSplit vendors={supplierOptions.filter(v => selectedSuppliers.includes(v.id))}
+                  rules={shippingRules} onChange={setShippingRules} disabled={busy} />
                 <button
                   onClick={startShare}
                   disabled={busy || suppliersLoading || selectedSuppliers.length === 0 || !!supplierError}

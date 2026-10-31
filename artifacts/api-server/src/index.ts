@@ -999,6 +999,7 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS lock_deadline timestamptz`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS allowed_countries jsonb`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS allowed_vendor_ids jsonb`);
+    await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS vendor_shipping_split jsonb`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS organiser_payment_info text`);
     // wholesale_shares — public group listing + parcel count + flat organiser fee
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS max_packages integer`);

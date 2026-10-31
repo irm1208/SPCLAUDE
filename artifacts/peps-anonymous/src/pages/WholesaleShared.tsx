@@ -5,6 +5,7 @@ import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { VendorShipments } from "@/components/VendorShipments";
 import { VendorShippingBreakdown, VendorGroupHeader } from "@/components/wholesale-shared/VendorShippingBreakdown";
 import { SupplierSelection } from "@/components/wholesale-shared/SupplierSelection";
+import { SupplierShippingSplit, type SupplierShippingRules } from "@/components/wholesale-shared/SupplierShippingSplit";
 import { groupByVendor, isMultiVendor } from "@/lib/vendor-grouping";
 import { useLocation, useRoute } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -821,10 +822,14 @@ export default function WholesaleShared() {
     finally { setBusy(null); }
   };
 
-  const changeSplit = async (mode: WholesaleSplitMode) => {
-    if (!id || mode === share.splitMode) return;
+  const changeSplit = async (mode: WholesaleSplitMode, rules?: SupplierShippingRules) => {
+    if (!id || busy === "split" || (mode === share.splitMode && !rules)) return;
     setActionError(""); setBusy("split");
-    try { await setWholesaleShareSplit(id, mode); invalidate(id); }
+    try {
+      const updated = await setWholesaleShareSplit(id, mode, rules);
+      await applyWholesaleShareResponse(queryClient, id, updated);
+      invalidate(id);
+    }
     catch (e) { setActionError((e as Error).message); }
     finally { setBusy(null); }
   };
@@ -1270,6 +1275,12 @@ export default function WholesaleShared() {
           <span className="text-sm" style={{ color: "var(--t-muted)" }}>Split between members</span>
           <span className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>{share.splitMode === "by_size" ? "By order size" : "Evenly"}</span>
         </div>
+        {(share.settings.availableVendors ?? []).filter(v => share.settings.allowedVendorIds == null || share.settings.allowedVendorIds.includes(v.id)).map(v => (
+          <div key={v.id} className="flex items-center justify-between gap-3 text-xs">
+            <span style={{ color: "var(--t-muted)" }}>{v.name} shipping</span>
+            <span style={{ color: "var(--t-text)" }}>{share.vendorShippingSplit?.[v.id] === "all_members" ? "All members with items" : `${v.name} buyers only`}</span>
+          </div>
+        ))}
       </div>
       {showOrganiserOpen && lockChecklistBlock}
       {leaveButton && (
@@ -1819,7 +1830,7 @@ export default function WholesaleShared() {
   // ── Organiser-open control blocks (composed differently per view) ──
   // Split mode
   const orgSplitBlock = (
-    <div>
+    <div className="space-y-3">
       <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Shipping split</label>
       <div className="grid grid-cols-2 gap-2">
         {(["even", "by_size"] as WholesaleSplitMode[]).map(mode => (
@@ -1836,6 +1847,13 @@ export default function WholesaleShared() {
           </button>
         ))}
       </div>
+      <SupplierShippingSplit
+        vendors={(share.settings.availableVendors ?? []).filter(v => share.settings.allowedVendorIds == null || share.settings.allowedVendorIds.includes(v.id))}
+        rules={share.vendorShippingSplit ?? {}}
+        onChange={rules => changeSplit(share.splitMode, rules)}
+        disabled={busy === "split"}
+      />
+      <p className="text-xs" style={{ color: "var(--t-muted)" }}>Changes save automatically and members must confirm their orders again. Shipping splits cannot change after payment has started.</p>
     </div>
   );
 

@@ -57,6 +57,7 @@ export const wholesaleSharesTable = pgTable("wholesale_shares", {
   allowedCountries: jsonb("allowed_countries").$type<string[]>(),
   // null preserves legacy all-supplier access; new orders snapshot an explicit selection.
   allowedVendorIds: jsonb("allowed_vendor_ids").$type<string[]>(),
+  vendorShippingSplit: jsonb("vendor_shipping_split").$type<Record<string, "buyers" | "all_members">>(),
   // ── Public group listing ────────────────────────────────────────────────────
   // When true, this shared order is listed publicly so any wholesale member can
   // discover and join it (no approval needed). organiserFlatFee is a flat per-person

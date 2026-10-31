@@ -178,6 +178,7 @@ export interface WholesaleOrganiserPayment {
 }
 
 export interface WholesaleShareDetail {
+  vendorShippingSplit?: Record<string, "buyers" | "all_members">;
   id: string;
   status: WholesaleShareStatus;
   splitMode: WholesaleSplitMode;
@@ -357,10 +358,10 @@ export function setWholesaleShareHidden(id: string, hidden: boolean) {
   });
 }
 
-export function createWholesaleShare(splitMode: WholesaleSplitMode, allowedVendorIds?: string[]) {
+export function createWholesaleShare(splitMode: WholesaleSplitMode, allowedVendorIds?: string[], vendorShippingSplit?: Record<string, "buyers" | "all_members">) {
   return request<WholesaleShareDetail>("/api/wholesale-shares", {
     method: "POST",
-    body: JSON.stringify({ splitMode, allowedVendorIds }),
+    body: JSON.stringify({ splitMode, allowedVendorIds, vendorShippingSplit }),
   });
 }
 
@@ -442,10 +443,10 @@ export function setWholesaleShareTracking(
   });
 }
 
-export function setWholesaleShareSplit(id: string, splitMode: WholesaleSplitMode) {
+export function setWholesaleShareSplit(id: string, splitMode: WholesaleSplitMode, vendorShippingSplit?: Record<string, "buyers" | "all_members">) {
   return request<WholesaleShareDetail>(`/api/wholesale-shares/${id}/split`, {
     method: "PUT",
-    body: JSON.stringify({ splitMode }),
+    body: JSON.stringify({ splitMode, vendorShippingSplit }),
   });
 }
 

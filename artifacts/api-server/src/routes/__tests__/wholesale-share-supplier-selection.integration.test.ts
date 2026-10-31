@@ -38,7 +38,7 @@ describe.skipIf(process.env.SHARED_VENDOR_DB_TESTS !== "1")("shared supplier pol
       const s = app.listen(0, "127.0.0.1", () => resolve(s));
     });
     base = `http://127.0.0.1:${(server.address() as any).port}`;
-  });
+  }, 30000);
   afterAll(async () => {
     if (server) await new Promise<void>(resolve => server.close(() => resolve()));
     if (store?.pool) await store.pool.end();
@@ -55,6 +55,7 @@ describe.skipIf(process.env.SHARED_VENDOR_DB_TESTS !== "1")("shared supplier pol
     await expect(realDb.transaction(async (tx: any) => {
       state.tx = tx;
       await tx.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS allowed_vendor_ids jsonb`);
+      await tx.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS vendor_shipping_split jsonb`);
       const a = randomUUID(), b = randomUUID(), productId = randomUUID();
       await tx.insert(store.siteConfigTable).values({
         key: "wholesale_vendors",
@@ -103,6 +104,44 @@ describe.skipIf(process.env.SHARED_VENDOR_DB_TESTS !== "1")("shared supplier pol
       const onlyB = await request(`/wholesale-shares/${id}/settings`, { allowedVendorIds: [b] });
       expect(onlyB.status).toBe(200);
       expect(onlyB.body.settings.allowedVendorIds).toEqual([b]);
+      expect((await request(`/wholesale-shares/${id}/settings`, { allowedVendorIds: [a, b] })).status).toBe(200);
+      const config = JSON.stringify([
+        { id: a, name: "Uther", enabled: true, tiers: ["1-100"], tierBounds: [100], regions: [{ name: "UK", countries: ["GB"], prices: [50] }] },
+        { id: b, name: "JBG/YT", enabled: true, tiers: ["1-100"], tierBounds: [100], regions: [{ name: "UK", countries: ["GB"], prices: [30] }] },
+      ]);
+      await tx.update(store.siteConfigTable).set({ value: config }).where(eq(store.siteConfigTable.key, "wholesale_vendors"));
+      await tx.update(store.wholesaleSharesTable).set({ shippingCountry: "GB" }).where(eq(store.wholesaleSharesTable.id, id));
+      await tx.insert(store.wholesaleShareMembersTable).values({
+        id: randomUUID(), shareId: id, username: "supplier-fixture-other", isCreator: false,
+        items: [{ productId: "fixture-uther", productName: "Uther fixture", unitPrice: 60, quantity: 1, vendorId: a, vendorName: "Uther" }],
+        confirmedAt: new Date(),
+      });
+      await tx.update(store.wholesaleShareMembersTable).set({ confirmedAt: new Date() }).where(eq(store.wholesaleShareMembersTable.shareId, id));
+      expect((await request(`/wholesale-shares/${id}/split`, { splitMode: "even", vendorShippingSplit: { [a]: "all_members" } }, "supplier-fixture-other")).status).toBe(403);
+      expect((await request(`/wholesale-shares/${id}/split`, { splitMode: "even", vendorShippingSplit: { unknown: "all_members" } })).status).toBe(400);
+      const combined = await request(`/wholesale-shares/${id}/split`, {
+        splitMode: "even", vendorShippingSplit: { [a]: "all_members", [b]: "all_members" },
+      });
+      expect(combined.status).toBe(200);
+      expect(combined.body.vendorShippingSplit).toEqual({ [a]: "all_members", [b]: "all_members" });
+      expect(combined.body.members.map((m: any) => m.vendorShippingShares.reduce((sum: number, p: any) => sum + p.shipping, 0))).toEqual([40, 40]);
+      const confirmations = await tx.select().from(store.wholesaleShareMembersTable).where(eq(store.wholesaleShareMembersTable.shareId, id));
+      expect(confirmations.every((m: any) => m.confirmedAt === null)).toBe(true);
+      const separate = await request(`/wholesale-shares/${id}/split`, { splitMode: "even", vendorShippingSplit: {} });
+      expect(separate.status).toBe(200);
+      const separateAmounts = Object.fromEntries(separate.body.members.map((m: any) =>
+        [m.username, m.vendorShippingShares.reduce((sum: number, p: any) => sum + p.shipping, 0)]));
+      expect(separateAmounts).toEqual({ "supplier-fixture-owner": 30, "supplier-fixture-other": 50 });
+      const orderId = randomUUID();
+      await tx.insert(store.ordersTable).values({
+        id: orderId, code: `FIX-${randomUUID()}`, telegramUsername: "supplier-fixture-owner",
+        deliveryMethod: "Vendor shipping", productSubtotal: "60", grandTotal: "90", paymentStatus: "confirmed",
+      });
+      await tx.update(store.wholesaleShareMembersTable).set({ orderId }).where(eq(store.wholesaleShareMembersTable.id, untouched.id));
+      const protectedChange = await request(`/wholesale-shares/${id}/split`, {
+        splitMode: "even", vendorShippingSplit: { [a]: "all_members", [b]: "all_members" },
+      });
+      expect(protectedChange.status).toBe(409);
       throw rollback;
     })).rejects.toBe(rollback);
   }, 30000);

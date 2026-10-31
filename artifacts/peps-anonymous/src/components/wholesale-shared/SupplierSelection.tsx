@@ -21,7 +21,7 @@ export function SupplierSelection({ vendors, selected, onChange, disabled = fals
         {vendors.length > 1 && <button type="button" className="text-xs font-semibold px-2" style={{ color: "var(--t-blue)" }}
           onClick={() => onChange(vendors.map(v => v.id))}>Select both suppliers</button>}
       </div>
-      <p className="text-xs" style={{ color: "var(--t-muted)" }}>Choose one supplier or both. Each supplier has its own shipping charge, shared only by members ordering from that supplier.</p>
+      <p className="text-xs" style={{ color: "var(--t-muted)" }}>Choose one supplier or both. Each supplier has its own shipping charge; the organiser chooses how it is shared.</p>
       {selected.length === 0 && <p className="text-xs" role="alert" style={{ color: "#dc2626" }}>Select at least one supplier.</p>}
     </fieldset>
   );

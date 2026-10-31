@@ -1,11 +1,45 @@
 import { describe, it, expect } from "vitest";
-import { quoteVendorShipping, resolveProductVendor } from "./multi-vendor-shipping";
+import { quoteVendorShipping, resolveProductVendor, parseVendorShippingSplit } from "./multi-vendor-shipping";
 
 const vendors = ["uther", "second"].map((id) => ({
   id, name: id, tiers: ["1–25"], tierBounds: [25], maxKitsPerPackage: 25,
   regions: [{ name: "UK", countries: ["GB"], prices: [id === "uther" ? 50 : 30] }],
 }));
 describe("multi-vendor shipping", () => {
+  it("validates organiser shipping rules and preserves legacy buyer-only defaults", () => {
+    expect(parseVendorShippingSplit({ uther: "buyers", second: "all_members" }, vendors))
+      .toEqual({ uther: "buyers", second: "all_members" });
+    expect(parseVendorShippingSplit(null, vendors)).toEqual({});
+    for (const value of [[], "all_members", { missing: "buyers" }, { uther: "free" }]) {
+      expect(() => parseVendorShippingSplit(value, vendors)).toThrow();
+    }
+  });
+  const members = [
+    [{ vendorId: "uther", quantity: 2 }],
+    [{ vendorId: "second", quantity: 1 }],
+    [{ vendorId: "uther", quantity: 1 }, { vendorId: "second", quantity: 1 }],
+    [],
+  ];
+  it("lets the organiser share both suppliers across everyone with items", () => {
+    const result = quoteVendorShipping(vendors, members, "GB", "even", null, null,
+      { uther: "all_members", second: "all_members" });
+    expect(result.total).toBe(80);
+    expect(result.members.map(parts => Number(parts.reduce((s, p) => s + (p.shipping ?? 0), 0).toFixed(2))))
+      .toEqual([26.67, 26.67, 26.66, 0]);
+    expect(result.members[1].find(p => p.vendorId === "uther")?.kits).toBe(0);
+    expect(result.members.flat().reduce((s, p) => s + Math.round((p.shipping ?? 0) * 100), 0)).toBe(8000);
+  });
+  it("supports independent choices for Uther and JBG shipping", () => {
+    const result = quoteVendorShipping(vendors, members, "GB", "even", null, null,
+      { uther: "buyers", second: "all_members" });
+    expect(result.members.map(parts => parts.reduce((s, p) => s + (p.shipping ?? 0), 0))).toEqual([35, 10, 35, 0]);
+  });
+  it("uses each participant's total order size when sharing a supplier across everyone", () => {
+    const result = quoteVendorShipping(vendors, members, "GB", "by_size", null, null,
+      { uther: "all_members", second: "all_members" });
+    expect(result.members.map(parts => parts.reduce((s, p) => s + (p.shipping ?? 0), 0))).toEqual([32, 16, 32, 0]);
+    expect(result.breakdown.map(p => p.kits)).toEqual([3, 2]);
+  });
   it("splits only among members ordering from each vendor", () => {
     const result = quoteVendorShipping(vendors, [
       [{ vendorId: "uther", quantity: 2 }],
