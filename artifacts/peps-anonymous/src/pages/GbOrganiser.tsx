@@ -1,3 +1,5 @@
+import { OrderReference } from "@/components/OrderReference";
+import { orderReference } from "@/lib/order-reference";
 import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
 import { ParcelDestinationField, ParcelDestinationSummary } from "@/components/ParcelDestinationField";
 import { BankTransferSettings } from "@/components/BankTransferSettings";
@@ -8296,7 +8298,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
 
   const searchFilteredOrders = q
     ? sortedDateFiltered.filter(o =>
-        o.code.toLowerCase().includes(q) ||
+        o.code.toLowerCase().includes(q) || orderReference(o).toLowerCase().includes(q) ||
         o.telegramUsername.toLowerCase().includes(q) ||
         o.grandTotal.toFixed(2).includes(q)
       )
@@ -9359,7 +9361,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                     }}
                     onClick={ev => ev.stopPropagation()}
                   />
-                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.06)", color: "#94a3b8", border: "1px solid rgba(255,255,255,0.1)", padding: "2px 8px", borderRadius: 6 }}>#{o.code}</span>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.06)", color: "#94a3b8", border: "1px solid rgba(255,255,255,0.1)", padding: "2px 8px", borderRadius: 6 }}><OrderReference order={o} /></span>
                   <OrderBatchBadge model={supplierBatches} orderId={o.id} />
                   <GbMultipleOrderBadge order={o} />
                   <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(255,255,255,0.07)", color: "#94a3b8" }}>{o.status}</span>
@@ -9653,7 +9655,7 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                 {isEditing && edit && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden border-t" style={{ borderColor: "var(--t-border)" }}>
                     <div className="px-4 py-3 space-y-3" style={{ background: "var(--t-surface2)" }}>
-                      <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Edit Order #{o.code}</p>
+                      <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--t-blue-deep)" }}>Edit Order #{orderReference(o)}</p>
                       <OnwardDeliveryReadonly source={{ kind: "manager", scope: "organiser", gbId: gb.id, orderId: o.id }} />
                       <OnwardPaymentReadonly source={{ kind: "organiser", gbId: gb.id, orderId: o.id }} />
                       {o.testPaymentTxHash && (

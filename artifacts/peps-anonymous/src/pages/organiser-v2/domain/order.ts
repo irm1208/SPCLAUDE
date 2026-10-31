@@ -31,6 +31,9 @@ export interface OrderFlag {
 }
 
 export interface OrganiserOrder {
+  displayReference?: string;
+  isAddition?: boolean;
+  additionParent?: { id: string; reference: string } | null;
   id: string;
   code?: string;
   memberUsername: string;
@@ -156,6 +159,12 @@ export function normalizeOrder(value: unknown, fallbackId?: string): OrganiserOr
 
   return {
     id,
+    code: optionalString(value, "code"),
+    displayReference: optionalString(value, "displayReference"),
+    isAddition: value["isAddition"] === true,
+    additionParent: isRecord(value["additionParent"])
+      && typeof value["additionParent"]["id"] === "string" && typeof value["additionParent"]["reference"] === "string"
+      ? { id: value["additionParent"]["id"], reference: value["additionParent"]["reference"] } : null,
     memberUsername,
     memberName,
     status,

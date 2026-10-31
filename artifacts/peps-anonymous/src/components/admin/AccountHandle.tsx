@@ -32,14 +32,23 @@ export function AdminAccountNames({ secret, children }: { secret: string; childr
   return <DiscordNames.Provider value={names}>{children}</DiscordNames.Provider>;
 }
 
-export function AccountHandle({ username }: { username: string | null | undefined }) {
+export function AccountHandle({ username, discordUsername }: { username: string | null | undefined; discordUsername?: string | null }) {
   const names = useContext(DiscordNames);
+  if (/^@?discord:/i.test(username ?? "") && discordUsername?.trim()) return <>{discordUsername.trim()}</>;
   // Shared staff components also run outside Admin; keep their existing labels there.
   return <>{names ? accountDisplayName(username, names) : username}</>;
 }
 
-export function DiscordAccountId({ username }: { username: string | null | undefined }) {
-  const id = username?.match(/^@?discord:(\d+)$/)?.[1];
+export function DiscordAccountId({ username, discordId }: { username: string | null | undefined; discordId?: string | null }) {
+  const [shown, setShown] = useState(false);
+  const id = discordId || username?.match(/^@?discord:(\d+)$/)?.[1];
   if (!id) return null;
-  return <span className="block text-[11px] font-normal text-muted-foreground break-all select-text">Discord ID: {id}</span>;
+  return <span className="block text-[11px] font-normal text-muted-foreground">
+    <button type="button" className="underline underline-offset-2" aria-expanded={shown}
+      onClick={event => { event.stopPropagation(); setShown(value => !value); }}
+      onKeyDown={event => event.stopPropagation()}>
+      {shown ? "Hide Discord ID" : "Show Discord ID"}
+    </button>
+    {shown && <span className="block break-all select-text" onClick={event => event.stopPropagation()}>Discord ID: {id}</span>}
+  </span>;
 }

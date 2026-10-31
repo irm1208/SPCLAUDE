@@ -9,24 +9,63 @@ Object.defineProperty(globalThis, "navigator", { configurable: true, value: dom.
 const React = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { AccountHandle, AdminAccountNames, DiscordAccountId } = await import("./AccountHandle");
+const { AccountTypeFilter } = await import("./AccountTypeFilter");
 
 it("uses readable account handles in the actual Admin customer-card heading", () => {
   const page = readFileSync(new URL("../../pages/Admin.tsx", import.meta.url), "utf8");
-  expect(/<p className="text-sm font-semibold text-foreground truncate"><AccountHandle username=\{row\.telegramUsername\} \/><\/p>/.test(page)).toBe(true);
-  expect(page.includes("<DiscordAccountId username={row.telegramUsername} />")).toBe(true);
+  expect(page.includes("<AccountHandle username={row.telegramUsername} discordUsername={row.discordUsername} />")).toBe(true);
+  expect(page.includes("<DiscordAccountId username={row.telegramUsername} discordId={row.discordId} />")).toBe(true);
+  expect(page.includes('params.set("accountType", accountType)')).toBe(true);
 });
 
-it("shows the exact numeric Discord ID separately and omits it for Telegram accounts", async () => {
+it("hides Discord IDs until requested, preserves every digit and does not open the account", async () => {
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
-    await React.act(async () => root.render(<DiscordAccountId username="@discord:1528489165962871026" />));
-    expect(container.textContent).toBe("Discord ID: 1528489165962871026");
+    const openAccount = vi.fn();
+    await React.act(async () => root.render(<div onClick={openAccount}><DiscordAccountId username="@discord:1528489165962871026" /></div>));
+    expect(container.textContent).toBe("Show Discord ID");
+    expect(container.textContent).not.toContain("1528489165962871026");
+    await React.act(async () => container.querySelector("button")!.click());
+    expect(container.textContent).toContain("Discord ID: 1528489165962871026");
+    expect(container.querySelector("button")!.getAttribute("aria-expanded")).toBe("true");
+    expect(openAccount).not.toHaveBeenCalled();
+    await React.act(async () => container.querySelector("button")!.click());
+    expect(container.textContent).toBe("Show Discord ID");
     await React.act(async () => root.render(<DiscordAccountId username="telegram_member" />));
     expect(container.textContent).toBe("");
   } finally {
     await React.act(async () => root.unmount());
   }
+});
+
+it("uses the row's saved Discord username without waiting for a separate directory request", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await React.act(async () => root.render(<AccountHandle username="discord:1523097459885346830" discordUsername="serger1978" />));
+    expect(container.textContent).toBe("serger1978");
+    await React.act(async () => root.render(<AccountHandle username="website_name" discordUsername="discord_name" />));
+    expect(container.textContent).toBe("website_name");
+  } finally { await React.act(async () => root.unmount()); }
+});
+
+it("offers Discord, Telegram-linked and no-Telegram filters", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const change = vi.fn();
+  try {
+    await React.act(async () => root.render(<AccountTypeFilter value="all" onChange={change} />));
+    expect([...container.querySelectorAll("option")].map(option => option.value)).toEqual(["all", "discord", "telegram", "non_telegram"]);
+    const select = container.querySelector("select")!;
+    for (const value of ["discord", "telegram", "non_telegram"]) {
+      await React.act(async () => {
+        select.value = value;
+        select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+      });
+      expect(change).toHaveBeenLastCalledWith(value);
+    }
+  } finally { await React.act(async () => root.unmount()); }
 });
 
 it("loads names once for admin labels while actions retain the original account ID", async () => {

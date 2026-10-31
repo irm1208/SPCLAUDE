@@ -1,4 +1,6 @@
 import { OnwardPaymentCard } from "@/components/onward-delivery/OnwardPayments";
+import { OrderReference } from "@/components/OrderReference";
+import { orderReference } from "@/lib/order-reference";
 import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { VendorShipments } from "@/components/VendorShipments";
 import React, { useState, useRef, useEffect } from "react";
@@ -160,6 +162,9 @@ function MemberDispatchImages({ orderId }: { orderId: string }) {
 }
 
 interface OrderDetail {
+  displayReference?: string;
+  isAddition?: boolean;
+  additionParent?: { id: string; reference: string } | null;
   id: string;
   code: string;
   telegramUsername: string;
@@ -2354,7 +2359,7 @@ export default function AccountOrderDetail() {
                         <div className="relative flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="font-bold uppercase" style={{ fontSize: 11, letterSpacing: "0.12em", color: "rgba(255,255,255,.62)" }}>Order</p>
-                            <h1 className="font-extrabold text-white tracking-widest" style={{ fontSize: 28, lineHeight: 1.1, marginTop: 4 }}>{order.code}</h1>
+                            <h1 className="font-extrabold text-white tracking-widest" style={{ fontSize: 28, lineHeight: 1.1, marginTop: 4 }}><OrderReference order={order} /></h1>
                             <div className="flex items-center gap-2 mt-3 flex-wrap">
                               <span className="inline-flex items-center gap-1.5 rounded-full font-bold" style={{ fontSize: 11.5, padding: "4px 11px", background: "rgba(255,255,255,.16)", border: "1px solid rgba(255,255,255,.28)", color: "#fff" }}>
                                 <span className="rounded-full" style={{ width: 6, height: 6, background: hst.color === "#fff" ? "#fff" : hst.color }} />
@@ -3241,7 +3246,7 @@ export default function AccountOrderDetail() {
                 <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "rgba(220,38,38,0.1)" }}>
                   <AlertCircle className="w-7 h-7 text-red-500" />
                 </div>
-                <h3 className="text-base font-bold text-center" style={{ color: "var(--t-text)" }}>Cancel order {order.code}?</h3>
+                <h3 className="text-base font-bold text-center" style={{ color: "var(--t-text)" }}>Cancel order {orderReference(order)}?</h3>
                 <p className="text-sm text-center leading-relaxed" style={{ color: "var(--t-muted)" }}>
                   Your order will be permanently removed. This cannot be undone.
                 </p>

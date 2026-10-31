@@ -1,3 +1,4 @@
+import { OrderReference } from "@/components/OrderReference";
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { useQueryClient } from "@tanstack/react-query";
@@ -107,6 +108,9 @@ import { InsulinResistanceContent } from "@/pages/InsulinResistanceCalculator";
 type LineItem = { productId?: string; productName: string; quantity: number; unitPrice: number; lineTotal: number };
 type Order = {
   id: string; code: string; telegramUsername: string;
+  displayReference?: string;
+  isAddition?: boolean;
+  additionParent?: { id: string; reference: string } | null;
   memberReceivedAt?: string | null;
   status: string; paymentStatus: string; grandTotal: number;
   productSubtotal: number; lineItems: LineItem[];
@@ -422,7 +426,7 @@ function OrderGridCard({
       <div className="flex items-center justify-between gap-2 mt-3.5 pb-3.5" style={{ borderBottom: `1px dashed ${T.border}` }}>
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[10px] font-bold uppercase tracking-wider shrink-0" style={{ color: T.subtle }}>Order</span>
-          <span className="text-[12px] font-semibold truncate" style={{ color: T.muted }}>#{order.code}</span>
+          <span className="text-[12px] font-semibold min-w-0" style={{ color: T.muted }}><OrderReference order={order} /></span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: T.subtle }}>Payment</span>
@@ -611,7 +615,7 @@ function OrderCard({ order, onManage, onReorder, groupBuyName, accent }: { order
               className="font-mono text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-lg shrink-0"
               style={{ background: T.surface2, color: T.muted, border: `1px solid ${T.border}` }}
             >
-              {order.code}
+              <OrderReference order={order} />
             </span>
             <span className="text-[11px] truncate" style={{ color: T.subtle }}>{createdDate}, {createdTime}</span>
           </div>

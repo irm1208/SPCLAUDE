@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import express from "express";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -114,6 +115,114 @@ describe.runIf(process.env.SUPPLIER_BATCH_DB_TESTS === "1")("batch-aware additio
       headers: { "content-type": "application/json", ...(username ? { "x-test-owner": username } : {}) }, body: JSON.stringify(body) });
     return { status: response.status, data: await response.json() as Record<string, any> };
   }
+
+  it("upgrades the old order schema before reads, alias lookup and separate-addition creation", async () => {
+    const f = await fixture();
+    const before = await snapshot(f);
+    const migration = await readFile(new URL("../../../../lib/db/drizzle/order-addition-references.sql", import.meta.url), "utf8");
+    const { createSeparateAddition } = await import("./order-addition-submission");
+    await store.db.transaction(async (tx: any) => {
+      // Temporary tables shadow public tables only on this transaction's connection.
+      await tx.execute(sql`CREATE TEMP TABLE orders (LIKE public.orders INCLUDING DEFAULTS) ON COMMIT DROP`);
+      await tx.execute(sql`INSERT INTO orders SELECT * FROM public.orders WHERE id = ${f.parentId}`);
+      await tx.execute(sql`ALTER TABLE orders DROP COLUMN addition_display_reference`);
+      await tx.execute(sql`CREATE TEMP TABLE order_line_items (LIKE public.order_line_items INCLUDING DEFAULTS) ON COMMIT DROP`);
+      await tx.execute(sql.raw(migration));
+      await tx.execute(sql.raw(migration));
+      const constraint = await tx.execute(sql`SELECT contype FROM pg_constraint
+        WHERE conrelid = 'orders'::regclass AND conname = 'orders_addition_display_reference_unique'`);
+      expect(constraint.rows).toEqual([{ contype: "u" }]);
+      const [parent] = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.parentId));
+      expect(parent).toEqual(before.order);
+      expect(parent.additionDisplayReference).toBeNull();
+      const created = await createSeparateAddition(tx, parent, {
+        items: [{ productId: f.productId, productName: "Synthetic canonical product", quantity: 2, unitPrice: 10 }],
+        productSubtotal: 20, grandTotal: 20, tip: 0, testingContribution: 0, kitFees: 0,
+        couponCode: null, couponDiscount: 0, requestedCredits: 0, notes: null,
+      });
+      const child = created.updatedParent;
+      expect(child.code).toMatch(/^ADD-/);
+      expect(child.additionDisplayReference).toBe(`${parent.code}-A1`);
+      expect(child.paymentStatus).toBe("unpaid");
+      expect(child.deliveryPrice).toBe("0.00");
+      expect(child.vendorShipping).toBe("0.00");
+      const lookup = await tx.execute(sql`SELECT id FROM orders WHERE
+        (code = ${child.code} OR addition_display_reference = ${child.additionDisplayReference})
+        AND telegram_username = ${child.telegramUsername} AND group_buy_id = ${f.groupId}`);
+      expect(lookup.rows).toEqual([{ id: child.id }]);
+      await tx.execute(sql`SAVEPOINT duplicate_alias`);
+      await expect(tx.execute(sql`UPDATE orders SET addition_display_reference = ${child.additionDisplayReference}
+        WHERE id = ${f.parentId}`)).rejects.toThrow();
+      await tx.execute(sql`ROLLBACK TO SAVEPOINT duplicate_alias`);
+      const [unchanged] = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.parentId));
+      expect(unchanged).toEqual(parent);
+    });
+    expect(await snapshot(f)).toEqual(before);
+  });
+
+  it("allocates stable unique readable aliases concurrently and replays the original reference", async () => {
+    const f = await fixture();
+    const before = await snapshot(f);
+    const secondBody = { ...f.body, additionRequestId: randomUUID() };
+    const [first, second] = await Promise.all([submit(f.body), submit(secondBody)]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.data.code).toMatch(/^ADD-/);
+    expect(second.data.code).toMatch(/^ADD-/);
+    expect(first.data.additionParent).toEqual({ id: f.parentId, reference: before.order.code });
+    expect(new Set([first.data.displayReference, second.data.displayReference]).size).toBe(2);
+    expect([first.data.displayReference, second.data.displayReference].sort()).toEqual([
+      `${before.order.code}-A1`, `${before.order.code}-A2`,
+    ]);
+    const retry = await submit(f.body);
+    expect(retry.data.id).toBe(first.data.id);
+    expect(retry.data.displayReference).toBe(first.data.displayReference);
+    const { withAdditionReferences } = await import("./addition-order-references");
+    await store.db.update(store.ordersTable).set({ status: "Cancelled" }).where(eq(store.ordersTable.id, second.data.id));
+    const reordered = await withAdditionReferences([{ id: second.data.id, code: second.data.code }, { id: first.data.id, code: first.data.code }]);
+    expect(reordered.map(o => o.displayReference)).toEqual([second.data.displayReference, first.data.displayReference]);
+    const third = await submit({ ...f.body, additionRequestId: randomUUID() });
+    expect(third.data.displayReference).toBe(`${before.order.code}-A3`);
+    expect((await snapshot(f)).order).toEqual(before.order);
+  });
+
+  it("repairs historical aliases once, includes cancelled siblings and does not expose an inaccessible parent", async () => {
+    const f = await fixture();
+    const a = await submit(f.body);
+    const b = await submit({ ...f.body, additionRequestId: randomUUID() });
+    await store.db.update(store.ordersTable).set({ additionDisplayReference: null }).where(inArray(store.ordersTable.id, [a.data.id, b.data.id]));
+    await store.db.update(store.ordersTable).set({ status: "Cancelled" }).where(eq(store.ordersTable.id, a.data.id));
+    const { withAdditionReferences } = await import("./addition-order-references");
+    const repaired = await withAdditionReferences([{ id: b.data.id, code: b.data.code }]);
+    const again = await withAdditionReferences([{ id: b.data.id, code: b.data.code }]);
+    expect(repaired).toEqual(again);
+    expect(repaired[0].displayReference).toMatch(/-A2$/);
+    const [child] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, b.data.id));
+    expect(child.deliveryPrice).toBe("0.00");
+    expect(child.vendorShipping).toBe("0.00");
+    expect(child.paymentStatus).toBe("unpaid");
+    expect(child.code).toBe(b.data.code);
+    await store.db.update(store.ordersTable).set({ deletedAt: new Date() }).where(eq(store.ordersTable.id, f.parentId));
+    const hidden = await withAdditionReferences([{ id: b.data.id, code: b.data.code }]);
+    expect(hidden[0].additionParent).toBeNull();
+    expect(hidden[0].displayReference).toBe("Addition");
+  });
+
+  it("never resolves a parent from another group, another owner, or a missing record", async () => {
+    const f = await fixture(), other = await fixture();
+    const child = await submit(f.body);
+    const { withAdditionReferences } = await import("./addition-order-references");
+    const read = async () => (await withAdditionReferences([{ id: child.data.id, code: child.data.code }]))[0];
+    for (const parentId of [other.parentId, randomUUID()]) {
+      await store.db.update(store.ordersTable).set({ additionOfOrderId: parentId }).where(eq(store.ordersTable.id, child.data.id));
+      expect((await read()).additionParent).toBeNull();
+      expect((await read()).displayReference).toBe("Addition");
+    }
+    await store.db.update(store.ordersTable).set({ additionOfOrderId: f.parentId }).where(eq(store.ordersTable.id, child.data.id));
+    await store.db.update(store.ordersTable).set({ telegramUsername: "synthetic-other-owner" }).where(eq(store.ordersTable.id, f.parentId));
+    expect((await read()).additionParent).toBeNull();
+    expect((await read()).displayReference).toBe("Addition");
+  });
   async function snapshot(f: any) {
     return {
       order: (await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.parentId)))[0],

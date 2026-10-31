@@ -1,5 +1,6 @@
 import { getOnwardOrderPreference } from "../lib/gb-onward-delivery";
 import { getAdditionAvailability } from "../lib/order-addition-submission";
+import { withAdditionReferences, additionReferenceFields } from "../lib/addition-order-references";
 import { projectMemberParcels } from "../lib/member-gb-parcels";
 import { loadMemberParcelRouting } from "../lib/member-parcel-routing-service";
 import { shippingOptionMatchesCountry } from "../lib/group-buy-shipping-options";
@@ -1905,7 +1906,7 @@ router.get("/account/orders", requireAccount, async (req, res): Promise<void> =>
     };
   }));
 
-  res.json(results);
+  res.json(await withAdditionReferences(results));
 });
 
 // GET /api/account/hidden-orders — returns the list of order IDs the member has hidden
@@ -2027,7 +2028,7 @@ router.get("/account/orders/deleted", requireAccount, async (req, res): Promise<
     };
   });
 
-  res.json(results);
+  res.json(await withAdditionReferences(results));
 });
 
 // GET /api/account/order-by-code — fetch a single order by code for the logged-in account
@@ -2049,7 +2050,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
     .from(ordersTable)
     .where(
       and(
-        eq(ordersTable.code, code),
+        or(sql`lower(${ordersTable.code}) = ${code.toLowerCase()}`, sql`lower(${ordersTable.additionDisplayReference}) = ${code.toLowerCase()}`),
         sql`lower(${ordersTable.telegramUsername}) IN (${tgWithAt}, ${tgBare})`,
       )
     );
@@ -2097,6 +2098,7 @@ router.get("/account/order-by-code", requireAccount, async (req, res): Promise<v
   res.json({
     id: order.id,
     code: order.code,
+    ...await additionReferenceFields(order),
     telegramUsername: order.telegramUsername,
     deliveryMethod: order.deliveryMethod,
     deliveryMethodId: order.deliveryMethodId ?? null,
@@ -2428,6 +2430,7 @@ router.get("/account/orders/:id", requireAccount, async (req, res): Promise<void
   res.json({
     id: order.id,
     code: order.code,
+    ...await additionReferenceFields(order),
     telegramUsername: order.telegramUsername,
     deliveryMethod: order.deliveryMethod,
     deliveryMethodId: order.deliveryMethodId ?? null,

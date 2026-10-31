@@ -73,6 +73,8 @@ import { GoogleGenAI } from "../lib/google-genai";
 import { writeLog } from "../lib/audit-log";
 import { resolveOrderVendorShippingIsTbd } from "../lib/vendor-shipping-tbd";
 import { createAdminOrganiserSession } from "../lib/admin-organiser-sessions";
+import { withAdditionReferences, additionReferenceFields } from "../lib/addition-order-references";
+import { ACCOUNT_TYPES, matchesAccountType, type AccountType } from "../lib/admin-account-identity";
 import { issueAccountCookieForAccount } from "../middleware/account-auth";
 import { enrichLogsWithGeo, enrichIps, enrichIpsFromCache } from "../lib/ip-geo";
 import { createAlert } from "../lib/create-alert";
@@ -490,6 +492,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
         sql`lower(coalesce(${ordersTable.trackingNumber}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.paymentTxHash}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.shippingName}, '')) like ${"%" + q + "%"}`,
+        sql`lower(coalesce(${ordersTable.additionDisplayReference}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.shippingCountry}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.reshipperUsername}, '')) like ${"%" + q + "%"}`,
         sql`lower(coalesce(${ordersTable.shippingEmail}, '')) like ${"%" + q + "%"}`,
@@ -769,7 +772,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
   enrichIps(countryFiltered.map(o => o.ipAddress)).catch(() => {});
 
   res.json({
-    orders: countryFiltered.map(o => {
+    orders: await withAdditionReferences(countryFiltered.map(o => {
       const key = normIp(o.ipAddress);
       const geo = key ? (geoMap.get(key) ?? { country: null, city: null }) : { country: null, city: null };
       const { paymentScreenshot, ...rest } = o as any;
@@ -780,7 +783,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
         geoCity: (geo as any).city ?? null,
         geoCountry: (geo as any).country ?? null,
       };
-    }),
+    })),
     pagination: {
       page,
       pageSize,
@@ -1037,7 +1040,7 @@ router.get("/admin/orders/:id", async (req, res): Promise<void> => {
   const geoMap = await enrichIps([fmt.ipAddress]);
   const key = normIp(fmt.ipAddress);
   const geo = key ? (geoMap.get(key) ?? { country: null, city: null }) : { country: null, city: null };
-  res.json({ ...fmt, geoCity: geo.city ?? null, geoCountry: geo.country ?? null });
+  res.json({ ...fmt, ...await additionReferenceFields(order), geoCity: geo.city ?? null, geoCountry: geo.country ?? null });
 });
 
 // ─── POST /api/admin/orders — admin creates a new order ──────
@@ -1740,6 +1743,7 @@ router.patch("/admin/orders/:id", async (req, res): Promise<void> => {
 
   res.json({
     ...fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]),
+    ...await additionReferenceFields(updated),
     customShippingRequiresAddress: patchReqAddress,
     customShippingRequiresQrCode: patchReqQr,
     shippingOptionRequiresAddress: patchOptReqAddress,
@@ -3409,7 +3413,7 @@ router.put("/admin/orders/:id/line-items", async (req: any, res: any) => {
   return { updated, newLineItems };
   });
 
-  res.json(fmtOrder(updated as unknown as Record<string, any>, newLineItems as unknown as Record<string, any>[]));
+  res.json({ ...fmtOrder(updated as unknown as Record<string, any>, newLineItems as unknown as Record<string, any>[]), ...await additionReferenceFields(updated) });
 });
 
 // ─── GET /api/admin/orders/:id/routing-history ───────────────
@@ -3538,7 +3542,7 @@ router.patch("/admin/orders/:id/routing", async (req, res): Promise<void> => {
       reason: reason ? String(reason).slice(0, 500) : null,
     });
     const lineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, req.params.id));
-    res.json(fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]));
+    res.json({ ...fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]), ...await additionReferenceFields(updated) });
   } catch (err) {
     const refundOrderId = refundMutationErrorOrderId(err);
     if (refundOrderId) {
@@ -3834,7 +3838,7 @@ router.post("/admin/orders/:id/financial-override", async (req, res): Promise<vo
     );
 
     const lineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, req.params.id));
-    res.json(fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]));
+    res.json({ ...fmtOrder(updated as unknown as Record<string, any>, lineItems as unknown as Record<string, any>[]), ...await additionReferenceFields(updated) });
   } catch (err) {
     handleRoutingError(err, res, { action: "financial_override", affectedOrders: [req.params.id] });
   }
@@ -4879,7 +4883,7 @@ router.get("/admin/customers/:username", async (req: any, res: any): Promise<voi
     }));
 
     const logsWithGeo = await enrichLogsWithGeo(logs);
-    res.json({ orders: ordersWithItems, logs: logsWithGeo, customerDetails: customerDetails ?? null, account: account ?? null, bloodTests });
+    res.json({ orders: await withAdditionReferences(ordersWithItems), logs: logsWithGeo, customerDetails: customerDetails ?? null, account: account ?? null, bloodTests });
   } catch (err) {
     console.error("[admin/customers/:username]", err);
     res.status(500).json({ error: "Failed to fetch customer profile" });
@@ -5286,6 +5290,11 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
   const gbIdFilter = typeof req.query.gbId === "string" ? req.query.gbId.trim() : null;
   const wholesaleOnly = req.query.wholesale === "true";
   const guestsOnly = req.query.guests === "true";
+  const accountType = String(req.query.accountType ?? "all");
+  if (!ACCOUNT_TYPES.includes(accountType as AccountType)) {
+    res.status(400).json({ error: "Invalid account type filter" });
+    return;
+  }
 
   try {
     // If filtering by group buy, resolve the set of member accountIds first
@@ -5375,8 +5384,9 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
       const filteredGuests = guestRows
         .filter(g => !q || g.telegramUsername.toLowerCase().includes(q))
         .sort((a, b) => new Date(b.lastOrderAt ?? 0).getTime() - new Date(a.lastOrderAt ?? 0).getTime());
-      const total = filteredGuests.length;
-      const page_data = filteredGuests.slice(offset, offset + limit);
+      const matchingGuests = filteredGuests.filter(c => matchesAccountType(c, accountType as AccountType));
+      const total = matchingGuests.length;
+      const page_data = matchingGuests.slice(offset, offset + limit);
       return res.json({ customers: page_data, total, page, limit });
     }
 
@@ -5397,13 +5407,15 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
 
     const merged = accounts.map(a => ({
       telegramUsername: a.telegramUsername,
+      discordUsername: a.discordUsername ?? null,
+      discordId: a.discordId ?? null,
       email: a.email,
       accountStatus: a.accountStatus,
       createdAt: a.createdAt,
       country: a.country ?? null,
       lastLoginIp: a.lastLoginIp ?? null,
       tags: tagsMap.get(a.telegramUsername ?? "") ?? [],
-      telegramConnected: a.telegramChatId != null,
+      telegramConnected: Boolean(a.telegramChatId),
       organiserStatus: a.organiserStatus ?? null,
       poolLeaderStatus: a.poolLeaderStatus ?? null,
       reshipperStatus: a.reshipperStatus ?? null,
@@ -5415,6 +5427,8 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
     const filtered = merged
       .filter(c => !q || (
         c.telegramUsername.toLowerCase().includes(q) ||
+        (c.discordUsername ?? "").toLowerCase().includes(q) ||
+        (c.discordId ?? "").includes(q) ||
         (c.email ?? "").toLowerCase().includes(q) ||
         (c.country ?? "").toLowerCase().includes(q) ||
         (c.lastLoginIp ?? "").toLowerCase().includes(q)
@@ -5425,7 +5439,8 @@ router.get("/admin/customers", async (req: any, res: any): Promise<void> => {
         const alt = u.startsWith("@") ? u.slice(1) : `@${u}`;
         return gbMemberUsernames.has(u) || gbMemberUsernames.has(alt);
       })
-      .filter(c => !wholesaleOnly || c.isWholesale);
+      .filter(c => !wholesaleOnly || c.isWholesale)
+      .filter(c => matchesAccountType(c, accountType as AccountType));
 
     const total = filtered.length;
     const page_data = filtered.slice(offset, offset + limit);

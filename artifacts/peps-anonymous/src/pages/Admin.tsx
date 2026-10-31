@@ -1,5 +1,7 @@
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { OrderReference } from "@/components/OrderReference";
 import { AccountHandle, AdminAccountNames, DiscordAccountId } from "@/components/admin/AccountHandle";
+import { AccountTypeFilter, type AccountType } from "@/components/admin/AccountTypeFilter";
 import { LinkedTelegramUsername } from "@/components/admin/LinkedTelegramUsername";
 import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
@@ -166,6 +168,9 @@ function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret
 // ─── Types ───────────────────────────────────────────────────
 interface LineItem { id: string; productId: string | null; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos?: boolean; }
 interface Order {
+  displayReference?: string;
+  isAddition?: boolean;
+  additionParent?: { id: string; reference: string } | null;
   id: string; code: string; telegramUsername: string; status: string;
   deliveryMethod: string; deliveryPrice: number; vendorShipping: number;
   productSubtotal: number; tip: number; grandTotal: number;
@@ -2935,7 +2940,7 @@ function OrdersTab({ secret }: { secret: string }) {
                       <div key={o.id} className="bg-white rounded-lg border border-red-200 px-3 py-2.5 flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-bold text-sm text-foreground">#{o.code}</span>
+                            <span className="font-mono font-bold text-sm text-foreground min-w-0"><OrderReference order={o} /></span>
                             <span className="text-xs text-muted-foreground"><AccountHandle username={o.telegramUsername} /></span>
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 uppercase">{deletedByLabel}</span>
                           </div>
@@ -3324,7 +3329,7 @@ function OrdersTab({ secret }: { secret: string }) {
                 <span className={cn("text-xs font-bold px-2 py-1 rounded-full shrink-0", STATUS_COLORS[order.status] ?? "bg-muted text-muted-foreground")}>
                   {order.status}
                 </span>
-                <span className="font-mono font-bold text-sm shrink-0">{order.code}</span>
+                <span className="font-mono font-bold text-sm min-w-0"><OrderReference order={order} /></span>
                 <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap inline-flex items-center gap-1">
                   <CalendarDays className="w-3 h-3 opacity-50" />
                   {new Date(order.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
@@ -7215,7 +7220,7 @@ function PaymentsTab({ secret }: { secret: string }) {
                 <span className={cn("text-xs font-bold px-2 py-1 rounded-full shrink-0", PAYMENT_COLORS[o.paymentStatus])}>
                   {PAYMENT_LABELS[o.paymentStatus]}
                 </span>
-                <span className="font-mono font-bold text-sm">{o.code}</span>
+                <span className="font-mono font-bold text-sm"><OrderReference order={o} /></span>
                 <span className="text-sm text-muted-foreground truncate flex-1"><AccountHandle username={o.telegramUsername} /></span>
                 <span className="font-semibold text-sm shrink-0">{fmt(o.grandTotal)}</span>
               </div>
@@ -11685,6 +11690,8 @@ function LogsTab({ secret }: { secret: string }) {
 
 // ─── Usernames Tab ────────────────────────────────────────────
 interface UsernameRow {
+  discordUsername?: string | null;
+  discordId?: string | null;
   telegramUsername: string;
   orderCount: number;
   totalSpent: number;
@@ -12553,10 +12560,10 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
             {orders.map(o => (
               <div key={o.id} className="rounded-xl border border-border bg-white overflow-hidden">
                 <button
-                  className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-muted/30 transition-colors"
+                  className="w-full text-left px-3 py-2.5 flex flex-wrap sm:flex-nowrap items-center gap-2 hover:bg-muted/30 transition-colors"
                   onClick={() => handleExpandOrder(o.id, o)}
                 >
-                  <span className="font-mono font-bold text-sm text-foreground">#{o.code}</span>
+                  <span className="font-mono font-bold text-sm text-foreground min-w-0"><OrderReference order={o} /></span>
                   <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide", STATUS_COLORS[o.status] ?? "bg-muted text-muted-foreground")}>{o.status}</span>
                   <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", PAYMENT_COLORS[o.paymentStatus] ?? "bg-muted text-muted-foreground")}>{PAYMENT_LABELS[o.paymentStatus] ?? o.paymentStatus}</span>
                   {o.groupBuyId ? (
@@ -12748,7 +12755,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
             <div className="space-y-1.5">
               {orders.filter(o => o.status !== "Draft").map(o => (
                 <div key={o.id} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border bg-white text-xs">
-                  <span className="font-mono font-bold text-foreground shrink-0">#{o.code}</span>
+                  <span className="font-mono font-bold text-foreground min-w-0"><OrderReference order={o} /></span>
                   <span className={cn("px-1.5 py-0.5 rounded font-bold shrink-0", PAYMENT_COLORS[o.paymentStatus] ?? "bg-muted text-muted-foreground")}>{PAYMENT_LABELS[o.paymentStatus] ?? o.paymentStatus}</span>
                   <div className="flex-1 min-w-0">
                     {o.paymentTxHash && (
@@ -13399,6 +13406,8 @@ function CustomerDiscussLimitOverride({ secret, username }: { secret: string; us
 }
 
 function UsernamesTab({ secret }: { secret: string }) {
+  const [accountType, setAccountType] = useState<AccountType>("all");
+  const customerRequest = useRef(0);
   const [rows, setRows] = useState<UsernameRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState("");
@@ -13445,9 +13454,11 @@ function UsernamesTab({ secret }: { secret: string }) {
   }, [searchInput]);
 
   const fetch$ = useCallback(async () => {
+    const request = ++customerRequest.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set("accountType", accountType);
       if (searchQuery) params.set("q", searchQuery);
       if (gbFilter) params.set("gbId", gbFilter);
       if (wholesaleFilter) params.set("wholesale", "true");
@@ -13456,10 +13467,10 @@ function UsernamesTab({ secret }: { secret: string }) {
       const r = await fetch(apiUrl(`/admin/customers?${params}`), { headers: { "x-admin-secret": secret } });
       const data = await r.json();
       // New endpoint returns { customers, total, page, limit }; fall back to array for legacy compat
-      setRows(Array.isArray(data) ? data : (data.customers ?? []));
+      if (request === customerRequest.current) setRows(Array.isArray(data) ? data : (data.customers ?? []));
     } catch { /* ignore */ }
-    setLoading(false);
-  }, [secret, searchQuery, gbFilter, wholesaleFilter, guestsFilter]);
+    if (request === customerRequest.current) setLoading(false);
+  }, [secret, searchQuery, gbFilter, wholesaleFilter, guestsFilter, accountType]);
 
   useEffect(() => { fetch$(); }, [fetch$]);
 
@@ -13599,7 +13610,7 @@ function UsernamesTab({ secret }: { secret: string }) {
 
   // Reset to page 0 when any filter/sort/search changes
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, guestsFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
+  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, guestsFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter, accountType]);
 
   return (
     <div className="space-y-4">
@@ -13715,6 +13726,11 @@ function UsernamesTab({ secret }: { secret: string }) {
 
       {/* Status filter + tag filter + sort */}
       <div className="flex gap-2 flex-wrap">
+        <AccountTypeFilter value={accountType} onChange={value => {
+          setAccountType(value);
+          setSelected(new Set());
+          setPanelUsername(null);
+        }} />
         <select
           className="h-9 rounded-lg border bg-background px-3 text-xs font-medium text-foreground flex-1 min-w-[140px]"
           value={paymentFilter}
@@ -13928,9 +13944,15 @@ function UsernamesTab({ secret }: { secret: string }) {
                       onChange={() => toggleSelect(row.telegramUsername)}
                     />
                   </label>
-                  <button
+                  <div role="button" tabIndex={0}
                     className="flex-1 text-left flex items-center gap-3 px-3 py-3 hover:bg-slate-50 transition-colors min-w-0"
                     onClick={() => openPanel(row.telegramUsername)}
+                    onKeyDown={event => {
+                      if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        openPanel(row.telegramUsername);
+                      }
+                    }}
                   >
                     <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
                       <span className="text-xs font-bold text-orange-500">{row.telegramUsername.replace(/^@/, "").slice(0, 2).toUpperCase()}</span>
@@ -13938,8 +13960,8 @@ function UsernamesTab({ secret }: { secret: string }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate"><AccountHandle username={row.telegramUsername} /></p>
-                          <DiscordAccountId username={row.telegramUsername} />
+                          <p className="text-sm font-semibold text-foreground truncate"><AccountHandle username={row.telegramUsername} discordUsername={row.discordUsername} /></p>
+                          <DiscordAccountId username={row.telegramUsername} discordId={row.discordId} />
                         </div>
                         {row.country && <span className="text-[11px] text-muted-foreground font-medium">{row.country}</span>}
                         {(row as any).isGuest
@@ -13977,7 +13999,7 @@ function UsernamesTab({ secret }: { secret: string }) {
                       ? <ChevronUp className="w-4 h-4 text-violet-500 shrink-0" />
                       : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
                     }
-                  </button>
+                  </div>
                 </div>
                 {isExpanded && (
                   <div className="border-t border-violet-100">

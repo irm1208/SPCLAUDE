@@ -10,6 +10,7 @@ import { assertNoActiveRefund } from "./refund-mutation-guard";
 import { additionMustSplit, additionBlockReason } from "./order-addition-policy";
 import { centsToUsdString, usdToCents } from "./refund-money";
 import { fingerprint, SupplierBatchError } from "./supplier-batches-model";
+import { ensureAdditionReferences } from "./addition-order-references";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const owner = (name: string) => name.replace(/^@/, "").toLowerCase();
@@ -148,6 +149,9 @@ export async function createSeparateAddition(tx: Tx, parent: typeof ordersTable.
     creditsApplied: Number(centsToUsdString(credits)), status: "Submitted",
     paymentStatus: settled ? "confirmed" : "unpaid", paymentConfirmedAt: settled ? new Date() : null,
   }).returning();
+  await ensureAdditionReferences(tx, parent.id, [id]);
+  const [referenceRow] = await tx.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (referenceRow) order.additionDisplayReference = referenceRow.additionDisplayReference;
   const lines = await tx.insert(orderLineItemsTable).values(input.items.map(item => ({
     id: randomUUID(), orderId: id, productId: item.productId, productName: item.productName,
     quantity: Number(item.quantity).toFixed(2), unitPrice: Number(item.unitPrice).toFixed(2),

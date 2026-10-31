@@ -17,6 +17,7 @@ __pycache__/
 # Database dumps & exports
 backup_clean.sql
 *.sql
+!lib/db/drizzle/order-addition-references.sql
 exports/
 
 # Local DB backups created by the dev scheduler — large, dev-only

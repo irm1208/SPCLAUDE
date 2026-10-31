@@ -56,6 +56,7 @@ import { getActiveWholesaleVendor, getEnabledWholesaleVendors, getVendors } from
 import { resolveProductVendor } from "../lib/multi-vendor-shipping";
 import { calcTotalShipping, pickRegionForCountry, type ShippingVendor } from "../lib/wholesale-shipping";
 import { calculateAdditionMerge } from "../lib/order-addition-merge";
+import { additionReferenceFields, withAdditionReferences } from "../lib/addition-order-references";
 import { resolveGroupBuyAdminFee } from "../lib/group-buy-admin-fee";
 import { centsToUsdString, subtractMoneyClamped, usdToCents } from "../lib/refund-money";
 import { inferGroupBuyContext } from "../lib/group-buy-order-context";
@@ -730,6 +731,7 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       const replay = await replayAddition(db, additionRequest);
       if (replay) {
         res.json({ ...formatOrderResponse(replay.updatedParent, replay.mergedItems),
+          ...await additionReferenceFields(replay.updatedParent),
           amountDue: Number(replay.updatedParent.amountDue), mergedIntoExistingOrder: !replay.separate,
           additionOutcome: replay.separate ? "separate" : "merged", replayed: true }); return;
       }
@@ -1411,10 +1413,10 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       return;
     }
 
-    const formatted = formatOrderResponse(
+    const formatted = { ...await additionReferenceFields(mergeOutcome.updatedParent), ...formatOrderResponse(
       { ...mergeOutcome.updatedParent, onwardDeliveryMethod: mergeOutcome.updatedParent.groupBuyId ? await getOnwardOrderPreference(mergeOutcome.updatedParent.id) : null },
       mergeOutcome.mergedItems as unknown as Record<string, unknown>[],
-    );
+    ) };
     const response = {
       ...formatted,
       amountDue: parseFloat(String(mergeOutcome.updatedParent.amountDue ?? "0")),
@@ -1938,7 +1940,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
   const raw = rawIdentifier.trim();
 
   // Determine if input looks like an order code (4-digit number) or a telegram username
-  const isCode = /^\d{4}$/.test(raw);
+  const isCode = /^\d+$/.test(raw) || /^.+-A\d+$/i.test(raw) || /^ADD-[a-f0-9-]+$/i.test(raw);
 
   const identifier = raw.toLowerCase();
   const now = new Date();
@@ -1960,7 +1962,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
   // For username lookups: find ALL orders for that user and pick the one with matching PIN
   let order: typeof ordersTable.$inferSelect | undefined;
   if (isCode) {
-    const [found] = await db.select().from(ordersTable).where(and(eq(ordersTable.code, raw), isNull(ordersTable.deletedAt)));
+    const [found] = await db.select().from(ordersTable).where(and(or(sql`lower(${ordersTable.code}) = ${raw.toLowerCase()}`, sql`lower(${ordersTable.additionDisplayReference}) = ${raw.toLowerCase()}`), isNull(ordersTable.deletedAt)));
     // Timing-safe PIN check even on single result
     if (found && safeEqual(found.pin ?? "____", pin.trim())) {
       order = found;
@@ -2126,6 +2128,7 @@ router.post("/orders/lookup", async (req, res): Promise<void> => {
 
   res.json({
     ...formatOrderResponse({ ...order, onwardDeliveryMethod: order.groupBuyId ? await getOnwardOrderPreference(order.id) : null }, lineItems as unknown as Record<string, unknown>[], gbPaymentsEnabled),
+    ...await additionReferenceFields(order),
     qrCodes,
     groupBuyQrUploadInpostEnabled: gbQrUploadInpostEnabled,
     groupBuyQrUploadRoyalMailEnabled: gbQrUploadRoyalMailEnabled,
@@ -2801,7 +2804,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     },
   ).catch(() => {});
 
-  res.json(formatted);
+  res.json({ ...formatted, ...await additionReferenceFields(updatedOrder) });
 });
 
 // ── POST /api/orders/:orderId/shipping-address ───────────────
@@ -2999,7 +3002,7 @@ router.post("/orders/my-orders", async (req, res): Promise<void> => {
     return formatOrderResponse(order as unknown as Record<string, unknown>, lineItems as unknown as Record<string, unknown>[]);
   }));
 
-  res.json({ orders: result, username: pinMatch.telegramUsername });
+  res.json({ orders: await withAdditionReferences(result), username: pinMatch.telegramUsername });
 });
 
 // ── DELETE /api/orders/:orderId — customer self-deletes a Draft/Submitted order ──
