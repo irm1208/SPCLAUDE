@@ -28,6 +28,21 @@ merely the member order's Processing label. A successful submission replay must 
 its existing result even if vendor submission happened later; do not cancel historical
 additions or change their payment eligibility when enforcing the new cutoff.
 
+## Combined shipping, separate money
+Group the original order and its active add-ons for one packing slip and one final
+parcel, without merging order balances, payment evidence or supplier commitments.
+All included orders must be paid and ready, with matching member, group buy, destination
+and reshipper. Apply the same final tracking number to each included order.
+
+**Why:** The user approved attaching linked orders for shipping together rather than
+shipping each add-on separately, while retaining separate payment records.
+
+**How to apply:** Treat the whole linked family as the dispatch unit, protect stock
+allocation against retries/concurrent additions, and undo a combined dispatch together.
+If part of the family already shipped independently, do not claim it can be combined
+retroactively; remaining add-ons need a separate parcel. Never infer shared shipping
+merely from the same customer on unrelated orders.
+
 ## The unbatched invariant
 The server must lock and revalidate the paid parent, append/combine canonical catalog
 items, increase its gross totals, and add only the incremental unpaid amount to

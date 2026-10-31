@@ -56,6 +56,7 @@ const mockState = vi.hoisted(() => {
   };
 
   const fakeDb = {
+    execute: async () => ({ rows: [] }), // Transaction-scoped advisory money mutex.
     select: (columns?: unknown) => makeSelect(columns),
     update: (t: unknown) => ({
       set: (values: unknown) => {

@@ -22,6 +22,7 @@ import { eq, and, inArray, isNull, or, sql } from "drizzle-orm";
 import { sendTelegramMessage, notifyUserFromTemplate } from "../lib/telegram";
 import { GoogleGenAI } from "../lib/google-genai";
 import { randomUUID } from "crypto";
+import { registerLinkedOrderDispatch, withLinkedDispatchBoundary, CombinedShippingError } from "./linked-order-dispatch";
 
 
 // ─── factory config ──────────────────────────────────────────────────────────
@@ -92,6 +93,8 @@ export function createDispatchRouter(cfg: DispatchRouterCfg): IRouter {
     } catch { res.status(500).json({ error: "Access check failed" }); }
   });
 
+
+registerLinkedOrderDispatch(router, cfg);
 
 // ─── types ─────────────────────────────────────────────────────────────────
 type ExtParcelItem = ParcelItem & { dispatchedQty?: number };
@@ -374,7 +377,7 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
       return;
     }
 
-    await db.transaction(async tx => {
+    await withLinkedDispatchBoundary(db, gbId, scopedOrderIds, async tx => {
       // Lock and check the complete sorted target set before touching parcel
       // stock. Any active middle order aborts this transaction atomically.
       await assertNoActiveRefunds(tx, [...scopedOrderIds].sort());
@@ -430,6 +433,7 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
       res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
+    if (e instanceof CombinedShippingError) { res.status(e.status).json({ error: e.message }); return; }
     console.error("[dispatch confirm]", e);
     res.status(500).json({ error: "Failed to confirm dispatch" });
   }
@@ -458,7 +462,7 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
       return;
     }
 
-    await db.transaction(async tx => {
+    await withLinkedDispatchBoundary(db, gbId, scopedOrderIds, async tx => {
       // This check must be inside the same transaction as parcel restoration;
       // a blocked order therefore cannot leave stock or order state changed.
       await assertNoActiveRefunds(tx, [...scopedOrderIds].sort());
@@ -497,7 +501,7 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
       if (updated.length !== scopedOrderIds.length) {
         throw new RefundMutationBlockedError(scopedOrderIds.find(id => !updated.some(row => row.id === id)) ?? scopedOrderIds[0]!);
       }
-    });
+    }, "undo");
 
     res.json({ ok: true, undispatched: scopedOrderIds.length });
   } catch (e) {
@@ -506,6 +510,7 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
       res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
+    if (e instanceof CombinedShippingError) { res.status(e.status).json({ error: e.message }); return; }
     console.error("[dispatch undispatch]", e);
     res.status(500).json({ error: "Failed to un-dispatch orders" });
   }
@@ -617,7 +622,7 @@ router.post(`${cfg.prefix}/:gbId/mark-shipped-by-reshipper`, async (req, res) =>
       res.json({ ok: true, marked: 0 }); return;
     }
 
-    await withRefundMutationGuard(db, toMark, async tx => {
+    await withLinkedDispatchBoundary(db, gbId, toMark, async tx => {
       await tx.update(ordersTable)
         .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date(), dispatchedByReshipper: reshipper })
         .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
@@ -630,6 +635,7 @@ router.post(`${cfg.prefix}/:gbId/mark-shipped-by-reshipper`, async (req, res) =>
       res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
+    if (e instanceof CombinedShippingError) { res.status(e.status).json({ error: e.message }); return; }
     console.error("[dispatch mark-shipped-by-reshipper]", e);
     res.status(500).json({ error: "Failed to mark orders as shipped" });
   }
@@ -676,7 +682,7 @@ router.post(`${cfg.prefix}/:gbId/mark-orders-shipped`, async (req, res) => {
 
     if (toMark.length === 0) { res.json({ ok: true, marked: 0 }); return; }
 
-    await withRefundMutationGuard(db, toMark, async tx => {
+    await withLinkedDispatchBoundary(db, gbId, toMark, async tx => {
       await tx.update(ordersTable)
         .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date() })
         .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
@@ -689,6 +695,7 @@ router.post(`${cfg.prefix}/:gbId/mark-orders-shipped`, async (req, res) => {
       res.status(409).json({ error: "Order mutation is blocked while a refund is active.", code: "refund_active", orderId: refundOrderId });
       return;
     }
+    if (e instanceof CombinedShippingError) { res.status(e.status).json({ error: e.message }); return; }
     console.error("[dispatch mark-orders-shipped]", e);
     res.status(500).json({ error: "Failed to mark orders as shipped" });
   }

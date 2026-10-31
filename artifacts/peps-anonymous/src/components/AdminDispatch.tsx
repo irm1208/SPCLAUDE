@@ -6,6 +6,7 @@ import {
   Info, Lightbulb,
 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import CombinedOrderShipping from "./combined-shipping/CombinedOrderShipping";
 
 function apiUrl(path: string) { return `/api${path}`; }
 
@@ -138,6 +139,7 @@ export interface DispatchOrder {
   routingType?: string | null;
   lineItems: { productName: string; quantity: number }[];
   reason?: string;
+  includedOrderCodes?: string[];
 }
 
 interface ScopeOptions {
@@ -199,9 +201,11 @@ export function DispatchManager({ cfg }: { cfg: DispatchCfg }) {
 
 function DispatchManagerInner() {
   const cfg = useDispatchCfg();
-  const [subTab, setSubTab] = useState<"packing" | "halfkits" | "dispatched" | "shipped">("packing");
+  const [subTab, setSubTab] = useState<"packing" | "linked" | "halfkits" | "dispatched" | "shipped">("packing");
+  const [combinedPrint, setCombinedPrint] = useState<DispatchOrder | null>(null);
   const [groupBuys, setGroupBuys] = useState<GbStub[]>([]);
   const [selectedGb, setSelectedGb] = useState(cfg.gbId ?? "");
+  useEffect(() => { setCombinedPrint(null); }, [selectedGb, cfg.role, cfg.lockedScope?.scopeId]);
 
   useEffect(() => {
     // Bound to the parent page's selected GB — skip the internal GB list.
@@ -226,6 +230,7 @@ function DispatchManagerInner() {
       <div className="flex flex-nowrap gap-1 p-1 rounded-xl bg-muted max-w-full overflow-x-auto">
         {([
           ["packing", "Dispatch & Packing Slips"],
+          ["linked", "Linked orders"],
           // Half Kits is admin-only — hidden on reshipper/organiser surfaces.
           ...(cfg.role === "admin" ? [["halfkits", "Half Kits"]] as const : []),
           ["dispatched", "Dispatched Orders"],
@@ -264,6 +269,12 @@ function DispatchManagerInner() {
       {subTab === "packing" && (
         <PackingSlipsTab selectedGb={selectedGb} />
       )}
+      {subTab === "linked" && (
+        <CombinedOrderShipping key={`${cfg.role}:${cfg.lockedScope?.scopeId ?? ""}:${selectedGb}`} groupBuyId={selectedGb} prefix={cfg.base}
+          dfetch={cfg.dfetch} onPrint={setCombinedPrint} />
+      )}
+      {combinedPrint && <PrintModal orders={[combinedPrint]} gbName={groupBuys.find(group => group.id === selectedGb)?.name}
+        onClose={() => setCombinedPrint(null)} />}
       {subTab === "halfkits" && (
         <HalfKitsTab selectedGb={selectedGb} />
       )}
@@ -1681,7 +1692,7 @@ function LabelSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string
       {/* Header: code + username */}
       <div className="label-header" style={{ borderBottom: "2px solid #111", paddingBottom: "8px", marginBottom: "8px" }}>
         <div className="order-no" style={{ fontSize: "20px", fontWeight: 800, color: "#111", lineHeight: 1.1 }}>
-          {o.code ? `@${o.code}` : o.telegramUsername}
+          {o.includedOrderCodes?.length ? `Combined: ${o.includedOrderCodes.map(code => `#${code}`).join(" + ")}` : o.code ? `@${o.code}` : o.telegramUsername}
         </div>
         {o.code && o.telegramUsername && (
           <div className="order-username" style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
@@ -1759,7 +1770,7 @@ function PackingSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: stri
     }}>
       {/* Order number + username */}
       <div className="order-no" style={{ borderBottom: "1px solid #e5e7eb", paddingBottom: "4px" }}>
-        <div style={{ fontWeight: 700, fontSize: "12px", color: "#111" }}>
+        <div style={{ fontWeight: 700, fontSize: o.includedOrderCodes?.length ? "9px" : "12px", overflowWrap: "anywhere", color: "#111" }}>
           {o.code ? `@${o.code}` : o.telegramUsername}
         </div>
         {o.code && o.telegramUsername && (
