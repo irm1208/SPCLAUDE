@@ -19,3 +19,11 @@ Wholesale Lab Reports are matched to products by **batch-code prefix**, NOT by p
 **Some blends are intentionally left unmatched.** CJC±DAC/Ipamorelin, the Tesa/IPA/CJC triple, and SLU/BAM are skipped because the DB has genuine table/data contradictions (e.g. `CJND10` is labelled both as a no-DAC/Ipa blend AND as CJC-no-DAC solo). Guessing there risks showing the wrong CoA, so they keep the pre-existing no-badge behaviour rather than mismatch.
 
 These helper endpoints follow the raw-fetch convention (like the pre-existing peptide-names endpoint) and are intentionally NOT in `openapi.yaml`, so no codegen is needed.
+
+## Supplier isolation
+
+Wholesale reports must belong to the selected supplier. JBG/YT must never display Uther certificates, even for identical product names or batch prefixes. Hide the report action when that supplier has no matching approved reports; show its own reports when available.
+
+**Why:** the user explicitly reported Uther reports appearing on JBG products and requested supplier-specific evidence only.
+
+**How to apply:** scope both availability checks and popup retrieval to the same supplier identity, and discard prior supplier results on switching. UR is the abbreviated Uther catalogue, not a separate lab supplier.

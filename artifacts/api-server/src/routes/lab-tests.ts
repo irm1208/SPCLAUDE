@@ -220,12 +220,17 @@ router.get("/lab-tests/peptide-names", async (req, res) => {
 // ── GET /api/lab-tests/batch-codes — distinct batch codes with approved tests ──
 // Used by the wholesale page to determine (client-side) which products have lab
 // reports, by matching each product's batch-code prefix(es) against this list.
-router.get("/lab-tests/batch-codes", async (_req, res) => {
+router.get("/lab-tests/batch-codes", async (req, res) => {
   try {
+    const supplier = typeof req.query.supplier === "string" ? req.query.supplier.trim() : "";
     const rows = await db
       .selectDistinct({ batchCode: labTestsTable.batchCode })
       .from(labTestsTable)
-      .where(and(eq(labTestsTable.pending, false), isNotNull(labTestsTable.batchCode)));
+      .where(and(
+        eq(labTestsTable.pending, false),
+        isNotNull(labTestsTable.batchCode),
+        supplier ? sql`lower(${labTestsTable.supplier}) = lower(${supplier})` : undefined,
+      ));
     res.json(rows.map(r => r.batchCode).filter((b): b is string => !!b && b.trim() !== ""));
   } catch {
     res.status(500).json({ error: "Failed to fetch batch codes" });

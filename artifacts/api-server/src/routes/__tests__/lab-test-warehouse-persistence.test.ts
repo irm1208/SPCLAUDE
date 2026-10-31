@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import express, { type Express } from "express";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const mockState = vi.hoisted(() => ({
   selectedRows: [] as Record<string, unknown>[],
   inserts: [] as Record<string, unknown>[],
   updates: [] as Record<string, unknown>[],
   extracted: null as Record<string, unknown> | null,
+  batchWhere: null as unknown,
 }));
 
 vi.mock("@workspace/db", async () => {
@@ -30,6 +32,14 @@ vi.mock("@workspace/db", async () => {
   };
   const db = {
     select,
+    selectDistinct: () => ({
+      from: () => ({
+        where(condition: unknown) {
+          mockState.batchWhere = condition;
+          return Promise.resolve(mockState.selectedRows);
+        },
+      }),
+    }),
     insert: () => ({
       values(values: Record<string, unknown>) {
         mockState.inserts.push(values);
@@ -101,6 +111,20 @@ async function withServer<T>(fn: (baseUrl: string) => Promise<T>): Promise<T> {
 }
 
 describe("lab-test warehouse persistence", () => {
+  it("scopes wholesale batch availability to the supplier with a bound exact-match parameter", async () => {
+    mockState.selectedRows = [{ batchCode: "RE10-1234" }];
+    await withServer(async baseUrl => {
+      const response = await fetch(`${baseUrl}/lab-tests/batch-codes?supplier=JBG%2FYT`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(["RE10-1234"]);
+      const query = new PgDialect().sqlToQuery(mockState.batchWhere as Parameters<PgDialect["sqlToQuery"]>[0]);
+      expect(query.sql).toContain('lower("lab_tests"."supplier") = lower(');
+      expect(query.params).toContain("JBG/YT");
+      expect(query.params).toContain(false);
+      expect(query.sql).toContain('"batch_code" is not null');
+    });
+  });
+
   it("persists a derived US warehouse without altering the submitted batch code", async () => {
     mockState.selectedRows = [];
     mockState.inserts.length = 0;

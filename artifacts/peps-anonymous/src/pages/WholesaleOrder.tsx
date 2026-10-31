@@ -16,7 +16,7 @@ import "@/components/wholesale/WholesaleJourney.css";
 import { WholesaleProductSearch } from "@/components/wholesale/WholesaleProductSearch";
 import { SupplierMessage } from "@/components/wholesale/SupplierMessage";
 
-import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
+import { getWholesaleLabSupplier, loadWholesaleLabAvailability } from "@/lib/wholesale-lab-reports";
 
 type StockLevel = "oos" | "low" | "medium" | "high" | "none";
 
@@ -62,6 +62,7 @@ interface WholesaleVendorRegion {
 }
 
 interface WholesaleVendor {
+  legacyCatalogueVendor?: string;
   wholesaleMessage?: string;
   id: string;
   name: string;
@@ -86,8 +87,9 @@ export default function WholesaleOrder() {
 
   const [products, setProducts] = useState<ProductWithMeta[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
-  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string; batchPrefixes: string[] } | null>(null);
+  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string; batchPrefixes: string[]; supplier: string } | null>(null);
   const [productLabTestsMap, setProductLabTestsMap] = useState<Record<string, boolean>>({});
+  const [labResultsScope, setLabResultsScope] = useState("");
   const productPrefixesRef = useRef<Record<string, string[]>>({});
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -119,6 +121,8 @@ export default function WholesaleOrder() {
   const [vendors, setVendors] = useState<WholesaleVendor[]>([]);
   const [defaultVendorId, setDefaultVendorId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const labSupplier = getWholesaleLabSupplier(vendors.find(v => v.id === selectedVendorId) ?? null);
+  const labScope = `${selectedVendorId ?? ""}:${labSupplier}`;
   const [pendingVendorId, setPendingVendorId] = useState<string | null>(null);
   const [vendorUnavailable, setVendorUnavailable] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
@@ -384,26 +388,23 @@ export default function WholesaleOrder() {
   // matching is authoritative (products are named inconsistently, but batch codes
   // reliably encode the compound + dose).
   useEffect(() => {
+    setProductLabTestsMap({});
+    productPrefixesRef.current = {};
+    setLabTestsProduct(null);
+    setLabResultsScope("");
     if (!account?.isWholesale) return;
-    if (productsLoading || products.length === 0) return;
+    if (productsLoading || products.length === 0 || !labSupplier) return;
     let cancelled = false;
-    fetch("/api/lab-tests/batch-codes", { credentials: "include" })
-      .then(r => r.ok ? r.json() : [])
-      .then((codes: string[]) => {
-        if (cancelled || !Array.isArray(codes)) return;
-        const map: Record<string, boolean> = {};
-        const prefMap: Record<string, string[]> = {};
-        for (const p of products) {
-          const prefixes = resolveProductBatchPrefixes(p.name);
-          prefMap[p.name] = prefixes;
-          map[p.name] = anyBatchCodeMatches(codes, prefixes);
-        }
-        productPrefixesRef.current = prefMap;
-        setProductLabTestsMap(map);
+    loadWholesaleLabAvailability(products, labSupplier)
+      .then(({ available, prefixes }) => {
+        if (cancelled) return;
+        productPrefixesRef.current = prefixes;
+        setProductLabTestsMap(available);
+        setLabResultsScope(labScope);
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [productsLoading, products, account?.isWholesale]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [productsLoading, products, account?.isWholesale, labSupplier, labScope]);
 
   if (accountLoading) {
     return (
@@ -1203,10 +1204,10 @@ export default function WholesaleOrder() {
                                 </span>
                               )}
                             </div>
-                            {productLabTestsMap[product.name] === true && (
+                            {labResultsScope === labScope && productLabTestsMap[product.name] === true && (
                               <button
                                 type="button"
-                                onClick={() => setLabTestsProduct({ productName: product.name, batchPrefixes: productPrefixesRef.current[product.name] ?? [] })}
+                                onClick={() => setLabTestsProduct({ productName: product.name, batchPrefixes: productPrefixesRef.current[product.name] ?? [], supplier: labSupplier })}
                                 className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold"
                                 style={{ color: "var(--t-blue)", background: "var(--t-blue-08)", border: "1px solid var(--t-blue-25)" }}
                               >
@@ -1364,10 +1365,10 @@ export default function WholesaleOrder() {
                                   </p>
                                 )}
                                 {/* Lab reports — historic CoA results for this peptide */}
-                                {productLabTestsMap[product.name] === true && (
+                                {labResultsScope === labScope && productLabTestsMap[product.name] === true && (
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: product.name, batchPrefixes: productPrefixesRef.current[product.name] ?? [] }); }}
+                                    onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: product.name, batchPrefixes: productPrefixesRef.current[product.name] ?? [], supplier: labSupplier }); }}
                                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all active:scale-[0.97]"
                                     style={{ color: "var(--t-blue)", background: "color-mix(in srgb, var(--t-blue) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--t-blue) 25%, transparent)" }}
                                   >
@@ -1599,10 +1600,11 @@ export default function WholesaleOrder() {
       </div>
 
       <AnimatePresence>
-        {labTestsProduct && (
+        {labTestsProduct && labTestsProduct.supplier === labSupplier && (
           <LabReportPopup
             productName={labTestsProduct.productName}
             batchPrefixes={labTestsProduct.batchPrefixes}
+            vendor={labTestsProduct.supplier}
             onClose={() => setLabTestsProduct(null)}
           />
         )}
