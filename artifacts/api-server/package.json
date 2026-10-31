@@ -9,6 +9,7 @@
     "build:compile": "tsx ./build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:bundle": "API_BUNDLE_SMOKE_TESTS=1 vitest run src/lib/production-bundle.test.ts",
     "migrate:db-backups": "tsx scripts/migrate-db-backups-to-google-drive.ts",
     "restore:db-backup": "tsx scripts/restore-db-backup-from-google-drive.ts",
     "backfill:shared-organiser-payments": "tsx scripts/backfill-shared-organiser-order-payments.ts",
