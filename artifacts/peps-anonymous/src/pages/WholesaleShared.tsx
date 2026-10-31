@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { VendorShipments } from "@/components/VendorShipments";
 import { VendorShippingBreakdown, VendorGroupHeader } from "@/components/wholesale-shared/VendorShippingBreakdown";
+import { SupplierSelection } from "@/components/wholesale-shared/SupplierSelection";
 import { groupByVendor, isMultiVendor } from "@/lib/vendor-grouping";
 import { useLocation, useRoute } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -191,6 +192,7 @@ export default function WholesaleShared() {
     maxPackages: "", organiserFlatFee: "", feePerKit: "",
   });
   const [allowedCountriesList, setAllowedCountriesList] = useState<string[]>([]);
+  const [allowedSupplierIds, setAllowedSupplierIds] = useState<string[]>([]);
   const [countryToAdd, setCountryToAdd] = useState("");
   const [settingsDirty, setSettingsDirty] = useState(false);
   const settingsSeeded = useRef(false);
@@ -403,6 +405,7 @@ export default function WholesaleShared() {
       feePerKit: s.feePerKit != null ? String(s.feePerKit) : "",
     });
     setAllowedCountriesList(s.allowedCountries ?? []);
+    setAllowedSupplierIds(s.allowedVendorIds ?? (s.availableVendors ?? []).map(v => v.id));
     settingsSeeded.current = true;
   }, [share, settingsDirty]);
 
@@ -830,7 +833,8 @@ export default function WholesaleShared() {
     if (!id) return;
     setActionError(""); setBusy("settings");
     try {
-      await setWholesaleShareSettings(id, {
+      const updated = await setWholesaleShareSettings(id, {
+        allowedVendorIds: allowedSupplierIds,
         maxMembers: settingsForm.maxMembers.trim() === "" ? null : Number(settingsForm.maxMembers),
         minKitsPerMember: settingsForm.minKitsPerMember.trim() === "" ? null : Number(settingsForm.minKitsPerMember),
         maxKitsPerMember: settingsForm.maxKitsPerMember.trim() === "" ? null : Number(settingsForm.maxKitsPerMember),
@@ -841,6 +845,7 @@ export default function WholesaleShared() {
         organiserFlatFee: settingsForm.organiserFlatFee.trim() === "" ? null : Number(settingsForm.organiserFlatFee),
         feePerKit: settingsForm.feePerKit.trim() === "" ? null : Number(settingsForm.feePerKit),
       });
+      await applyWholesaleShareResponse(queryClient, id, updated);
       setSettingsDirty(false);
       // Don't reset settingsSeeded here. The form already holds exactly what we just
       // submitted, so re-enabling the seed effect would let it run against the still-stale
@@ -1019,7 +1024,8 @@ export default function WholesaleShared() {
 
   const searchQ = productSearch.trim().toLowerCase();
   const visibleProducts = (searchQ ? products.filter(p => p.name.toLowerCase().includes(searchQ)) : products)
-    .filter(p => p.active !== false);
+    .filter(p => p.active !== false && (share.settings.allowedVendorIds == null ||
+      (p.vendorId != null && share.settings.allowedVendorIds.includes(p.vendorId))));
 
   const card = { background: "var(--t-surface)", border: "1px solid var(--t-border)" } as const;
   const field = { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" } as const;
@@ -1290,6 +1296,9 @@ export default function WholesaleShared() {
       </div>
       <p className="text-[11px] px-1" style={{ color: "var(--t-muted)" }}>
         Tap <span className="font-semibold">Save my items</span> to keep your selection. Your saved items and delivery details stay with this shared order — close anytime and finish later from <span className="font-semibold">Your shared orders</span>.
+      </p>
+      <p className="text-xs px-1" style={{ color: "var(--t-muted)" }}>
+        Suppliers: {(share.settings.availableVendors ?? []).filter(v => share.settings.allowedVendorIds == null || share.settings.allowedVendorIds.includes(v.id)).map(v => v.name).join(" · ") || "No suppliers currently available"}
       </p>
       <div className="relative overflow-hidden rounded-xl p-4 space-y-3" style={card}>
         <PriceWatermark username={share.currentUsername} />
@@ -1992,6 +2001,13 @@ export default function WholesaleShared() {
           <p className="text-[11px]" style={{ color: "var(--t-muted)" }}>
             Set the rules for this shared order. Leave a limit blank for no limit.
           </p>
+          <SupplierSelection
+            vendors={share.settings.availableVendors ?? []}
+            selected={allowedSupplierIds}
+            onChange={ids => { setAllowedSupplierIds(ids); setSettingsDirty(true); }}
+            disabled={busy === "settings"}
+          />
+          <p className="text-xs" style={{ color: "var(--t-muted)" }}>A supplier cannot be removed while a member has saved items from it.</p>
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--t-muted)" }}>Max people</label>
             <input type="number" min="2" step="1" value={settingsForm.maxMembers}
@@ -2152,7 +2168,7 @@ export default function WholesaleShared() {
           )}
           <button
             onClick={saveSettings}
-            disabled={busy === "settings" || !settingsDirty}
+            disabled={busy === "settings" || !settingsDirty || allowedSupplierIds.length === 0}
             className="inline-flex items-center gap-2 px-4 h-10 rounded-xl text-sm font-bold disabled:opacity-50"
             style={{ background: "var(--t-surface2)", color: "var(--t-text)", border: "1px solid var(--t-border)" }}
           >

@@ -125,6 +125,8 @@ export interface WholesaleShareVendor {
 
 // Organiser-set order rules. Any field may be null (no limit / not set).
 export interface WholesaleShareSettings {
+  allowedVendorIds?: string[] | null;
+  availableVendors?: { id: string; name: string }[];
   maxMembers: number | null; // null = no limit on group size
   minKitsPerMember: number | null;
   maxKitsPerMember: number | null;
@@ -355,10 +357,10 @@ export function setWholesaleShareHidden(id: string, hidden: boolean) {
   });
 }
 
-export function createWholesaleShare(splitMode: WholesaleSplitMode) {
+export function createWholesaleShare(splitMode: WholesaleSplitMode, allowedVendorIds?: string[]) {
   return request<WholesaleShareDetail>("/api/wholesale-shares", {
     method: "POST",
-    body: JSON.stringify({ splitMode }),
+    body: JSON.stringify({ splitMode, allowedVendorIds }),
   });
 }
 
@@ -497,6 +499,7 @@ export function confirmWholesaleShareFee(
 // Organiser sets the order rules (limits, deadline, allowed countries). Any field
 // sent as null/"" clears that rule. Organiser-only and editable while open.
 export interface WholesaleShareSettingsInput {
+  allowedVendorIds?: string[];
   organiserFullName?: string;
   maxMembers?: number | null;
   minKitsPerMember?: number | null;

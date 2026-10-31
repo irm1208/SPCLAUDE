@@ -6,6 +6,7 @@ import { Loader2, ArrowRight, Users, Share2, Clock, Globe, ShieldAlert, Package,
 import { PageLayout } from "@/components/PageLayout";
 import { WholesaleShell } from "@/components/WholesaleShell";
 import { useAccount } from "@/hooks/use-account";
+import { SupplierSelection, type SharedSupplier } from "@/components/wholesale-shared/SupplierSelection";
 import { useWholesaleShares, useWholesalePublicGroups, createWholesaleShare, joinWholesaleShare, setWholesaleShareHidden } from "@/hooks/use-wholesale-shares";
 
 export default function WholesaleShareEntry() {
@@ -22,6 +23,27 @@ export default function WholesaleShareEntry() {
   const [comingSoon, setComingSoon] = useState(false);
   const [comingSoonMsg, setComingSoonMsg] = useState("Coming soon");
   const [configLoaded, setConfigLoaded] = useState(false);
+  const [supplierOptions, setSupplierOptions] = useState<SharedSupplier[]>([]);
+  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
+  const [suppliersLoading, setSuppliersLoading] = useState(true);
+  const [supplierError, setSupplierError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/wholesale-vendors", { credentials: "include" })
+      .then(async r => {
+        if (!r.ok) throw new Error("Could not load suppliers. Refresh to try again.");
+        const data = await r.json();
+        if (!Array.isArray(data.vendors)) throw new Error("Could not load suppliers. Refresh to try again.");
+        if (active) {
+          setSupplierOptions(data.vendors);
+          setSelectedSuppliers(data.vendors.map((v: SharedSupplier) => v.id));
+        }
+      })
+      .catch(e => { if (active) setSupplierError(e.message); })
+      .finally(() => { if (active) setSuppliersLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!accountLoading && (!account || !account.isWholesale)) setLocation("/account");
@@ -60,7 +82,7 @@ export default function WholesaleShareEntry() {
   const startShare = async () => {
     setError(""); setBusy(true);
     try {
-      const share = await createWholesaleShare("even");
+      const share = await createWholesaleShare("even", selectedSuppliers);
       setLocation(`/wholesale/shared/${share.id}`);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   };
@@ -134,9 +156,12 @@ export default function WholesaleShareEntry() {
                   <h2 className="text-sm font-bold" style={{ color: "var(--t-text)" }}>Start a shared order</h2>
                   <p className="text-xs" style={{ color: "var(--t-muted)" }}>Create a new parcel and invite others to join using your share code.</p>
                 </div>
+                {suppliersLoading ? <p className="text-xs">Loading suppliers…</p> :
+                  <SupplierSelection vendors={supplierOptions} selected={selectedSuppliers} onChange={setSelectedSuppliers} disabled={busy} />}
+                {supplierError && <p role="alert" className="text-xs" style={{ color: "#dc2626" }}>{supplierError}</p>}
                 <button
                   onClick={startShare}
-                  disabled={busy}
+                  disabled={busy || suppliersLoading || selectedSuppliers.length === 0 || !!supplierError}
                   className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold text-white disabled:opacity-60"
                   style={{ background: "var(--t-blue)" }}
                 >

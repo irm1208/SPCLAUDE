@@ -1,4 +1,5 @@
 import { parseOrganiserFullName, ORGANISER_FULL_NAME_ERROR } from "../lib/shared-organiser-name";
+import { parseSharedOrderVendors, sharedOrderAllowsVendor, sharedOrderVendorConflict } from "../lib/shared-order-vendors";
 import {
   assertNoActiveRefunds,
   RefundMutationBlockedError,
@@ -398,6 +399,7 @@ async function buildShareResponse(
 
   // Resolve vendor + delivery region for a live shipping estimate.
   const configuredVendors = await getVendors();
+  const selectableVendors = await getEnabledWholesaleVendors();
   const vendor = configuredVendors.find(v => v.id === share.vendorId) ?? null;
   let shippingEstimate: number | null = null;
   let shippingRegion: string | null = null;
@@ -678,6 +680,8 @@ async function buildShareResponse(
     deadlinePassed: share.lockDeadline ? (share.lockDeadline as Date).getTime() <= Date.now() : false,
     // ── Organiser-set order rules (limits, deadline, allowed countries) ────────
     settings: {
+      allowedVendorIds: share.allowedVendorIds ?? null,
+      availableVendors: selectableVendors.map(v => ({ id: v.id, name: v.name })),
       maxMembers: share.maxMembers ?? null,
       minKitsPerMember: share.minKitsPerMember ?? null,
       maxKitsPerMember: share.maxKitsPerMember ?? null,
@@ -945,13 +949,23 @@ router.get("/wholesale-shares/public", requireWholesale, async (req, res): Promi
 // POST /api/wholesale-shares — create a new shared order; creator becomes first member
 router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<void> => {
   const me = req.wholesale!.telegramUsername;
-  const body = (req.body ?? {}) as { splitMode?: string };
+  const body = (req.body ?? {}) as { splitMode?: string; allowedVendorIds?: unknown };
   const splitMode: WholesaleShareSplitMode =
     body.splitMode && (WHOLESALE_SHARE_SPLIT_MODES as readonly string[]).includes(body.splitMode)
       ? (body.splitMode as WholesaleShareSplitMode)
       : "even";
 
   const vendor = await getActiveWholesaleVendor();
+  const enabledVendors = await getEnabledWholesaleVendors();
+  let allowedVendorIds: string[];
+  try {
+    allowedVendorIds = parseSharedOrderVendors(
+      body.allowedVendorIds === undefined ? enabledVendors.map(v => v.id) : body.allowedVendorIds,
+      enabledVendors,
+    );
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message }); return;
+  }
   const id = await generateUniqueShareId();
 
   await db.insert(wholesaleSharesTable).values({
@@ -960,6 +974,7 @@ router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<voi
     status: "open",
     splitMode,
     vendorId: vendor?.id ?? null,
+    allowedVendorIds,
   });
 
   await db.insert(wholesaleShareMembersTable).values({
@@ -1276,6 +1291,9 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
     const unitPrice = product.wholesalePrice != null ? parseFloat(product.wholesalePrice) : parseFloat(product.price);
     const owner = resolveProductVendor(product, catalogueVendors);
     if (!owner || !availableVendors.some(v => v.id === owner.id)) { res.status(400).json({error:`The vendor for ${product.name} is not available.`}); return; }
+    if (!sharedOrderAllowsVendor(share.allowedVendorIds, owner.id)) {
+      res.status(400).json({ error: `${owner.name} is not selected for this shared order.` }); return;
+    }
     cleanItems.push({ productId, productName: product.name, quantity, unitPrice, vendorId: owner.id, vendorName: owner.name });
   }
 
@@ -1318,7 +1336,16 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
         AND ${ordersTable.paymentStatus} = 'unpaid'
     )`
     : sql`TRUE`;
-  const itemsUpdated = await db.update(wholesaleShareMembersTable)
+  const itemsUpdated = await db.transaction(async tx => {
+    // Serialize item saves with supplier settings and locking. Recheck the policy
+    // after taking the parent lock: a pre-lock read may have an older selection.
+    const [locked] = await tx.select().from(wholesaleSharesTable)
+      .where(eq(wholesaleSharesTable.id, share.id)).for("update");
+    if (!locked || locked.status !== "open" ||
+      cleanItems.some(item => !sharedOrderAllowsVendor(locked.allowedVendorIds, item.vendorId!))) {
+      return [];
+    }
+    return tx.update(wholesaleShareMembersTable)
     .set({ items: cleanItems, tip: tip.toFixed(2), confirmedAt: null })
     .where(and(
       eq(wholesaleShareMembersTable.id, member.id),
@@ -1326,8 +1353,9 @@ router.put("/wholesale-shares/:id/items", requireWholesale, async (req, res): Pr
       paymentEditGate,
     ))
     .returning({ id: wholesaleShareMembersTable.id });
+  });
   if (itemsUpdated.length === 0) {
-    res.status(409).json({ error: "This shared order is locked — items can no longer be changed." });
+    res.status(409).json({ error: "This shared order or its supplier selection has changed. Refresh before saving your items." });
     return;
   }
 
@@ -1705,6 +1733,14 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
   }
 
   const body = (req.body ?? {}) as Record<string, unknown>;
+  let allowedVendorIds: string[] | undefined;
+  if (body.allowedVendorIds !== undefined) {
+    try {
+      allowedVendorIds = parseSharedOrderVendors(body.allowedVendorIds, await getEnabledWholesaleVendors());
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message }); return;
+    }
+  }
   const organiserFullName = body.organiserFullName === undefined
     ? undefined : parseOrganiserFullName(body.organiserFullName);
   if (organiserFullName === null) {
@@ -1829,12 +1865,21 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
   try {
     await db.transaction(async (tx) => {
       const [locked] = await tx
-        .select({ status: wholesaleSharesTable.status, isPublic: wholesaleSharesTable.isPublic, deliveryUsername: wholesaleSharesTable.deliveryUsername })
+        .select({ status: wholesaleSharesTable.status, isPublic: wholesaleSharesTable.isPublic, deliveryUsername: wholesaleSharesTable.deliveryUsername, allowedVendorIds: wholesaleSharesTable.allowedVendorIds, vendorId: wholesaleSharesTable.vendorId })
         .from(wholesaleSharesTable)
         .where(eq(wholesaleSharesTable.id, share.id))
         .for("update");
       if (!locked || (locked.status !== "open" && !(req.sharedOrderAdminOverride === true && locked.status === "locked"))) {
         throw FEES_CONFLICT;
+      }
+      if (allowedVendorIds !== undefined) {
+        const changed = JSON.stringify([...(locked.allowedVendorIds ?? [])].sort()) !== JSON.stringify([...allowedVendorIds].sort());
+        if (changed && locked.status !== "open") throw FEES_CONFLICT;
+        const members = await tx.select({ items: wholesaleShareMembersTable.items })
+          .from(wholesaleShareMembersTable).where(eq(wholesaleShareMembersTable.shareId, share.id));
+        if (sharedOrderVendorConflict(allowedVendorIds, members.map(m => m.items ?? []), locked.vendorId)) {
+          throw new Error("SUPPLIER_ITEMS_CONFLICT");
+        }
       }
 
       await tx.update(wholesaleSharesTable)
@@ -1849,6 +1894,7 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
           feePerKit: kitFeePerKit != null ? kitFeePerKit.toFixed(2) : null,
           lockDeadline: deadline,
           allowedCountries,
+          ...(allowedVendorIds !== undefined ? { allowedVendorIds } : {}),
         })
         .where(eq(wholesaleSharesTable.id, share.id));
 
@@ -1873,13 +1919,16 @@ router.put("/wholesale-shares/:id/settings", requireWholesaleOrAdmin, async (req
       }
     });
   } catch (e) {
+    if (e instanceof Error && e.message === "SUPPLIER_ITEMS_CONFLICT") {
+      res.status(409).json({ error: "A member already has items from a supplier you are removing. Those items must be removed by the member first." }); return;
+    }
     if (e === FEES_CONFLICT) { res.status(409).json({ error: "This shared order cannot be changed in its current status." }); return; }
     throw e;
   }
 
   await writeLog("order", "info", "wholesale_share_settings_updated",
     `Wholesale share ${share.id} rules updated by ${me}`,
-    { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, maxPackages, organiserFlatFee: flatFee, feePerKit: kitFeePerKit, lockDeadline: deadline?.toISOString() ?? null, allowedCountries }, req.ip);
+    { shareId: share.id, maxMembers, minKitsPerMember: minVal, maxKitsPerMember: maxVal, maxTotalKits: totalVal, maxPackages, organiserFlatFee: flatFee, feePerKit: kitFeePerKit, lockDeadline: deadline?.toISOString() ?? null, allowedCountries, allowedVendorIds }, req.ip);
 
   const updated = await loadShare(share.id);
   res.json(await buildShareResponse(updated!, me));
@@ -2411,6 +2460,9 @@ export async function attemptLockShare(
     .orderBy(wholesaleShareMembersTable.joinedAt);
 
   // ── Validation ──
+  if (share.allowedVendorIds != null && sharedOrderVendorConflict(share.allowedVendorIds, members.map(m => m.items ?? []), share.vendorId)) {
+    return { ok: false, status: 400, error: "Some items belong to a supplier not selected for this shared order." };
+  }
   if (members.length < 2) {
     return { ok: false, status: 400, error: "A shared order needs at least 2 members before it can be locked." };
   }
@@ -3607,6 +3659,9 @@ router.put("/admin/wholesale-shares/:id/adjustments", async (req, res): Promise<
           if (!product) throw new Error("One of the selected products is not available for wholesale.");
           const owner = resolveProductVendor(product, await getVendors());
           if (!owner) throw new Error("Choose a configured vendor for every selected product.");
+          if (!sharedOrderAllowsVendor(share.allowedVendorIds, owner.id)) {
+            throw new Error(`${owner.name} is not selected for this shared order.`);
+          }
           clean.push({
             productId,
             vendorId: owner.id, vendorName:owner.name,
