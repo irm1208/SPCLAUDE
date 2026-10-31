@@ -148,6 +148,7 @@
 - [Mobile chat overlays](mobile-chat-overlays.md) — chat must clear floating navigation and track the visual viewport; page animation containers can defeat local stacking.
 - [Shared-order names](shared-order-organiser-name.md) — full name required in delivery details only, not creation or organiser rules; preserve recipient privacy.
 - [Shared-order supplier choice](shared-order-supplier-choice.md) — organiser selects Uther, JBG/YT or both; never silently remove saved member items when changing suppliers.
+- [Supplier testing policy](supplier-testing-policy.md) — JBG groups per product and physical batch; placed paid/unpaid orders qualify across wholesale, shared orders and group buys.
 - [Supplier batch policies](supplier-batch-export-policy.md) — full FS3 exports, same-region prepared additions, staff readiness alerts and EU/US/GB reference prefixes.
 - [Reshipper payout method](reshipper-payout-method.md) — Admin records external transfers by TXID; no wallet connection for new payouts.
 - [Single-vial pricing](vial-shop-currency-policy.md) — keep seller-currency prices throughout checkout; show locked crypto settlement separately; never add unlike currencies.
