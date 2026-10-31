@@ -4,17 +4,20 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db, accountsTable, ordersTable, orderLineItemsTable, wholesaleSharesTable,
-  vendorPortalAccessTable, vendorSubmissionsTable, vendorImagesTable,
+  vendorPortalAccessTable, vendorPortalRequestsTable, vendorSubmissionsTable, vendorImagesTable,
 } from "@workspace/db";
 import { requireAccount } from "../middleware/account-auth";
+import { requireVendorAccount } from "../middleware/vendor-auth";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import { getVendors } from "./config";
 import { normalizeTg } from "../lib/normalize";
 import {
   auditVendor, vendorAccess, prepareVendorShipments, vendorPreviewToken,
   submitVendorOrders, loadVendorSource, isVendorSubmissionStale,
+  vendorApplicationFor, applyForVendorAccess, reviewVendorApplication,
 } from "../lib/vendor-portal-service";
-import { publicVendorOrder, VendorPortalError } from "../lib/vendor-portal-model";
+import { publicVendorOrder, publicVendorApplication, vendorApplicationInput, VendorPortalError } from "../lib/vendor-portal-model";
+import { createAlert } from "../lib/create-alert";
 import { vendorSupplierText, vendorSupplierCsv } from "../lib/vendor-supplier-export";
 import { prepareTrackingWrite } from "../lib/tracking-write";
 import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh";
@@ -46,7 +49,7 @@ function sameOrigin(req: Request, res: Response, next: () => void) {
   if (foreign) { res.status(403).json({ error: "Cross-site requests are not permitted." }); return; }
   next();
 }
-const username = (req: Request) => normalizeTg(req.account!.telegramUsername);
+const username = (req: Request) => req.vendor?.username ?? normalizeTg(req.account!.telegramUsername);
 async function imageList(row: any, prefix: "vendor" | "admin/vendor-portal" | "account", tx: any = db) {
   const images = await tx.select().from(vendorImagesTable).where(eq(vendorImagesTable.submissionId, row.id)).orderBy(desc(vendorImagesTable.createdAt));
   return images.map((image: any) => ({
@@ -73,17 +76,19 @@ async function memberMaySee(req: Request, row: any) {
   }
 }
 
-router.get("/vendor/me", requireAccount, handled(async (req, res) => {
-  res.json(await vendorAccess(db, username(req)));
+router.get("/vendor/me", requireVendorAccount, handled(async (req, res) => {
+  res.set("Cache-Control", "no-store").json(await vendorAccess(db, username(req), false, req.vendor!.tokenHash));
 }));
-router.get("/vendor/orders", requireAccount, handled(async (req, res) => {
-  const access = await vendorAccess(db, username(req));
+// Retired member-based applications cannot grant access to the independent site.
+router.post("/vendor/apply", (_req, res) => { res.status(410).json({ error: "Create a dedicated vendor account to apply." }); });
+router.get("/vendor/orders", requireVendorAccount, handled(async (req, res) => {
+  const access = await vendorAccess(db, username(req), false, req.vendor!.tokenHash);
   const rows = await db.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.vendorId, access.vendorId)).orderBy(desc(vendorSubmissionsTable.submittedAt));
   const orders = [];
   for (const row of rows) orders.push(publicVendorOrder(row, await isVendorSubmissionStale(db, row), await imageList(row, "vendor")));
   res.set("Cache-Control", "no-store").json({ orders });
 }));
-router.patch("/vendor/orders/:id", requireAccount, sameOrigin, handled(async (req, res) => {
+router.patch("/vendor/orders/:id", requireVendorAccount, sameOrigin, handled(async (req, res) => {
   const body = req.body ?? {};
   if (!["processing", "tracking"].includes(body.action) || Object.keys(body).some(k => !["action", "trackingNumber", "carrier"].includes(k))) {
     throw new VendorPortalError("Only processing and tracking updates are permitted.");
@@ -91,7 +96,7 @@ router.patch("/vendor/orders/:id", requireAccount, sameOrigin, handled(async (re
   let refreshShare: string | null = null;
   const notifications: Array<{ username: string; code: string }> = [];
   await db.transaction(async tx => {
-    const access = await vendorAccess(tx, username(req), true);
+    const access = await vendorAccess(tx, username(req), true, req.vendor!.tokenHash);
     // Parent and orders first, matching shared-order mutations; submission is locked last.
     const initial = await ownedSubmission(tx, String(req.params.id), access.vendorId);
     const source = await loadVendorSource(tx, initial.sourceKey, true);
@@ -148,7 +153,7 @@ router.patch("/vendor/orders/:id", requireAccount, sameOrigin, handled(async (re
   if (refreshShare) void refreshWholesaleMainParcelForShare(refreshShare).catch(() => {});
   res.json({ ok: true });
 }));
-router.post("/vendor/orders/:id/images", requireAccount, sameOrigin, (req, res, next) => {
+router.post("/vendor/orders/:id/images", requireVendorAccount, sameOrigin, (req, res, next) => {
   upload(req, res, err => {
     if (err) { res.status(400).json({ error: "Upload one image, 5 MB or smaller." }); return; }
     next();
@@ -156,7 +161,7 @@ router.post("/vendor/orders/:id/images", requireAccount, sameOrigin, (req, res, 
 }, handled(async (req, res) => {
   if (!req.file) throw new VendorPortalError("Choose an image.");
   // Authorize and check freshness before any storage work.
-  const access = await vendorAccess(db, username(req));
+  const access = await vendorAccess(db, username(req), false, req.vendor!.tokenHash);
   const initial = await ownedSubmission(db, String(req.params.id), access.vendorId);
   if (await isVendorSubmissionStale(db, initial)) throw new VendorPortalError("Order changed. Ask Admin to review it.", 409);
   let path: string;
@@ -167,7 +172,7 @@ router.post("/vendor/orders/:id/images", requireAccount, sameOrigin, (req, res, 
   }
   try {
     await db.transaction(async tx => {
-      const access = await vendorAccess(tx, username(req), true);
+      const access = await vendorAccess(tx, username(req), true, req.vendor!.tokenHash);
       const source = await loadVendorSource(tx, initial.sourceKey, true);
       const row = await ownedSubmission(tx, initial.id, access.vendorId, true);
       if (source.fingerprint !== row.sourceFingerprint) throw new VendorPortalError("Order changed during upload. Ask Admin to review it.", 409);
@@ -192,30 +197,22 @@ router.get("/admin/vendor-portal", handled(async (req, res) => {
     id: row.id, reference: row.reference, vendorId: row.vendorId, status: row.status,
     submittedAt: row.submittedAt, stale: await isVendorSubmissionStale(db, row),
   });
+  const applications = await db.select().from(vendorPortalRequestsTable).orderBy(desc(vendorPortalRequestsTable.updatedAt)).limit(200);
   res.json({
     vendors: (await getVendors()).map(v => ({ id: v.id, name: v.name })),
     access: await db.select({ username: vendorPortalAccessTable.username, vendorId: vendorPortalAccessTable.vendorId }).from(vendorPortalAccessTable),
+    applications: applications.map(a => publicVendorApplication(a, true)),
     submissions,
   });
 }));
-router.put("/admin/vendor-portal/access", handled(async (req, res) => {
+router.post("/admin/vendor-portal/applications/:username/review", (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const user = typeof req.body?.username === "string" ? normalizeTg(req.body.username) : "";
-  const vendorId = req.body?.vendorId;
-  if (!user || (vendorId !== null && typeof vendorId !== "string")) throw new VendorPortalError("Provide an account username and vendor.");
-  if (vendorId !== null && !(await getVendors()).some(v => v.id === vendorId)) throw new VendorPortalError("Vendor not found.");
-  await db.transaction(async tx => {
-    const [account] = await tx.select({ status: accountsTable.accountStatus }).from(accountsTable).where(eq(accountsTable.telegramUsername, user)).for("update");
-    if (!account || (vendorId !== null && account.status !== "active")) throw new VendorPortalError("An active existing account is required.");
-    const actor = getAdminUsername(res);
-    if (vendorId === null) await tx.delete(vendorPortalAccessTable).where(eq(vendorPortalAccessTable.username, user));
-    else await tx.insert(vendorPortalAccessTable).values({ username: user, vendorId, grantedBy: actor }).onConflictDoUpdate({
-      target: vendorPortalAccessTable.username, set: { vendorId, grantedBy: actor, updatedAt: new Date() },
-    });
-    await auditVendor(tx, actor, vendorId === null ? "access_revoked" : "access_granted", null, { username: user, vendorId });
-  });
-  res.json({ ok: true });
-}));
+  res.status(410).json({ error: "Manage dedicated vendor accounts under vendor account management." });
+});
+router.put("/admin/vendor-portal/access", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.status(410).json({ error: "Create or approve a dedicated vendor account instead of granting member access." });
+});
 function submissionInput(req: Request) {
   const { vendorId, orderCodes } = req.body ?? {};
   if (typeof vendorId !== "string" || !Array.isArray(orderCodes) || orderCodes.some(c => typeof c !== "string")) throw new VendorPortalError("Choose a vendor and enter order numbers.");
@@ -241,7 +238,10 @@ router.get("/admin/vendor-portal/orders/:id", handled(async (req, res) => {
 router.delete("/admin/vendor-portal/orders/:id", handled(async (req, res) => {
   if (!requireAdmin(req, res)) return;
   await db.transaction(async tx => {
-    const [row] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, String(req.params.id))).for("update");
+    const [candidate] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, String(req.params.id)));
+    if (!candidate) throw new VendorPortalError("Submission not found.", 404);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`vendor-submit:${candidate.sourceKey}`}))`);
+    const [row] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, candidate.id)).for("update");
     if (!row) throw new VendorPortalError("Submission not found.", 404);
     if (row.status !== "Submitted") throw new VendorPortalError("Vendor has started this shipment. It cannot be recalled here; coordinate fulfilment before editing.", 409);
     const images = await tx.select({ id: vendorImagesTable.id }).from(vendorImagesTable).where(eq(vendorImagesTable.submissionId, row.id));
@@ -323,14 +323,14 @@ function imageHandler(mode: "vendor" | "admin" | "account"): Handler {
     const [row] = await db.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, image.submissionId));
     if (!row) throw new VendorPortalError("Image not found.", 404);
     if (mode === "vendor") {
-      const access = await vendorAccess(db, username(req));
+      const access = await vendorAccess(db, username(req), false, req.vendor!.tokenHash);
       if (row.vendorId !== access.vendorId) throw new VendorPortalError("Image not found.", 404);
     } else if (mode === "account") await memberMaySee(req, row);
     const bytes = await downloadWholesaleUpdateImage(image.objectPath);
     res.set({ "Content-Type": "image/webp", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }).send(bytes);
   });
 }
-router.get("/vendor/vendor-images/:id", requireAccount, imageHandler("vendor"));
+router.get("/vendor/vendor-images/:id", requireVendorAccount, imageHandler("vendor"));
 router.get("/account/vendor-images/:id", requireAccount, imageHandler("account"));
 router.get("/admin/vendor-portal/vendor-images/:id", imageHandler("admin"));
 export default router;

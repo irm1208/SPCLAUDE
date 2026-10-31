@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { supplierCatalogueCosts, supplierItems, sourceFingerprint, previewFingerprint, publicVendorOrder, requiredShipping, VendorPortalError } from "./vendor-portal-model";
+import { supplierCatalogueCosts, supplierItems, sourceFingerprint, previewFingerprint, publicVendorOrder, requiredShipping, VendorPortalError, vendorApplicationInput, publicVendorApplication } from "./vendor-portal-model";
 import type { Fs3CostMatch } from "@workspace/api-zod/fs3-costs";
 
 const approvedMatches: Fs3CostMatch[] = [
@@ -102,16 +102,47 @@ describe("vendor order privacy and pricing", () => {
     const text = JSON.stringify(view);
     for (const secret of ["grandTotal", "paymentTxHash", "adminNotes", "SECRET", "PRIVATE", "orderIds", "sourceKey", "vendorId"]) expect(text).not.toContain(secret);
   });
+  it("allows vendor submission without an email address", () => {
+    const source = { shippingName: "N", shippingAddress: "17 Road", shippingCountry: "UK", shippingPhone: "123" };
+    expect(requiredShipping(source)).toEqual({ name: "N", address: "17 Road", country: "UK", phone: "123", email: "" });
+    expect(requiredShipping({ ...source, shippingEmail: " n@example.test " }).email).toBe("n@example.test");
+  });
   it("includes separate city and postcode in the supplier address once", () => {
     expect(requiredShipping({ shippingName: "N", shippingAddress: "17 Road", shippingCity: "London", shippingPostcode: "W1 1AA", shippingCountry: "UK", shippingPhone: "1", shippingEmail: "n@example.test" }).address)
       .toBe("17 Road, London, W1 1AA");
     expect(requiredShipping({ shippingName: "N", shippingAddress: "17 Road, London, W1 1AA", shippingCity: "London", shippingPostcode: "W1 1AA", shippingCountry: "UK", shippingPhone: "1", shippingEmail: "n@example.test" }).address)
       .toBe("17 Road, London, W1 1AA");
   });
-  it("allows incomplete contact details only for exports, retaining strict submission checks", () => {
+  it("requires delivery phone for submissions but allows incomplete exports", () => {
     const source = { shippingName: "N", shippingAddress: "17 Road", shippingCountry: "UK" };
     expect(requiredShipping(source, "export")).toEqual({ name: "N", address: "17 Road", country: "UK", phone: "", email: "" });
-    expect(() => requiredShipping(source)).toThrow(/phone, email/);
-    expect(() => requiredShipping(source, "submission")).toThrow(/phone, email/);
+    expect(() => requiredShipping(source)).toThrow(/phone/);
+    expect(() => requiredShipping(source, "submission")).toThrow(/phone/);
+  });
+});
+
+describe("vendor applications", () => {
+  const valid = { companyName: "  Northstar   Labs ", contactName: "Ada Lovelace", contactEmail: "Ops@Northstar.Example ", website: "", message: "  ", requestedVendorId: "" };
+  it("normalises whitespace and casing and drops empty optional fields", () => {
+    expect(vendorApplicationInput(valid)).toEqual({
+      companyName: "Northstar Labs", contactName: "Ada Lovelace", contactEmail: "ops@northstar.example",
+      website: null, message: null, requestedVendorId: null,
+    });
+  });
+  it("rejects missing or malformed required fields with a 400", () => {
+    for (const bad of [
+      { ...valid, companyName: "" }, { ...valid, companyName: "N" }, { ...valid, contactName: undefined },
+      { ...valid, contactEmail: "not-an-email" }, { ...valid, message: "x".repeat(1001) }, { ...valid, companyName: "x".repeat(121) }, null, "text",
+    ]) {
+      let status = 0;
+      try { vendorApplicationInput(bad); } catch (e) { status = (e as VendorPortalError).status; }
+      expect(status).toBe(400);
+    }
+  });
+  it("hides the reviewer from vendors but shows it to Admin", () => {
+    const row = { username: "vendor", status: "approved", companyName: "N", contactName: "A", contactEmail: "a@b.c", reviewedBy: "admin", reviewNote: "ok", createdAt: "x", reviewedAt: "y", updatedAt: "z" };
+    expect(publicVendorApplication(row)).not.toHaveProperty("username");
+    expect(publicVendorApplication(row)).not.toHaveProperty("reviewedBy");
+    expect(publicVendorApplication(row, true)).toMatchObject({ username: "vendor", reviewedBy: "admin", status: "approved", reviewNote: "ok" });
   });
 });

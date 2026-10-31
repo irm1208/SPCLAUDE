@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/vendor/login" });
 function setupDom() {
-  for (const key of ["window", "document", "navigator", "location", "history", "HTMLElement", "HTMLInputElement", "Event", "Node"]) {
+  for (const key of ["window", "document", "navigator", "location", "history", "HTMLElement", "HTMLInputElement", "FormData", "Event", "Node"]) {
     vi.stubGlobal(key, key === "window" ? dom.window : dom.window[key]);
   }
   vi.stubGlobal("addEventListener", dom.window.addEventListener.bind(dom.window));
@@ -41,7 +41,7 @@ function fields() { return [...element.querySelectorAll("input")]; }
 async function enterAndSubmit() {
   const inputs = fields();
   await act(async () => {
-    const username = inputs.find(i => i.name === "telegramUsername")!;
+    const username = inputs.find(i => i.name === "username")!;
     const password = inputs.find(i => i.name === "password")!;
     const nativeValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!;
     nativeValue.call(username, "vendor-test");
@@ -53,55 +53,77 @@ async function enterAndSubmit() {
   await settle();
 }
 
-it("is a separate vendor sign-in with no customer login or signup link", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 401 }));
+it("uses dedicated vendor sign-in and offers independent account creation", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{}', { status: 401 })));
   await render();
-  expect(element.textContent).toContain("Vendor sign in");
+  expect(element.textContent).toContain("Sign in to the vendor portal");
   expect(element.querySelector('a[href="/login"]')).toBeNull();
-  expect(element.textContent?.toLowerCase()).not.toContain("sign up");
-  expect(fields().some(i => i.name === "telegramUsername")).toBe(true);
+  expect(element.textContent).toContain("Create vendor account");
+  expect(fields().some(i => i.name === "username")).toBe(true);
 });
-it("signs in with existing credentials then checks vendor access before opening portal", async () => {
+it("signs in using only vendor authentication and opens the portal for a linked active account", async () => {
   const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
     calls.push(`${opts?.method ?? "GET"} ${url}`);
-    if (url === "/api/account/login") return { ok: true, json: async () => ({ ok: true }) };
-    if (url === "/api/vendor/me") return calls.includes("POST /api/account/login")
-      ? { ok: true, status: 200, json: async () => ({ vendorId: "a" }) }
-      : { status: 401 };
+    if (url === "/api/vendor/auth/login") return new Response(JSON.stringify({ csrfToken: "vendor-token", account: { username: "vendor-test", companyName: "Supplier", status: "active", vendorId: "a" } }));
+    if (url === "/api/vendor/auth/session") return new Response('{}', { status: 401 });
     throw new Error("Unexpected URL");
   }));
   await render();
   await enterAndSubmit();
-  expect(calls).toEqual(["GET /api/vendor/me", "POST /api/account/login", "GET /api/vendor/me"]);
+  expect(calls).toEqual(["GET /api/vendor/auth/session", "POST /api/vendor/auth/login"]);
   expect(path.history?.at(-1)).toBe("/vendor");
 });
-it("rejects a valid member login without vendor access and offers account switching", async () => {
-  const calls: string[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (url: string, opts?: RequestInit) => {
-    calls.push(`${opts?.method ?? "GET"} ${url}`);
-    if (url === "/api/account/login") return { ok: true, json: async () => ({ ok: true }) };
-    if (url === "/api/vendor/me") return { status: calls.includes("POST /api/account/login") ? 403 : 401 };
-    if (url === "/api/account/logout") return { ok: true };
+it("restores pending accounts and preserves them when vendor logout fails", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url === "/api/vendor/auth/session") return new Response(JSON.stringify({ csrfToken: "vendor-token", account: { username: "supplier", status: "pending", vendorId: null, companyName: "Supplier" } }));
+    if (url === "/api/vendor/auth/logout") return new Response('{}', { status: 503 });
     throw new Error("Unexpected URL");
   }));
   await render();
-  await enterAndSubmit();
-  expect(path.history?.at(-1)).toBe("/vendor/login");
-  expect(element.textContent?.toLowerCase()).toContain("vendor access");
-  const switchButton = [...element.querySelectorAll("button")].find(b => b.textContent?.includes("Switch account"))!;
-  expect(switchButton).toBeDefined();
-  await act(async () => switchButton.click());
-  expect(calls).toContain("POST /api/account/logout");
-});
-
-it("does not pretend a failed account switch signed the current user out", async () => {
-  vi.stubGlobal("fetch", vi.fn(async (url: string) =>
-    url === "/api/vendor/me" ? { status: 403 } : { ok: false, status: 503 }));
-  await render();
-  const button = [...element.querySelectorAll("button")].find(b => b.textContent?.includes("Switch account"))!;
+  expect(element.textContent).toContain("awaiting approval");
+  const button = [...element.querySelectorAll("button")].find(b => b.textContent === "Sign out")!;
   await act(async () => button.click());
   await settle();
-  expect(element.querySelector('[data-testid="state-forbidden"]')).not.toBeNull();
   expect(element.textContent).toContain("Could not sign out");
+  expect(element.textContent).toContain("Signed in as supplier");
+});
+it("creates a pending vendor account without a member signup, email or verification", async () => {
+  const calls: string[] = [];
+  let payload: Record<string, unknown> = {};
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+    calls.push(String(url));
+    if (url === "/api/vendor/auth/session") return new Response('{}', { status: 401 });
+    if (url === "/api/vendor/auth/signup") {
+      payload = JSON.parse(String(options?.body));
+      return new Response(JSON.stringify({ csrfToken: "vendor-token", account: { username: payload.username, status: "pending", vendorId: null, companyName: payload.companyName } }), { status: 201 });
+    }
+    throw new Error("Unexpected URL");
+  }));
+  await render();
+  await act(async () => [...element.querySelectorAll("button")].find(b => b.textContent === "Create vendor account")!.click());
+  await act(async () => {
+    const nativeValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!;
+    for (const [name, value] of Object.entries({ companyName: "Supplier", username: "supplier", password: "long-vendor-password", confirm: "long-vendor-password" })) {
+      nativeValue.call(element.querySelector(`input[name="${name}"]`), value);
+    }
+    element.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await settle();
+  expect(payload).toEqual({ username: "supplier", password: "long-vendor-password", companyName: "Supplier" });
+  expect(calls).toEqual(["/api/vendor/auth/session", "/api/vendor/auth/signup"]);
+  expect(element.textContent).toContain("awaiting approval");
+});
+it('returns to sign in when logout confirms the vendor session was revoked', async () => {
+  let revoked = false;
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/vendor/auth/session') return revoked ? new Response('{}', { status: 401 }) : new Response(JSON.stringify({ csrfToken: 'vendor-token', account: { username: 'supplier', status: 'pending', companyName: 'Supplier', vendorId: null } }));
+    if (url === '/api/vendor/auth/logout') { revoked = true; return new Response('{}', { status: 401 }); }
+    throw new Error('Unexpected URL');
+  }));
+  await render();
+  await act(async () => [...element.querySelectorAll('button')].find(b => b.textContent === 'Sign out')!.click());
+  await settle();
+  expect(element.textContent).toContain('Sign in to the vendor portal');
+  expect(element.textContent).not.toContain('Could not sign out');
 });

@@ -8,17 +8,24 @@ import { randomBytes } from "crypto";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { globalLimiter } from "./middleware/rate-limits";
 import router from "./routes";
+import { siteDomainPolicy, siteDocument } from "./lib/site-domain-policy";
 import { buildAllowedOrigins, isAllowedOrigin } from "./lib/cors-origin";
 import { refundMutationConflictResponse, refundMutationHttpStatus } from "./lib/refund-mutation-guard";
 
 const app: Express = express();
+
+// The domain boundary precedes CORS, routing and static fallbacks.
+app.use(siteDomainPolicy({
+  production: process.env.NODE_ENV === "production",
+  developmentHosts: [process.env.REPLIT_DEV_DOMAIN ?? "", ...(process.env.VENDOR_DEV_HOSTS ?? "").split(",")].filter(Boolean),
+}));
 
 // ── CORS ───────────────────────────────────────────────────────
 // Explicitly whitelist known origins instead of reflecting any origin.
 // Allows localhost (dev) and Replit workspace / deployed app domains.
 // Use ALLOWED_ORIGINS env var (comma-separated) to add custom domains.
 
-const _allowedOrigins = buildAllowedOrigins();
+const _allowedOrigins = [...buildAllowedOrigins(), "https://pepsanonymous.com", "https://www.pepsanonymous.com"];
 
 app.use(
   cors({
@@ -256,9 +263,16 @@ if (process.env["NODE_ENV"] === "production") {
 
     app.use(staticHeaders);
     app.use(express.static(frontendDist, { index: false }));
-    // SPA fallback — return index.html for any non-API route
-    app.use((_req: Request, res: Response) => {
-      res.sendFile(path.join(frontendDist, "index.html"));
+    // Share the build while serving a vendor document without member SDK bootstrap.
+    const indexPath = path.join(frontendDist, "index.html");
+    const mainDocument = fs.readFileSync(indexPath, "utf8");
+    app.use((req: Request, res: Response) => {
+      const document = siteDocument(mainDocument, req.headers.host ?? "");
+      if (document !== mainDocument) {
+        res.type("html").send(document);
+        return;
+      }
+      res.sendFile(indexPath);
     });
   } else {
     // Frontend dist not found — still respond 200 to the health check route (GET /)

@@ -36,6 +36,8 @@ afterward so the app can seed and use the new tables.
 **Optional Environment Variables**:
 - `TELEGRAM_BOT_TOKEN`: Telegram Bot API token for notifications
 - `TELEGRAM_ADMIN_CHAT_ID`: Admin Telegram chat for order alerts
+- `VENDOR_TELEGRAM_BOT_TOKEN`: Separate bot for vendor portal alerts (new shipments, holds, overdue, answered problem reports). Vendors link a chat from Settings → Telegram notifications. Alternatively store it in site config as `vendorTelegramBotToken`.
+- `VENDOR_TELEGRAM_BOT_USERNAME`: Optional; skips the getMe lookup when building `t.me` link URLs for the vendor bot
 - `ORDER_PIN`: Optional global PIN gate for order creation
 
 ### Database backup operations

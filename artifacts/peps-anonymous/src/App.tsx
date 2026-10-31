@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, useLocation, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/account-session";
 
 // Pages
+import { siteSurface } from "@/lib/site-domain";
 import Home from "@/pages/Home";
 import LegacyOrderRedirect from "@/pages/LegacyOrderRedirect";
 import OrderForm from "@/pages/OrderForm";
@@ -179,8 +180,6 @@ function Router() {
       <Route path="/wholesale/shared" component={WholesaleShareEntry} />
       <Route path="/wholesale/tracking" component={WholesaleTracking} />
       <Route path="/wholesale" component={WholesaleOrder} />
-      <Route path="/vendor/login" component={VendorLogin} />
-      <Route path="/vendor" component={VendorPortal} />
       <Route path="/join-wholesale/:code" component={WholesaleInviteLanding} />
       <Route path="/sleepingpepisadmin/janoshik-receiver" component={JanoshikReceiver} />
       <Route path="/sleepingpepisadmin" component={Admin} />
@@ -312,17 +311,46 @@ function AccountSessionRecoveryNotice() {
   );
 }
 
+function SiteNotFound() {
+  return <main className="min-h-screen flex items-center justify-center"><h1>404 — Not Found</h1></main>;
+}
+
+function SiteContent() {
+  const [location] = useLocation();
+  const surface = siteSurface(window.location.hostname, location, import.meta.env.DEV,
+    (import.meta.env.VITE_VENDOR_DEV_HOSTS ?? "").split(",").filter(Boolean));
+  useEffect(() => {
+    document.title = surface === "vendor" ? "Peps Anonymous · Vendor portal" : "Salt & Peps";
+  }, [surface]);
+  if (surface === "blocked") return <SiteNotFound />;
+  if (surface === "vendor") return (
+    <Switch>
+      <Route path="/" component={VendorPortal} />
+      <Route path="/vendor" component={VendorPortal} />
+      <Route path="/vendor/" component={VendorPortal} />
+      <Route path="/vendor/login" component={VendorLogin} />
+      <Route path="/vendor/login/" component={VendorLogin} />
+      <Route path="/login" component={VendorLogin} />
+      <Route path="/login/" component={VendorLogin} />
+      <Route component={SiteNotFound} />
+    </Switch>
+  );
+  return <>
+    <TelegramAutoLogin />
+    <AccountSessionActivity />
+    <AccountSessionRecoveryNotice />
+    <Router />
+    <DiscordLoginSetupModal />
+  </>;
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <TelegramAutoLogin />
-        <AccountSessionActivity />
-        <AccountSessionRecoveryNotice />
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-            <DiscordLoginSetupModal />
+            <SiteContent />
           </WouterRouter>
           <Toaster />
         </TooltipProvider>

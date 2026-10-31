@@ -10,9 +10,11 @@ packages:
   - scripts
 
 allowBuilds:
+  bufferutil: set this to true or false
   core-js: true
   esbuild: true
   msedge-tts: false
+  utf-8-validate: set this to true or false
 
 autoInstallPeers: false
 

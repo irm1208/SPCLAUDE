@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import express from "express";
 import type { Server } from "node:http";
@@ -19,6 +19,13 @@ vi.mock("../../middleware/account-auth", () => ({
     req.account = { telegramUsername: req.get("x-test-user") }; next();
   },
 }));
+vi.mock("../../middleware/vendor-auth", () => ({
+  vendorSameOrigin: (_req: any, _res: any, next: any) => next(),
+  requireVendorAccount: (req: any, res: any, next: any) => {
+    if (!req.get("x-test-user")) return res.status(401).json({ error: "Vendor sign-in required" });
+    req.vendor = { username: req.get("x-test-user") }; next();
+  },
+}));
 vi.mock("../../middleware/require-admin", () => ({
   requireAdmin: (req: any, res: any) => {
     if (req.get("x-test-admin") === "yes") return true;
@@ -35,7 +42,7 @@ vi.mock("../config", async () => ({
 }));
 vi.mock("../../lib/audit-log", () => ({writeLog:vi.fn(async()=>{})}));
 vi.mock("../../lib/wholesale-share-chat", () => ({postWholesaleChatMessage:vi.fn(async()=>{})}));
-vi.mock("../../lib/telegram", () => ({ notifyUser: vi.fn(async () => ({ ok: true })) }));
+vi.mock("../../lib/telegram", () => ({ notifyUser: vi.fn(async () => ({ ok: true })), sendAdminMessage: vi.fn(async () => true) }));
 vi.mock("../../lib/tracking-auto-refresh", () => ({ refreshWholesaleMainParcelForShare: vi.fn(async () => ({ updated: true })) }));
 vi.mock("../../lib/wholesale-update-images", () => ({
   storePageUpdateImage: vi.fn(async () => "vendor-dispatch/test.webp"),
@@ -51,6 +58,10 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     const router = (await import("../vendor-portal")).default;
     lockShare = (await import("../wholesale-shares")).attemptLockShare;
     const app = express(); app.use(express.json()); app.use(router);
+    app.use((await import("../vendor-accounts-admin")).default);
+    app.use((await import("../vendor-portal-extras")).default);
+    app.use((await import("../vendor-telegram")).default);
+    app.use((await import("../vendor-threads")).default);
     server = app.listen(0);
     await new Promise<void>(resolve => server.once("listening", resolve));
     base = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -69,12 +80,17 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     const rollback = new Error("fixture rollback");
     await realDb.transaction(async (tx: any) => {
       state.tx = tx;
+      await (await import("../../lib/vendor-account-schema")).ensureVendorAccountSchema(tx);
       const suffix = randomUUID().slice(0, 8);
       const a = `fixture-vendor-a-${suffix}`, b = `fixture-vendor-b-${suffix}`, member = `fixture-member-${suffix}`, other = `fixture-other-${suffix}`;
       await tx.insert(store.accountsTable).values([a, b, member, other].map(telegramUsername => ({ telegramUsername })));
       await tx.insert(store.vendorPortalAccessTable).values([
         { username: a, vendorId: "vendor-a", grantedBy: "fixture" },
         { username: b, vendorId: "vendor-b", grantedBy: "fixture" },
+      ]);
+      await tx.insert(store.vendorAccountsTable).values([
+        { username: a, vendorId: "vendor-a", passwordHash: "fixture-only-not-used", status: "active" },
+        { username: b, vendorId: "vendor-b", passwordHash: "fixture-only-not-used", status: "active" },
       ]);
       const name = `Fixture product ${suffix}`;
       await tx.insert(store.fs3CostsTable).values({ productName: name, unitCost: "20.00" });
@@ -102,6 +118,74 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect((await request("/admin/vendor-portal/submit", undefined, body, true)).status).toBe(200);
     return { body, preview: preview.data, row: (await f.tx.select().from(store.vendorSubmissionsTable).where(eq(store.vendorSubmissionsTable.sourceKey, preview.data.shipments[0].id)))[0] };
   }
+  it("previews and submits a paid order without an email address", () => fixture(async f => {
+    await f.tx.update(store.ordersTable).set({ shippingEmail: null }).where(eq(store.ordersTable.id, f.orderId));
+    const { preview, row } = await submit(f);
+    expect(preview.shipments[0].shipping.email).toBe("");
+    expect(row.snapshot.shipping.email).toBe("");
+    const orders = await request("/vendor/orders", f.a);
+    expect(orders.status).toBe(200);
+  }));
+  it("automatically submits a paid order without email once", () => fixture(async f => {
+    const { autoSubmitPaidVendorOrder } = await import("../../lib/vendor-portal-service");
+    await f.tx.update(store.ordersTable).set({ shippingEmail: null }).where(eq(store.ordersTable.id, f.orderId));
+    const { pendingVendorRoutingPredicate } = await import("../../lib/vendor-portal-worker");
+    const pending = () => f.tx.select({ id: store.ordersTable.id }).from(store.ordersTable).where(and(eq(store.ordersTable.id, f.orderId), pendingVendorRoutingPredicate()));
+    expect(await pending()).toHaveLength(1);
+    await autoSubmitPaidVendorOrder(f.orderId);
+    await autoSubmitPaidVendorOrder(f.orderId);
+    expect(await pending()).toHaveLength(0);
+    const rows = await f.tx.select().from(store.vendorSubmissionsTable).where(eq(store.vendorSubmissionsTable.sourceKey, `order:${f.orderId}`));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].vendorId).toBe("vendor-a");
+    expect(rows[0].snapshot.shipping.email).toBe("");
+    expect(rows[0].submittedBy).toBe("system:paid-order");
+    expect(rows[0].snapshot.items[0].unitCost).toBe("20.00");
+  }), 60000);
+  it("never automatically submits an unpaid order", () => fixture(async f => {
+    const { autoSubmitPaidVendorOrder } = await import("../../lib/vendor-portal-service");
+    await f.tx.update(store.ordersTable).set({ paymentStatus: "pending" }).where(eq(store.ordersTable.id, f.orderId));
+    await expect(autoSubmitPaidVendorOrder(f.orderId)).rejects.toThrow(/fully paid/);
+    expect(await f.tx.select().from(store.vendorSubmissionsTable).where(eq(store.vendorSubmissionsTable.sourceKey, `order:${f.orderId}`))).toHaveLength(0);
+  }), 60000);
+  it("does not automatically resend an admin-recalled shipment", () => fixture(async f => {
+    const { autoSubmitPaidVendorOrder } = await import("../../lib/vendor-portal-service");
+    const { row } = await submit(f);
+    expect((await request(`/admin/vendor-portal/orders/${row.id}`, undefined, undefined, true, "DELETE")).status).toBe(200);
+    await autoSubmitPaidVendorOrder(f.orderId);
+    expect(await f.tx.select().from(store.vendorSubmissionsTable).where(eq(store.vendorSubmissionsTable.sourceKey, `order:${f.orderId}`))).toHaveLength(0);
+    const { pendingVendorRoutingPredicate } = await import("../../lib/vendor-portal-worker");
+    expect(await f.tx.select().from(store.ordersTable).where(and(eq(store.ordersTable.id, f.orderId), pendingVendorRoutingPredicate()))).toHaveLength(0);
+  }), 60000);
+  it("holds automatic routing while a balance remains unpaid", () => fixture(async f => {
+    const { autoSubmitPaidVendorOrder } = await import("../../lib/vendor-portal-service");
+    await f.tx.update(store.ordersTable).set({ amountDue: "10.00", balancePaymentStatus: "pending" }).where(eq(store.ordersTable.id, f.orderId));
+    await expect(autoSubmitPaidVendorOrder(f.orderId)).rejects.toThrow(/fully paid/);
+    expect(await f.tx.select().from(store.vendorSubmissionsTable).where(eq(store.vendorSubmissionsTable.sourceKey, `order:${f.orderId}`))).toHaveLength(0);
+  }), 60000);
+  it("routes a ready shared-order vendor when another vendor lacks saved costs", () => fixture(async f => {
+    const { autoSubmitPaidVendorOrder } = await import("../../lib/vendor-portal-service");
+    const shareId = `AUTO${randomUUID().slice(0, 7)}`;
+    const secondName = `${f.name} ready`;
+    await f.tx.delete(store.fs3CostsTable).where(eq(store.fs3CostsTable.productName, f.name));
+    await f.tx.insert(store.fs3CostsTable).values({ productName: secondName, unitCost: "30" });
+    await f.tx.insert(store.wholesaleSharesTable).values({
+      id: shareId, creatorUsername: f.member, deliveryUsername: f.member, vendorId: "vendor-a",
+      status: "submitted", organiserPaymentStatus: "confirmed", shippingName: "Fixture recipient",
+      shippingAddress: "Fixture Road", shippingCountry: "United Kingdom", shippingPhone: "+441234567890",
+    });
+    await f.tx.update(store.ordersTable).set({ orderType: "wholesale_shared", sharedOrderId: shareId }).where(eq(store.ordersTable.id, f.orderId));
+    await f.tx.insert(store.wholesaleShareMembersTable).values({ id: randomUUID(), shareId, username: f.member, orderId: f.orderId });
+    await f.tx.insert(store.orderLineItemsTable).values({
+      id: randomUUID(), orderId: f.orderId, vendorId: "vendor-b", productId: secondName,
+      productName: secondName, quantity: "1", unitPrice: "888", lineTotal: "888",
+    });
+    await expect(autoSubmitPaidVendorOrder(f.orderId)).rejects.toThrow(/vendor-a/);
+    const rows = await f.tx.select().from(store.vendorSubmissionsTable).where(eq(store.vendorSubmissionsTable.sharedOrderId, shareId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].vendorId).toBe("vendor-b");
+    expect(rows[0].snapshot.shipping.email).toBe("");
+  }), 60000);
   it("upgrades an older database twice without changing legacy rows or money",()=>fixture(async f=>{
     const namespace=`mv_migration_${randomUUID().replaceAll("-","")}`;
     await f.tx.execute(sql`CREATE SCHEMA ${sql.identifier(namespace)}`);
@@ -177,10 +261,14 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect(exportA.data.text).toContain("$40.00");
     expect(exportA.data.text).not.toContain(secondName);
     expect(exportA.data.text).not.toContain("999");
+    // Legacy lines use the share's vendor assignment when no line vendor was saved.
+    await f.tx.update(store.orderLineItemsTable).set({ vendorId: null }).where(and(eq(store.orderLineItemsTable.orderId, f.orderId), eq(store.orderLineItemsTable.productName, f.name)));
     const {row:a} = await submit(f);
-    const previewB = await request("/admin/vendor-portal/preview",undefined,{vendorId:"vendor-b",orderCodes:[f.code]},true);
-    expect(previewB.status).toBe(200);
-    expect((await request("/admin/vendor-portal/submit",undefined,{vendorId:"vendor-b",orderCodes:[f.code],previewToken:previewB.data.previewToken},true)).status).toBe(200);
+    const { autoSubmitPaidVendorOrder } = await import("../../lib/vendor-portal-service");
+    await autoSubmitPaidVendorOrder(f.orderId);
+    await autoSubmitPaidVendorOrder(f.orderId);
+    const { pendingVendorRoutingPredicate } = await import("../../lib/vendor-portal-worker");
+    expect(await f.tx.select().from(store.ordersTable).where(and(eq(store.ordersTable.id, f.orderId), pendingVendorRoutingPredicate()))).toHaveLength(0);
     const listB = await request("/vendor/orders",f.b);
     expect(listB.data.orders).toHaveLength(1);
     expect(JSON.stringify(listB.data)).not.toContain(f.name+'\"');
@@ -284,14 +372,238 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     for (const hidden of ["1998", "2048", "999", "grandTotal", "paymentStatus", "telegramUsername", "sourceFingerprint"]) expect(text).not.toContain(hidden);
     expect((await request("/vendor/orders", f.b)).data.orders).toEqual([]);
   }));
+  it("uses independent vendor accounts and retires member-based access grants", () => fixture(async f => {
+    expect((await request("/vendor/apply", f.other, { companyName: "Legacy" })).status).toBe(410);
+    expect((await request("/admin/vendor-portal/access", undefined, { username: f.other, vendorId: "vendor-a" }, true, "PUT")).status).toBe(410);
+    expect((await request("/vendor/me", f.other)).status).toBe(403);
+    await f.tx.update(store.accountsTable).set({ accountStatus: "suspended" }).where(eq(store.accountsTable.telegramUsername, f.a));
+    expect((await request("/vendor/me", f.a)).status).toBe(200);
+  }), 60000);
+  it("admin creates independent vendor credentials, links orders and revokes sessions on access changes", () => fixture(async f => {
+    const username = `vendoronly-${randomUUID().slice(0,8)}`;
+    expect((await request("/admin/vendor-accounts", undefined, { username, password: "vendor-test-password123", vendorId: "vendor-a" }, false)).status).toBe(403);
+    const created = await request("/admin/vendor-accounts", undefined, { username, password: "vendor-test-password123", vendorId: "vendor-a" }, true);
+    expect(created.status).toBe(201);
+    expect(created.data.account).toMatchObject({ username, vendorId: "vendor-a", status: "active" });
+    expect(created.data.account).not.toHaveProperty("passwordHash");
+    expect(await f.tx.select().from(store.accountsTable).where(eq(store.accountsTable.telegramUsername, username))).toHaveLength(0);
+    await submit(f);
+    expect((await request("/vendor/orders", username)).data.orders).toHaveLength(1);
+    const tokenHash = `fixture-session-${username}`;
+    await f.tx.insert(store.vendorSessionsTable).values({ username, tokenHash, expiresAt: new Date(Date.now() + 60000) });
+    const updated = await request(`/admin/vendor-accounts/${username}`, undefined, { status: "disabled", vendorId: "vendor-a" }, true, "PUT");
+    expect(updated.status).toBe(200);
+    expect(await f.tx.select().from(store.vendorSessionsTable).where(eq(store.vendorSessionsTable.username, username))).toHaveLength(0);
+    expect((await request("/vendor/orders", username)).status).toBe(403);
+    const reassigned = await request(`/admin/vendor-accounts/${username}`, undefined, { status: "active", vendorId: "vendor-b", password: "new-vendor-password123" }, true, "PUT");
+    expect(reassigned.status).toBe(200);
+    const { vendorAccess } = await import("../../lib/vendor-portal-service");
+    await expect(vendorAccess(f.tx, username, true, tokenHash)).rejects.toThrow(/session expired or revoked/);
+    expect((await request("/vendor/orders", username)).data.orders).toHaveLength(0);
+  }), 60000);
+  it("links a Telegram chat with a one-time code and announces new shipments to it exactly once", () => fixture(async f => {
+    const tg = await import("../../lib/vendor-telegram");
+    const sent: Array<{ method: string; payload: any }> = [];
+    tg.setVendorTelegramTransport(async (method, payload) => { sent.push({ method, payload }); return method === "getMe" ? { ok: true, result: { username: "PepsVendorBot" } } : { ok: true, result: { message_id: sent.length } }; });
+    const previousToken = process.env.VENDOR_TELEGRAM_BOT_TOKEN; process.env.VENDOR_TELEGRAM_BOT_TOKEN = "123:fixture";
+    const secret = tg.vendorWebhookSecret("123:fixture");
+    const webhook = (body: unknown, header = secret) => fetch(base + "/vendor-telegram/webhook", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-bot-api-secret-token": header }, body: JSON.stringify(body) });
+    // The webhook acknowledges before doing database work, so wait for the bot's reply rather than a fixed delay.
+    const replied = async (before: number) => { const start = Date.now(); while (sent.length <= before && Date.now() - start < 15_000) await new Promise(r => setTimeout(r, 50)); };
+    try {
+      expect((await request("/vendor/telegram/link", undefined, {})).status).toBe(401);
+      const link = await request("/vendor/telegram/link", f.a, {});
+      expect(link.status).toBe(200); expect(link.data.url).toBe(`https://t.me/PepsVendorBot?start=${link.data.token}`);
+      // Wrong secret is refused; a bad code is answered politely; the right code links the chat.
+      expect((await webhook({ message: { chat: { id: 555 }, text: `/start ${link.data.token}` } }, "nope")).status).toBe(401);
+      let before = sent.length;
+      expect((await webhook({ message: { chat: { id: 555, type: "group", title: "Fixture packing team" }, text: "/start wrongcode" } })).status).toBe(200);
+      await replied(before);
+      expect(sent.at(-1)?.payload.text).toContain("expired");
+      before = sent.length;
+      expect((await webhook({ message: { chat: { id: 555, type: "group", title: "Fixture packing team" }, text: `/start ${link.data.token}` } })).status).toBe(200);
+      await replied(before);
+      expect(sent.at(-1)?.payload).toMatchObject({ chat_id: "555" }); expect(sent.at(-1)?.payload.text).toContain("Linked to <b>vendor-a</b>");
+      const mine = await request("/vendor/telegram", f.a);
+      expect(mine.data.chats).toHaveLength(1); expect(mine.data.chats[0]).toMatchObject({ chatId: "555", title: "Fixture packing team", linkedBy: f.a });
+      expect((await request("/vendor/telegram", f.b)).data.chats).toHaveLength(0);
+      // A code cannot be reused.
+      before = sent.length;
+      expect((await webhook({ message: { chat: { id: 556 }, text: `/start ${link.data.token}` } })).status).toBe(200);
+      await replied(before);
+      expect(sent.at(-1)?.payload.chat_id).toBe("556"); expect(sent.at(-1)?.payload.text).toContain("expired");
+      // New shipment -> one announcement; a second pass sends nothing more.
+      const { row } = await submit(f);
+      sent.length = 0;
+      await tg.notifyVendorEvents(new Date(), { vendorIds: ["vendor-a", "vendor-b"] });
+      const announced = sent.filter(s => s.method === "sendMessage" && s.payload.chat_id === "555");
+      expect(announced).toHaveLength(1); expect(announced[0].payload.text).toContain(`#${row.reference}`); expect(announced[0].payload.text).not.toContain("Fixture Recipient");
+      await tg.notifyVendorEvents(new Date(), { vendorIds: ["vendor-a", "vendor-b"] });
+      expect(sent.filter(s => s.method === "sendMessage" && s.payload.chat_id === "555")).toHaveLength(1);
+      // Overdue reminder once the order is old enough, honouring a muted preference.
+      const chatRowId = mine.data.chats[0].id;
+      expect((await request(`/vendor/telegram/chats/${chatRowId}/prefs`, f.b, { overdue: false }, false, "PUT")).status).toBe(404);
+      const muted = await request(`/vendor/telegram/chats/${chatRowId}/prefs`, f.a, { overdue: false }, false, "PUT");
+      expect(muted.data.chat.prefs).toEqual({ overdue: false });
+      sent.length = 0;
+      await tg.notifyVendorEvents(new Date(Date.now() + 3 * 86_400_000), { vendorIds: ["vendor-a", "vendor-b"] });
+      expect(sent.filter(s => s.method === "sendMessage" && s.payload.chat_id === "555")).toHaveLength(0);
+      expect(await f.tx.select().from(store.vendorTelegramEventsTable).where(and(eq(store.vendorTelegramEventsTable.submissionId, row.id), eq(store.vendorTelegramEventsTable.kind, "overdue")))).toHaveLength(1);
+      // /orders summary and disconnecting.
+      sent.length = 0;
+      await webhook({ message: { chat: { id: 555 }, text: "/orders@PepsVendorBot" } });
+      await replied(0);
+      expect(sent.at(-1)?.payload.text).toContain("open shipment"); expect(sent.at(-1)?.payload.text).toContain(`#${row.reference}`);
+      const adminList = await request("/admin/vendor-telegram", undefined, undefined, true);
+      expect(adminList.status).toBe(200); expect(adminList.data.configured).toBe(true);
+      expect(adminList.data.chats.find((c: any) => c.chatId === "555")).toMatchObject({ vendorId: "vendor-a", vendorName: "vendor-a" });
+      expect((await request(`/vendor/telegram/chats/${chatRowId}`, f.a, undefined, false, "DELETE")).status).toBe(200);
+      expect((await request("/vendor/telegram", f.a)).data.chats).toHaveLength(0);
+      before = sent.length;
+      await webhook({ message: { chat: { id: 555 }, text: "/orders" } });
+      await replied(before);
+      expect(sent.at(-1)?.payload.text).toContain("not linked");
+    } finally {
+      tg.setVendorTelegramTransport(null);
+      if (previousToken === undefined) delete process.env.VENDOR_TELEGRAM_BOT_TOKEN; else process.env.VENDOR_TELEGRAM_BOT_TOKEN = previousToken;
+    }
+  }));
+
+  it("carries a conversation between a vendor and Admin, mirrors Admin replies to Telegram and routes Telegram replies back", () => fixture(async f => {
+    const tg = await import("../../lib/vendor-telegram");
+    const sent: Array<{ method: string; payload: any }> = [];
+    let nextMessageId = 100;
+    tg.setVendorTelegramTransport(async (method, payload) => { sent.push({ method, payload }); return method === "getMe" ? { ok: true, result: { username: "PepsVendorBot" } } : { ok: true, result: { message_id: ++nextMessageId } }; });
+    const previousToken = process.env.VENDOR_TELEGRAM_BOT_TOKEN; process.env.VENDOR_TELEGRAM_BOT_TOKEN = "123:fixture";
+    const secret = tg.vendorWebhookSecret("123:fixture");
+    const webhook = (body: unknown) => fetch(base + "/vendor-telegram/webhook", { method: "POST", headers: { "Content-Type": "application/json", "x-telegram-bot-api-secret-token": secret }, body: JSON.stringify(body) });
+    const replied = async (before: number) => { const start = Date.now(); while (sent.length <= before && Date.now() - start < 15_000) await new Promise(r => setTimeout(r, 50)); };
+    try {
+      const { row } = await submit(f);
+      // Vendor opens a thread about its order; the other vendor cannot reference that order.
+      expect((await request("/vendor/threads", undefined, { subject: "Stock", body: "hi" })).status).toBe(401);
+      expect((await request("/vendor/threads", f.b, { subject: "Not mine", body: "hi", submissionId: row.id })).status).toBe(404);
+      expect((await request("/vendor/threads", f.a, { subject: "S", body: "hi" })).status).toBe(400);
+      const opened = await request("/vendor/threads", f.a, { subject: "Only 1 of 2 in stock", body: "Can we ship one now?", submissionId: row.id });
+      expect(opened.status).toBe(201);
+      expect(opened.data.thread).toMatchObject({ status: "open", openedBy: "vendor", reference: row.reference, adminUnread: 1, vendorUnread: 0 });
+      const threadId = opened.data.thread.id;
+      // Admin sees it as unread, reads it, replies; vendor's unread count rises and the reply is mirrored to the linked chat.
+      const adminList = await request("/admin/vendor-threads?status=open", undefined, undefined, true);
+      expect(adminList.data.threads.find((t: any) => t.id === threadId)).toMatchObject({ vendorName: "vendor-a", adminUnread: 1 });
+      const adminView = await request(`/admin/vendor-threads/${threadId}`, undefined, undefined, true);
+      expect(adminView.data.messages).toHaveLength(1); expect(adminView.data.messages[0]).toMatchObject({ authorRole: "vendor", body: "Can we ship one now?" });
+      expect((await request(`/admin/vendor-threads/${threadId}`, undefined, undefined, true)).data.thread.adminUnread).toBe(0);
+      const link = await request("/vendor/telegram/link", f.a, {});
+      let before = sent.length;
+      await webhook({ message: { chat: { id: 777, type: "private", first_name: "Pat" }, text: `/start ${link.data.token}` } });
+      await replied(before);
+      sent.length = 0;
+      const reply = await request(`/admin/vendor-threads/${threadId}/messages`, undefined, { body: "Yes, ship the one you have; we will refund the other." }, true);
+      expect(reply.status).toBe(201); expect(reply.data.telegramDelivered).toBe(1);
+      const mirrored = sent.find(s => s.method === "sendMessage" && s.payload.chat_id === "777");
+      expect(mirrored?.payload.text).toContain("ship the one you have"); expect(mirrored?.payload.text).toContain("Only 1 of 2 in stock");
+      const mine = await request("/vendor/threads", f.a);
+      expect(mine.data.unread).toBe(1); expect(mine.data.threads[0]).toMatchObject({ id: threadId, vendorUnread: 1 });
+      expect((await request("/vendor/threads", f.b)).data.threads).toHaveLength(0);
+      expect((await request(`/vendor/threads/${threadId}`, f.b)).status).toBe(404);
+      const read = await request(`/vendor/threads/${threadId}`, f.a);
+      expect(read.data.messages).toHaveLength(2); expect(read.data.messages[1]).toMatchObject({ authorRole: "admin", body: "Yes, ship the one you have; we will refund the other." });
+      expect((await request("/vendor/threads", f.a)).data.unread).toBe(0);
+      // A native Telegram reply to the mirrored message lands in the thread as a vendor message.
+      before = sent.length;
+      await webhook({ message: { message_id: 5000, chat: { id: 777, type: "private" }, from: { username: "pat_packs", first_name: "Pat" }, reply_to_message: { message_id: mirrored!.payload && nextMessageId }, text: "Will do, shipping today." } });
+      await replied(before);
+      const afterReply = await request(`/admin/vendor-threads/${threadId}`, undefined, undefined, true);
+      expect(afterReply.data.messages.at(-1)).toMatchObject({ authorRole: "vendor", authorName: "@pat_packs (Telegram)", body: "Will do, shipping today.", via: "telegram" });
+      expect(sent.at(-1)?.payload.text).toContain("Sent to Peps Anonymous");
+      // Closing blocks admin replies but a vendor message reopens it.
+      expect((await request(`/admin/vendor-threads/${threadId}/status`, undefined, { status: "closed" }, true, "PUT")).data.thread.status).toBe("closed");
+      expect((await request(`/admin/vendor-threads/${threadId}/messages`, undefined, { body: "late" }, true)).status).toBe(409);
+      expect((await request(`/vendor/threads/${threadId}/messages`, f.a, { body: "One more thing" })).status).toBe(201);
+      // Reading a thread clears its unread counter, so check the list rather than the detail view.
+      expect((await request("/admin/vendor-threads?status=open", undefined, undefined, true)).data.threads.find((t: any) => t.id === threadId)).toMatchObject({ status: "open", adminUnread: 1 });
+      // Admin can start a conversation too; it arrives unread for the vendor and is mirrored.
+      sent.length = 0;
+      const started = await request("/admin/vendor-threads", undefined, { vendorId: "vendor-a", subject: "Holiday cover", body: "Who covers next week?" }, true);
+      expect(started.status).toBe(201); expect(started.data.thread).toMatchObject({ openedBy: "admin", vendorUnread: 1 }); expect(started.data.telegramDelivered).toBe(1);
+      expect((await request("/vendor/threads", f.a)).data.unread).toBe(1);
+      expect((await request("/admin/vendor-threads", undefined, { vendorId: "vendor-zzz", subject: "Nope", body: "x" }, true)).status).toBe(404);
+    } finally {
+      tg.setVendorTelegramTransport(null);
+      if (previousToken === undefined) delete process.env.VENDOR_TELEGRAM_BOT_TOKEN; else process.env.VENDOR_TELEGRAM_BOT_TOKEN = previousToken;
+    }
+  }));
+
+  it("holiday mode pauses automatic routing until the vendor reopens, and Admin can see and override it", () => fixture(async f => {
+    const { autoSubmitPaidVendorOrder } = await import("../../lib/vendor-portal-service");
+    const days = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString();
+    expect((await request("/vendor/settings")).status).toBe(401);
+    const initial = await request("/vendor/settings", f.a);
+    expect(initial.status).toBe(200); expect(initial.data.settings).toMatchObject({ vendorId: "vendor-a", closedNow: false, closedUntil: null });
+    expect((await request("/vendor/settings", f.a, { closedUntil: days(-1) }, false, "PUT")).status).toBe(400);
+    const closed = await request("/vendor/settings", f.a, { closedUntil: days(3), closedNote: "Stocktake", handlingDays: 2, defaultCarrier: "DPD" }, false, "PUT");
+    expect(closed.status).toBe(200); expect(closed.data.settings).toMatchObject({ closedNow: true, closedNote: "Stocktake", handlingDays: 2, defaultCarrier: "DPD" });
+    // Paid order for a closed vendor is left alone without being reported as a failure.
+    await autoSubmitPaidVendorOrder(f.orderId);
+    expect(await f.tx.select().from(store.vendorSubmissionsTable).where(sql`${store.vendorSubmissionsTable.orderIds} @> ${JSON.stringify([f.orderId])}::jsonb`)).toHaveLength(0);
+    const adminView = await request("/admin/vendor-portal/issues", undefined, undefined, true);
+    expect(adminView.status).toBe(200);
+    expect(adminView.data.settings.find((v: any) => v.vendorId === "vendor-a")).toMatchObject({ closedNow: true, vendorName: "vendor-a" });
+    // Reopening (no end date) resumes routing on the next pass.
+    const reopened = await request("/vendor/settings", f.a, { handlingDays: 2 }, false, "PUT");
+    expect(reopened.data.settings).toMatchObject({ closedNow: false, closedUntil: null, handlingDays: 2 });
+    await autoSubmitPaidVendorOrder(f.orderId);
+    expect(await f.tx.select().from(store.vendorSubmissionsTable).where(sql`${store.vendorSubmissionsTable.orderIds} @> ${JSON.stringify([f.orderId])}::jsonb`)).toHaveLength(1);
+    // Admin can close a vendor too; unknown vendors and non-admins are refused.
+    expect((await request("/admin/vendor-portal/settings/vendor-b", undefined, { closedUntil: days(1) }, false, "PUT")).status).toBe(403);
+    expect((await request("/admin/vendor-portal/settings/vendor-zzz", undefined, { closedUntil: days(1) }, true, "PUT")).status).toBe(404);
+    const adminClose = await request("/admin/vendor-portal/settings/vendor-b", undefined, { closedUntil: days(1) }, true, "PUT");
+    expect(adminClose.status).toBe(200); expect(adminClose.data.settings.closedNow).toBe(true);
+    expect((await request("/vendor/settings", f.b)).data.settings.closedNow).toBe(true);
+    const audit = await f.tx.select().from(store.vendorAuditTable).where(and(eq(store.vendorAuditTable.action, "settings_updated"), eq(store.vendorAuditTable.actor, f.a)));
+    expect(audit).toHaveLength(2);
+  }));
+
+  it("lets a vendor report a problem on its own order once, and Admin resolve it with a note the vendor can read", () => fixture(async f => {
+    const { row } = await submit(f);
+    const path = `/vendor/orders/${row.id}/issues`;
+    expect((await request(path, undefined, { type: "out_of_stock" })).status).toBe(401);
+    expect((await request(path, f.b, { type: "out_of_stock" })).status).toBe(404);
+    expect((await request(path, f.a, { type: "other" })).status).toBe(400);
+    expect((await request(path, f.a, { type: "nope" })).status).toBe(400);
+    const reported = await request(path, f.a, { type: "partial_stock", note: "Only 1 of 2 in stock" });
+    expect(reported.status).toBe(201);
+    expect(reported.data.issue).toMatchObject({ type: "partial_stock", label: "Only part of the order is in stock", note: "Only 1 of 2 in stock", open: true, reference: row.reference, reportedBy: f.a });
+    expect((await request(path, f.a, { type: "out_of_stock" })).status).toBe(409);
+    const mine = await request("/vendor/issues", f.a);
+    expect(mine.status).toBe(200); expect(mine.data.issues).toHaveLength(1); expect(mine.data.issues[0].submissionId).toBe(row.id);
+    expect((await request("/vendor/issues", f.b)).data.issues).toHaveLength(0);
+    const list = await request("/admin/vendor-portal/issues", undefined, undefined, true);
+    const issue = list.data.issues.find((i: any) => i.id === reported.data.issue.id);
+    expect(issue).toMatchObject({ open: true, vendorId: "vendor-a", reference: row.reference });
+    const resolvePath = `/admin/vendor-portal/issues/${issue.id}/resolve`;
+    expect((await request(resolvePath, undefined, { resolution: "x" }, false)).status).toBe(403);
+    const resolved = await request(resolvePath, undefined, { resolution: "Ship the one in stock; we refunded the other." }, true);
+    expect(resolved.status).toBe(200); expect(resolved.data.issue).toMatchObject({ open: false, resolvedBy: "test-admin", resolution: "Ship the one in stock; we refunded the other." });
+    expect((await request(resolvePath, undefined, { resolution: "again" }, true)).status).toBe(409);
+    expect((await request(`/admin/vendor-portal/issues/not-an-id/resolve`, undefined, {}, true)).status).toBe(404);
+    const after = await request("/vendor/issues", f.a);
+    expect(after.data.issues[0]).toMatchObject({ open: false, resolution: "Ship the one in stock; we refunded the other." });
+    // Once resolved, a new problem can be raised on the same order.
+    expect((await request(path, f.a, { type: "damaged", note: "Returned by courier" })).status).toBe(201);
+    const audit = await f.tx.select().from(store.vendorAuditTable).where(and(eq(store.vendorAuditTable.submissionId, row.id), inArray(store.vendorAuditTable.action, ["issue_reported", "issue_resolved"])));
+    expect(audit).toHaveLength(3);
+  }));
+
   it("blocks another vendor's IDs, tampered price writes, suspension and immediate revocation", () => fixture(async f => {
     const { row } = await submit(f);
     expect((await request(`/vendor/orders/${row.id}`, f.b, { action: "processing" }, false, "PATCH")).status).toBe(404);
     expect((await request(`/vendor/orders/${row.id}`, f.a, { action: "processing", grandTotal: 0 }, false, "PATCH")).status).toBe(400);
-    await f.tx.update(store.accountsTable).set({ accountStatus: "suspended" }).where(eq(store.accountsTable.telegramUsername, f.a));
+    await f.tx.update(store.vendorAccountsTable).set({ status: "disabled" }).where(eq(store.vendorAccountsTable.username, f.a));
     expect((await request("/vendor/orders", f.a)).status).toBe(403);
-    await f.tx.update(store.accountsTable).set({ accountStatus: "active" }).where(eq(store.accountsTable.telegramUsername, f.a));
-    await f.tx.delete(store.vendorPortalAccessTable).where(eq(store.vendorPortalAccessTable.username, f.a));
+    await f.tx.update(store.vendorAccountsTable).set({ status: "active" }).where(eq(store.vendorAccountsTable.username, f.a));
+    await f.tx.update(store.vendorAccountsTable).set({ vendorId: null, status: "pending" }).where(eq(store.vendorAccountsTable.username, f.a));
     expect((await request(`/vendor/orders/${row.id}`, f.a, { action: "processing" }, false, "PATCH")).status).toBe(403);
   }));
   it("detects stale previews and post-submission product edits", () => fixture(async f => {

@@ -64,7 +64,7 @@ node -e "
     const opts = {
       host: '127.0.0.1', port: 21504,
       path: req.url, method: req.method,
-      headers: { ...req.headers, host: 'localhost' },
+      headers: { ...req.headers },
     };
     const proxy = http.request(opts, r => {
       res.writeHead(r.statusCode, r.headers);
@@ -83,7 +83,7 @@ node -e "
   server.on('upgrade', (req, clientSocket, head) => {
     const upstream = net.connect(21504, '127.0.0.1', () => {
       const reqLine = req.method + ' ' + req.url + ' HTTP/1.1\r\n';
-      const hdrs = Object.entries({ ...req.headers, host: 'localhost' })
+      const hdrs = Object.entries({ ...req.headers })
         .map(([k, v]) => k + ': ' + v).join('\r\n');
       upstream.write(reqLine + hdrs + '\r\n\r\n');
       if (head && head.length) upstream.write(head);

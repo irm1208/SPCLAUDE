@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye, Loader2, RefreshCw, Send, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, RefreshCw, Send, X } from "lucide-react";
+import VendorAccountsAdmin from "./VendorAccountsAdmin";
+import VendorPortalIssuesAdmin from "./VendorPortalIssuesAdmin";
+import VendorTelegramAdmin from "./VendorTelegramAdmin";
+import VendorThreadsAdmin from "./VendorThreadsAdmin";
 import { CostBreakdown, ShippingBlock, StatusPill, type VendorOrder } from "@/pages/VendorPortal";
 
 interface AdminData {
   vendors: { id: string; name: string }[];
-  access: { username: string; vendorId: string }[];
   submissions: { id: string; reference: string; vendorId: string; status: string; stale: boolean; submittedAt: string }[];
 }
 type Msg = { ok: boolean; text: string } | null;
@@ -37,21 +40,6 @@ export default function VendorPortalAdmin({ secret }: { secret: string }) {
     } catch (e) { setLoadErr(e instanceof Error ? e.message : "Load failed"); }
   }, [headers]);
   useEffect(() => { load(); }, [load]);
-
-  // access
-  const [user, setUser] = useState(""); const [accVendor, setAccVendor] = useState("");
-  const [accBusy, setAccBusy] = useState(false); const [accMsg, setAccMsg] = useState<Msg>(null);
-  const putAccess = async (username: string, vendorId: string | null) => {
-    if (!username.trim()) { setAccMsg({ ok: false, text: "Enter a username." }); return; }
-    setAccBusy(true); setAccMsg(null);
-    try {
-      const r = await fetch("/api/admin/vendor-portal/access", { method: "PUT", credentials: "include", headers: headers(true), body: JSON.stringify({ username: username.trim(), vendorId }) });
-      if (!r.ok) throw new Error(await err(r, "Access update failed"));
-      setAccMsg({ ok: true, text: vendorId ? `Access saved for ${username.trim()}.` : `Access revoked for ${username.trim()}.` });
-      if (vendorId) setUser("");
-      await load();
-    } catch (e) { setAccMsg({ ok: false, text: e instanceof Error ? e.message : "Failed" }); } finally { setAccBusy(false); }
-  };
 
   // submit
   const [vendorId, setVendorId] = useState(""); const [codes, setCodes] = useState("");
@@ -125,29 +113,17 @@ export default function VendorPortalAdmin({ secret }: { secret: string }) {
       </div>
       {loadErr && <Note msg={{ ok: false, text: loadErr }} id="text-load-error" />}
 
-      <section className="rounded-2xl p-4 space-y-3" style={card}>
-        <h3 className="font-bold flex items-center gap-2" style={{ color: "var(--t-text)" }}><ShieldCheck className="w-4 h-4" style={{ color: "var(--t-blue)" }} />Access</h3>
-        <form className="grid sm:grid-cols-[1fr_1fr_auto] gap-2" onSubmit={e => { e.preventDefault(); if (!accVendor) { setAccMsg({ ok: false, text: "Select a vendor." }); return; } putAccess(user, accVendor); }}>
-          <input aria-label="Username" placeholder="Account username" value={user} onChange={e => setUser(e.target.value)} className={input} style={card} data-testid="input-access-username" />
-          <select aria-label="Vendor" value={accVendor} onChange={e => setAccVendor(e.target.value)} className={input} style={card} data-testid="select-access-vendor">
-            <option value="">Select vendor</option>{data.vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-          <button type="submit" disabled={accBusy} className={btn} style={{ background: "#1B3A7A" }} data-testid="button-grant-access">{accBusy && <Loader2 className="w-4 h-4 animate-spin" />}Grant / change</button>
-        </form>
-        <Note msg={accMsg} id="text-access-result" />
-        {data.access.length === 0 ? <p className="text-sm" style={{ color: "var(--t-muted)" }}>No vendor accounts yet.</p> : (
-          <ul className="divide-y" style={{ borderColor: "var(--t-border)" }}>{data.access.map(a => (
-            <li key={a.username} className="py-2 flex flex-wrap items-center gap-2 text-sm" data-testid={`row-access-${a.username}`}>
-              <span className="font-semibold" style={{ color: "var(--t-text)" }}>{a.username}</span>
-              <select aria-label={`Vendor for ${a.username}`} value={a.vendorId} disabled={accBusy} onChange={e => putAccess(a.username, e.target.value)} className="rounded-lg px-2 py-1 text-xs ml-auto" style={card} data-testid={`select-change-${a.username}`}>
-                {data.vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-              <button disabled={accBusy} onClick={() => { if (window.confirm(`Revoke vendor access for ${a.username}?`)) putAccess(a.username, null); }} className="text-xs font-bold px-2 py-1 rounded-lg disabled:opacity-50" style={{ color: "#DC2626" }} data-testid={`button-revoke-${a.username}`}>Revoke</button>
-            </li>))}</ul>)}
-      </section>
+      <VendorAccountsAdmin />
+
+      <VendorPortalIssuesAdmin secret={secret} />
+
+      <VendorThreadsAdmin secret={secret} vendors={data.vendors} />
+
+      <VendorTelegramAdmin secret={secret} vendors={data.vendors} />
 
       <section className="rounded-2xl p-4 space-y-3" style={card}>
-        <h3 className="font-bold flex items-center gap-2" style={{ color: "var(--t-text)" }}><Send className="w-4 h-4" style={{ color: "var(--t-blue)" }} />Submit orders to vendor</h3>
+        <h3 className="font-bold flex items-center gap-2" style={{ color: "var(--t-text)" }}><Send className="w-4 h-4" style={{ color: "var(--t-blue)" }} />Manual submission</h3>
+        <p className="text-sm" style={{ color: "var(--t-muted)" }}>Paid orders are sent to their assigned vendor automatically. Use this form to retry or resubmit an order after review. Email is optional.</p>
         <select aria-label="Target vendor" value={vendorId} onChange={e => { setVendorId(e.target.value); setPreview(null); }} className={input} style={card} data-testid="select-submit-vendor">
           <option value="">Select vendor</option>{data.vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
         </select>

@@ -61,3 +61,5 @@ export * from "./admin_security";
 export * from "./order-invoices";
 export * from "./gb_half_kit_offers";
 export * from "./gb_supplier_batches";
+
+export * from "./vendor_accounts";

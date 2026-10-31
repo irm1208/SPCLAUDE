@@ -89,7 +89,7 @@ export function requiredShipping(source: Record<string, any>, purpose: "submissi
     country: String(source.shippingCountry ?? "").trim(), phone: String(source.shippingPhone ?? "").trim(),
     email: String(source.shippingEmail ?? "").trim(),
   };
-  const missing = Object.entries(shipping).filter(([, value]) => !value).map(([key]) => key);
+  const missing = Object.entries(shipping).filter(([key, value]) => key !== "email" && !value).map(([key]) => key);
   // An Admin download is not vendor submission: retain known details and let
   // the export label absent fields without inventing customer information.
   if (purpose === "submission" && missing.length) throw new VendorPortalError(`Delivery details missing: ${missing.join(", ")}. Set these before submitting.`);
@@ -109,5 +109,47 @@ export function publicVendorOrder(row: any, stale: boolean, images: any[]) {
     },
     trackingNumber: row.trackingNumber ?? null, carrier: row.carrier ?? null,
     images: images.map(i => ({ id: i.id, filename: i.filename, url: i.url, createdAt: i.createdAt })),
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * Vendor applications (self-service signup, approved by Admin)
+ * ------------------------------------------------------------------------- */
+export interface VendorApplicationInput {
+  companyName: string; contactName: string; contactEmail: string;
+  website: string | null; message: string | null; requestedVendorId: string | null;
+}
+function cleanText(value: unknown, label: string, min: number, max: number, required: true): string;
+function cleanText(value: unknown, label: string, min: number, max: number, required: false): string | null;
+function cleanText(value: unknown, label: string, min: number, max: number, required: boolean): string | null {
+  const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  if (!text) { if (required) throw new VendorPortalError(`${label} is required.`); return null; }
+  if (text.length < min) throw new VendorPortalError(`${label} is too short.`);
+  if (text.length > max) throw new VendorPortalError(`${label} must be ${max} characters or fewer.`);
+  return text;
+}
+export function vendorApplicationInput(body: unknown): VendorApplicationInput {
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const contactEmail = cleanText(b.contactEmail, "Contact email", 3, 254, true).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) throw new VendorPortalError("Enter a valid contact email.");
+  const message = typeof b.message === "string" ? b.message.trim() : "";
+  if (message.length > 1000) throw new VendorPortalError("Message must be 1000 characters or fewer.");
+  return {
+    companyName: cleanText(b.companyName, "Company name", 2, 120, true),
+    contactName: cleanText(b.contactName, "Contact name", 2, 120, true),
+    contactEmail,
+    website: cleanText(b.website, "Website", 3, 200, false),
+    message: message || null,
+    requestedVendorId: cleanText(b.requestedVendorId, "Vendor", 1, 80, false),
+  };
+}
+export type VendorApplicationStatus = "pending" | "approved" | "rejected";
+export function publicVendorApplication(row: any, admin = false) {
+  return {
+    ...(admin ? { username: row.username, reviewedBy: row.reviewedBy ?? null, updatedAt: row.updatedAt } : {}),
+    status: row.status as VendorApplicationStatus,
+    companyName: row.companyName, contactName: row.contactName, contactEmail: row.contactEmail,
+    website: row.website ?? null, message: row.message ?? null, requestedVendorId: row.requestedVendorId ?? null,
+    createdAt: row.createdAt, reviewedAt: row.reviewedAt ?? null, reviewNote: row.reviewNote ?? null,
   };
 }

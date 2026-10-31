@@ -1,3 +1,4 @@
+import { requestVendorPortalReconciliation } from "./vendor-portal-worker";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { db, gbSupplierSettingsTable as settings, gbSupplierEventsTable as events } from "@workspace/db";
 import { reconcileSupplierGroup } from "./supplier-batches";
@@ -35,6 +36,7 @@ export async function reconcileSupplierBatches() {
 }
 /** Coalesced server-driven hook; not dependent on opening a staff page. */
 export function requestSupplierReconciliation() {
+  requestVendorPortalReconciliation();
   if (pending) return;
   pending = setTimeout(() => {
     pending = null;

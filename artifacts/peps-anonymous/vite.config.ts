@@ -29,6 +29,7 @@ if (!basePath) {
 export default defineConfig({
   base: basePath,
   define: {
+    'import.meta.env.VITE_VENDOR_DEV_HOSTS': JSON.stringify([process.env.REPLIT_DEV_DOMAIN ?? '', process.env.VENDOR_DEV_HOSTS ?? ''].filter(Boolean).join(',')),
     'import.meta.env.VITE_ADMIN_PASSWORD': JSON.stringify(process.env.VITE_ADMIN_PASSWORD ?? ''),
   },
   // Pre-scan every page so Vite completes dep optimisation in ONE pass at
@@ -156,7 +157,8 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: `http://127.0.0.1:${process.env.API_PORT ?? "5000"}`,
-        changeOrigin: true,
+        // Admin CSRF checks compare Origin with Host; retain the browser host.
+        changeOrigin: false,
       },
       "/__mockup": {
         target: "http://127.0.0.1:8081",

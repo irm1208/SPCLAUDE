@@ -1,3 +1,6 @@
+import { ensureVendorAccountSchema } from "./lib/vendor-account-schema";
+import { registerVendorPortalScheduler } from "./lib/vendor-portal-worker";
+import { registerVendorTelegramScheduler } from "./lib/vendor-telegram";
 import {
   activeRefundStatusesSql,
   refundMutationErrorOrderId,
@@ -83,6 +86,7 @@ async function runStartupRefundSafeRepair(
 }
 
 async function runStartupMigrations(): Promise<void> {
+    await ensureVendorAccountSchema(db);
     await ensureSupplierTestingSchema(db);
     // Startup compatibility only adds columns/tables that are absent. It must
     // never change an existing production column type or constraint: publish
@@ -96,6 +100,131 @@ async function runStartupMigrations(): Promise<void> {
         order_id text NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
         hidden_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT hidden_orders_username_order_uniq UNIQUE (telegram_username, order_id)
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_portal_requests (
+        username text PRIMARY KEY REFERENCES accounts(telegram_username) ON UPDATE CASCADE ON DELETE CASCADE,
+        company_name text NOT NULL,
+        contact_name text NOT NULL,
+        contact_email text NOT NULL,
+        website text,
+        message text,
+        requested_vendor_id text,
+        status text NOT NULL DEFAULT 'pending',
+        reviewed_by text,
+        reviewed_at timestamptz,
+        review_note text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_settings (
+        vendor_id text PRIMARY KEY,
+        closed_from timestamptz,
+        closed_until timestamptz,
+        closed_note text,
+        handling_days integer,
+        default_carrier text,
+        updated_by text NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_order_issues (
+        id text PRIMARY KEY,
+        submission_id text NOT NULL REFERENCES vendor_submissions(id) ON DELETE CASCADE,
+        vendor_id text NOT NULL,
+        type text NOT NULL,
+        note text,
+        reported_by text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        resolved_at timestamptz,
+        resolved_by text,
+        resolution text
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_order_issues_submission_idx ON vendor_order_issues (submission_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_order_issues_vendor_idx ON vendor_order_issues (vendor_id)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_telegram_chats (
+        id text PRIMARY KEY,
+        vendor_id text NOT NULL,
+        chat_id text NOT NULL,
+        chat_type text,
+        title text,
+        linked_by text NOT NULL,
+        prefs jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT vendor_telegram_chats_chat_unique UNIQUE (chat_id)
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_telegram_chats_vendor_idx ON vendor_telegram_chats (vendor_id)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_telegram_link_tokens (
+        token text PRIMARY KEY,
+        vendor_id text NOT NULL,
+        username text NOT NULL,
+        expires_at timestamptz NOT NULL,
+        used_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_telegram_events (
+        id text PRIMARY KEY,
+        kind text NOT NULL,
+        submission_id text NOT NULL,
+        vendor_id text NOT NULL,
+        delivered integer NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT vendor_telegram_events_kind_submission_unique UNIQUE (kind, submission_id)
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_threads (
+        id text PRIMARY KEY,
+        vendor_id text NOT NULL,
+        submission_id text REFERENCES vendor_submissions(id) ON DELETE SET NULL,
+        subject text NOT NULL,
+        status text NOT NULL DEFAULT 'open',
+        opened_by text NOT NULL,
+        vendor_unread integer NOT NULL DEFAULT 0,
+        admin_unread integer NOT NULL DEFAULT 0,
+        last_message_at timestamptz NOT NULL DEFAULT now(),
+        last_message_preview text,
+        closed_by text,
+        closed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_threads_vendor_idx ON vendor_threads (vendor_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_threads_last_message_idx ON vendor_threads (last_message_at)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_thread_messages (
+        id text PRIMARY KEY,
+        thread_id text NOT NULL REFERENCES vendor_threads(id) ON DELETE CASCADE,
+        author_role text NOT NULL,
+        author_name text NOT NULL,
+        body text NOT NULL,
+        image_path text,
+        image_name text,
+        via text NOT NULL DEFAULT 'portal',
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS vendor_thread_messages_thread_idx ON vendor_thread_messages (thread_id)`);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS vendor_thread_telegram_messages (
+        id text PRIMARY KEY,
+        telegram_message_id text NOT NULL,
+        chat_id text NOT NULL,
+        thread_id text NOT NULL REFERENCES vendor_threads(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT vendor_thread_telegram_messages_unique UNIQUE (telegram_message_id, chat_id)
       )
     `);
     await db.execute(sql`
@@ -1250,6 +1379,8 @@ function startBackgroundServices(): void {
   registerRefundNotificationScheduler(db);
   registerGroupBuyUpdateNotificationScheduler();
   registerSupplierBatchScheduler();
+  registerVendorPortalScheduler();
+  registerVendorTelegramScheduler();
   setInterval(purgeExpiredDeletedOrders, 60 * 60 * 1000);
 }
 

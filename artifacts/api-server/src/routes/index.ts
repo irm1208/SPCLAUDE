@@ -1,3 +1,5 @@
+import vendorAuthRouter from "./vendor-auth";
+import vendorAccountsAdminRouter from "./vendor-accounts-admin";
 import { Router, type IRouter } from "express";
 import {
   strictLimiter,
@@ -82,6 +84,9 @@ import wholesaleTrackingRouter from "./wholesale-tracking";
 import adminAuthRouter from "./admin-auth";
 import adminInvoicesRouter from "./admin-invoices";
 import vendorPortalRouter from "./vendor-portal";
+import vendorPortalExtrasRouter from "./vendor-portal-extras";
+import vendorTelegramRouter from "./vendor-telegram";
+import vendorThreadsRouter from "./vendor-threads";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
 const router: IRouter = Router();
@@ -131,7 +136,12 @@ router.use((req, res, next) => {
 router.use(supplierBatchesRouter);
 router.use(supplierFulfilmentRouter);
 router.use(adminInvoicesRouter);
+router.use(vendorAuthRouter);
+router.use(vendorAccountsAdminRouter);
 router.use(vendorPortalRouter);
+router.use(vendorPortalExtrasRouter);
+router.use(vendorTelegramRouter);
+router.use(vendorThreadsRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them
 // after the scoped admin boundary so their /admin handlers receive the
