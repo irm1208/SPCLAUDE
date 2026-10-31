@@ -97,6 +97,7 @@ import { DashboardShell, StatCard, palette, ACCENT, ACCENT_SOFT, SecIcon, HERO_G
 import { useThemeStore } from "@/hooks/use-theme";
 import Protocols from "@/pages/Protocols";
 import PublicTestingPools from "@/pages/PublicTestingPools";
+import { SupplierTesting } from "@/components/supplier-testing/SupplierTesting";
 import LabTests from "@/pages/LabTests";
 import { FHRiskContent } from "@/pages/FHRiskCalculator";
 import { InsulinResistanceContent } from "@/pages/InsulinResistanceCalculator";
@@ -124,8 +125,8 @@ type Order = {
   current?: CustomerRefund | null;
 };
 type CustomerProfile = { fullName: string; email: string; phone: string; address: string };
-type Section = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing" | "protocols" | "medications" | "trtaas" | "community-testing" | "lab-tests" | "support" | "fh-risk" | "insulin-resistance" | "wholesale-access";
-const PORTAL_SECTIONS: Section[] = ["home","orders","groups","compounds","blood-tests","health","glp1","plotter","profile","telegram","history","health-hub","lab-pool","gb-testing","protocols","medications","trtaas","community-testing","lab-tests","support","wholesale-access"];
+type Section = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing" | "protocols" | "medications" | "trtaas" | "community-testing" | "lab-tests" | "support" | "fh-risk" | "insulin-resistance" | "wholesale-access" | "supplier-testing";
+const PORTAL_SECTIONS: Section[] = ["home","orders","groups","compounds","blood-tests","health","glp1","plotter","profile","telegram","history","health-hub","lab-pool","gb-testing","protocols","medications","trtaas","community-testing","lab-tests","support","wholesale-access","supplier-testing"];
 
 const SECTION_ALL_META: { id: Section; label: string; icon: React.ElementType }[] = [
   { id: "home",        label: "Hub",          icon: LayoutDashboard },
@@ -531,6 +532,7 @@ function OrderGridCard({
               memberReceivedAt={order.memberReceivedAt} onReceived={onReceived} />
           </div>
         )}
+        {order.id && !order.current && <SupplierTesting orderId={order.id} compact />}
       </div>
       </div>
     </div>
@@ -11162,6 +11164,10 @@ export default function CustomerPortal() {
     return inShell("trtaas", "TRT & AAS", (
       <Protocols bare initialTrack="trtaas" />
     ));
+  }
+
+  if (section === "supplier-testing") {
+    return inShell("supplier-testing", "Supplier Testing", <SupplierTesting />);
   }
 
   if (section === "community-testing") {

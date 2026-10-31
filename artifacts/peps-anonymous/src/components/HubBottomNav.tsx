@@ -12,7 +12,7 @@ import { useHubDrawerStore } from "@/hooks/use-hub-drawer";
 import { useLogout } from "@/hooks/use-account";
 import { palette, ACCENT, FONT } from "@/components/dashboard-theme";
 
-export type HubSection = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing";
+export type HubSection = "home" | "orders" | "groups" | "compounds" | "blood-tests" | "health" | "glp1" | "plotter" | "profile" | "telegram" | "history" | "health-hub" | "lab-pool" | "gb-testing" | "supplier-testing";
 
 export const HUB_SECTION_ALL_META: { id: HubSection; label: string; icon: React.ElementType }[] = [
   { id: "home",        label: "Hub",             icon: LayoutDashboard },
@@ -173,6 +173,7 @@ export function HubBottomNav({
         { key: "gb-testing", label: "GB Testing",        Icon: FlaskConical, active: section === "gb-testing", onClick: () => navigate("gb-testing") },
         { key: "lab-pool",   label: "Testing Pools",     Icon: TestTube,     active: section === "lab-pool",   onClick: () => navigate("lab-pool") },
         { key: "community-testing", label: "Community Testing", Icon: FlaskConical, onClick: () => go(account ? "/account?s=community-testing" : "/community-testing") },
+        { key: "supplier-testing", label: "Supplier Testing", Icon: FlaskConical, active: section === "supplier-testing", onClick: () => go("/account?s=supplier-testing") },
       ],
     },
     ...(roleItems.length ? [{ label: "Workspaces", items: roleItems }] : []),

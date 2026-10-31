@@ -23,6 +23,7 @@ type PoolPaymentMethod =
   | { type: "janoshik"; url: string };
 
 type Pool = {
+  supplierTesting?: boolean;
   id: string;
   slug: string;
   title: string;
@@ -77,6 +78,10 @@ type PoolContributor = {
 };
 
 type PoolDetail = {
+  myContribution?: {
+    id: string; amountUsd: number; paymentStatus: string; paymentMethod: string | null; paymentCurrency: string | null;
+    namedReportOptIn: boolean; namedReportName: string | null; paymentSubmittedAt: string | null; paymentTxHash: string | null;
+  } | null;
   pool: Pool;
   tests: PoolTest[];
   contributorCount: number;
@@ -1369,7 +1374,7 @@ export default function TestingPool() {
   const [selectedCryptoCurrency, setSelectedCryptoCurrency] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<PoolDetail>({
-    queryKey: ["/api/testing-pools", slug, refreshKey],
+    queryKey: ["/api/testing-pools", slug, refreshKey, account?.telegramUsername],
     queryFn: async () => {
       const r = await testingPoolFetch(slug, `/api/testing-pools/${slug}`, { credentials: "include" });
       if (r.status === 403 && (await r.json()).error === "access_code_required") {
@@ -1412,6 +1417,24 @@ export default function TestingPool() {
 
   // Auto-fill Telegram from account when signed in
   useEffect(() => {
+    if (!data?.pool.supplierTesting) return;
+    const c = data.myContribution;
+    if (!c) { setParticipantId(null); setReceipt(null); return; }
+    setParticipantId(c.id);
+    setAmount(String(c.amountUsd));
+    setNamedReportOptIn(c.namedReportOptIn);
+    setNamedReportName(c.namedReportName ?? "");
+    if (c.paymentMethod) setSelectedMethodType(c.paymentMethod);
+    if (c.paymentCurrency) setSelectedCryptoCurrency(c.paymentCurrency);
+    setReceipt(["submitted", "verified", "refunded"].includes(c.paymentStatus) ? {
+      method: c.paymentMethod ?? "crypto", methodDetail: c.paymentStatus, amount: c.amountUsd,
+      namedReportOptIn: c.namedReportOptIn, namedReportName: c.namedReportName ?? "",
+      paidAt: c.paymentSubmittedAt ?? "", txHash: c.paymentTxHash ?? undefined,
+      participantRef: c.id.slice(-8), participantIdFull: c.id,
+    } : null);
+  }, [data?.pool.supplierTesting, data?.myContribution, account?.telegramUsername]);
+
+  useEffect(() => {
     if (account?.telegramUsername && !contactTelegram) {
       setContactTelegram(`@${account.telegramUsername}`);
     }
@@ -1419,7 +1442,9 @@ export default function TestingPool() {
 
   // Restore participant state from sessionStorage on mount
   useEffect(() => {
-    if (!slug) return;
+    // Supplier memberships restore only the authenticated server contribution above,
+    // never a previous account's guest receipt from this browser.
+    if (!slug || !data || data.pool.supplierTesting) return;
     const key = `pool-contrib-${slug}`;
     const stored = sessionStorage.getItem(key);
     if (!stored) return;
@@ -1442,7 +1467,7 @@ export default function TestingPool() {
         })
         .catch(() => {});
     } catch { sessionStorage.removeItem(`pool-contrib-${slug}`); }
-  }, [slug]);
+  }, [slug, data?.pool.supplierTesting, account?.telegramUsername]);
 
   const optInMutation = useMutation({
     mutationFn: async () => {

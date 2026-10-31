@@ -30,6 +30,7 @@ export * from "./customer_activity_logs";
 export * from "./tracking_links";
 export * from "./telegram_message_logs";
 export * from "./testing_pools";
+export * from "./supplier_testing";
 export * from "./package_sizes";
 export * from "./intl_shipping";
 export * from "./credit_transactions";

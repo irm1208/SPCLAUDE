@@ -10,6 +10,9 @@ import {
   poolMessagesTable,
   testCatalogTable,
   accountsTable,
+  supplierTestingGroupsTable,
+  supplierTestingInterestsTable,
+  supplierTestingMembershipsTable,
   type PoolPaymentMethod,
 } from "@workspace/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
@@ -19,6 +22,9 @@ import { writeLog } from "../lib/audit-log";
 import { sendAdminFromTemplate, notifyUserFromTemplate, notifyUser } from "../lib/telegram";
 import { isEthErc20StableRail, ERC20_STABLE_CURRENCIES } from "../lib/payment-verify";
 import { computeTestingPoolTarget, DEFAULT_MAX_VIAL_COUNT, fitsTestingPoolTarget, parsePoolVialCount, validatePoolVialQuantities, parsePoolTestPriceUsd, parseStrictPoolMoney } from "../lib/testing-pool-pricing";
+import { supplierTestingIdentity, testingUsername } from "../lib/supplier-testing";
+import { loadSupplierTestingItems } from "../lib/supplier-testing-service";
+import { getVendors } from "./config";
 
 const router: IRouter = Router();
 
@@ -192,6 +198,15 @@ type PoolSettingsBuild =
     }
   | { ok: false; status: number; message: string };
 
+async function supplierPoolIdentityChanged(pool: typeof testingPoolsTable.$inferSelect, body: Record<string, unknown>) {
+  const changed = (["compoundName", "manufacturer", "batchNumber", "mgSize"] as const)
+    .some(key => Object.hasOwn(body, key) && (body[key] || null) !== (pool[key] || null));
+  if (!changed) return false;
+  const [group] = await db.select({ id: supplierTestingGroupsTable.id }).from(supplierTestingGroupsTable)
+    .where(eq(supplierTestingGroupsTable.poolId, pool.id));
+  return !!group;
+}
+
 async function replacePoolTests(
   poolId: string,
   input: ValidatedPoolTest[],
@@ -316,6 +331,16 @@ async function hasSubmittedOrVerifiedContributions(poolId: string): Promise<bool
 }
 
 async function requirePoolAccess(req: any, res: any, pool: typeof testingPoolsTable.$inferSelect): Promise<boolean> {
+  const [supplierGroup] = await db.select().from(supplierTestingGroupsTable).where(eq(supplierTestingGroupsTable.poolId, pool.id));
+  if (supplierGroup) {
+    await loadOptionalAccount(req);
+    if (!req.account) { res.status(401).json({ error: "Sign in to view your supplier testing group." }); return false; }
+    const [interest] = await db.select({ id: supplierTestingInterestsTable.id }).from(supplierTestingInterestsTable).where(and(
+      eq(supplierTestingInterestsTable.groupId, supplierGroup.id),
+      sql`lower(ltrim(${supplierTestingInterestsTable.accountUsername}, '@')) = ${testingUsername(req.account.telegramUsername)}`,
+    ));
+    if (!interest) { res.status(403).json({ error: "This testing group is for members assigned to this exact supplier product batch." }); return false; }
+  }
   if (!pool.inviteOnly) return true;
   await loadOptionalAccount(req);
   if (req.account?.telegramUsername === pool.leaderUsername) return true;
@@ -325,13 +350,23 @@ async function requirePoolAccess(req: any, res: any, pool: typeof testingPoolsTa
   return false;
 }
 
-async function requireParticipantPoolAccess(req: any, res: any, poolId: string): Promise<boolean> {
+async function requireParticipantPoolAccess(req: any, res: any, poolId: string, participantId?: string): Promise<boolean> {
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
   if (!pool) {
     res.status(404).json({ error: "Pool not found" });
     return false;
   }
-  return requirePoolAccess(req, res, pool);
+  if (!await requirePoolAccess(req, res, pool)) return false;
+  if (participantId) {
+    const [group] = await db.select({ id: supplierTestingGroupsTable.id }).from(supplierTestingGroupsTable).where(eq(supplierTestingGroupsTable.poolId, poolId));
+    if (group) {
+      const [participant] = await db.select({ username: poolParticipantsTable.accountUsername }).from(poolParticipantsTable).where(eq(poolParticipantsTable.id, participantId));
+      if (!participant?.username || !req.account || testingUsername(participant.username) !== testingUsername(req.account.telegramUsername)) {
+        res.status(403).json({ error: "This contribution belongs to another account." }); return false;
+      }
+    }
+  }
+  return true;
 }
 
 async function computePoolTotals(poolId: string) {
@@ -409,9 +444,11 @@ router.get("/testing-pools", async (_req, res): Promise<void> => {
     .where(and(eq(testingPoolsTable.approvalStatus, "approved"), eq(testingPoolsTable.hiddenFromList, false)))
     .orderBy(desc(testingPoolsTable.createdAt));
 
+  const supplierGroups = await db.select({ poolId: supplierTestingGroupsTable.poolId }).from(supplierTestingGroupsTable);
+  const supplierPoolIds = new Set(supplierGroups.map(g => g.poolId));
   const out = await Promise.all(
     pools
-      .filter(p => p.status !== "draft" && !p.inviteOnly)
+      .filter(p => p.status !== "draft" && !p.inviteOnly && !supplierPoolIds.has(p.id))
       .map(async p => ({ ...poolPublicShape(p), ...(await computePoolTotals(p.id)) })),
   );
   res.json(out);
@@ -436,7 +473,7 @@ router.get("/testing-pools/participants/:id/status", async (req, res): Promise<v
       .where(eq(poolParticipantsTable.id, req.params.id));
 
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
-    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId, participant.id)) return;
 
     const [pool] = await db
       .select({
@@ -455,6 +492,7 @@ router.get("/testing-pools/participants/:id/status", async (req, res): Promise<v
     if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
 
     const totals = await computePoolTotals(participant.poolId);
+    const [supplierGroup] = await db.select({ id: supplierTestingGroupsTable.id }).from(supplierTestingGroupsTable).where(eq(supplierTestingGroupsTable.poolId, participant.poolId));
 
     res.json({
       id: participant.id,
@@ -470,8 +508,8 @@ router.get("/testing-pools/participants/:id/status", async (req, res): Promise<v
         status: pool.status,
         goalUsd: num(pool.targetAmountUsd),
         hasResults: pool.resultPostedAt != null,
-        resultNotes: pool.resultNotes ?? null,
-        resultPdfUrl: pool.resultPdfUrl ?? null,
+        resultNotes: supplierGroup ? null : pool.resultNotes ?? null,
+        resultPdfUrl: supplierGroup ? null : pool.resultPdfUrl ?? null,
       },
       poolTotals: totals,
     });
@@ -486,7 +524,7 @@ router.get("/testing-pools/:slug", async (req, res): Promise<void> => {
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.slug, req.params.slug));
   if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
   await loadOptionalAccount(req);
-  const isOwner = req.account?.telegramUsername === pool.leaderUsername;
+  const isOwner = req.account?.telegramUsername === pool.leaderUsername && !await isSupplierTestingPool(pool.id);
   if (!isOwner && (pool.approvalStatus !== "approved" || pool.status === "draft")) {
     res.status(404).json({ error: "Pool not found" });
     return;
@@ -497,6 +535,15 @@ router.get("/testing-pools/:slug", async (req, res): Promise<void> => {
   // Non-owners never see rejected tests
   const tests = isOwner ? allTests : allTests.filter(t => (t.contributionStatus ?? "active") !== "rejected");
   const totals = await computePoolTotals(pool.id);
+  const [supplierGroup] = await db.select({ id: supplierTestingGroupsTable.id }).from(supplierTestingGroupsTable).where(eq(supplierTestingGroupsTable.poolId, pool.id));
+  const [myContribution] = supplierGroup && req.account ? await db.select({
+    id: poolParticipantsTable.id, amountUsd: poolParticipantsTable.amountUsd,
+    paymentStatus: poolParticipantsTable.paymentStatus, paymentMethod: poolParticipantsTable.paymentMethod,
+    paymentCurrency: poolParticipantsTable.paymentCurrency, namedReportOptIn: poolParticipantsTable.namedReportOptIn,
+    namedReportName: poolParticipantsTable.namedReportName, paymentSubmittedAt: poolParticipantsTable.paymentSubmittedAt,
+    paymentTxHash: poolParticipantsTable.paymentTxHash,
+  }).from(poolParticipantsTable).where(and(eq(poolParticipantsTable.poolId, pool.id),
+    sql`lower(ltrim(${poolParticipantsTable.accountUsername}, '@')) = ${testingUsername(req.account.telegramUsername)}`)).orderBy(poolParticipantsTable.createdAt) : [];
 
   const voteCounts: Record<string, number> = {};
   if (pool.votingMode === "vote") {
@@ -543,7 +590,8 @@ router.get("/testing-pools/:slug", async (req, res): Promise<void> => {
   }));
 
   res.json({
-    pool: poolPublicShape(pool),
+    pool: { ...poolPublicShape(pool), supplierTesting: !!supplierGroup },
+    myContribution: myContribution ? { ...myContribution, amountUsd: num(myContribution.amountUsd) } : null,
     tests: tests.map(t => ({
       id: t.id,
       catalogId: t.catalogId,
@@ -577,6 +625,27 @@ router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
   if (!["open", "funded"].includes(pool.status)) {
     res.status(400).json({ error: "This pool is not currently accepting contributions" });
     return;
+  }
+  let supplierContributionKey: string | null = null;
+  const [supplierGroup] = await db.select().from(supplierTestingGroupsTable).where(eq(supplierTestingGroupsTable.poolId, pool.id));
+  if (supplierGroup) {
+    if (!req.account) { res.status(401).json({ error: "Sign in with the account that placed the JBG order." }); return; }
+    const username = req.account.telegramUsername;
+    const assigned = await db.select().from(supplierTestingInterestsTable).where(and(
+      eq(supplierTestingInterestsTable.groupId, supplierGroup.id),
+      sql`lower(ltrim(${supplierTestingInterestsTable.accountUsername}, '@')) = ${testingUsername(username)}`,
+    )).orderBy(supplierTestingInterestsTable.createdAt, supplierTestingInterestsTable.id);
+    const items = await loadSupplierTestingItems(db, await getVendors(), username);
+    if (!assigned.length || !assigned.some(i => items.some(item => item.orderId === i.orderId &&
+      item.productId === i.productId && item.supplierId === supplierGroup.supplierId && item.eligible))) {
+      res.status(403).json({ error: "Join Supplier Testing and wait for staff to confirm your product batch before contributing." }); return;
+    }
+    const [membership] = await db.select({ id: supplierTestingMembershipsTable.id }).from(supplierTestingMembershipsTable).where(and(
+      eq(supplierTestingMembershipsTable.groupId, supplierGroup.id),
+      sql`lower(ltrim(${supplierTestingMembershipsTable.accountUsername}, '@')) = ${testingUsername(username)}`,
+    ));
+    if (!membership) { res.status(403).json({ error: "Your testing membership has not been assigned yet." }); return; }
+    supplierContributionKey = supplierTestingIdentity(supplierGroup.id, membership.id);
   }
   if (pool.stopOnFunded && pool.status === "funded") {
     res.status(400).json({ error: "This pool has reached its funding goal and is no longer accepting new contributions" });
@@ -656,7 +725,8 @@ router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
   const chosenCrypto = cryptoOptions.find(o => o.currency.toUpperCase() === requestedCrypto) ?? cryptoOptions[0] ?? null;
   const storeCrypto = chosenMethod === "crypto" && chosenCrypto != null;
 
-  await db.insert(poolParticipantsTable).values({
+  const insert = db.insert(poolParticipantsTable).values({
+    supplierContributionKey,
     id,
     poolId: pool.id,
     accountUsername,
@@ -675,6 +745,12 @@ router.post("/testing-pools/:slug/opt-in", async (req, res): Promise<void> => {
     voteTestIds: validVoteIds,
     canProvideVial: canProvideVial === true,
   });
+  if (supplierContributionKey) {
+    const inserted = await insert.onConflictDoNothing({ target: poolParticipantsTable.supplierContributionKey }).returning({ id: poolParticipantsTable.id });
+    if (!inserted.length) {
+      res.status(409).json({ error: "You already have a contribution for this batch. Open it from Supplier Testing to continue." }); return;
+    }
+  } else await insert;
 
   // Find the chosen payment method details
   const methodDetails = chosenMethod
@@ -705,7 +781,7 @@ router.post("/testing-pools/participants/:id/submit-tx", async (req, res): Promi
   }
   const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
   if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
-  if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
+  if (!await requireParticipantPoolAccess(req, res, participant.poolId, participant.id)) return;
   if (participant.paymentStatus === "verified") {
     res.json({ ok: true, status: "verified" });
     return;
@@ -735,7 +811,7 @@ router.post("/testing-pools/participants/:id/submit-screenshot", async (req, res
   }
   const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
   if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
-  if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
+  if (!await requireParticipantPoolAccess(req, res, participant.poolId, participant.id)) return;
   if (participant.paymentStatus === "verified") {
     res.json({ ok: true, status: "verified" });
     return;
@@ -759,7 +835,7 @@ router.post("/testing-pools/participants/:id/init-anonpay", async (req, res): Pr
     console.log("[pool/init-anonpay] start", req.params.id);
     const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
-    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId, participant.id)) return;
     if (participant.paymentStatus === "verified") { res.status(400).json({ error: "Payment already verified" }); return; }
 
     // If already submitted with an existing AnonPay session, return existing session
@@ -845,7 +921,7 @@ router.post("/testing-pools/participants/:id/confirm-anonpay-initiation", async 
   try {
     const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
-    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId, participant.id)) return;
     if (participant.paymentStatus === "verified") { res.json({ ok: true, paymentStatus: "verified" }); return; }
     const ANON_PREFIX = "anonpay:";
     if (!participant.paymentTxHash?.startsWith(ANON_PREFIX)) {
@@ -865,7 +941,7 @@ router.get("/testing-pools/participants/:id/anonpay-status", async (req, res): P
   try {
     const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id));
     if (!participant) { res.status(404).json({ error: "Contribution not found" }); return; }
-    if (!await requireParticipantPoolAccess(req, res, participant.poolId)) return;
+    if (!await requireParticipantPoolAccess(req, res, participant.poolId, participant.id)) return;
     if (participant.paymentStatus === "verified") { res.json({ status: "verified", paymentStatus: "verified" }); return; }
     if (participant.paymentStatus !== "submitted") { res.status(400).json({ error: "Payment has not been submitted yet." }); return; }
     const ANON_PREFIX = "anonpay:";
@@ -905,7 +981,7 @@ router.post("/testing-pools/:slug/results-unlock", async (req, res): Promise<voi
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.slug, req.params.slug));
   if (!pool) { res.status(404).json({ error: "Results not available" }); return; }
   await loadOptionalAccount(req);
-  const isOwner = req.account?.telegramUsername === pool.leaderUsername;
+  const isOwner = req.account?.telegramUsername === pool.leaderUsername && !await isSupplierTestingPool(pool.id);
   if (!isOwner && (pool.approvalStatus !== "approved" || pool.status === "draft")) {
     res.status(404).json({ error: "Results not available" });
     return;
@@ -1128,7 +1204,9 @@ router.get("/account/pool-leader/pools", requireAccount, async (req, res): Promi
     .from(testingPoolsTable)
     .where(eq(testingPoolsTable.leaderUsername, tg))
     .orderBy(desc(testingPoolsTable.createdAt));
-  const out = await Promise.all(pools.map(async p => ({ ...poolPublicShape(p), ...(await computePoolTotals(p.id)) })));
+  const groups = await db.select({ poolId: supplierTestingGroupsTable.poolId }).from(supplierTestingGroupsTable);
+  const supplierIds = new Set(groups.map(g => g.poolId));
+  const out = await Promise.all(pools.filter(p => !supplierIds.has(p.id)).map(async p => ({ ...poolPublicShape(p), ...(await computePoolTotals(p.id)) })));
   res.json(out);
 });
 
@@ -1284,9 +1362,19 @@ router.post("/account/pool-leader/pools", requireAccount, async (req, res): Prom
   res.status(201).json({ id, slug });
 });
 
+async function isSupplierTestingPool(poolId: string) {
+  const [group] = await db.select({ id: supplierTestingGroupsTable.id }).from(supplierTestingGroupsTable)
+    .where(eq(supplierTestingGroupsTable.poolId, poolId));
+  return !!group;
+}
+
 async function getOwnedPool(req: any, res: any, poolId: string) {
   const [pool] = await db.select().from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
   if (!pool) { res.status(404).json({ error: "Pool not found" }); return null; }
+  if (await isSupplierTestingPool(pool.id)) {
+    res.status(403).json({ error: "Supplier testing batches are managed through Admin, not member pool-leader access." });
+    return null;
+  }
   if (pool.leaderUsername !== req.account!.telegramUsername) {
     res.status(403).json({ error: "Not your pool" });
     return null;
@@ -1298,6 +1386,7 @@ async function buildLeaderPoolUpdates(
   pool: typeof testingPoolsTable.$inferSelect,
   b: Record<string, unknown>,
 ): Promise<PoolSettingsBuild> {
+  if (await supplierPoolIdentityChanged(pool, b)) return { ok: false, status: 409, message: "Supplier, product strength and physical batch identity are fixed for supplier testing groups. Create a new batch group instead." };
   const updates: Partial<typeof testingPoolsTable.$inferInsert> = {};
   if (typeof b.title === "string") updates.title = b.title.slice(0, 200);
   if (typeof b.description === "string") updates.description = b.description.slice(0, 4000);
@@ -1490,6 +1579,7 @@ router.get("/account/pool-leader/pools/:id/participants", requireAccount, async 
 router.get("/account/pool-leader/participants/:id/screenshot", requireAccount, async (req, res): Promise<void> => {
   const [participant] = await db.select().from(poolParticipantsTable).where(eq(poolParticipantsTable.id, req.params.id as string));
   if (!participant) { res.status(404).json({ error: "Not found" }); return; }
+  if (!await getOwnedPool(req, res, participant.poolId)) return;
   const [pool] = await db.select({ leader: testingPoolsTable.leaderUsername }).from(testingPoolsTable).where(eq(testingPoolsTable.id, participant.poolId));
   if (!pool || pool.leader !== req.account!.telegramUsername) { res.status(403).json({ error: "Not your pool" }); return; }
   if (!participant.paymentScreenshotUrl) { res.status(404).json({ error: "No screenshot" }); return; }
@@ -1830,6 +1920,7 @@ async function buildAdminPoolUpdates(
   existingPool: typeof testingPoolsTable.$inferSelect,
   b: Record<string, unknown>,
 ): Promise<AdminPoolUpdatesResult> {
+  if (await supplierPoolIdentityChanged(existingPool, b)) return { ok: false, status: 409, message: "Supplier, product strength and physical batch identity are fixed for supplier testing groups. Create a new batch group instead." };
   const updates: Partial<typeof testingPoolsTable.$inferInsert> = {};
 
   if (typeof b.approvalStatus === "string" && ["pending", "approved", "rejected"].includes(b.approvalStatus)) updates.approvalStatus = b.approvalStatus;
@@ -2140,6 +2231,8 @@ router.delete("/admin/testing-pools/:id", async (req, res): Promise<void> => {
   const poolId = req.params.id;
   const [pool] = await db.select({ id: testingPoolsTable.id, title: testingPoolsTable.title }).from(testingPoolsTable).where(eq(testingPoolsTable.id, poolId));
   if (!pool) { res.status(404).json({ error: "Pool not found" }); return; }
+  const [supplierGroup] = await db.select({ id: supplierTestingGroupsTable.id }).from(supplierTestingGroupsTable).where(eq(supplierTestingGroupsTable.poolId, pool.id));
+  if (supplierGroup) { res.status(409).json({ error: "Supplier testing history must be retained. Close or hide this batch group instead of deleting it." }); return; }
   // Delete in FK order: results → participants → messages → tests → pool
   await db.delete(poolTestResultsTable).where(eq(poolTestResultsTable.poolId, poolId));
   await db.delete(poolParticipantsTable).where(eq(poolParticipantsTable.poolId, poolId));

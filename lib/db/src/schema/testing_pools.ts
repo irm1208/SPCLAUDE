@@ -135,6 +135,7 @@ export const POOL_PARTICIPANT_PAYMENT_STATUSES = [
 ] as const;
 
 export const poolParticipantsTable = pgTable("pool_participants", {
+  supplierContributionKey: text("supplier_contribution_key").unique(),
   id: text("id").primaryKey(),
   poolId: text("pool_id").notNull().references(() => testingPoolsTable.id, { onDelete: "cascade" }),
   // Identity — at least one of accountUsername / contactEmail / contactTelegram required

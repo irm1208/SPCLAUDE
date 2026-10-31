@@ -29,6 +29,7 @@ import { registerRefundNotificationScheduler } from "./lib/refund-notifications"
 import { registerGroupBuyUpdateNotificationScheduler } from "./lib/group-buy-update-notifications";
 import { registerSupplierBatchScheduler } from "./lib/supplier-batch-worker";
 import { stopAllSchedulers } from "./lib/scheduler-registry";
+import { ensureSupplierTestingSchema } from "./lib/supplier-testing-migration";
 import { db, ordersTable } from "@workspace/db";
 import { sql, and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 
@@ -82,6 +83,7 @@ async function runStartupRefundSafeRepair(
 }
 
 async function runStartupMigrations(): Promise<void> {
+    await ensureSupplierTestingSchema(db);
     // Startup compatibility only adds columns/tables that are absent. It must
     // never change an existing production column type or constraint: publish
     // the branch so the normal Replit schema migration applies those changes.

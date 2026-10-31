@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { AdminSupplierTesting } from "./supplier-testing/AdminSupplierTesting";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Check, X, Trash2, Plus, Eye, EyeOff,
@@ -982,13 +983,14 @@ function PoolFormModal({
 
 // ─── Main export ────────────────────────────────────────────────────────────────
 export default function AdminTestingPools({ secret }: { secret: string }) {
-  const [tab, setTab] = useState<"applications" | "pools" | "catalog">("applications");
+  const [tab, setTab] = useState<"applications" | "pools" | "catalog" | "supplier">("applications");
   const headers = { "x-admin-secret": secret, "Content-Type": "application/json" };
 
   const tabs = [
     { id: "applications" as const, label: "Leader Applications", icon: UserCog },
     { id: "pools" as const, label: "Pools", icon: FlaskConical },
     { id: "catalog" as const, label: "Test Catalog", icon: BookOpen },
+    { id: "supplier" as const, label: "Supplier batches", icon: FlaskConical },
   ];
 
   return (
@@ -1025,6 +1027,7 @@ export default function AdminTestingPools({ secret }: { secret: string }) {
       {tab === "applications" && <ApplicationsPanel headers={headers} />}
       {tab === "pools"        && <PoolsPanel headers={headers} secret={secret} />}
       {tab === "catalog"      && <CatalogPanel headers={headers} />}
+      {tab === "supplier" && <AdminSupplierTesting headers={headers} />}
     </div>
   );
 }
