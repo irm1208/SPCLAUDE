@@ -27,14 +27,14 @@ async function renderLookup(linked = true) {
   return { container, flush, close };
 }
 
-it("shows the actual bot username separately without guessing from the website account", async () => {
+it("automatically shows the actual bot username without a show-username click", async () => {
   const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ linked: true, username: "different_telegram_name" }) });
   vi.stubGlobal("fetch", fetcher);
   const ui = await renderLookup();
   try {
-    expect(fetcher).not.toHaveBeenCalled();
-    await React.act(async () => ui.container.querySelector("button")!.click());
     await ui.flush();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(ui.container.textContent).not.toContain("Show username");
     expect(fetcher.mock.calls[0][0]).toBe("/api/admin/accounts/website_name/telegram-profile");
     expect(ui.container.textContent).toContain("@different_telegram_name");
     expect(ui.container.textContent).not.toContain("website_name");
@@ -56,7 +56,6 @@ it("clearly labels linked Telegram accounts without a public username", async ()
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ linked: true, username: null }) }));
   const ui = await renderLookup();
   try {
-    await React.act(async () => ui.container.querySelector("button")!.click());
     await ui.flush();
     expect(ui.container.textContent).toContain("No public username set");
     expect(ui.container.querySelector("a")).toBeNull();
@@ -67,7 +66,6 @@ it("shows a retry option when Telegram cannot be reached", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "Unavailable" }) }));
   const ui = await renderLookup();
   try {
-    await React.act(async () => ui.container.querySelector("button")!.click());
     await ui.flush();
     expect(ui.container.textContent).toContain("Lookup unavailable");
     expect(ui.container.textContent).toContain("Retry");

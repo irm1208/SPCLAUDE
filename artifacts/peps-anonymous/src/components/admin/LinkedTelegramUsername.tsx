@@ -1,18 +1,15 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 export function LinkedTelegramUsername({
-  username, secret, linked, autoLoad = false,
+  username, secret, linked,
 }: {
   username: string;
   secret: string;
   linked: boolean;
-  autoLoad?: boolean;
 }) {
-  const [requested, setRequested] = useState(false);
   const lookup = useQuery<{ linked: boolean; username: string | null }>({
     queryKey: ["admin-linked-telegram", username],
-    enabled: linked && (autoLoad || requested),
+    enabled: linked,
     staleTime: 60_000,
     gcTime: 0,
     retry: false,
@@ -39,7 +36,7 @@ export function LinkedTelegramUsername({
           ? <a className="font-semibold text-blue-600 underline" href={`https://t.me/${encodeURIComponent(lookup.data.username)}`} target="_blank" rel="noopener noreferrer">@{lookup.data.username}</a>
           : <span>No public username set</span>}
         <button type="button" className="text-muted-foreground underline ml-1" onClick={() => void lookup.refetch()}>Refresh</button>
-      </> : <button type="button" className="font-medium text-blue-600 underline" onClick={() => setRequested(true)}>Show username</button>}
+      </> : <span>Looking up…</span>}
     </span>
   );
 }

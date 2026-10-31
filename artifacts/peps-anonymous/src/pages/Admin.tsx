@@ -12865,7 +12865,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
         {/* TELEGRAM LOGS TAB */}
         {activeTab === "tglogs" && (
           <div className="space-y-4">
-            <LinkedTelegramUsername key={username} username={username} secret={secret} linked={!!profile?.account?.telegramChatId} autoLoad />
+            <LinkedTelegramUsername key={username} username={username} secret={secret} linked={!!profile?.account?.telegramChatId} />
             <SendMemberMessage
               secret={secret}
               username={username}
@@ -13937,7 +13937,7 @@ function UsernamesTab({ secret }: { secret: string }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-foreground truncate">{row.telegramUsername}</p>
+                        <p className="text-sm font-semibold text-foreground truncate"><AccountHandle username={row.telegramUsername} /></p>
                         {row.country && <span className="text-[11px] text-muted-foreground font-medium">{row.country}</span>}
                         {(row as any).isGuest
                           ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">No Account</span>

@@ -24,6 +24,9 @@ Admin-facing account and order labels should also resolve synthetic Discord
 identities to their linked Discord username. Keep real Telegram handles
 unchanged, even when those accounts also link Discord.
 
+This includes the main Customers cards, not just the separate Accounts table.
+The user repeated that they need actual usernames, never `discord:<id>` labels.
+
 **Why:** the user explicitly requested readable Discord names for other members;
 numeric synthetic identifiers were confusing in staff views.
 

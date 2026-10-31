@@ -14,3 +14,13 @@ the Telegram accounts connected to the bot and needs to identify the latter.
 not a username search. An absent public Telegram username and a failed lookup
 are different states. Keep this contact lookup Admin-only and do not expose
 bot credentials or alter account/order ownership.
+
+Linked Telegram usernames must appear automatically in Admin customer lists,
+without a “Show username” step.
+
+**Why:** the user rejected click-to-reveal and explicitly requested the usernames
+be shown directly.
+
+**How to apply:** load the lookup when a linked account row appears; keep explicit
+loading, no-public-username and error states rather than guessing from the
+website handle.
