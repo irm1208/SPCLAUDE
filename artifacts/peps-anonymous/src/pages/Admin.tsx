@@ -1,5 +1,6 @@
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
 import { AccountHandle, AdminAccountNames } from "@/components/admin/AccountHandle";
+import { LinkedTelegramUsername } from "@/components/admin/LinkedTelegramUsername";
 import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { aggregateFs3Orders, findFs3SavedCost, fs3ProductCost, fs3ProfitRowKey, inferFs3Supplier, matchesFs3Order, type Fs3Product, type Fs3Supplier } from "@/lib/fs3-order-tools";
@@ -12864,6 +12865,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
         {/* TELEGRAM LOGS TAB */}
         {activeTab === "tglogs" && (
           <div className="space-y-4">
+            <LinkedTelegramUsername key={username} username={username} secret={secret} linked={!!profile?.account?.telegramChatId} autoLoad />
             <SendMemberMessage
               secret={secret}
               username={username}
@@ -13944,6 +13946,11 @@ function UsernamesTab({ secret }: { secret: string }) {
                         {!(row as any).isGuest && (row.telegramConnected
                           ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">Connected</span>
                           : <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">Disconnected</span>
+                        )}
+                        {!(row as any).isGuest && row.telegramConnected && (
+                          <div className="w-full" onClick={event => event.stopPropagation()}>
+                            <LinkedTelegramUsername key={row.telegramUsername} username={row.telegramUsername} secret={secret} linked />
+                          </div>
                         )}
                         {(row.tags ?? []).includes("seller") && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">Seller</span>}
                         {row.isWholesale && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Wholesaler</span>}
@@ -18849,7 +18856,7 @@ function AccountsTab({ secret }: { secret: string }) {
                         </td>
                         <td className="px-4 py-3 hidden lg:table-cell">
                           <span className={cn("text-[10px] font-semibold", a.telegramConnected ? "text-green-600" : "text-muted-foreground")}>
-                            {a.telegramConnected ? "✓" : "—"}
+                            {a.telegramConnected ? <span onClick={event => event.stopPropagation()}><LinkedTelegramUsername key={a.telegramUsername} username={a.telegramUsername} secret={secret} linked /></span> : "—"}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">

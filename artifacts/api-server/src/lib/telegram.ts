@@ -667,6 +667,31 @@ export async function getBotUsername(): Promise<string | null> {
   }
 }
 
+/** Read the actual private-chat username, never the website account identifier. */
+export async function getLinkedTelegramUsername(chatId: string): Promise<string | null> {
+  const { token } = await getCredentials();
+  if (!token) throw new Error("Telegram bot is not configured");
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/getChat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await response.json() as {
+      ok: boolean;
+      result?: { id: number; type: string; username?: string };
+    };
+    if (!response.ok || !data.ok || data.result?.type !== "private" || String(data.result.id) !== chatId) {
+      throw new Error("Invalid Telegram chat response");
+    }
+    return data.result.username?.trim() || null;
+  } catch {
+    // Never include the upstream URL/error: it can contain the bot token.
+    throw new Error("Could not retrieve the linked Telegram username");
+  }
+}
+
 /** Build a canonical webhook URL from a domain or full URL, tolerating schemes and trailing slashes. */
 export function buildWebhookUrl(domainOrUrl: string): string {
   const host = domainOrUrl.replace(/^https?:\/\//i, "").replace(/\/+$/, "");

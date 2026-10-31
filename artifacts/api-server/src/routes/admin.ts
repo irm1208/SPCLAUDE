@@ -77,7 +77,7 @@ import { issueAccountCookieForAccount } from "../middleware/account-auth";
 import { enrichLogsWithGeo, enrichIps, enrichIpsFromCache } from "../lib/ip-geo";
 import { createAlert } from "../lib/create-alert";
 import { calculateVendorShipping } from "../lib/vendor-shipping";
-import { notifyUser, sendAdminMessage, sendTelegramMessage, notifyUserFromTemplate, sendAdminFromTemplate } from "../lib/telegram";
+import { notifyUser, sendAdminMessage, sendTelegramMessage, notifyUserFromTemplate, sendAdminFromTemplate, getLinkedTelegramUsername } from "../lib/telegram";
 import { maybeSubmitSharedOrder } from "../lib/wholesale-submit";
 import { normalizeWholesaleTrackingDetails, reconcileWholesaleTrackingCache } from "../lib/tracking-auto-refresh-model";
 import { refreshWholesaleMainParcelForShare } from "../lib/tracking-auto-refresh";
@@ -7997,6 +7997,34 @@ router.get("/admin/payment-orders", async (req, res): Promise<void> => {
 });
 
 // ── GET /admin/accounts/:username/timeline ────────────────────
+router.get("/admin/accounts/:username/telegram-profile", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  res.setHeader("Cache-Control", "no-store");
+  const username = String(req.params.username);
+  const alt = username.startsWith("@") ? username.slice(1) : `@${username}`;
+  const findAccount = () => db.select({
+    accountUsername: accountsTable.telegramUsername,
+    chatId: accountsTable.telegramChatId,
+  }).from(accountsTable).where(or(
+    eq(accountsTable.telegramUsername, username),
+    eq(accountsTable.telegramUsername, alt),
+  )).limit(1);
+  const [account] = await findAccount();
+  if (!account) { res.status(404).json({ error: "Account not found" }); return; }
+  if (!account.chatId) { res.json({ linked: false, username: null }); return; }
+  try {
+    const linkedUsername = await getLinkedTelegramUsername(account.chatId);
+    const [current] = await findAccount();
+    if (!current || current.chatId !== account.chatId) {
+      res.status(409).json({ error: "Telegram link changed. Please try again." });
+      return;
+    }
+    res.json({ linked: true, username: linkedUsername });
+  } catch {
+    res.status(502).json({ error: "Unable to retrieve the linked Telegram username. Please try again." });
+  }
+});
+
 router.get("/admin/accounts/:username/contact", async (req: any, res: any): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const username = req.params.username;
