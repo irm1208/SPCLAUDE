@@ -21,7 +21,7 @@ import { WholesaleShell } from "@/components/WholesaleShell";
 import { WholesalePriceNote } from "@/components/WholesalePriceNote";
 import { LabReportPopup } from "@/components/LabTestsPopup";
 
-import { resolveProductBatchPrefixes, anyBatchCodeMatches } from "@/lib/batch-prefixes";
+import { useSharedWholesaleLabReports } from "@/hooks/use-shared-wholesale-lab-reports";
 import { useAccount, useMarkWholesaleInvitePromptSeen } from "@/hooks/use-account";
 import { PriceWatermark } from "@/components/PriceWatermark";
 import { COUNTRIES } from "@/data/countries";
@@ -160,9 +160,9 @@ export default function WholesaleShared() {
   const [products, setProducts] = useState<ProductLite[]>([]);
   const [productSearch, setProductSearch] = useState("");
   // Lab reports (historic CoA results) for products in the shared order
-  const [labTestsProduct, setLabTestsProduct] = useState<{ productName: string; batchPrefixes: string[] } | null>(null);
-  const [productLabTestsMap, setProductLabTestsMap] = useState<Record<string, boolean>>({});
-  const productPrefixesRef = useRef<Record<string, string[]>>({});
+  const [labTestsProductId, setLabTestsProductId] = useState<string | null>(null);
+  const productLabReports = useSharedWholesaleLabReports(products);
+  const labTestsProduct = labTestsProductId ? productLabReports[labTestsProductId] : null;
 
   // Local editor state for the current member's items + tip
   const [myItems, setMyItems] = useState<Record<string, number>>({});
@@ -254,28 +254,6 @@ export default function WholesaleShared() {
       .then(d => setProducts(Array.isArray(d) ? d : []))
       .catch(() => {});
   }, []);
-
-  // Map which products have matching lab reports by batch-code prefix
-  useEffect(() => {
-    if (products.length === 0) return;
-    let cancelled = false;
-    fetch("/api/lab-tests/batch-codes", { credentials: "include" })
-      .then(r => (r.ok ? r.json() : []))
-      .then((codes: string[]) => {
-        if (cancelled || !Array.isArray(codes)) return;
-        const map: Record<string, boolean> = {};
-        const prefMap: Record<string, string[]> = {};
-        for (const p of products) {
-          const prefixes = resolveProductBatchPrefixes(p.name);
-          prefMap[p.name] = prefixes;
-          map[p.name] = anyBatchCodeMatches(codes, prefixes);
-        }
-        productPrefixesRef.current = prefMap;
-        setProductLabTestsMap(map);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [products]);
 
   const myMember = useMemo(() => share?.members.find(m => m.isYou) ?? null, [share]);
 
@@ -1350,10 +1328,10 @@ export default function WholesaleShared() {
                       </span>
                     )}
                   </div>
-                  {productLabTestsMap[p.name] === true && (
+                  {productLabReports[p.id] && (
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); setLabTestsProduct({ productName: p.name, batchPrefixes: productPrefixesRef.current[p.name] ?? [] }); }}
+                      onClick={(e) => { e.stopPropagation(); setLabTestsProductId(p.id); }}
                       className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all active:scale-[0.97]"
                       style={{ color: "var(--t-blue)", background: "var(--t-blue-08)", border: "1px solid var(--t-blue-25)" }}
                     >
@@ -3075,9 +3053,11 @@ export default function WholesaleShared() {
       <AnimatePresence>
         {labTestsProduct && (
           <LabReportPopup
+            key={labTestsProductId}
             productName={labTestsProduct.productName}
+            vendor={labTestsProduct.supplier}
             batchPrefixes={labTestsProduct.batchPrefixes}
-            onClose={() => setLabTestsProduct(null)}
+            onClose={() => setLabTestsProductId(null)}
           />
         )}
       </AnimatePresence>
