@@ -644,6 +644,9 @@ export function useUpdateCountry() {
 }
 
 export interface AccountOrder {
+  displayReference?: string;
+  isAddition?: boolean;
+  additionParent?: { id: string; reference: string } | null;
   shippingName?: string | null;
   shippingAddress?: string | null;
   shippingCountry?: string | null;

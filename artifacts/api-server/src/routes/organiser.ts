@@ -1,3 +1,4 @@
+import { withAdditionReferences } from "../lib/addition-order-references";
 import { validateGroupProductLabReport } from "../lib/group-product-lab-report";
 import { parseBankTransfer } from "@workspace/api-zod/bank-transfer";
 import { getGbOrderCounts, gbOrderPersonKey } from "../lib/gb-multiple-orders";
@@ -2462,7 +2463,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
   }
 
   const multipleCounts = await getGbOrderCounts([id]);
-  res.json(orders.map(o => {
+  res.json(await withAdditionReferences(orders.map(o => {
     const txHash = o.paymentTxHash ?? null;
     const { paymentScreenshot, balanceScreenshot, ...rest } = o as any;
     let paymentMethod = "manual";
@@ -2500,7 +2501,7 @@ router.get("/organiser/group-buys/:id/orders", requireOrganiser, async (req, res
         isOos: li.isOos ?? false,
       })),
     };
-  }));
+  })));
 });
 
 // GET /api/organiser/group-buys/:gbId/orders/:orderId/screenshot — fetch single order screenshot

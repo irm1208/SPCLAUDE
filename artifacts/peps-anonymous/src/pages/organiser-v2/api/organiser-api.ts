@@ -32,6 +32,9 @@ export interface ApiOrderLineItem {
 }
 
 export interface ApiOrganiserOrder {
+  displayReference?: string;
+  isAddition?: boolean;
+  additionParent?: { id: string; reference: string } | null;
   id: string;
   code?: string | null;
   telegramUsername?: string | null;
@@ -358,6 +361,11 @@ export function mapApiOrder(value: ApiOrganiserOrder): OrganiserOrder {
   return {
     id: value.id,
     code: typeof value.code === "string" ? value.code : undefined,
+    displayReference: typeof value.displayReference === "string" ? value.displayReference : undefined,
+    isAddition: value.isAddition === true,
+    additionParent: value.additionParent && typeof value.additionParent === "object"
+      && "id" in value.additionParent && "reference" in value.additionParent
+      ? value.additionParent as { id: string; reference: string } : null,
     memberUsername: username,
     multipleGbOrderCount: numberValue(value.multipleGbOrderCount),
     additionOfOrderId: typeof value.additionOfOrderId === "string" ? value.additionOfOrderId : undefined,

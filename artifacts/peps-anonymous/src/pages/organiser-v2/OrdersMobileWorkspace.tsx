@@ -24,7 +24,7 @@ export interface OrdersMobileWorkspaceProps {
 
 export default function OrdersMobileWorkspace(props: OrdersMobileWorkspaceProps) {
   const { model, orders, view, searchQuery, activeFilterCount, filterButtonRef, onViewChange, onSearchChange, onOpenFilters, onChasePayments, onOpenDispatch, onOpenOrder } = props;
-  const visible = selectMobileOrderView(model, orders, view).filter(order => !searchQuery || [order.code, order.id, order.memberName, order.memberUsername].some(value => value?.toLowerCase().includes(searchQuery.toLowerCase())));
+  const visible = selectMobileOrderView(model, orders, view).filter(order => !searchQuery || [order.code, order.displayReference, order.additionParent?.reference, order.id, order.memberName, order.memberUsername].some(value => value?.toLowerCase().includes(searchQuery.toLowerCase())));
   return <div className="orders-mobile-workspace">
     <header><div><small>Order desk</small><h1>Orders</h1></div><button type="button" onClick={onOpenDispatch}><Truck aria-hidden="true" /> Dispatch</button></header>
     <section className="orders-mobile-attention"><AlertTriangle aria-hidden="true" /><div><strong>{model.summary.needsActionCount} orders need attention</strong><span>{fmtMoney(model.summary.paymentTotal, "GBP")} awaiting payment action</span></div></section>

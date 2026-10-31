@@ -1,4 +1,8 @@
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
+import { OrderReference } from "@/components/OrderReference";
+import { AccountHandle, AdminAccountNames, DiscordAccountId } from "@/components/admin/AccountHandle";
+import { AccountTypeFilter, type AccountType } from "@/components/admin/AccountTypeFilter";
+import { LinkedTelegramUsername } from "@/components/admin/LinkedTelegramUsername";
 import { ReshipperPayouts } from "@/components/reshipper-payouts";
 import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { aggregateFs3Orders, findFs3SavedCost, fs3ProductCost, fs3ProfitRowKey, inferFs3Supplier, matchesFs3Order, type Fs3Product, type Fs3Supplier } from "@/lib/fs3-order-tools";
@@ -164,6 +168,9 @@ function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret
 // ─── Types ───────────────────────────────────────────────────
 interface LineItem { id: string; productId: string | null; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos?: boolean; }
 interface Order {
+  displayReference?: string;
+  isAddition?: boolean;
+  additionParent?: { id: string; reference: string } | null;
   id: string; code: string; telegramUsername: string; status: string;
   deliveryMethod: string; deliveryPrice: number; vendorShipping: number;
   productSubtotal: number; tip: number; grandTotal: number;
@@ -1690,7 +1697,7 @@ function OrdersTab({ secret }: { secret: string }) {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2 min-w-0">
                           <User className="w-3 h-3 shrink-0 opacity-50" />
-                          <span className="font-medium text-sm truncate">{m.telegramUsername}</span>
+                          <span className="font-medium text-sm truncate"><AccountHandle username={m.telegramUsername} /></span>
                           <span className="font-mono text-[11px] text-muted-foreground shrink-0">{m.code}</span>
                           <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0", PAYMENT_COLORS[m.paymentStatus] ?? "bg-slate-100 text-slate-500")}>
                             {PAYMENT_LABELS[m.paymentStatus] ?? m.paymentStatus}
@@ -2933,8 +2940,8 @@ function OrdersTab({ secret }: { secret: string }) {
                       <div key={o.id} className="bg-white rounded-lg border border-red-200 px-3 py-2.5 flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-bold text-sm text-foreground">#{o.code}</span>
-                            <span className="text-xs text-muted-foreground">{o.telegramUsername}</span>
+                            <span className="font-mono font-bold text-sm text-foreground min-w-0"><OrderReference order={o} /></span>
+                            <span className="text-xs text-muted-foreground"><AccountHandle username={o.telegramUsername} /></span>
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 uppercase">{deletedByLabel}</span>
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
@@ -3322,14 +3329,14 @@ function OrdersTab({ secret }: { secret: string }) {
                 <span className={cn("text-xs font-bold px-2 py-1 rounded-full shrink-0", STATUS_COLORS[order.status] ?? "bg-muted text-muted-foreground")}>
                   {order.status}
                 </span>
-                <span className="font-mono font-bold text-sm shrink-0">{order.code}</span>
+                <span className="font-mono font-bold text-sm min-w-0"><OrderReference order={order} /></span>
                 <span className="text-[11px] text-muted-foreground shrink-0 whitespace-nowrap inline-flex items-center gap-1">
                   <CalendarDays className="w-3 h-3 opacity-50" />
                   {new Date(order.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
                 </span>
                 <span className="text-sm text-muted-foreground flex-1 flex flex-wrap items-center gap-1 min-w-0">
                   <User className="w-3 h-3 shrink-0 opacity-50" />
-                  <span className="truncate">{order.telegramUsername}</span>
+                  <span className="truncate"><AccountHandle username={order.telegramUsername} /></span>
                   <GbMultipleOrderBadge order={order} />
                   {!gbFilter && order.groupBuyId && (() => {
                     const gbName = gbs.find(g => g.id === order.groupBuyId)?.name ?? order.groupBuyId;
@@ -3423,7 +3430,7 @@ function OrdersTab({ secret }: { secret: string }) {
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors"
                         >
                           {impersonatingOrderId === order.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
-                          View as {order.telegramUsername}
+                          View as <AccountHandle username={order.telegramUsername} />
                         </button>
                         <span className="text-[10px] text-amber-700">Opens their account in a new tab</span>
                         {impersonateOrderErr[order.id] && <span className="text-xs text-red-600 font-semibold ml-2">{impersonateOrderErr[order.id]}</span>}
@@ -7213,8 +7220,8 @@ function PaymentsTab({ secret }: { secret: string }) {
                 <span className={cn("text-xs font-bold px-2 py-1 rounded-full shrink-0", PAYMENT_COLORS[o.paymentStatus])}>
                   {PAYMENT_LABELS[o.paymentStatus]}
                 </span>
-                <span className="font-mono font-bold text-sm">{o.code}</span>
-                <span className="text-sm text-muted-foreground truncate flex-1">{o.telegramUsername}</span>
+                <span className="font-mono font-bold text-sm"><OrderReference order={o} /></span>
+                <span className="text-sm text-muted-foreground truncate flex-1"><AccountHandle username={o.telegramUsername} /></span>
                 <span className="font-semibold text-sm shrink-0">{fmt(o.grandTotal)}</span>
               </div>
               {o.paymentTestAmount && o.testPaymentTxHash && (
@@ -8674,7 +8681,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
           })}
           className="rounded border-input accent-primary"
         />
-        <span className="text-xs font-medium text-foreground min-w-0 truncate">{o.telegramUsername}</span>
+        <span className="text-xs font-medium text-foreground min-w-0 truncate"><AccountHandle username={o.telegramUsername} /></span>
         <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap inline-flex items-center gap-0.5">
           <CalendarDays className="w-2.5 h-2.5" />
           {new Date(o.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
@@ -9267,7 +9274,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
                           })}
                           className="rounded border-input accent-primary"
                         />
-                        <span className="text-xs font-medium text-foreground min-w-0 truncate">{o.telegramUsername}</span>
+                        <span className="text-xs font-medium text-foreground min-w-0 truncate"><AccountHandle username={o.telegramUsername} /></span>
                         {(o.vendorShipping != null && o.vendorShipping > 0) && (
                           <span className="text-[10px] text-slate-500 shrink-0">+${parseFloat(String(o.vendorShipping)).toFixed(2)} ship</span>
                         )}
@@ -11683,6 +11690,8 @@ function LogsTab({ secret }: { secret: string }) {
 
 // ─── Usernames Tab ────────────────────────────────────────────
 interface UsernameRow {
+  discordUsername?: string | null;
+  discordId?: string | null;
   telegramUsername: string;
   orderCount: number;
   totalSpent: number;
@@ -12506,7 +12515,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 transition-colors"
         >
           {impersonating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
-          View as @{username}
+          View as @<AccountHandle username={username} />
         </button>
         <span className="text-[10px] text-amber-700">Opens their account in a new tab — session lasts 7 days</span>
         {impersonateErr && <span className="text-xs text-red-600 font-semibold ml-2">{impersonateErr}</span>}
@@ -12551,10 +12560,10 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
             {orders.map(o => (
               <div key={o.id} className="rounded-xl border border-border bg-white overflow-hidden">
                 <button
-                  className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-muted/30 transition-colors"
+                  className="w-full text-left px-3 py-2.5 flex flex-wrap sm:flex-nowrap items-center gap-2 hover:bg-muted/30 transition-colors"
                   onClick={() => handleExpandOrder(o.id, o)}
                 >
-                  <span className="font-mono font-bold text-sm text-foreground">#{o.code}</span>
+                  <span className="font-mono font-bold text-sm text-foreground min-w-0"><OrderReference order={o} /></span>
                   <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide", STATUS_COLORS[o.status] ?? "bg-muted text-muted-foreground")}>{o.status}</span>
                   <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", PAYMENT_COLORS[o.paymentStatus] ?? "bg-muted text-muted-foreground")}>{PAYMENT_LABELS[o.paymentStatus] ?? o.paymentStatus}</span>
                   {o.groupBuyId ? (
@@ -12746,7 +12755,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
             <div className="space-y-1.5">
               {orders.filter(o => o.status !== "Draft").map(o => (
                 <div key={o.id} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border bg-white text-xs">
-                  <span className="font-mono font-bold text-foreground shrink-0">#{o.code}</span>
+                  <span className="font-mono font-bold text-foreground min-w-0"><OrderReference order={o} /></span>
                   <span className={cn("px-1.5 py-0.5 rounded font-bold shrink-0", PAYMENT_COLORS[o.paymentStatus] ?? "bg-muted text-muted-foreground")}>{PAYMENT_LABELS[o.paymentStatus] ?? o.paymentStatus}</span>
                   <div className="flex-1 min-w-0">
                     {o.paymentTxHash && (
@@ -12863,6 +12872,7 @@ function CustomerProfile({ username, secret, onRename, onDelete }: { username: s
         {/* TELEGRAM LOGS TAB */}
         {activeTab === "tglogs" && (
           <div className="space-y-4">
+            <LinkedTelegramUsername key={username} username={username} secret={secret} linked={!!profile?.account?.telegramChatId} />
             <SendMemberMessage
               secret={secret}
               username={username}
@@ -13396,6 +13406,8 @@ function CustomerDiscussLimitOverride({ secret, username }: { secret: string; us
 }
 
 function UsernamesTab({ secret }: { secret: string }) {
+  const [accountType, setAccountType] = useState<AccountType>("all");
+  const customerRequest = useRef(0);
   const [rows, setRows] = useState<UsernameRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState("");
@@ -13442,9 +13454,11 @@ function UsernamesTab({ secret }: { secret: string }) {
   }, [searchInput]);
 
   const fetch$ = useCallback(async () => {
+    const request = ++customerRequest.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set("accountType", accountType);
       if (searchQuery) params.set("q", searchQuery);
       if (gbFilter) params.set("gbId", gbFilter);
       if (wholesaleFilter) params.set("wholesale", "true");
@@ -13453,10 +13467,10 @@ function UsernamesTab({ secret }: { secret: string }) {
       const r = await fetch(apiUrl(`/admin/customers?${params}`), { headers: { "x-admin-secret": secret } });
       const data = await r.json();
       // New endpoint returns { customers, total, page, limit }; fall back to array for legacy compat
-      setRows(Array.isArray(data) ? data : (data.customers ?? []));
+      if (request === customerRequest.current) setRows(Array.isArray(data) ? data : (data.customers ?? []));
     } catch { /* ignore */ }
-    setLoading(false);
-  }, [secret, searchQuery, gbFilter, wholesaleFilter, guestsFilter]);
+    if (request === customerRequest.current) setLoading(false);
+  }, [secret, searchQuery, gbFilter, wholesaleFilter, guestsFilter, accountType]);
 
   useEffect(() => { fetch$(); }, [fetch$]);
 
@@ -13596,7 +13610,7 @@ function UsernamesTab({ secret }: { secret: string }) {
 
   // Reset to page 0 when any filter/sort/search changes
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, guestsFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter]);
+  useEffect(() => { setMembersPage(0); }, [searchQuery, gbFilter, wholesaleFilter, guestsFilter, paymentFilter, statusFilter, tagFilter, roleFilter, sortBy, countryFilter, accountType]);
 
   return (
     <div className="space-y-4">
@@ -13712,6 +13726,11 @@ function UsernamesTab({ secret }: { secret: string }) {
 
       {/* Status filter + tag filter + sort */}
       <div className="flex gap-2 flex-wrap">
+        <AccountTypeFilter value={accountType} onChange={value => {
+          setAccountType(value);
+          setSelected(new Set());
+          setPanelUsername(null);
+        }} />
         <select
           className="h-9 rounded-lg border bg-background px-3 text-xs font-medium text-foreground flex-1 min-w-[140px]"
           value={paymentFilter}
@@ -13925,16 +13944,25 @@ function UsernamesTab({ secret }: { secret: string }) {
                       onChange={() => toggleSelect(row.telegramUsername)}
                     />
                   </label>
-                  <button
+                  <div role="button" tabIndex={0}
                     className="flex-1 text-left flex items-center gap-3 px-3 py-3 hover:bg-slate-50 transition-colors min-w-0"
                     onClick={() => openPanel(row.telegramUsername)}
+                    onKeyDown={event => {
+                      if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        openPanel(row.telegramUsername);
+                      }
+                    }}
                   >
                     <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
                       <span className="text-xs font-bold text-orange-500">{row.telegramUsername.replace(/^@/, "").slice(0, 2).toUpperCase()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-foreground truncate">{row.telegramUsername}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate"><AccountHandle username={row.telegramUsername} discordUsername={row.discordUsername} /></p>
+                          <DiscordAccountId username={row.telegramUsername} discordId={row.discordId} />
+                        </div>
                         {row.country && <span className="text-[11px] text-muted-foreground font-medium">{row.country}</span>}
                         {(row as any).isGuest
                           ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700">No Account</span>
@@ -13943,6 +13971,11 @@ function UsernamesTab({ secret }: { secret: string }) {
                         {!(row as any).isGuest && (row.telegramConnected
                           ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">Connected</span>
                           : <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500">Disconnected</span>
+                        )}
+                        {!(row as any).isGuest && row.telegramConnected && (
+                          <div className="w-full" onClick={event => event.stopPropagation()}>
+                            <LinkedTelegramUsername key={row.telegramUsername} username={row.telegramUsername} secret={secret} linked />
+                          </div>
                         )}
                         {(row.tags ?? []).includes("seller") && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">Seller</span>}
                         {row.isWholesale && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">Wholesaler</span>}
@@ -13966,7 +13999,7 @@ function UsernamesTab({ secret }: { secret: string }) {
                       ? <ChevronUp className="w-4 h-4 text-violet-500 shrink-0" />
                       : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
                     }
-                  </button>
+                  </div>
                 </div>
                 {isExpanded && (
                   <div className="border-t border-violet-100">
@@ -18074,7 +18107,7 @@ function DashboardTab({ secret, onNavigate, openTickets }: { secret: string; onN
                       <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full", statusColors[o.status] ?? "bg-slate-100 text-slate-600")}>{o.status}</span>
                       <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full", payColors[o.paymentStatus] ?? "bg-slate-100 text-slate-500")}>{o.paymentStatus?.replace(/_/g, " ")}</span>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{o.telegramUsername}{o.trackingNumber ? ` · 📦 ${o.trackingNumber}` : ""}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate"><AccountHandle username={o.telegramUsername} />{o.trackingNumber ? ` · 📦 ${o.trackingNumber}` : ""}</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-xs font-medium text-foreground">${parseFloat(String(o.grandTotal ?? "0")).toFixed(2)}</p>
@@ -18826,7 +18859,7 @@ function AccountsTab({ secret }: { secret: string }) {
                       >
                         <td className="px-4 py-3 font-semibold text-foreground flex items-center gap-1.5">
                           <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform shrink-0", isExpanded && "rotate-180")} />
-                          @{a.telegramUsername.replace(/^@/, "")}
+                          @<AccountHandle username={a.telegramUsername.replace(/^@/, "")} />
                         </td>
                         <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell truncate max-w-[140px]">{a.email ?? "—"}</td>
                         <td className="px-4 py-3">
@@ -18848,7 +18881,7 @@ function AccountsTab({ secret }: { secret: string }) {
                         </td>
                         <td className="px-4 py-3 hidden lg:table-cell">
                           <span className={cn("text-[10px] font-semibold", a.telegramConnected ? "text-green-600" : "text-muted-foreground")}>
-                            {a.telegramConnected ? "✓" : "—"}
+                            {a.telegramConnected ? <span onClick={event => event.stopPropagation()}><LinkedTelegramUsername key={a.telegramUsername} username={a.telegramUsername} secret={secret} linked /></span> : "—"}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
@@ -28931,9 +28964,11 @@ export default function Admin() {
 
   if (authenticated) return (
     <div data-admin-theme={adminTheme} className={adminTheme === "dark" ? "dark" : ""}>
+      <AdminAccountNames key={adminAuth.sessionBacked ? "__admin_session__" : gateSecret} secret={adminAuth.sessionBacked ? "__admin_session__" : gateSecret}>
       <AdminInner initialSecret={adminAuth.sessionBacked ? "__admin_session__" : gateSecret} theme={adminTheme} onToggleTheme={toggleTheme} admin2fa={mode} rememberedSession={adminAuth.rememberMe}
         recoveryCodes={freshRecoveryCodes} onRecoveryCodesDismissed={() => setFreshRecoveryCodes([])}
         onEnabled={handleEnabled} onDisabled={handleDisabled} />
+      </AdminAccountNames>
       {stepUpRequest !== undefined && <AdminStepUpDialog request={stepUpRequest} onComplete={code => {
         const resolve = stepUpResolve.current; stepUpResolve.current = null; setStepUpRequest(undefined); resolve?.(code);
       }} />}

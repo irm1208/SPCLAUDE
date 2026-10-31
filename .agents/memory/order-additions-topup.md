@@ -67,3 +67,11 @@ conflict if an addition changed the balance during external verification.
 merged additions navigate to the parent balance; separate ones open their own payment
 details. Historical child additions may be soft-deleted
 after a guarded merge, but never hard-deleted.
+
+## Reference compatibility
+
+Human-readable addition references are presentation aliases, not replacements for historical canonical order codes.
+
+**Why:** Existing payments, supplier exports, invoices, batch records and links depend on the canonical codes. A display correction must not alter those contracts or imply that an independent payable addition was merged.
+
+**How to apply:** Keep aliases stable when orders are cancelled, filtered or paginated and when later additions arrive. Resolve parent labels only after checking the same owner and group; an unavailable or unrelated parent must not expose another member's reference.

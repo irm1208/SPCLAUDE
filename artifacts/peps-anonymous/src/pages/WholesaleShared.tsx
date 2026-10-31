@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { VendorShipments } from "@/components/VendorShipments";
-import { SupplierTesting } from "@/components/supplier-testing/SupplierTesting";
 import { VendorShippingBreakdown } from "@/components/wholesale-shared/VendorShippingBreakdown";
 import { SupplierSelection } from "@/components/wholesale-shared/SupplierSelection";
 import { SupplierProductBrowser, SupplierItemGroups } from "@/components/wholesale-shared/SupplierProducts";
@@ -2446,7 +2445,6 @@ export default function WholesaleShared() {
         <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: "#8A9AAA" }}>Shipment Status</p>
         {isRecipient && myMember?.orderId && <VendorOrderImages orderId={myMember.orderId} />}
         {myMember?.orderId && <VendorShipments orderId={myMember.orderId} showImages={false} />}
-        {myMember?.orderId && <SupplierTesting orderId={myMember.orderId} compact />}
         <div className="rounded-xl overflow-hidden" style={card}>
           {/* Row 1: Group parcel (vendor → recipient) */}
           <div className="flex items-center gap-3 p-4">

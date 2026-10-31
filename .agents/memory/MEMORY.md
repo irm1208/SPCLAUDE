@@ -6,6 +6,7 @@
 - [Organiser V2 placeholder data traps](organiser-v2-placeholder-data.md) — mapApiGroupBuy fills fake fallbacks (maxMembers=1, counts 0); wire V2 tabs from raw API values via props, never SampleGB counts.
 - [Organiser V2 drawer portal CSS scoping](ov2-drawer-portal-scoping.md) — mobile drawer is a portalled Sheet; `.organiser-v2 .ov2-sidebar-drawer` selectors never match it, use compound `.organiser-v2.ov2-sidebar-drawer`.
 - [Discord synthetic username display](discord-synthetic-username-display.md) — own-account handle display must use getAccountHandle()/isDiscordOnlyAccount(), never raw telegramUsername; localStorage-key scoping stays raw.
+- [Linked Telegram identity](telegram-linked-identity.md) — website handles may differ from bot-linked Telegram usernames; show separately, never infer or rename account identities.
 - [Discord signup verification policy](discord-signup-verification-policy.md) — successful Discord OAuth replaces email verification and CAPTCHA for new Discord accounts; invite-only signup still applies.
 - [Browser and TypeScript tests](browser-test-import-order.md) — jsdom import order, Nix Chromium, API fixture routing and Node 20 runner notes.
 - [Lab imports and reports](lab-import-reference.md) — provider restrictions, extraction pitfalls, bloodwork parsing, certificate compression and blob-free lists.

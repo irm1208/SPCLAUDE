@@ -1,3 +1,5 @@
+import { OrderReference } from "@/components/OrderReference";
+import { orderReference } from "@/lib/order-reference";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Download, ChevronDown, Package, Clock, CheckCircle2, XCircle, X, Edit2, Send, Copy, Plus, Minus, Trash2, Flag, Truck, Upload, SlidersHorizontal } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -937,12 +939,13 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch, c
         open={Boolean(quickViewOrder)}
         onClose={() => setQuickViewOrder(null)}
         eyebrow="Order quick view"
-        title={quickViewOrder?.id ?? "Order"}
+        title={quickViewOrder ? orderReference(quickViewOrder) : "Order"}
         subtitle={quickViewOrder ? <AtlasPerson name={quickViewOrder.memberName} username={quickViewOrder.memberUsername} compact /> : undefined}
         footer={quickViewOrder ? <div className="atlas-drawer-actions"><button type="button" className="atlas-secondary-button" onClick={() => { openEditModal(quickViewOrder); setQuickViewOrder(null); }}><Edit2 aria-hidden="true" /> Edit order</button><button type="button" className="atlas-primary-button" onClick={() => { toggleOrderSelection(quickViewOrder.id); setQuickViewOrder(null); }}>Select order</button></div> : undefined}
       >
         {quickViewOrder ? (
           <>
+            <div className="mb-3"><OrderReference order={quickViewOrder} /></div>
             <div className="atlas-drawer-summary"><AtlasStatusBadge tone={quickViewOrder.status === "pending" ? "warning" : quickViewOrder.status === "cancelled" ? "danger" : "success"}>{STATUS_CONFIG[quickViewOrder.status].label}</AtlasStatusBadge><strong>{fmtMoney(quickViewOrder.total, "GBP")}</strong><span>{quickViewOrder.paymentMethod} · {quickViewOrder.country}</span></div>
             <AtlasDrawerSection title="Items"><div className="atlas-order-history">{quickViewOrder.products.map(product => <article key={product.name}><div><strong>{product.name}</strong><small>Quantity {product.quantity}</small></div><strong>{fmtMoney(product.price * product.quantity, "GBP")}</strong></article>)}</div></AtlasDrawerSection>
             <AtlasDrawerSection title="Payment">

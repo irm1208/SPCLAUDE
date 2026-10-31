@@ -82,6 +82,8 @@ export const ordersTable = pgTable("orders", {
   // Additions always ride along with the parent's shipment: delivery/vendor/admin shipping fees are
   // forced to 0 and the shipping address is locked to (copied from) the parent. Doubles as the marker.
   additionOfOrderId: text("addition_of_order_id"),
+  // Presentation alias only: canonical code/payment references remain unchanged.
+  additionDisplayReference: text("addition_display_reference").unique(),
   testingContribution: numeric("testing_contribution", { precision: 10, scale: 2 }).notNull().default("0"),
   testVote: text("test_vote"),
   refundStatus: text("refund_status"),

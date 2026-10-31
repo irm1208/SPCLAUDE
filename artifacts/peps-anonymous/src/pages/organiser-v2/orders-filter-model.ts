@@ -137,6 +137,8 @@ export function filterOrders(
     .filter(order => {
       const matchesSearch = !query || [
         order.code ?? "",
+        order.displayReference ?? "",
+        order.additionParent?.reference ?? "",
         order.memberUsername,
         order.memberName,
         order.id,
