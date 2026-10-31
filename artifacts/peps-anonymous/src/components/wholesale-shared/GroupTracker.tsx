@@ -4,6 +4,7 @@ import type { WholesaleShareDetail, WholesaleShareMember } from "@/hooks/use-who
 import { PriceWatermark } from "@/components/PriceWatermark";
 import { CreditPaymentPill } from "@/components/CreditPaymentPill";
 import { buildBalanceAnonPayUrl } from "@/pages/balance-anonpay-url";
+import { SupplierItemGroups } from "./SupplierProducts";
 
 interface GroupTrackerProps {
   share: WholesaleShareDetail;
@@ -170,14 +171,9 @@ export function GroupTracker({ share, onPayMember, showItems = false, onRemoveMe
              <PaymentTransactionDetails transactions={m.paymentTransactions} />
            )}
           {showItems && m.items.length > 0 && (
-            <ul className="space-y-1 pt-2 mt-1 border-t" style={{ borderColor: "var(--t-border)" }}>
-              {m.items.map((it, i) => (
-                <li key={i} className="flex items-center justify-between gap-2 text-xs" style={{ color: "var(--t-muted)" }}>
-                  <span className="min-w-0 truncate">{it.productName}</span>
-                  <span className="shrink-0 tabular-nums">×{it.quantity} · {money(it.quantity * it.unitPrice)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="pt-2 mt-1 border-t" style={{ borderColor: "var(--t-border)" }}>
+              <SupplierItemGroups items={m.items} vendors={share.settings.availableVendors} />
+            </div>
           )}
         </div>
       ))}

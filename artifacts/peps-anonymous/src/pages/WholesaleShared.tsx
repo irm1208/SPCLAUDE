@@ -4,10 +4,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { VendorOrderImages } from "@/components/VendorOrderImages";
 import { VendorShipments } from "@/components/VendorShipments";
 import { SupplierTesting } from "@/components/supplier-testing/SupplierTesting";
-import { VendorShippingBreakdown, VendorGroupHeader } from "@/components/wholesale-shared/VendorShippingBreakdown";
+import { VendorShippingBreakdown } from "@/components/wholesale-shared/VendorShippingBreakdown";
 import { SupplierSelection } from "@/components/wholesale-shared/SupplierSelection";
+import { SupplierProductBrowser, SupplierItemGroups } from "@/components/wholesale-shared/SupplierProducts";
 import { SupplierShippingSplit, type SupplierShippingRules } from "@/components/wholesale-shared/SupplierShippingSplit";
-import { groupByVendor, isMultiVendor } from "@/lib/vendor-grouping";
 import { useLocation, useRoute } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1006,11 +1006,6 @@ export default function WholesaleShared() {
       ? { boxShadow: "0 0 0 2px var(--t-blue)", borderRadius: 16, transition: "box-shadow 0.2s" }
       : undefined;
 
-  const searchQ = productSearch.trim().toLowerCase();
-  const visibleProducts = (searchQ ? products.filter(p => p.name.toLowerCase().includes(searchQ)) : products)
-    .filter(p => p.active !== false && (share.settings.allowedVendorIds == null ||
-      (p.vendorId != null && share.settings.allowedVendorIds.includes(p.vendorId))));
-
   const card = { background: "var(--t-surface)", border: "1px solid var(--t-border)" } as const;
   const field = { background: "var(--t-surface2)", borderColor: "var(--t-border)", color: "var(--t-text)" } as const;
 
@@ -1239,6 +1234,10 @@ export default function WholesaleShared() {
           <Row label="Packages" value={share.settings.maxPackages != null ? `${share.packageCount} / ${share.settings.maxPackages} max` : String(share.packageCount)} />
         )}
         <Row label="Combined products" value={money(share.combinedSubtotal)} />
+        {showOrderBreakdown && share.members.some(member => member.items.length > 0) && (
+          <SupplierItemGroups items={share.members.flatMap(member => member.items)}
+            vendors={share.settings.availableVendors} aggregate />
+        )}
         <Row
           label={`Vendor shipping${share.shippingRegion ? ` · ${share.shippingRegion}` : ""}`}
           value={
@@ -1292,30 +1291,15 @@ export default function WholesaleShared() {
       </p>
       <div className="relative overflow-hidden rounded-xl p-4 space-y-3" style={card}>
         <PriceWatermark username={share.currentUsername} />
-        <div className="flex items-center gap-2 h-10 px-3 rounded-lg border" style={field}>
-          <Search className="w-4 h-4" style={{ color: "var(--t-muted)" }} />
-          <input
-            value={productSearch}
-            onChange={e => setProductSearch(e.target.value)}
-            placeholder="Search products…"
-            className="flex-1 bg-transparent outline-none text-sm"
-            style={{ color: "var(--t-text)" }}
-          />
-        </div>
-
-        <div className="max-h-72 overflow-y-auto rounded-lg divide-y" style={{ border: "1px solid var(--t-border)", borderColor: "var(--t-border)" }}>
-          {visibleProducts.length === 0 && (
-            <p className="text-sm text-center py-6" style={{ color: "var(--t-muted)" }}>No products found.</p>
-          )}
-          {(isMultiVendor(visibleProducts) ? groupByVendor(visibleProducts).flatMap(g => g.items) : visibleProducts).map((p, idx, arr) => {
-            const showVendorHeader = isMultiVendor(visibleProducts) && (idx === 0 || arr[idx - 1].vendorId !== p.vendorId);
+        <SupplierProductBrowser key={`${share.id}:${share.currentUsername}`} products={products}
+          vendors={share.settings.availableVendors} allowedVendorIds={share.settings.allowedVendorIds}
+          search={productSearch} onSearchChange={setProductSearch} quantities={myItems}
+          renderProduct={p => {
             const qty = myItems[p.id] ?? 0;
             const stockLevel = getStockLevel(p.stock);
             const isOos = stockLevel === "oos";
             const stockMeta = STOCK_META[stockLevel];
             return (
-              <div key={p.id} style={{ borderColor: "var(--t-border)" }}>
-              {showVendorHeader && <VendorGroupHeader name={p.vendorName ?? null} />}
               <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ borderColor: "var(--t-border)", opacity: isOos ? 0.6 : 1 }}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>{p.name}</p>
@@ -1357,10 +1341,8 @@ export default function WholesaleShared() {
                   </button>
                 </div>
               </div>
-              </div>
             );
-          })}
-        </div>
+          }} />
 
         <div className="flex items-center justify-between">
           <label className="text-xs font-semibold" style={{ color: "var(--t-muted)" }}>Tip (optional)</label>
@@ -1400,20 +1382,7 @@ export default function WholesaleShared() {
       </div>
       <div className="relative overflow-hidden rounded-xl p-4 space-y-2.5" style={card}>
         <PriceWatermark username={share.currentUsername} />
-        <div className="divide-y" style={{ borderColor: "var(--t-border)" }}>
-          {(isMultiVendor(myMember.items) ? groupByVendor(myMember.items).flatMap(g => g.items) : myMember.items).map((it, idx, arr) => (
-            <div key={it.productId}>
-            {isMultiVendor(myMember.items) && (idx === 0 || arr[idx - 1].vendorId !== it.vendorId) && <VendorGroupHeader name={it.vendorName ?? null} />}
-            <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate" style={{ color: "var(--t-text)" }}>{it.productName}</p>
-                <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>{it.quantity} × {money(it.unitPrice)}</p>
-              </div>
-              <span className="text-sm font-semibold shrink-0" style={{ color: "var(--t-text)" }}>{money(it.quantity * it.unitPrice)}</span>
-            </div>
-            </div>
-          ))}
-        </div>
+        <SupplierItemGroups items={myMember.items} vendors={share.settings.availableVendors} />
         <VendorShippingBreakdown lines={myMember.vendorShippingShares} label="Your shipping by vendor" testId="member-vendor-shipping" />
         {myMember.tip > 0 && (
           <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: "var(--t-border)" }}>
