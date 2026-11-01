@@ -112,6 +112,7 @@
 - [Order code allocation](order-code-allocation.md) — shared-order locks serialize max-code allocation, but ordinary orders do not; a global DB sequence/counter is needed to prevent cross-flow duplicates.
 - [Publish startup readiness](publish-startup-readiness.md) — bind the API port before database bootstrap; keep normal API traffic gated until bootstrap succeeds.
 - [Artifact runtime dependencies](artifact-runtime-dependencies.md) — a successful production compile can still externalize packages missing at artifact startup; verify bundled imports before publishing.
+- [Testmedaddy separation](testmedaddy-separation.md) — saltandpeps.co.uk must show Salt & Peps; testmedaddy.com must show Testmedaddy, not the Salt & Peps frontend.
 - [Replit preview account cookies](replit-preview-account-cookies.md) — iframe sessions need Secure + SameSite=None + Partitioned; login and all clear paths must share identical options.
 - [Paid group-buy refund eligibility](historical-crypto-refund-visibility.md) — confirmed paid GB orders qualify without incoming tx proof; snapshot current grandTotal under lock.
 - [Refund queue payment TXIDs](refund-queue-payment-txids.md) — show original/additional/balance chain TXIDs to Admin/organiser; exclude fiat/test markers and outgoing refund TXID.
