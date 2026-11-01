@@ -149,12 +149,12 @@ importers:
 
   artifacts/api-server:
     dependencies:
-      '@noble/hashes':
-        specifier: 1.8.0
-        version: 1.8.0
       '@google/genai':
         specifier: workspace:*
         version: link:../../lib/google-genai-shim
+      '@noble/hashes':
+        specifier: 1.8.0
+        version: 1.8.0
       '@replit/connectors-sdk':
         specifier: ^0.4.2
         version: 0.4.2
@@ -179,12 +179,12 @@ importers:
       '@workspace/shipping':
         specifier: workspace:*
         version: link:../../lib/shipping
-      bech32:
-        specifier: 2.0.0
-        version: 2.0.0
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
+      bech32:
+        specifier: 2.0.0
+        version: 2.0.0
       bs58:
         specifier: 6.0.0
         version: 6.0.0
@@ -943,6 +943,51 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  artifacts/testmedaddy:
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: 'catalog:'
+        version: 4.3.3(vite@7.3.2(@types/node@25.3.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.90.21(react@19.1.0)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: 'catalog:'
+        version: 5.1.4(vite@7.3.2(@types/node@25.3.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      clsx:
+        specifier: 'catalog:'
+        version: 2.1.1
+      lucide-react:
+        specifier: 'catalog:'
+        version: 0.545.0(react@19.1.0)
+      react:
+        specifier: 'catalog:'
+        version: 19.1.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.1.0(react@19.1.0)
+      tailwind-merge:
+        specifier: 'catalog:'
+        version: 3.5.0
+      tailwindcss:
+        specifier: 'catalog:'
+        version: 4.3.3
+      vite:
+        specifier: 'catalog:'
+        version: 7.3.2(@types/node@25.3.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
+      wouter:
+        specifier: ^3.3.5
+        version: 3.11.0(react@19.1.0)
 
   lib/api-client-react:
     dependencies:

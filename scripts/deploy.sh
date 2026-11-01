@@ -20,4 +20,8 @@ echo "[deploy] Building frontend..."
 # BASE_PATH=/ serves the SPA from root in production.
 NODE_OPTIONS="--max-old-space-size=4096" PORT=5000 BASE_PATH=/ $PNPM --filter @workspace/peps-anonymous run build
 
+echo "[deploy] Building Testmedaddy..."
+# Served by the API on the TESTMEDADDY_HOSTS domains (default testmedaddy.com).
+NODE_OPTIONS="--max-old-space-size=4096" PORT=5000 BASE_PATH=/ $PNPM --filter @workspace/testmedaddy run build
+
 echo "[deploy] Build complete."

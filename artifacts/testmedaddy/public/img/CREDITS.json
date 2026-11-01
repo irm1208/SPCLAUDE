@@ -1,0 +1,21 @@
+{
+ "temple": {
+  "title": "File:Temple of Hephaestus in Athens 02.1.JPG",
+  "artist": "sailko",
+  "license": "CC BY 2.5"
+ },
+ "hero": {
+  "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/35/Purple_lavender_field_%28Unsplash%29.jpg/1920px-Purple_lavender_field_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+  "page": "https://commons.wikimedia.org/wiki/File:Purple_lavender_field_(Unsplash).jpg",
+  "artist": "Francis Cheung riceball",
+  "license": "CC0",
+  "licurl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+ },
+ "flower": {
+  "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bb/A_Head_Of_The_Lavender_%28225588707%29.jpeg/1920px-A_Head_Of_The_Lavender_%28225588707%29.jpeg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+  "page": "https://commons.wikimedia.org/wiki/File:A_Head_Of_The_Lavender_(225588707).jpeg",
+  "artist": "Igal Marcelo Zimmt",
+  "license": "CC BY 3.0",
+  "licurl": "https://creativecommons.org/licenses/by/3.0"
+ }
+}
