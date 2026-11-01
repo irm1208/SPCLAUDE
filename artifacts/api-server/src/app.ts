@@ -3,12 +3,12 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import path from "path";
-import fs from "fs";
 import { randomBytes } from "crypto";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { globalLimiter } from "./middleware/rate-limits";
 import router from "./routes";
-import { siteDomainPolicy, siteDocument, isVendorHost } from "./lib/site-domain-policy";
+import { siteDomainPolicy, isVendorHost, isTestmedaddyHost } from "./lib/site-domain-policy";
+import { siteFrontends } from "./lib/site-frontends";
 import { buildAllowedOrigins, isAllowedOrigin } from "./lib/cors-origin";
 import { refundMutationConflictResponse, refundMutationHttpStatus } from "./lib/refund-mutation-guard";
 
@@ -197,6 +197,11 @@ if (process.env.NODE_ENV === "production") {
 // In development, the Replit preview always hits port 8080 (externalPort=80).
 // All non-/api requests are forwarded to the Vite dev server so the full
 // app (including HMR) is visible in the default preview pane.
+// Unknown APIs must not fall through to Vite, whose /api proxy points back here.
+app.use("/api", (_req: Request, res: Response) => {
+  res.status(404).json({ error: "API endpoint not found" });
+});
+
 // /api requests are handled by Express above and never reach this proxy.
 if (process.env["NODE_ENV"] !== "production") {
   // Mockup sandbox preview server — must be registered before the catch-all Vite proxy.
@@ -224,6 +229,8 @@ if (process.env["NODE_ENV"] !== "production") {
   app.use(
     createProxyMiddleware({
       target: `http://localhost:${vitePort}`,
+      router: req => (isTestmedaddyHost(req.headers.host ?? "") || req.url?.startsWith("/testmedaddy/"))
+        ? "http://127.0.0.1:21505" : `http://localhost:${vitePort}`,
       changeOrigin: false,
       ws: true,
       on: {
@@ -241,53 +248,36 @@ if (process.env["NODE_ENV"] !== "production") {
 }
 
 // ── Production static frontend ─────────────────────────────────
-// When NODE_ENV=production and the Vite build exists, serve the
-// compiled frontend from the Express server with full security headers.
+// One production entry point selects each site's own build by hostname.
+// API health/readiness routes above do not depend on frontend availability.
 if (process.env["NODE_ENV"] === "production") {
   const frontendDist = path.resolve(__dirname, "../../peps-anonymous/dist/public");
-  if (fs.existsSync(frontendDist)) {
-    const csp = [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://telegram.org https://challenges.cloudflare.com",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com data:",
-      "connect-src 'self' https: wss:",
-      "img-src 'self' data: blob: https:",
-      "frame-src 'self' blob: https://trocador.app https://challenges.cloudflare.com",
-      "frame-ancestors 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-    ].join("; ");
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://telegram.org https://challenges.cloudflare.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "connect-src 'self' https: wss:",
+    "img-src 'self' data: blob: https:",
+    "frame-src 'self' blob: https://trocador.app https://challenges.cloudflare.com",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join("; ");
 
-    const staticHeaders = (_req: Request, res: Response, next: NextFunction) => {
-      res.setHeader("Content-Security-Policy", csp);
-      res.setHeader("X-Frame-Options", "DENY");
-      res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-      next();
-    };
+  const staticHeaders = (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Content-Security-Policy", csp);
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    next();
+  };
 
-    app.use(staticHeaders);
-    app.use(express.static(frontendDist, { index: false }));
-    // Share the build while serving a vendor document without member SDK bootstrap.
-    const indexPath = path.join(frontendDist, "index.html");
-    const mainDocument = fs.readFileSync(indexPath, "utf8");
-    app.use((req: Request, res: Response) => {
-      const document = siteDocument(mainDocument, req.headers.host ?? "");
-      if (document !== mainDocument) {
-        res.type("html").send(document);
-        return;
-      }
-      res.sendFile(indexPath);
-    });
-  } else {
-    // Frontend dist not found — still respond 200 to the health check route (GET /)
-    // so the Cloud Run promote step doesn't time out waiting for the SPA.
-    console.warn(`[startup] Frontend dist not found at ${frontendDist} — serving fallback`);
-    app.use((_req: Request, res: Response) => {
-      res.status(200).send("OK");
-    });
-  }
+  app.use(staticHeaders);
+  app.use(siteFrontends({
+    main: frontendDist,
+    testing: path.resolve(__dirname, "../../testmedaddy/dist/public"),
+  }));
 }
 
 // ── Global error handler ───────────────────────────────────────

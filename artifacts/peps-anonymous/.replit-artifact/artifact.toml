@@ -21,11 +21,5 @@ run = "pnpm --filter @workspace/peps-anonymous run dev"
 PORT = "21503"
 BASE_PATH = "/"
 
-[services.production]
-build = ["pnpm", "--filter", "@workspace/peps-anonymous", "run", "build"]
-publicDir = "artifacts/peps-anonymous/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+# Production is built by api-server's build:sites and served by its hostname router.
+# Keep this artifact's own Vite service for independent development previews.

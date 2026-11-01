@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 
 const VENDOR_HOSTS = new Set(["pepsanonymous.com", "www.pepsanonymous.com"]);
+const TESTING_HOSTS = new Set(["testmedaddy.com", "www.testmedaddy.com"]);
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 const VENDOR_PAGES = new Set(["/", "/vendor", "/vendor/", "/vendor/login", "/vendor/login/", "/login", "/login/"]);
 const HEALTH_PATHS = new Set(["/health", "/_health", "/api", "/api/health", "/api/healthz"]);
@@ -27,6 +28,7 @@ export function siteDomainPolicy(options: { production: boolean; developmentHost
       try { decodedPath = decodeURIComponent(decodedPath); } catch { break; }
     }
     const vendorHost = !!host && VENDOR_HOSTS.has(host.host);
+    const testingHost = !!host && TESTING_HOSTS.has(host.host);
     const vendorResource = /^\/(?:vendor(?:\/|$)|api\/vendor(?:\/|$))/i.test(decodedPath);
     if (!host || !path.startsWith("/") || /[\\\x00-\x20\x7f]/.test(path)
       || /[\\\x00-\x1f\x7f]/.test(decodedPath) || decodedPath.includes("//")
@@ -36,15 +38,21 @@ export function siteDomainPolicy(options: { production: boolean; developmentHost
     }
     const localDevelopment = !options.production && developmentHosts.has(host.host);
     const vendorApi = /^\/api\/vendor(?:\/|$)/i.test(path);
+    const testingApi = /^\/api\/tmd(?:\/|$)/i.test(decodedPath);
     const vendorPage = /^\/vendor(?:\/|$)/i.test(path);
     const origin = req.headers.origin;
     if (origin) {
       let originUrl: URL;
       try { originUrl = new URL(origin); } catch { res.status(403).json({ error: "Origin not allowed" }); return; }
       const vendorOrigin = VENDOR_HOSTS.has(originUrl.hostname.toLowerCase());
-      if ((vendorOrigin && !vendorHost) || ((vendorHost || vendorApi) && (originUrl.origin !== origin || originUrl.host.toLowerCase() !== host.authority || !["http:", "https:"].includes(originUrl.protocol) || (options.production && vendorHost && originUrl.protocol !== "https:")))) {
+      const testingOrigin = TESTING_HOSTS.has(originUrl.hostname.toLowerCase());
+      if ((vendorOrigin && !vendorHost) || (testingOrigin && !testingHost) || ((vendorHost || vendorApi || testingHost) && (originUrl.origin !== origin || originUrl.host.toLowerCase() !== host.authority || !["http:", "https:"].includes(originUrl.protocol) || (options.production && (vendorHost || testingHost) && originUrl.protocol !== "https:")))) {
         res.status(403).json({ error: "Origin not allowed" }); return;
       }
+    }
+    if ((testingApi && !testingHost && !localDevelopment)
+      || (testingHost && /^\/api(?:\/|$)/i.test(decodedPath) && !testingApi && !HEALTH_PATHS.has(path))) {
+      res.status(404).json({ error: "Not found" }); return;
     }
     if ((vendorApi || vendorPage) && !vendorHost && !localDevelopment) {
       res.status(404).json({ error: "Not found" }); return;
@@ -63,6 +71,11 @@ export function siteDomainPolicy(options: { production: boolean; developmentHost
 export function isVendorHost(hostHeader: string): boolean {
   const host = authority(hostHeader);
   return !!host && VENDOR_HOSTS.has(host.host);
+}
+
+export function isTestmedaddyHost(hostHeader: string): boolean {
+  const host = authority(hostHeader);
+  return !!host && TESTING_HOSTS.has(host.host);
 }
 
 /** Shared build, distinct vendor document: no member Mini App bootstrap. */
