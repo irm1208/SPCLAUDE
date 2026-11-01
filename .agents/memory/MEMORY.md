@@ -157,3 +157,4 @@
 - [GB bank transfers](group-buy-bank-transfer-policy.md) — UK and international organiser details; member “sent” notifications require manual receipt confirmation.
 - [GB manual payments](group-buy-manual-payment-policy.md) — single/selected paid confirmations require a staff-only note and actor/time; independent balances stay unchanged.
 - [Wholesale vendor portal](wholesale-vendor-portal-policy.md) — vendor-only cost prices, Admin submission gate, member fulfilment updates; separate vendor login with existing credentials.
+- [HGH direct shipping quotes](hgh-direct-shipping-quotes.md) — HGH 36IU direct-to-home shipping stays manually quoted; do not automatically apply vendor rates.
