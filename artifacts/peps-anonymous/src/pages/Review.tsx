@@ -26,6 +26,7 @@ import type { MemberOffersResponse } from "@/lib/half-kit-api";
 import { ReviewShippingDetails } from "@/components/ReviewShippingDetails";
 import { reviewShippingRequirements, validateReviewShippingDetails } from "@/lib/review-shipping-details";
 import { COUNTRY_LIST } from "@/data/countries";
+import { formatOrderPrice } from "@/lib/order-money";
 
 function ReviewShell({ children }: { children: ReactNode }) {
   const [, navigate] = useLocation();
@@ -156,11 +157,7 @@ export default function Review() {
   }, [shippingRequirements.show, draft.shippingCountry, account?.country, activeCountryLeg?.countryCode, draft.setShippingCountry]);
   const gbCurrency = activeGb?.currency ?? null;
   const hideOrderFormPrices = (activeGb?.status === "closed") && (activeGb?.hidePricesOnOrderForm ?? false);
-  const formatPrice = (amount: number) => {
-    const symbols: Record<string, string> = { GBP: "£", USD: "$", EUR: "€", CAD: "CA$", AUD: "A$" };
-    const sym = (gbCurrency && symbols[gbCurrency]) ? symbols[gbCurrency] : "$";
-    return `${sym}${amount.toFixed(2)}`;
-  };
+  const formatPrice = (amount: number) => formatOrderPrice(amount, gbCurrency);
 
   const isWholesale = draft.orderType === "wholesale";
   const vendorShippingEnabled = isWholesale ? true : (activeGb ? activeGb.vendorShippingEnabled : (globalVendorShippingWarning ?? false));

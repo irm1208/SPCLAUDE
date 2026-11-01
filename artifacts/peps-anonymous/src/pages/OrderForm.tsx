@@ -1,4 +1,5 @@
 import { hasFreeDirectHomeShipping } from "@workspace/shipping/group-buy-direct";
+import { formatOrderPrice } from "@/lib/order-money";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
@@ -705,11 +706,7 @@ export default function OrderForm() {
 
   // Format price using the group buy's currency
   const formatPrice = React.useCallback(
-    (amount: number) => {
-      const symbols: Record<string, string> = { GBP: "£", USD: "$", EUR: "€", CAD: "CA$", AUD: "A$" };
-      const sym = (effectiveCurrency && symbols[effectiveCurrency]) ? symbols[effectiveCurrency] : "$";
-      return `${sym}${amount.toFixed(2)}`;
-    },
+    (amount: number) => formatOrderPrice(amount, effectiveCurrency),
     [effectiveCurrency]
   );
 
@@ -1179,7 +1176,7 @@ export default function OrderForm() {
       return;
     }
 
-    if (customEuPostage && countKits(draft.lineItems) > 25) {
+    if (customEuPostage && !draft.directShippingRequested && countKits(draft.lineItems) > 25) {
       setError("Orders over 25 kits need an organiser delivery quote. Please contact the organiser before ordering.");
       return;
     }

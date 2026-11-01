@@ -3,18 +3,19 @@ import { test } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { OrderFormTotal } from "./OrderFormTotal";
+import { formatOrderPrice } from "../lib/order-money";
 
 Object.assign(globalThis, { React });
 const base = {
   total: 88.5, products: 85.5, delivery: 3, vendorShipping: 0,
   adminFee: 0, adminFeeLabel: null, tip: 0, testing: 0,
-  shippingPending: false, formatPrice: (amount: number) => `$${amount.toFixed(2)}`, hidden: false,
+  shippingPending: false, formatPrice: (amount: number) => formatOrderPrice(amount, "USD"), hidden: false,
 };
 
 test("93 HGH kits include free delivery without an outstanding quote", () => {
   const html = renderToStaticMarkup(<OrderFormTotal {...base} products={13950} total={13950} delivery={0} deliveryFree />);
   assert.match(html, /FREE/);
-  assert.match(html, /\$13950\.00/);
+  assert.match(html, /\$13,950\.00/);
   assert.match(html, /Direct-to-home shipping is free/);
   assert.doesNotMatch(html, /Shipping still to be quoted/);
   assert.doesNotMatch(html, /Final shipping is confirmed/);
