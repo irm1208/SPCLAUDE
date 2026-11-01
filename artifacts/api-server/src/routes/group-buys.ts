@@ -1,3 +1,4 @@
+import { hasFreeDirectHomeShipping } from "@workspace/shipping/group-buy-direct";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -633,6 +634,11 @@ router.get("/group-buys/:id/direct-shipping-info", requireAccount, async (req, r
 
   if (!gb || !gb.directShippingEnabled) {
     res.json({ enabled: false });
+    return;
+  }
+
+  if (hasFreeDirectHomeShipping(id)) {
+    res.json({ enabled: true, vendor: null, freeShipping: true, minKits: Number(gb.directShippingMinKits), message: "Free direct-to-home shipping" });
     return;
   }
 

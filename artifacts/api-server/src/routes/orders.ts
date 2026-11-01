@@ -1,3 +1,4 @@
+import { hasFreeDirectHomeShipping, resolveDirectHomeShippingCost } from "@workspace/shipping/group-buy-direct";
 import { getOnwardOrderPreference, saveOnwardOrderPreference, validateEuDeliveryCheckout } from "../lib/gb-onward-delivery";
 import { hasBankTransfer } from "@workspace/api-zod/bank-transfer";
 import { resolveGroupOrderRoute } from "../lib/group-buy-delivery-routing-service";
@@ -755,7 +756,8 @@ router.post("/orders", async (req, res, next): Promise<void> => {
     deliveryMethodRecord = { id: "wholesale", name: "Vendor Shipping", price: "0" };
   } else if (String(deliveryMethodId) === "__direct_shipping" && clientDirectShippingRequested === true) {
     // Virtual method for vendor direct-to-home shipping — not in delivery_methods table
-    const dsCost = clientDirectShippingCost != null ? parseFloat(String(clientDirectShippingCost)) : 0;
+    const dsCost = resolveDirectHomeShippingCost(normalizedGroupBuyId,
+      clientDirectShippingCost != null ? parseFloat(String(clientDirectShippingCost)) : 0);
     deliveryMethodRecord = { id: "__direct_shipping", name: "Direct Shipping to Home", price: isNaN(dsCost) ? "0" : dsCost.toFixed(2) };
   } else {
     [deliveryMethodRecord] = await db
@@ -789,6 +791,8 @@ router.post("/orders", async (req, res, next): Promise<void> => {
   let vendorShipping = Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
   if (additionParent) {
     vendorShipping = 0; // additions ride along free — no vendor shipping
+  } else if (!isWholesaleOrder && clientDirectShippingRequested === true && hasFreeDirectHomeShipping(normalizedGroupBuyId)) {
+    vendorShipping = 0;
   } else if (halfKitCheckout) {
     vendorShipping = newHalfGroup.vendorShippingEnabled && newHalfGroup.vendorShippingAmount != null
       ? Math.max(0, Number(newHalfGroup.vendorShippingAmount)) : 0;
@@ -1682,7 +1686,9 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       adminFeeLabel: clientDirectShippingRequested === true ? null : gbAdminFeeLabel,
       kitFees: gbKitFees.toFixed(2),
       directShippingRequested: clientDirectShippingRequested === true,
-      directShippingCost: clientDirectShippingRequested === true && clientDirectShippingCost != null
+      directShippingCost: clientDirectShippingRequested === true && hasFreeDirectHomeShipping(normalizedGroupBuyId)
+        ? "0.00"
+        : clientDirectShippingRequested === true && clientDirectShippingCost != null
         ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
         : null,
     })
@@ -2372,7 +2378,8 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     deliveryMethodRecord = { id: "wholesale", name: "Vendor Shipping", price: "0" };
   } else if (String(deliveryMethodId) === "__direct_shipping" && clientDirectShippingRequested === true) {
     // Virtual method for vendor direct-to-home shipping — not in delivery_methods table
-    const dsCost = clientDirectShippingCost != null ? parseFloat(String(clientDirectShippingCost)) : 0;
+    const dsCost = resolveDirectHomeShippingCost(order.groupBuyId,
+      clientDirectShippingCost != null ? parseFloat(String(clientDirectShippingCost)) : 0);
     deliveryMethodRecord = { id: "__direct_shipping", name: "Direct Shipping to Home", price: isNaN(dsCost) ? "0" : dsCost.toFixed(2) };
   } else {
     [deliveryMethodRecord] = await db
@@ -2407,7 +2414,8 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
   // client-sent delivery price / vendor shipping and force every shipping charge to 0.
   const isAddition = !!order.additionOfOrderId;
   const deliveryPrice = isAddition ? 0 : parseFloat(deliveryMethodRecord.price);
-  let vendorShipping = isAddition ? 0 : Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
+  let vendorShipping = isAddition || (!isWholesaleOrder && clientDirectShippingRequested === true && hasFreeDirectHomeShipping(order.groupBuyId))
+    ? 0 : Math.max(0, parseFloat(String(clientVendorShipping)) || 0);
   if (!isAddition && isWholesaleOrder) {
     let ownerId: string;
     try { ownerId = await validateWholesaleVendorItems(clientLineItems, req.body.wholesaleVendorId ?? order.wholesaleVendorId); }
@@ -2683,6 +2691,8 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
       directShippingRequested: isAddition ? (order.directShippingRequested ?? false) : clientDirectShippingRequested === true,
       directShippingCost: isAddition
         ? null
+        : clientDirectShippingRequested === true && hasFreeDirectHomeShipping(order.groupBuyId)
+          ? "0.00"
         : (clientDirectShippingRequested === true && clientDirectShippingCost != null
           ? parseFloat(String(clientDirectShippingCost)).toFixed(2)
           : null),

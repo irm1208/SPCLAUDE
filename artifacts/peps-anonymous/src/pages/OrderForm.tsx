@@ -1,3 +1,4 @@
+import { hasFreeDirectHomeShipping } from "@workspace/shipping/group-buy-direct";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearch } from "wouter";
@@ -520,6 +521,8 @@ export default function OrderForm() {
   const directShippingEligible = Boolean(directShippingInfo?.enabled &&
     countKits(draft.lineItems) >= Number(directShippingInfo.minKits ?? 30));
   const directShippingMessage = directShippingInfo?.enabled ? directShippingInfo.message?.trim() : "";
+  const freeDirectHomeShipping = hasFreeDirectHomeShipping(gbId);
+  const selectedFreeDirectHome = freeDirectHomeShipping && draft.directShippingRequested;
   useEffect(() => {
     if (isPreview || draft.additionOfOrderId || draft.orderId || !directShippingInfo) return;
     if (draft.directShippingRequested && !directShippingEligible) {
@@ -564,6 +567,7 @@ export default function OrderForm() {
 
   // Calculate direct shipping cost reactively from current kit count + vendor tier pricing
   const estimatedDirectShippingCost = useMemo((): number | null => {
+    if (hasFreeDirectHomeShipping(gbId)) return 0;
     if (!directShippingInfo?.enabled || !("tiers" in directShippingInfo)) return null;
     const info = directShippingInfo as any;
     if (!info.tiers || !info.tierBounds?.length) return null;
@@ -584,7 +588,7 @@ export default function OrderForm() {
       remaining -= inPkg;
     }
     return parseFloat(total.toFixed(2));
-  }, [draft.lineItems, directShippingInfo]);
+  }, [draft.lineItems, directShippingInfo, gbId]);
   // A quote can be displayed before selection, but only selected direct delivery may update the draft.
   const calcDirectShippingCost = draft.deliveryMethodId === "__direct_shipping" ? estimatedDirectShippingCost : null;
 
@@ -974,9 +978,9 @@ export default function OrderForm() {
     : isNewOrder ? myGb?.vendorShippingAmount ?? null
       : draft.vendorShipping > 0 ? draft.vendorShipping : null;
   const shippingEnabled = isWholesale || !!myGb?.vendorShippingEnabled;
-  const totalVendorShipping = !isTopUp && shippingEnabled && shippingAmount != null && shippingAmount > 0
+  const totalVendorShipping = !isTopUp && !selectedFreeDirectHome && shippingEnabled && shippingAmount != null && shippingAmount > 0
     ? shippingAmount : 0;
-  const shippingPending = !isTopUp && (
+  const shippingPending = !isTopUp && !selectedFreeDirectHome && (
     (shippingEnabled && shippingAmount == null)
     || (draft.directShippingRequested && draft.deliveryPrice === 0)
   );
@@ -1639,7 +1643,7 @@ export default function OrderForm() {
                           ...(directShippingEligible ? [{
                             id: "__direct_shipping", name: "Direct to Home",
                             price: browseTotal > 0 ? estimatedDirectShippingCost : null,
-                            description: directShippingMessage || "Shipped directly by the vendor.",
+                            description: freeDirectHomeShipping ? "Free direct-to-home shipping" : directShippingMessage || "Shipped directly by the vendor.",
                             requiresAddress: true,
                           }] : []),
                         ],
@@ -2170,9 +2174,9 @@ export default function OrderForm() {
                         <p className="text-sm font-semibold" style={{ color: "var(--t-text, #1A1D1F)" }}>Direct to Home</p>
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: "rgba(1,118,211,0.1)", color: "#0176D3" }}>VENDOR</span>
                       </div>
-                      <p className="text-[11px] mt-0.5 whitespace-pre-line break-words" style={{ color: "var(--t-muted, #6B7280)" }}>{directShippingMessage || "Contact us for quote"}</p>
+                      <p className="text-[11px] mt-0.5 whitespace-pre-line break-words" style={{ color: "var(--t-muted, #6B7280)" }}>{freeDirectHomeShipping ? "Free direct-to-home shipping" : directShippingMessage || "Contact us for quote"}</p>
                     </div>
-                    <p className="text-sm font-bold shrink-0" style={{ color: "var(--t-muted, #94A3B8)" }}>TBD</p>
+                    <p className="text-sm font-bold shrink-0" style={{ color: "var(--t-muted, #94A3B8)" }}>{freeDirectHomeShipping ? "FREE" : "TBD"}</p>
                   </button>
                 </div>
               );
@@ -2426,6 +2430,7 @@ export default function OrderForm() {
         </section>
 
         <OrderFormTotal
+          deliveryFree={selectedFreeDirectHome}
           total={grandTotal}
           products={productSubtotal}
           delivery={isTopUp ? 0 : draft.deliveryPrice}

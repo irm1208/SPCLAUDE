@@ -23,7 +23,12 @@ test("falling below the minimum clears only new order drafts, not previews or ex
   assert.match(source, /draft\.setDirectShippingRequested\(false\)/);
 });
 test("custom direct-shipping messages reach both picker views without replacing price or eligibility", () => {
-  assert.match(source, /description: directShippingMessage \|\| "Shipped directly by the vendor\."/);
+  assert.match(source, /description: freeDirectHomeShipping \? "Free direct-to-home shipping" : directShippingMessage \|\| "Shipped directly by the vendor\."/);
   assert.match(source, /directShippingMessage \|\| "Contact us for quote"/);
   assert.match(source, /directShippingMessage \|\| "Shipped direct by the vendor"/);
+});
+test("free HGH direct shipping is not treated as a pending quote", () => {
+  assert.match(source, /freeDirectHomeShipping = hasFreeDirectHomeShipping\(gbId\)/);
+  assert.match(source, /const shippingPending = !isTopUp && !selectedFreeDirectHome/);
+  assert.match(source, /freeDirectHomeShipping \? "FREE" : "TBD"/);
 });

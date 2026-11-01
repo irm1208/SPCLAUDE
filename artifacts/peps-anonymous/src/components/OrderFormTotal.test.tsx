@@ -11,6 +11,15 @@ const base = {
   shippingPending: false, formatPrice: (amount: number) => `$${amount.toFixed(2)}`, hidden: false,
 };
 
+test("93 HGH kits include free delivery without an outstanding quote", () => {
+  const html = renderToStaticMarkup(<OrderFormTotal {...base} products={13950} total={13950} delivery={0} deliveryFree />);
+  assert.match(html, /FREE/);
+  assert.match(html, /\$13950\.00/);
+  assert.match(html, /Direct-to-home shipping is free/);
+  assert.doesNotMatch(html, /Shipping still to be quoted/);
+  assert.doesNotMatch(html, /Final shipping is confirmed/);
+});
+
 test("shows the current total and breakdown before reviewing", () => {
   const html = renderToStaticMarkup(<OrderFormTotal {...base} />);
   assert.match(html, /Estimated total/);

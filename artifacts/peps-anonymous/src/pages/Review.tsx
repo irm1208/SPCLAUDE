@@ -1,3 +1,4 @@
+import { hasFreeDirectHomeShipping } from "@workspace/shipping/group-buy-direct";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import {
@@ -210,8 +211,9 @@ export default function Review() {
       : (draft.adminFeeLabel ?? null);
   // Additions (top-ups) ride along with the parent's shipment — the server always saves
   // vendor shipping as 0, so it must never be shown, marked TBD, or added to any total here.
-  const vendorShippingIsKnown = isTopUp ? false : (isWholesale ? true : (vendorShippingEnabled && vendorShippingAmount != null && vendorShippingAmount > 0));
-  const vendorShippingIsTbd = isTopUp ? false : (isWholesale ? false : (vendorShippingEnabled && vendorShippingAmount == null));
+  const selectedFreeDirectHome = draft.directShippingRequested && hasFreeDirectHomeShipping(draft.groupBuyId);
+  const vendorShippingIsKnown = isTopUp || selectedFreeDirectHome ? false : (isWholesale ? true : (vendorShippingEnabled && vendorShippingAmount != null && vendorShippingAmount > 0));
+  const vendorShippingIsTbd = isTopUp || selectedFreeDirectHome ? false : (isWholesale ? false : (vendorShippingEnabled && vendorShippingAmount == null));
   const paymentMessageEnabled = activeGb ? activeGb.paymentMessageEnabled : false;
   const paymentMessageText = activeGb?.paymentMessage ?? null;
 
@@ -266,7 +268,7 @@ export default function Review() {
 
   const isPending = isCreatingOrder || isUpdating;
 
-  const effectiveDeliveryPrice = isTopUp ? 0 : draft.deliveryPrice;
+  const effectiveDeliveryPrice = isTopUp || selectedFreeDirectHome ? 0 : draft.deliveryPrice;
   const effectiveVendorShipping = vendorShippingIsKnown ? vendorShippingAmount! : 0;
   const grandTotal = parseFloat(
     Math.max(0, productSubtotal + effectiveDeliveryPrice + effectiveVendorShipping + draft.tip + draft.testingContribution + adminFeeAmount - couponDiscount).toFixed(2)
@@ -298,7 +300,7 @@ export default function Review() {
       deliveryMethodId: draft.deliveryMethodId,
       deliveryMethod: draft.deliveryMethod,
       deliveryPrice: effectiveDeliveryPrice,
-      vendorShipping: draft.vendorShipping,
+      vendorShipping: selectedFreeDirectHome ? 0 : draft.vendorShipping,
       productSubtotal,
       tip: draft.tip,
       testingContribution: draft.testingContribution,
@@ -323,7 +325,7 @@ export default function Review() {
       ),
       reshipperUsername: draft.preferredReshipperUsername || undefined,
       directShippingRequested: draft.directShippingRequested || undefined,
-      directShippingCost: draft.directShippingRequested && draft.deliveryPrice > 0 ? draft.deliveryPrice : undefined,
+      directShippingCost: selectedFreeDirectHome ? 0 : draft.directShippingRequested && draft.deliveryPrice > 0 ? draft.deliveryPrice : undefined,
       reshipperCode: draft.reshipperCode || undefined,
       // Wholesale orders can never be additions — guard against a stale draft field
       // left over from a previous GB top-up flow in the same browser session.
@@ -643,7 +645,7 @@ export default function Review() {
                   {isTopUp ? (
                     <span className="text-green-600 font-semibold">Free</span>
                   ) : (
-                    <span>{formatPrice(draft.deliveryPrice)}</span>
+                    <span>{selectedFreeDirectHome ? "FREE" : formatPrice(draft.deliveryPrice)}</span>
                   )}
                 </div>
               )}
