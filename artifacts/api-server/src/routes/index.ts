@@ -93,7 +93,12 @@ import vendorSecurityRouter from "./vendor-security";
 import vendorNotificationsRouter from "./vendor-notifications";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
+import testmedaddyRouter from "./testmedaddy";
+
 const router: IRouter = Router();
+
+// Dedicated namespace must run before legacy, path-less account guards.
+router.use("/tmd", testmedaddyRouter);
 
 router.use(healthRouter);
 

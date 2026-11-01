@@ -3,7 +3,7 @@ import { Users, Lock, CalendarClock } from "lucide-react";
 import type { Pool } from "@/lib/types";
 import { usd, POOL_STATUS, date } from "@/lib/format";
 import { fileUrl } from "@/lib/api";
-import { Badge, Progress } from "./ui";
+import { Badge } from "./ui";
 
 export function poolSubtitle(pool: Pool) {
   const parts = pool.items.map(i => [i.batch?.compound, i.vendor?.name].filter(Boolean).join(" · ")).filter(Boolean);
@@ -29,10 +29,7 @@ export function PoolCard({ pool, href }: { pool: Pool; href?: string }) {
           </div>
           <Badge tone={status.tone}>{status.label}</Badge>
         </div>
-        <div>
-          <div className="mb-1 flex items-baseline justify-between text-sm"><span className="mono font-semibold">{usd(pool.progress.verified, 0)}</span><span className="text-muted">of {usd(pool.progress.target, 0)}</span></div>
-          <Progress value={pool.progress.pct} />
-        </div>
+        <div className="flex items-baseline justify-between gap-2 text-sm"><span className="mono font-semibold">{usd(pool.shareUsd)} est. share</span><span className="text-muted">of {usd(pool.progress.target, 0)} est. total</span></div>
         <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
           <span className="flex items-center gap-1"><Users className="size-3.5" />{pool.totals.memberCount}{pool.maxMembers ? `/${pool.maxMembers}` : ""} members</span>
           <span className="mono">{usd(pool.shareUsd)} share</span>

@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { post, restoreSession, setCsrfToken } from "./api";
 
 export type User = {
@@ -23,20 +24,27 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
+  const userRef = useRef<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const replaceUser = useCallback((next: User | null) => {
+    if (userRef.current?.id !== next?.id) queryClient.clear();
+    userRef.current = next;
+    setUser(next);
+  }, [queryClient]);
   const refresh = useCallback(async () => {
-    try { const session = await restoreSession(); setUser(session?.user ?? null); return session?.user ?? null; }
-    catch { setUser(null); return null; }
+    try { const session = await restoreSession(); const next = session?.user ?? null; replaceUser(next); return next; }
+    catch { replaceUser(null); return null; }
     finally { setLoading(false); }
-  }, []);
+  }, [replaceUser]);
   useEffect(() => { refresh(); }, [refresh]);
   const value = useMemo<AuthState>(() => ({
-    user, loading, refresh, setUser,
-    async login(email, password, rememberMe) { const r = await post("/api/tmd/auth/login", { email, password, rememberMe }); setCsrfToken(r.csrfToken); setUser(r.user); return r.user; },
-    async signup(input) { const r = await post("/api/tmd/auth/signup", input); setCsrfToken(r.csrfToken); setUser(r.user); return r.user; },
-    async logout() { try { await post("/api/tmd/auth/logout"); } finally { setCsrfToken(null); setUser(null); } },
-  }), [user, loading, refresh]);
+    user, loading, refresh, setUser: replaceUser,
+    async login(email, password, rememberMe) { const r = await post("/api/tmd/auth/login", { email, password, rememberMe }); setCsrfToken(r.csrfToken); replaceUser(r.user); return r.user; },
+    async signup(input) { const r = await post("/api/tmd/auth/signup", input); setCsrfToken(r.csrfToken); replaceUser(r.user); return r.user; },
+    async logout() { await post("/api/tmd/auth/logout"); setCsrfToken(null); replaceUser(null); },
+  }), [user, loading, refresh, replaceUser]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 export function useAuth(): AuthState {
