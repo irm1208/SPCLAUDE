@@ -3,6 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { isTestmedaddyHost, siteDocument } from "./site-domain-policy";
 
+// Only connected Testmedaddy routes receive a successful SPA document.
+// Keep this list aligned with Testmedaddy's App.tsx when enabling a new page.
+const testingPages = new Set(["/", "/explore", "/how-it-works", "/login", "/signup", "/dashboard", "/host/new", "/settings"]);
+function isTestingPage(url: string): boolean {
+  const pathname = url.length > 1 ? url.replace(/\/$/, "") : url;
+  return testingPages.has(pathname) || /^\/(?:p\/[^/]+|host\/[^/]+(?:\/edit)?)$/.test(pathname);
+}
+
 /** Each hostname gets its own document, assets and SPA fallback. Never share fallbacks. */
 export function siteFrontends(roots: { main: string; testing: string }): RequestHandler {
   function frontend(root: string): RequestHandler {
@@ -26,6 +34,10 @@ export function siteFrontends(roots: { main: string; testing: string }): Request
           return;
         }
         res.setHeader("Cache-Control", "no-cache");
+        if (isTestmedaddyHost(req.headers.host ?? "") && !isTestingPage(req.path)) {
+          res.status(404);
+          res.setHeader("X-Robots-Tag", "noindex");
+        }
         res.type("html").send(siteDocument(document, req.headers.host ?? ""));
       });
     };

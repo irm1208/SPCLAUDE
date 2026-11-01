@@ -13,6 +13,14 @@ that all three websites must have no overlap.
 **How to apply:** Preserve separate branding and entry points. Do not treat
 Testmedaddy as a Salt & Peps page or show the Salt & Peps frontend on its domain.
 
+Disconnected or unavailable Testmedaddy pages must return a 404 page, not a
+“Not in the core release” placeholder.
+
+**Why:** The user explicitly requested 404s for pages that are not connected.
+
+**How to apply:** Keep unknown-page navigation and direct URL responses
+consistent; only enable successful routes when their features are connected.
+
 The user selected **“Separate websites, shared publishing.”** Keep a single
 publishing operation; separate projects and databases were not requested.
 

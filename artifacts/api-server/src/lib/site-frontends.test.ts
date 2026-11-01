@@ -88,6 +88,20 @@ describe("separate websites with shared publishing", () => {
   it("preserves the existing dedicated vendor portal document", async () => {
     expect((await request("pepsanonymous.com", "/vendor/login")).body).toContain("Peps Anonymous · Vendor portal");
   });
+  it.each(["/vendors", "/v/example", "/forgot-password", "/reset-password", "/verify-email", "/wholesale", "/account", "/unknown-page"])("returns an actual 404 for disconnected Testmedaddy page %s", async url => {
+    const result = await request("testmedaddy.com", url);
+    expect(result.status).toBe(404);
+    expect(result.contentType).toContain("text/html");
+    expect(result.body).toContain("Testmedaddy");
+  });
+  it.each(["/", "/explore", "/how-it-works", "/login", "/signup", "/dashboard", "/host/new", "/host/example", "/host/example/edit", "/settings", "/p/example", "/login/"])("preserves connected Testmedaddy page %s", async url => {
+    expect((await request("testmedaddy.com", url)).status).toBe(200);
+  });
+  it("uses the existing Testmedaddy 404 screen rather than an unavailable-feature placeholder", async () => {
+    const app = await readFile(new URL("../../../testmedaddy/src/App.tsx", import.meta.url), "utf8");
+    expect(app).toContain("<Route component={NotFound} />");
+    expect(app).not.toContain("component={Unavailable}");
+  });
   it("publishes one root handler rather than two competing static root sites", async () => {
     const root = new URL("../../../", import.meta.url);
     const apiManifest = await readFile(new URL("api-server/.replit-artifact/artifact.toml", root), "utf8");

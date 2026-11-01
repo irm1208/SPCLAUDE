@@ -62,12 +62,6 @@ export function HowItWorks() {
   </Page>;
 }
 
-export function Unavailable() {
-  return <Page title="Not in the core release" subtitle="This part of Testmedaddy is not available yet.">
-    <Card className="max-w-2xl space-y-4"><Notice /><p className="text-sm text-muted">Payments, password recovery, vendor pages, proof uploads, result publishing, discussions, notifications and Telegram features are not implemented in this release.</p><div className="flex flex-wrap gap-2"><Link href="/explore"><Button>Browse pools</Button></Link><Link href="/"><Button tone="outline">Return home</Button></Link></div></Card>
-  </Page>;
-}
-
 export function Explore() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("open");

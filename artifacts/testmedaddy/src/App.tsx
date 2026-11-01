@@ -4,7 +4,8 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { ToastProvider, Spinner } from "@/components/ui";
 import { Layout } from "@/components/Layout";
 import { Login, Signup } from "@/pages/Auth";
-import { Landing, Explore, PoolDetail, Dashboard, PoolEditor, Settings, Unavailable, HowItWorks } from "@/core/CoreScreens";
+import { Landing, Explore, PoolDetail, Dashboard, PoolEditor, Settings, HowItWorks } from "@/core/CoreScreens";
+import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 10_000 } } });
 
@@ -31,12 +32,7 @@ function Routes() {
         <Route path="/host/:id/edit">{params => <Private><PoolEditor id={params.id} /></Private>}</Route>
         <Route path="/host/:id">{params => <Private><PoolDetail manageId={params.id} /></Private>}</Route>
         <Route path="/settings"><Private><Settings /></Private></Route>
-        <Route path="/forgot-password" component={Unavailable} />
-        <Route path="/reset-password" component={Unavailable} />
-        <Route path="/verify-email" component={Unavailable} />
-        <Route path="/vendors" component={Unavailable} />
-        <Route path="/v/:slug" component={Unavailable} />
-        <Route component={Unavailable} />
+        <Route component={NotFound} />
       </Switch>
     </Layout>
   );
