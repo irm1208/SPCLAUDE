@@ -6,6 +6,7 @@ import { DirectSupplierDownload } from "./DirectSupplierDownload";
 import { BatchRefreshReview } from "./BatchRefreshReview";
 import { BatchCorrection } from "./BatchCorrection";
 import { BatchAdditions } from "./BatchAdditions";
+import { BatchMessages } from "./BatchMessages";
 import {
   EU_BATCH_COUNTRIES, supplierKey, supplierRequest, downloadSupplierCsv,
   downloadSupplierTxt,
@@ -411,6 +412,7 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
       <p className="text-[11px]" style={{ color: V.muted }}>Last checked {fmt(d.checkedAt)}</p>
       <ConfigEditor putConfig={putConfig} data={d} busy={busy} run={run} reload={() => { qc.invalidateQueries({ queryKey: key }); }} />
       <Msg m={msg} id="text-supplier-msg" />
+      {scope === "admin" && <BatchMessages key={groupBuyId} groupBuyId={groupBuyId} batches={d.batches} headers={headers} />}
       {scope === "admin" && <DirectSupplierDownload key={groupBuyId} groupBuyId={groupBuyId} headers={headers} />}
       <section className="space-y-2">
         <p className={label} style={{ color: "#8A9AAA" }}>Proposals</p>

@@ -9,6 +9,12 @@ Keep supplier batch packages private to staff and their assigned reshipper; reus
 
 **How to apply:** Maintain recipient-scoped shipment projections and quantity-based inspections independently of carrier milestones. No supplier milestone may automatically change member fulfilment or money.
 
+Admin may deliberately compose a message for members in selected supplier batches; this is separate from automatic supplier tracking broadcasts.
+
+**Why:** The user requested messaging people in certain HGH 36IU batches and approved batch selection, recipient preview and one message per member across multiple selected batches.
+
+**How to apply:** Target current members of the selected batches only. Do not infer permission to broadcast private supplier tracking, addresses, contents or staff notes. Keep order, payment and dispatch states unchanged.
+
 Members may view a minimal batch-status summary only when staff explicitly enable sharing for that group buy; sharing is off by default. They may see batch references, regions, kit counts, dates and their own active-batch marker—not customer lists, payments, addresses, staff notes or supplier tracking numbers.
 
 **Why:** The user approved an optional “View batches” action in the group-buy card’s three-dot menu, conditional on enabling it. This is permission to share status summaries, not private supplier parcels.

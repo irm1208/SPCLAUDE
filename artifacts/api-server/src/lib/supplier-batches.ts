@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import {
   db, groupBuysTable, ordersTable, orderLineItemsTable, groupBuyRefundsTable, auditLogsTable,
   gbSupplierSettingsTable as settings, gbSupplierBatchesTable as batches,
@@ -154,7 +154,9 @@ async function state(tx: any, group: any, reconcile = true) {
       return reason ? [{ orderId: old.id, code: old.code, reason }] : [];
     }),
   }));
-  const eventRows = await tx.select().from(events).where(eq(events.groupBuyId, id)).orderBy(sql`${events.createdAt} desc`).limit(100);
+  // Per-member message deliveries have their own Admin history, not the shared batch event list.
+  const eventRows = await tx.select().from(events).where(and(eq(events.groupBuyId, id),
+    notInArray(events.kind, ["member_message", "member_message_request"]))).orderBy(sql`${events.createdAt} desc`).limit(100);
   return { groupBuy: { id, name: group.name }, config: data.config, version: data.stored?.version ?? 0,
     checkedAt: reconcile && data.stored ? now.toISOString() : asDate(data.stored?.checkedAt),
     proposals, batches: history.reverse(), review, events: eventRows };
