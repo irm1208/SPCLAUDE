@@ -371,6 +371,47 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
   }));
 
+  it.each([
+    { type: "wholesale", status: "Submitted", payment: "unpaid", due: "0", platform: "pending" },
+    { type: "wholesale", status: "Processing", payment: "confirmed", due: "50", platform: "pending" },
+    { type: "wholesale", status: "Shipped", payment: "unpaid", due: "0", platform: "pending" },
+    { type: "wholesale", status: "Completed", payment: "confirmed", due: "0", platform: "pending" },
+    { type: "wholesale_shared", status: "Submitted", payment: "unpaid", due: "0", platform: "pending" },
+    { type: "wholesale_shared", status: "Submitted", payment: "confirmed", due: "0", platform: "pending" },
+    { type: "wholesale_shared", status: "Submitted", payment: "confirmed", due: "50", platform: "confirmed" },
+  ])("exports $type / $status / $payment / balance $due / platform $platform without fulfilment or payment changes", test => fixture(async f => {
+    let shareId: string | null = null;
+    if (test.type === "wholesale_shared") {
+      shareId = `EX${randomUUID().slice(0, 7)}`;
+      await f.tx.insert(store.wholesaleSharesTable).values({
+        id: shareId, creatorUsername: f.member, deliveryUsername: f.member, vendorId: "vendor-a",
+        status: "submitted", organiserPaymentStatus: test.platform,
+        shippingName: "Fixture Recipient", shippingAddress: "Fixture Road, London AB1",
+        shippingCountry: "United Kingdom", shippingPhone: "+441234567890", shippingEmail: "fixture@example.invalid",
+      });
+      await f.tx.insert(store.wholesaleShareMembersTable).values({ id: randomUUID(), shareId, username: f.member, orderId: f.orderId });
+    }
+    await f.tx.update(store.ordersTable).set({
+      orderType: test.type, sharedOrderId: shareId, status: test.status,
+      paymentStatus: test.payment, amountDue: test.due, balancePaymentStatus: "unpaid",
+    }).where(eq(store.ordersTable.id, f.orderId));
+    const [before] = await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
+    const input = { vendorId: "vendor-a", orderCodes: [f.code], format: "txt" };
+    expect((await request("/admin/vendor-portal/export", undefined, input)).status).toBe(403);
+    const result = await request("/admin/vendor-portal/export", undefined, input, true);
+    expect(result.status).toBe(200);
+    expect(result.data.text).toContain(f.name);
+    expect(result.data.text).toContain("Grand Total: $90.00");
+    expect(result.data.text).not.toContain("Email:");
+    expect((await request("/admin/vendor-portal/preview", undefined, input, true)).status).toBe(409);
+    expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
+    const [after] = await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId));
+    expect(after).toEqual(before);
+    if (shareId) {
+      const [share] = await f.tx.select().from(store.wholesaleSharesTable).where(eq(store.wholesaleSharesTable.id, shareId));
+      expect(share.organiserPaymentStatus).toBe(test.platform);
+    }
+  }));
   it("downloads TXT without optional contact details, without submitting or changing the order", () => fixture(async f => {
     await f.tx.update(store.ordersTable).set({ shippingEmail: null, shippingPhone: null }).where(eq(store.ordersTable.id, f.orderId));
     const input = { vendorId: "vendor-a", orderCodes: [f.code], format: "txt" };

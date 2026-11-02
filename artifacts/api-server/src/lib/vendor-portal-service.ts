@@ -83,15 +83,15 @@ export async function reviewVendorApplication(
   return { ...updated, vendorId };
 }
 
-export function validateSourceOrders(orders: any[]) {
+export function validateSourceOrders(orders: any[], purpose: "submission" | "export" = "submission") {
   if (!orders.length) throw new VendorPortalError("Order no longer exists.", 409);
   for (const order of orders) {
     if (order.deletedAt || !["Submitted", "Processing", "Shipped", "Completed"].includes(order.status) ||
         !["wholesale", "wholesale_shared"].includes(order.orderType) || order.groupBuyId) {
       throw new VendorPortalError("An order was cancelled, completed or is not a wholesale order. Review it in Admin.", 409);
     }
-    if (order.paymentStatus !== "confirmed" ||
-        (Number(order.amountDue) > 0 && !["confirmed", "waived"].includes(order.balancePaymentStatus))) {
+    if (purpose === "submission" && (order.paymentStatus !== "confirmed" ||
+        (Number(order.amountDue) > 0 && !["confirmed", "waived"].includes(order.balancePaymentStatus)))) {
       throw new VendorPortalError("All orders must be fully paid with no unresolved balance before fulfilment.", 409);
     }
   }
@@ -107,7 +107,7 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
     let query = tx.select().from(wholesaleSharesTable).where(eq(wholesaleSharesTable.id, sharedId));
     if (lock) query = query.for("update");
     [share] = await query;
-    if (!share || share.status !== "submitted" || share.organiserPaymentStatus !== "confirmed") {
+    if (!share || (purpose === "submission" && (share.status !== "submitted" || share.organiserPaymentStatus !== "confirmed"))) {
       throw new VendorPortalError("Shared order must be submitted and its platform payment confirmed.", 409);
     }
     const members = await tx.select({ orderId: wholesaleShareMembersTable.orderId }).from(wholesaleShareMembersTable)
@@ -122,12 +122,13 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
   if (lock) query = query.for("update");
   let orders: any[] = await query;
   if (orders.length !== orderIds.length) throw new VendorPortalError("Order membership changed. Review the order.", 409);
-  validateSourceOrders(orders);
+  validateSourceOrders(orders, purpose);
   if (orders.some(o => (sharedId ? o.sharedOrderId !== sharedId || o.orderType !== "wholesale_shared" : o.sharedOrderId || o.orderType !== "wholesale"))) {
     throw new VendorPortalError("Order does not match this supplier shipment.", 409);
   }
-  if (lock) await assertNoActiveRefunds(tx, orderIds);
-  else {
+  // Downloads are read-only documents, not permission to fulfil or submit orders.
+  if (purpose === "submission" && lock) await assertNoActiveRefunds(tx, orderIds);
+  else if (purpose === "submission") {
     const mutable = await tx.select({ id: ordersTable.id }).from(ordersTable).where(and(inArray(ordersTable.id, orderIds), refundMutationPredicate()));
     if (mutable.length !== orderIds.length) throw new VendorPortalError("Order has an active refund.", 409);
   }
@@ -202,7 +203,7 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
       });
       continue;
     }
-    if (source.orders.some(o => ["Shipped", "Completed"].includes(o.status))) throw new VendorPortalError("An already shipped or completed order cannot be submitted as a new supplier shipment.", 409);
+    if (purpose === "submission" && source.orders.some(o => ["Shipped", "Completed"].includes(o.status))) throw new VendorPortalError("An already shipped or completed order cannot be submitted as a new supplier shipment.", 409);
     const distinctCosts = supplierCatalogueCosts(source.items, source.products, costs, costMatches);
     const items = supplierItems(source.items, distinctCosts);
     const kits = items.reduce((total, i) => total + i.quantity, 0);
