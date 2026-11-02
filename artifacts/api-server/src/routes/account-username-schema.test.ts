@@ -30,4 +30,10 @@ describe("account username foreign-key cascades", () => {
       /accountUsername:\s*text\("account_username"\)\.notNull\(\)\.references\(\s*\(\) => accountsTable\.telegramUsername,\s*\{\s*onUpdate:\s*"cascade"\s*\}\s*,?\s*\)/,
     );
   });
+  it("keeps the bell feed visible after rename migration adds an @ prefix", () => {
+    const source = readFileSync(new URL("./account.ts", import.meta.url), "utf8");
+    const handler = source.slice(source.indexOf('router.get("/account/notifications"'),
+      source.indexOf('// GET /api/account/orders'));
+    expect(handler).toContain('inArray(telegramMessageLogsTable.recipientUsername, [tg, `@${tg}`])');
+  });
 });

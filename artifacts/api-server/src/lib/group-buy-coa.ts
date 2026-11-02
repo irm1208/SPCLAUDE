@@ -9,6 +9,7 @@ import { fetchFiatToUsd } from "./crypto-pricing";
 import { verifyTransaction } from "./payment-verify";
 import { validateOnwardTx } from "./gb-onward-payment-rules";
 import { onwardTransactionTime } from "./gb-onward-chain-time";
+import { queueCoaNotification } from "./coa-notifications";
 
 type RequestRow = typeof requests.$inferSelect;
 const canonical = (name: string) => name.replace(/^@/, "").toLowerCase();
@@ -150,8 +151,10 @@ export async function inviteCoa(groupId: string, actor: string, input: any, data
       const values = { source: "invited", status: "invited", fee: previous?.fee ?? String(cfg.fee), currency: previous?.currency ?? cfg.currency,
         rails: previous?.rails ?? cfg.rails, manualInstructions: previous?.manualInstructions ?? cfg.manualInstructions,
         expiresAt: null, payment: null, updatedAt: new Date() };
+      const id = previous?.id ?? randomUUID();
       if (previous) await tx.update(requests).set(values).where(eq(requests.id, previous.id));
-      else await tx.insert(requests).values({ ...values, id: randomUUID(), orderId: o.id, groupBuyId: groupId, createdBy: actor });
+      else await tx.insert(requests).values({ ...values, id, orderId: o.id, groupBuyId: groupId, createdBy: actor });
+      await queueCoaNotification(tx, { id, orderId: o.id, fee: values.fee, currency: values.currency }, "invited");
     }
     await audit(tx, "invite", actor, groupId, { orderIds: ids });
     return { ok: true };
@@ -269,6 +272,7 @@ export async function submitCoaPayment(orderId: string, username: string, input:
         ...(result.verified ? { confirmedBy: "blockchain", confirmationNote: "Verified full COA charge at 1% tolerance." } : {}),
         updatedAt: new Date() }).where(eq(requests.id, r.id));
       await audit(tx, result.verified ? "payment_verified" : "payment_review", username, r.id, { result });
+      if (result.verified) await queueCoaNotification(tx, r, "paid");
     });
   }
   return getMemberCoa(orderId, username, database);
@@ -316,6 +320,8 @@ export async function manageCoa(requestId: string, actor: string, input: any, da
     } else throw new CoaError("Unknown COA action.");
     await tx.update(requests).set(update).where(eq(requests.id, r.id));
     await audit(tx, input.action, actor, r.id, { note: input.note, ...update });
+    if (update.status && update.status !== r.status && ["paid", "processing", "completed"].includes(update.status))
+      await queueCoaNotification(tx, r, update.status as "paid" | "processing" | "completed");
     return { ok: true };
   });
 }

@@ -1781,7 +1781,8 @@ router.get("/account/notifications", requireAccount, async (req, res): Promise<v
       .from(telegramMessageLogsTable)
       .where(and(
         eq(telegramMessageLogsTable.recipientType, "user"),
-        eq(telegramMessageLogsTable.recipientUsername, tg),
+        // Username migration historically writes @name; new logs use bare name.
+        inArray(telegramMessageLogsTable.recipientUsername, [tg, `@${tg}`]),
       ))
       .orderBy(desc(telegramMessageLogsTable.sentAt))
       .limit(20);

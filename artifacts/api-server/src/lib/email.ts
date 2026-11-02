@@ -15,19 +15,20 @@ const APP_URL = (process.env["APP_URL"] ?? "https://saltandpeps.co.uk").replace(
 // ── Core send ─────────────────────────────────────────────────────────────────
 
 export async function sendEmail({
-  to, subject, html, text, fromName,
+  to, subject, html, text, fromName, idempotencyKey,
 }: {
   to: string;
   subject: string;
   html?: string;
   text?: string;
   fromName?: string;
+  idempotencyKey?: string;
 }): Promise<{ ok: boolean; id?: string; error?: string }> {
   try {
     const from = `${fromName ?? BRAND} <${FROM}>`;
     const res = await connectors.proxy("resend", "/emails", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
       body: JSON.stringify({
         from,
         to: [to],
@@ -109,6 +110,7 @@ export async function sendTemplatedEmail(
   eventKey: string,
   to: string | null | undefined,
   vars: Record<string, string>,
+  options?: { idempotencyKey?: string },
 ): Promise<{ ok: boolean; error?: string }> {
   if (!to || !to.includes("@")) return { ok: false, error: "Invalid recipient" };
   try {
@@ -131,7 +133,7 @@ export async function sendTemplatedEmail(
       fromName: tpl.fromName,
     });
 
-    return await sendEmail({ to, subject, html, fromName: tpl.fromName });
+    return await sendEmail({ to, subject, html, fromName: tpl.fromName, idempotencyKey: options?.idempotencyKey });
   } catch (e) {
     console.error(`[email] Failed to send ${eventKey} to ${to}:`, (e as Error).message);
     return { ok: false, error: "Email send failed" };

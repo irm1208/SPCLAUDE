@@ -20,3 +20,9 @@ An existing COA request retains its original fee and payment terms when it is wi
 **Why:** Re-reserving must not charge more than the member saw on their existing request. A fee change must not silently rewrite a committed quote.
 
 **How to apply:** Preserve request terms independently of current group configuration. Changing COA payment destinations follows the existing Admin step-up boundary; routine notes and receipt confirmations do not need another security prompt.
+
+A completed COA request does not itself mean a certificate file is available.
+
+**Why:** The user explicitly requires notifications not to imply a certificate exists unless one has actually been attached.
+
+**How to apply:** Keep completion wording separate from download availability, including when adding future certificate uploads or changing notification templates.

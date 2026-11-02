@@ -30,6 +30,7 @@ import { repairOrder11688InvoiceDamage } from "./lib/order-11688-invoice-damage-
 import { repairApprovedOrderOwner } from "./lib/approved-order-owner-repair";
 import { registerRefundNotificationScheduler } from "./lib/refund-notifications";
 import { registerGroupBuyUpdateNotificationScheduler } from "./lib/group-buy-update-notifications";
+import { registerCoaNotificationScheduler } from "./lib/coa-notifications";
 import { registerSupplierBatchScheduler } from "./lib/supplier-batch-worker";
 import { stopAllSchedulers } from "./lib/scheduler-registry";
 import { ensureSupplierTestingSchema } from "./lib/supplier-testing-migration";
@@ -1432,6 +1433,7 @@ function startBackgroundServices(): void {
   startDbBackupVerificationSchedule();
   registerRefundNotificationScheduler(db);
   registerGroupBuyUpdateNotificationScheduler();
+  registerCoaNotificationScheduler();
   registerSupplierBatchScheduler();
   registerVendorPortalScheduler();
   registerVendorTelegramScheduler();

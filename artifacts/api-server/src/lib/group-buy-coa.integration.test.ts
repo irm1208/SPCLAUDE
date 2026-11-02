@@ -7,6 +7,7 @@ import {
   saveCoaSettings, saveMemberCoa, submitCoaPayment, withdrawCoa,
 } from "./group-buy-coa";
 import { coaTransactionConflict } from "./coa-payment-claim";
+import { drainCoaNotifications } from "./coa-notifications";
 
 const rail = { currency: "USDT", network: "ERC-20", walletAddress: `0x${"a".repeat(40)}` };
 vi.mock("../routes/payments", () => ({ getAdminCryptoOptions: async () => [rail] }));
@@ -165,3 +166,99 @@ function sqlIdIn(ids: string[]) {
   // Synthetic audit rows only; never delete unrelated audit history.
   return inArray(sql`${store.auditLogsTable.metadata}->>'id'`, ids);
 }
+
+describe.skipIf(process.env.COA_DB_TESTS !== "1")("COA notification transactions", () => {
+  const eventRows = (tx: any, requestId: string) => tx.select().from(store.siteConfigTable)
+    .where(sql`${store.siteConfigTable.key} LIKE ${`coa_notification:${requestId}:%`}`);
+  const feedRows = (tx: any, user: string) => tx.select().from(store.telegramMessageLogsTable)
+    .where(eq(store.telegramMessageLogsTable.recipientUsername, user));
+  it("deduplicates invitations including release and reinvite, without duplicating the bell", async () => {
+    await fixture(async ({ tx, database, group, ids, users }) => {
+      await inviteCoa(group, "test-admin", { orderIds: [ids[0]] }, database);
+      const request = (await getMemberCoa(ids[0], users[0], database)).request!;
+      await inviteCoa(group, "test-admin", { orderIds: [ids[0]] }, database);
+      await manageCoa(request.id, "test-admin", { action: "release" }, database);
+      await inviteCoa(group, "test-admin", { orderIds: [ids[0]] }, database);
+      expect(await eventRows(tx, request.id)).toHaveLength(1);
+      expect(await feedRows(tx, users[0])).toHaveLength(1);
+    });
+  });
+  it("rolls back both invitations and all notifications if a later invitation exceeds capacity", async () => {
+    await fixture(async ({ tx, database, group, ids, users }) => {
+      await saveCoaSettings(group, "test-admin", { ...cfg, cap: 1 }, database);
+      await expect(tx.transaction(async (savepoint: any) => {
+        await inviteCoa(group, "test-admin", { orderIds: ids.slice(0, 2) }, access(savepoint));
+      })).rejects.toThrow("limit");
+      expect(await feedRows(tx, users[0])).toHaveLength(0);
+      expect(await feedRows(tx, users[1])).toHaveLength(0);
+      expect((await adminCoaList({ groupBuyId: group }, database)).requests).toHaveLength(0);
+    });
+  });
+  it("queues exactly one event per manual receipt, processing and completion despite repeated actions", async () => {
+    await fixture(async ({ tx, database, ids, users }) => {
+      const saved = await saveMemberCoa(ids[0], users[0], details, database);
+      await submitCoaPayment(ids[0], users[0], { reference: "synthetic-reference" }, database);
+      for (const action of ["confirm", "processing", "completed"]) {
+        await manageCoa(saved.request!.id, "test-admin", { action, note: "Synthetic receipt checked" }, database);
+        await manageCoa(saved.request!.id, "test-admin", { action, note: "Synthetic receipt checked" }, database);
+      }
+      expect(await eventRows(tx, saved.request!.id)).toHaveLength(3);
+      const feed = await feedRows(tx, users[0]);
+      expect(feed.map((r: any) => r.eventKey).sort()).toEqual(["coa_completed", "coa_paid", "coa_processing"]);
+      expect(feed.find((r: any) => r.eventKey === "coa_completed").messageText).not.toMatch(/download|certificate is available/i);
+      // Notes are not lifecycle updates.
+      await manageCoa(saved.request!.id, "test-admin", { action: "notes", internalNotes: "Never sent" }, database);
+      expect(await eventRows(tx, saved.request!.id)).toHaveLength(3);
+    });
+  });
+  it("deduplicates a verified payment replay followed by Admin confirmation", async () => {
+    await fixture(async ({ tx, database, ids, users }) => {
+      await saveMemberCoa(ids[0], users[0], details, database);
+      await coaPaymentInstructions(ids[0], users[0], rail, database);
+      const hash = `0x${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "")}`;
+      const verifier = vi.fn().mockResolvedValue({ verified: true });
+      const saved = await submitCoaPayment(ids[0], users[0], { txHash: hash }, database, verifier, async () => Date.now());
+      await submitCoaPayment(ids[0], users[0], { txHash: hash }, database, verifier);
+      await manageCoa(saved.request!.id, "test-admin", { action: "confirm", note: "Repeated confirmation" }, database);
+      expect(await eventRows(tx, saved.request!.id)).toHaveLength(1);
+      expect(await feedRows(tx, users[0])).toHaveLength(1);
+      expect(verifier).toHaveBeenCalledTimes(1);
+    });
+  });
+  it("claims concurrent worker delivery once and follows the current renamed order owner", async () => {
+    await fixture(async ({ tx, database, group, ids, users }) => {
+      await inviteCoa(group, "test-admin", { orderIds: [ids[0]] }, database);
+      const request = (await getMemberCoa(ids[0], users[0], database)).request!;
+      const renamed = `renamed-${users[0]}`;
+      await tx.insert(store.accountsTable).values({ telegramUsername: renamed, telegramNotifications: { status: false, payment: false } });
+      await tx.update(store.ordersTable).set({ telegramUsername: `@${renamed}` }).where(eq(store.ordersTable.id, ids[0]));
+      // Match the real account-rename migration's historically prefixed feed rows.
+      await tx.update(store.telegramMessageLogsTable).set({ recipientUsername: `@${renamed}` })
+        .where(eq(store.telegramMessageLogsTable.recipientUsername, users[0]));
+      expect(await tx.select().from(store.telegramMessageLogsTable).where(
+        inArray(store.telegramMessageLogsTable.recipientUsername, [renamed, `@${renamed}`]))).toHaveLength(1);
+      // Never let test workers read or drain a real member's pending job.
+      const scoped = {
+        select: (fields?: any) => ({
+          from: (table: any) => ({
+            where: (condition: any) => tx.select(fields).from(table).where(table === store.siteConfigTable
+              ? and(condition, sql`${store.siteConfigTable.key} LIKE ${`coa_notification:${request.id}:%`}`) : condition),
+          }),
+        }),
+        update: tx.update.bind(tx), insert: tx.insert.bind(tx),
+      } as any;
+      const telegram = vi.fn().mockResolvedValue({ ok: false, skipped: true });
+      const email = vi.fn().mockResolvedValue({ ok: true });
+      await Promise.all([
+        drainCoaNotifications(scoped, { telegram, email }),
+        drainCoaNotifications(scoped, { telegram, email }),
+      ]);
+      expect(telegram).toHaveBeenCalledTimes(1);
+      expect(telegram.mock.calls[0][0]).toBe(renamed);
+      expect(email).not.toHaveBeenCalled(); // no member email saved
+      expect(JSON.parse((await eventRows(tx, request.id))[0].value).done).toBe(true);
+      await drainCoaNotifications(scoped, { telegram, email });
+      expect(telegram).toHaveBeenCalledTimes(1);
+    });
+  });
+});

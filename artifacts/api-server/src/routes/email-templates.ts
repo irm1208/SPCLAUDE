@@ -13,12 +13,14 @@ import { eq, and, isNotNull, inArray } from "drizzle-orm";
 import { requireAdmin } from "../middleware/require-admin";
 import { requireOrganiser } from "../middleware/require-organiser";
 import { sendEmail, buildEmailHtml, renderTemplate, massEmailTemplate } from "../lib/email.js";
+import { COA_EVENTS, COA_EMAIL_VARS } from "../lib/coa-notification-content";
 
 const router = Router();
 
 // ─── Shared template variables available per event ────────────────────────────
 
 const EVENT_META: Record<string, { name: string; vars: { key: string; description: string }[] }> = {
+  ...Object.fromEntries(COA_EVENTS.map(event => [`coa_${event}`, { name: `COA request: ${event}`, vars: COA_EMAIL_VARS }])),
   welcome:            { name: "Welcome",             vars: [{ key: "username", description: "Account username" }, { key: "app_url", description: "App URL" }] },
   order_confirmed:    { name: "Order Confirmed",     vars: [{ key: "order_id", description: "Order code" }, { key: "customer_name", description: "Customer username" }, { key: "items_summary", description: "List of ordered items" }, { key: "total", description: "Order total" }, { key: "app_url", description: "App URL" }] },
   order_shipped:      { name: "Order Shipped",       vars: [{ key: "order_id", description: "Order code" }, { key: "tracking_number", description: "Tracking number" }, { key: "tracking_url", description: "Tracking link" }, { key: "app_url", description: "App URL" }] },
