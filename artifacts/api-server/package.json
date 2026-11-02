@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:coa": "COA_DB_TESTS=1 vitest run src/lib/coa-rules.test.ts src/lib/group-buy-coa.integration.test.ts src/routes/group-buy-coa.test.ts",
     "build:sites": "BASE_PATH=/ PORT=21504 pnpm --filter @workspace/peps-anonymous run build && BASE_PATH=/ PORT=21505 pnpm --filter @workspace/testmedaddy run build && pnpm run build",
     "dev": "NODE_ENV=development node --env-file=../../.env --import tsx ./src/index.ts",
     "build": "tsx ./build.ts",

@@ -530,6 +530,13 @@ function OrderGridCard({
             </button>
           </div>
         )}
+        {kind === "gb" && order.groupBuyId && !cancelled && (
+          <a href={`/account/orders/${order.id}#coa`}
+            className="mt-2 flex items-center justify-center gap-1.5 text-[11.5px] font-semibold"
+            style={{ color: "var(--t-blue)" }}>
+            <FlaskConical className="w-3.5 h-3.5" />Request a COA
+          </a>
+        )}
         {(order.status === "Shipped" || order.memberReceivedAt) && !order.current && (
           <div className="mt-2">
             <OrderReceivedButton key={order.id} compact orderId={order.id} status={order.status}

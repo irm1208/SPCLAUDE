@@ -77,6 +77,7 @@ import peppysRouter from "./peppys";
 import emailTemplatesRouter from "./email-templates";
 import groupBuyBreakdownRouter from "./group-buy-breakdown";
 import groupBuyRefundsRouter from "./group-buy-refunds";
+import groupBuyCoaRouter from "./group-buy-coa";
 import halfKitOffersRouter from "./half-kit-offers";
 import { halfKitProtection } from "../middleware/half-kit-protection";
 import supplierBatchesRouter from "./supplier-batches";
@@ -241,6 +242,7 @@ router.use(peppysRouter);
 router.use(emailTemplatesRouter);
 router.use(groupBuyBreakdownRouter);
 router.use(groupBuyRefundsRouter);
+router.use(groupBuyCoaRouter);
 router.use(halfKitOffersRouter);
 router.use(wholesaleTrackingRouter);
 

@@ -65,3 +65,4 @@ export * from "./gb_supplier_batches";
 export * from "./vendor_accounts";
 export * from "./vendor_payments";
 export * from "./testmedaddy";
+export * from "./group_buy_coa";

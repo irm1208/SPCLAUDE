@@ -50,6 +50,7 @@ import { Fs3CostMatches } from "@/components/admin/Fs3CostMatches";
 import type { Fs3CostMatch } from "@workspace/api-zod/fs3-costs";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
+import { CoaRequests } from "@/components/admin/CoaRequests";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
 import { SharedOrderFulfilmentPills } from "@/components/admin/SharedOrderFulfilmentPills";
 import { OrderSupplierBadges } from "@/components/admin/OrderSupplierBadges";
@@ -15822,6 +15823,7 @@ const ALL_TABS_META = [
   { id: "intlshipping", label: "Intl Shipping", icon: Globe },
   { id: "payments", label: "Payments", icon: CreditCard },
   { id: "payment-audit", label: "Payment Audit", icon: ShieldCheck },
+  { id: "coa", label: "COA Requests", icon: FileText },
   { id: "packages", label: "Packages", icon: PackageCheck },
   { id: "fs3", label: "FS3", icon: ShieldCheck },
   { id: "vendor-portal", label: "Vendor portal", icon: Building2 },
@@ -28484,6 +28486,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
           {activeTab === "intlshipping" && <IntlShippingTab secret={secret} />}
           {activeTab === "payments"     && <PaymentsTab secret={secret} />}
           {activeTab === "payment-audit" && <PaymentAuditTab secret={secret} />}
+          {activeTab === "coa"          && <CoaRequests secret={secret} />}
           {activeTab === "packages"     && <ShipmentsTab secret={secret} />}
           {activeTab === "bulkship"     && <BulkShipmentTab secret={secret} />}
           {activeTab === "fs3"          && <Fs3Tab secret={secret} admin2fa={admin2fa} />}

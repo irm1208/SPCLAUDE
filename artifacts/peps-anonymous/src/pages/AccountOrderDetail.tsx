@@ -7,6 +7,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { OnwardDeliveryOrderCard } from "@/components/onward-delivery/OnwardDelivery";
 import { submittedTimelineLabel, wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
+import { MemberCoaRequest } from "@/components/MemberCoaRequest";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useRoute, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2437,6 +2438,9 @@ export default function AccountOrderDetail() {
                       gbId={order.groupBuyId}
                       enabled={isLoggedIn}
                     />
+                  )}
+                  {order.groupBuyId && !["wholesale", "wholesale_shared"].includes(order.orderType ?? "") && !isAdminPreview && isLoggedIn && (
+                    <MemberCoaRequest key={`${account?.telegramUsername}:${order.id}`} orderId={order.id} />
                   )}
                   {order.id && (
                     <CustomerRefundPanel
