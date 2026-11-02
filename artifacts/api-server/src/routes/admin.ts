@@ -1,6 +1,7 @@
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import adminProductStockRouter from "./admin-product-stock";
 import { resolveEditedProductId } from "../lib/admin-order-product-links";
+import { orderSupplierLabels } from "../lib/order-supplier-labels";
 import { getVendors } from "./config";
 import { loadFs3CostMatches } from "../lib/fs3-cost-matches";
 import { normaliseFs3Name } from "@workspace/api-zod/fs3-costs";
@@ -652,18 +653,19 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
   // Shared-wholesale metadata: map each order's sharedOrderId -> lead (creator) + recipient
   // username so the admin list can merge a shared order's member rows under its lead.
   const sharedOrderIds = [...new Set(orders.map(o => o.sharedOrderId).filter(Boolean))] as string[];
-  const shareMetaMap = new Map<string, { creatorUsername: string; deliveryUsername: string | null }>();
+  const shareMetaMap = new Map<string, { creatorUsername: string; deliveryUsername: string | null; vendorId: string | null }>();
   if (sharedOrderIds.length > 0) {
     const shareRows = await db
       .select({
         id: wholesaleSharesTable.id,
         creatorUsername: wholesaleSharesTable.creatorUsername,
         deliveryUsername: wholesaleSharesTable.deliveryUsername,
+        vendorId: wholesaleSharesTable.vendorId,
       })
       .from(wholesaleSharesTable)
       .where(inArray(wholesaleSharesTable.id, sharedOrderIds));
     for (const s of shareRows) {
-      shareMetaMap.set(s.id, { creatorUsername: s.creatorUsername, deliveryUsername: s.deliveryUsername ?? null });
+      shareMetaMap.set(s.id, { creatorUsername: s.creatorUsername, deliveryUsername: s.deliveryUsername ?? null, vendorId: s.vendorId });
     }
   }
 
@@ -686,6 +688,12 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
     }
   }
 
+  const wholesaleIds = new Set(orders.filter(o => ["wholesale", "wholesale_shared"].includes(o.orderType ?? "")).map(o => o.id));
+  const supplierProductIds = [...new Set(allLineItems.filter(li => wholesaleIds.has(li.orderId)).map(li => li.productId).filter(Boolean))] as string[];
+  const supplierProducts = supplierProductIds.length ? await db.select({
+    id: productsTable.id, wholesaleVendorId: productsTable.wholesaleVendorId, vendor: productsTable.vendor,
+  }).from(productsTable).where(inArray(productsTable.id, supplierProductIds)) : [];
+  const supplierVendors = wholesaleIds.size ? await getVendors() : [];
   const formatted = orders.map((o) => {
     const currency = o.groupBuyId ? (gbCurrencyMap.get(o.groupBuyId) ?? null) : null;
     // Only fall back to the gbReshippers leg lookup when:
@@ -720,6 +728,8 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
       ...fmtOrder({ ...o, currency } as unknown as Record<string, any>, (liByOrder.get(o.id) ?? []).map(li =>
         fs3Pricing ? { ...li, costVendorId: fs3Pricing.vendorIdFor(li) } : li) as unknown as Record<string, any>[]),
       reshipperUsername, accountCountry, isWholesale,
+      supplierLabels: orderSupplierLabels(o, liByOrder.get(o.id) ?? [], supplierProducts, supplierVendors,
+        o.sharedOrderId ? shareMetaMap.get(o.sharedOrderId)?.vendorId : null),
       missingAddress, hasUnresolvedBalance, needsBalanceDueReview, hasDraft,
       customShippingRequiresAddress, customShippingRequiresQrCode,
       shippingOptionRequiresAddress, shippingOptionRequiresQrCode,

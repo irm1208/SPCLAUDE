@@ -52,6 +52,7 @@ import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
 import { SharedOrderFulfilmentPills } from "@/components/admin/SharedOrderFulfilmentPills";
+import { OrderSupplierBadges } from "@/components/admin/OrderSupplierBadges";
 import { TrackingPackageEditor } from "@/components/admin/TrackingPackageEditor";
 import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
 import {
@@ -168,6 +169,7 @@ function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret
 // ─── Types ───────────────────────────────────────────────────
 interface LineItem { id: string; productId: string | null; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos?: boolean; }
 interface Order {
+  supplierLabels?: string[];
   displayReference?: string;
   isAddition?: boolean;
   additionParent?: { id: string; reference: string } | null;
@@ -1548,6 +1550,7 @@ function OrdersTab({ secret }: { secret: string }) {
           </button>
         </div>
         <div className="mx-4 mb-2 flex flex-wrap items-center gap-1.5">
+          <OrderSupplierBadges labels={group.members.flatMap(o => o.supplierLabels ?? [])} />
           <SharedOrderFulfilmentPills statuses={paymentSummary?.orderStatusPills}
             shareStatus={paymentSummary?.status} unavailable={sharedPaymentSummaryError} />
         </div>
@@ -3368,6 +3371,7 @@ function OrdersTab({ secret }: { secret: string }) {
                   </span>
                 )}
                 <CreditPaymentPill creditsApplied={order.creditsApplied} grandTotal={order.grandTotal} currency={order.currency} />
+                <OrderSupplierBadges labels={order.supplierLabels} />
                 {order.missingAddress && (
                   <span title="Missing delivery address" className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600 border border-red-200">
                     <AlertTriangle className="w-2.5 h-2.5" />Addr

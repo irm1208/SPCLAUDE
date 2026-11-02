@@ -64,6 +64,23 @@ describe.skipIf(process.env.FS3_COST_MATCH_DB_TESTS !== "1")("FS3 matches / real
       throw rollback;
     }).catch((e: any) => { if (e !== rollback) throw e; });
   }
+  it("includes chosen supplier badges in the ordinary Admin list, without requesting FS3 prices", async () => fixture(async () => {
+    const id = randomUUID(), code = `${Date.now()}`;
+    await state.tx.insert(store.ordersTable).values({
+      id, code, telegramUsername: "supplier-label-fixture", deliveryMethod: "Vendor",
+      orderType: "wholesale", wholesaleVendorId: "supplier-a", paymentStatus: "unpaid", status: "Submitted",
+      productSubtotal: "200", grandTotal: "200",
+    });
+    await state.tx.insert(store.orderLineItemsTable).values([
+      { id: randomUUID(), orderId: id, productId: "supplier-label-b", productName: "Explicit supplier B", vendorId: "supplier-b", quantity: "1", unitPrice: "100", lineTotal: "100" },
+      { id: randomUUID(), orderId: id, productId: "supplier-label-a", productName: "Inherited supplier A", quantity: "1", unitPrice: "100", lineTotal: "100" },
+    ]);
+    const result = await request("GET", undefined, true, `/admin/orders?search=${code}`);
+    expect(result.status).toBe(200);
+    const order = result.data.orders.find((o: any) => o.id === id);
+    expect([...order.supplierLabels].sort()).toEqual(["Supplier A", "Supplier B"]);
+    expect(order.lineItems.every((li: any) => li.costVendorId === undefined)).toBe(true);
+  }), 30_000);
   it("requires Admin for reads and writes and explicit review for every approval", async () => fixture(async body => {
     for (const method of ["GET", "POST", "DELETE"]) expect((await request(method, method === "GET" ? undefined : body, false)).status).toBe(403);
     for (const patch of [{ reviewed: false }, { reviewNote: "" }, { vendorId: "unknown" }, { costName: "missing" }, { productName: body.costName }, { vendorId: undefined }]) {
