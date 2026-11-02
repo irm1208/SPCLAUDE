@@ -9,7 +9,7 @@ export interface MemberBatchStatusData {
   countryRequired?: boolean;
   directShipping?: boolean;
   directShippingOnly?: boolean;
-  batches: { id: string; reference: string; region: string; kits: number; targetKits?: number | null; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null; orders?: { code: string; status: string }[] }[];
+  batches: { id: string; reference: string; region: string; kits: number; targetKits?: number | null; status: string; isYourBatch: boolean; createdAt: string; orderedAt: string | null; orders?: { id?: string; code: string; status: string }[] }[];
 }
 const date = (v: string) => new Date(v).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 

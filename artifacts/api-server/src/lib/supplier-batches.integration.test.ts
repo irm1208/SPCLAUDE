@@ -591,6 +591,9 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const de = await memberSupplierBatches(f.id, "synthetic-3");
     const uk = await memberSupplierBatches(f.id, "synthetic-1");
     const us = await memberSupplierBatches(f.id, "synthetic-2");
+    expect(eu.batches[0].orders.map((o: any) => o.id)).toEqual([f.ids[0]]);
+    expect(uk.batches[0].orders.map((o: any) => o.id)).toEqual([f.ids[1]]);
+    expect(us.batches[0].orders.map((o: any) => o.id)).toEqual([f.ids[2]]);
     expect(eu.regions).toEqual([]);
     expect(de.regions).toEqual([{ id: "eu", name: "EU", kits: 18.5, targetKits: 100, status: "Filling", yourOrderStatus: "included" }]);
     expect(uk.regions).toEqual([]);

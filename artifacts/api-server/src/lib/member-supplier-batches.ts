@@ -141,7 +141,7 @@ export async function memberSupplierBatches(id: string, username: string, databa
         .filter(o => ownOrderIds.has(o.id) && allocations.get(o.id) === reservationBatch(o, b.id))
         .map(o => {
           const current = ownActiveOrders.find(row => row.id === o.id)!;
-          return { code: current.code, status: current.status };
+          return { id: current.id, code: current.code, status: current.status };
         }),
     })) };
   }, { isolationLevel: "repeatable read" });

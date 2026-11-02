@@ -4,6 +4,8 @@ import { wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { useQueryClient } from "@tanstack/react-query";
 import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
 import { MemberBatchStatus } from "@/components/supplier-batches/MemberBatchStatus";
+import { OrderBatchDetails } from "@/components/supplier-batches/OrderBatchDetails";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
 import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
 import { OrderReceivedButton, type MemberReceipt } from "@/components/OrderReceivedButton";
@@ -334,6 +336,7 @@ function OrderGridCard({
   onReceived: (receipt: MemberReceipt) => void;
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const { account: cardAccount } = useAccount();
   const sMeta = STATUS_META[order.status] ?? { label: order.status, color: "#64748B", bg: "rgba(100,116,139,0.1)", icon: FileText };
   const pMeta = PAYMENT_META[order.paymentStatus] ?? PAYMENT_META.unpaid!;
   const { label: metaLabel, Icon } = ORDER_KIND_META[kind];
@@ -365,42 +368,51 @@ function OrderGridCard({
                 {order.status === "Completed" && order.memberReceivedAt ? "Received" : wholesaleStatusLabel(sMeta.label, order.orderType)}
               </span>
               {/* ⋯ kebab menu */}
-              <div className="relative">
+              <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
                 <button
-                  onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
+                  aria-label={`More actions for order ${order.code}`}
+                  onClick={e => e.stopPropagation()}
                   className="w-7 h-7 rounded-lg flex items-center justify-center"
                   style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.22)" }}>
                   <MoreHorizontal className="w-3.5 h-3.5 text-white" />
                 </button>
-                {menuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-[50]" onClick={() => setMenuOpen(false)} />
-                    <div className="absolute right-0 top-8 z-[51] w-40 rounded-xl p-1 flex flex-col gap-0.5"
+                </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="z-[51] w-64 max-w-[calc(100vw-2rem)] max-h-[65dvh] overflow-y-auto rounded-xl p-1 flex flex-col gap-0.5"
+                      onClick={e => e.stopPropagation()}
                       style={{ background: T.surface, border: `1px solid ${T.border}`, boxShadow: "0 8px 24px rgba(0,0,0,0.18)" }}>
+                      {menuOpen && kind === "gb" && order.groupBuyId && (
+                        <OrderBatchDetails key={`${cardAccount?.telegramUsername}:${order.id}`}
+                          groupBuyId={order.groupBuyId} orderId={order.id} accountKey={cardAccount?.telegramUsername} />
+                      )}
                       {isHidden ? (
+                        <DropdownMenuItem asChild disabled={completionPending}>
                         <button disabled={completionPending} onClick={() => { setMenuOpen(false); onUnhide?.(); }}
                           className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
                           style={{ color: T.text }}>
                           <ArchiveRestore className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Restore order
                         </button>
+                        </DropdownMenuItem>
                       ) : (
+                        <DropdownMenuItem asChild disabled={completionPending}>
                         <button disabled={completionPending} onClick={() => { setMenuOpen(false); onHide?.(); }}
                           className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
                           style={{ color: T.text }}>
                           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" style={{ color: T.subtle }} /> Mark completed
                         </button>
+                        </DropdownMenuItem>
                       )}
                       {cancelled && onRemove && (
+                        <DropdownMenuItem asChild>
                         <button onClick={() => { setMenuOpen(false); onRemove(); }}
                           className="flex items-center gap-2 h-9 px-3 rounded-lg text-[12.5px] font-medium text-left w-full"
                           style={{ color: "#DC2626" }}>
                           <Trash2 className="w-3.5 h-3.5 shrink-0" /> Remove
                         </button>
+                        </DropdownMenuItem>
                       )}
-                    </div>
-                  </>
-                )}
-              </div>
+                    </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
           <p className="text-[14px] font-bold text-white truncate mt-0.5">{title}</p>
