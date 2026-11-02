@@ -15,11 +15,12 @@ type WARData = {
   createdAt: string;
   rejectionReason: string | null;
 };
-type ApiResp = { request: WARData | null; cryptoOptions?: unknown[] };
+type ApiResp = { request: WARData | null; cryptoOptions?: unknown[]; accessFee?: number | null };
 
 export function WholesaleAccessSection() {
   const [loading, setLoading] = useState(true);
   const [request, setRequest] = useState<WARData | null>(null);
+  const [accessFee, setAccessFee] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -29,6 +30,7 @@ export function WholesaleAccessSection() {
       if (r.ok) {
         const d: ApiResp = await r.json();
         setRequest(d.request);
+        setAccessFee(typeof d.accessFee === "number" && Number.isFinite(d.accessFee) && d.accessFee > 0 ? d.accessFee : null);
       }
     } finally {
       setLoading(false);
@@ -142,8 +144,8 @@ export function WholesaleAccessSection() {
           <ol className="space-y-3">
             {[
               { n: "1", text: "Select Get Wholesale Access from the navigation." },
-              { n: "2", text: "Pay the $50 access fee." },
-              { n: "3", text: "The full $50 is added back to your account as credit." },
+              { n: "2", text: accessFee === null ? "Pay the access fee shown on your request." : `Pay the $${accessFee.toLocaleString("en-US", { maximumFractionDigits: 2 })} access fee.` },
+              { n: "3", text: accessFee === null ? "The full access fee is added back to your account as credit." : `The full $${accessFee.toLocaleString("en-US", { maximumFractionDigits: 2 })} is added back to your account as credit.` },
             ].map(({ n, text }) => (
               <li key={n} className="flex items-start gap-3">
                 <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white" style={{ background: "var(--t-blue)" }}>{n}</span>
@@ -153,7 +155,7 @@ export function WholesaleAccessSection() {
           </ol>
           <div className="rounded-lg px-3 py-2.5 space-y-1" style={{ background: "var(--t-surface2)", border: "1px solid var(--t-border)" }}>
             <p className="text-xs" style={{ color: "var(--t-muted)" }}>
-              The credit does not expire and can be used at any time. The $50 amount was chosen because it covers the lowest available shipping option.
+              The credit does not expire and can be used at any time.
             </p>
           </div>
           <button

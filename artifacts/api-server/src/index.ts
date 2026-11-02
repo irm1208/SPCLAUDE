@@ -26,6 +26,7 @@ import { startDbBackupSchedule } from "./lib/db-backup";
 import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
+import { correctWholesaleAccessFee } from "./lib/wholesale-access-fee-correction";
 import { repairOrder11688InvoiceDamage } from "./lib/order-11688-invoice-damage-repair";
 import { repairApprovedOrderOwner } from "./lib/approved-order-owner-repair";
 import { registerRefundNotificationScheduler } from "./lib/refund-notifications";
@@ -1457,6 +1458,7 @@ runStartupMigrations()
   .then(() => ensureSystemEmailTemplates())
   .then(() => purgeExpiredDeletedOrders())
   .then(() => runSecurityIncidentRemediation())
+  .then(() => correctWholesaleAccessFee())
   .then(() => repairOrder11688InvoiceDamage())
   .then(() => repairApprovedOrderOwner())
   .then(() => {
