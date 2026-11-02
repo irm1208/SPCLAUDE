@@ -24,6 +24,8 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
         await tx.delete(store.auditLogsTable).where(sql`${store.auditLogsTable.metadata}->>'groupBuyId' = ${id}`);
         await tx.delete(store.gbSupplierAllocationsTable).where(sql`${store.gbSupplierAllocationsTable.batchId} IN
           (SELECT id FROM gb_supplier_batches WHERE group_buy_id = ${id})`);
+        await tx.delete(store.gbSupplierShipmentsTable).where(sql`${store.gbSupplierShipmentsTable.batchId} IN
+          (SELECT id FROM gb_supplier_batches WHERE group_buy_id = ${id})`);
         await tx.delete(store.ordersTable).where(eq(store.ordersTable.groupBuyId, id));
         await tx.delete(store.groupBuysTable).where(eq(store.groupBuysTable.id, id));
       });
@@ -49,6 +51,55 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("audits an Admin move from an ordered batch, preserves payments, cleans the unchecked manifest, and replays safely", async () => {
+    const f = await fixture([58, 2, 4]);
+    const configured = await api.saveSupplierConfig(f.id, admin, { expectedVersion: f.result.version,
+      config: { ...f.result.config, regions: [{ ...f.result.config.regions[0], targetKits: 50 }] } });
+    const p = configured.proposals[0].allQueued;
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token, includeAll: true });
+    const batch = prepared.batches[0];
+    await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    const shipmentId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: batch.id, requestKey: randomUUID(), requestHash: "fixture",
+      label: "Unchecked fixture", createdBy: admin.username,
+      contents: f.ids.map((orderId, i) => ({ orderId, productId: "synthetic-product", quantity: [58, 2, 4][i] })),
+    });
+    const before = await store.db.select().from(store.ordersTable).where(inArray(store.ordersTable.id, f.ids));
+    const body = { confirm: true, reason: "Excluded from the actual vendor purchase", expectedBatchToken: batch.snapshot.token, orderIds: f.ids.slice(1) };
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, { username: "synthetic-organiser", admin: false }, body)).rejects.toThrow(/Admin/);
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, { ...body, expectedBatchToken: "stale" })).rejects.toThrow(/changed/);
+    await store.db.update(store.ordersTable).set({ status: "Shipped" }).where(eq(store.ordersTable.id, f.ids[1]));
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, body)).rejects.toThrow(/unshipped/);
+    await store.db.update(store.ordersTable).set({ status: "Processing" }).where(eq(store.ordersTable.id, f.ids[1]));
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 1 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, body)).rejects.toThrow(/inspected/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 0 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    const [result, concurrent] = await Promise.all([
+      api.moveSupplierBatchOrders(f.id, batch.id, admin, body),
+      api.moveSupplierBatchOrders(f.id, batch.id, admin, body),
+    ]);
+    expect(concurrent.batches).toHaveLength(2);
+    const source = result.batches.find((b: any) => b.id === batch.id);
+    const destination = result.batches.find((b: any) => b.id !== batch.id);
+    expect(source.state).toBe("ordered");
+    expect(source.snapshot.kits).toBe(58);
+    expect(source.snapshot.corrections[0]).toMatchObject({ direction: "out", kits: 6, reference: destination.reference });
+    expect(destination).toMatchObject({ state: "prepared", snapshot: { kits: 6 } });
+    const after = await store.db.select().from(store.ordersTable).where(inArray(store.ordersTable.id, f.ids));
+    for (const o of after) {
+      const previous = before.find((v: any) => v.id === o.id);
+      expect([o.grandTotal, o.paymentStatus, o.creditsApplied]).toEqual([previous.grandTotal, previous.paymentStatus, previous.creditsApplied]);
+      expect(o.status).toBe(o.id === f.ids[0] ? "Processing" : "Submitted");
+    }
+    const [shipment] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(shipment.contents.map((c: any) => c.orderId)).toEqual([f.ids[0]]);
+    const replay = await api.moveSupplierBatchOrders(f.id, batch.id, admin, body);
+    expect(replay.batches).toHaveLength(2);
+    expect(replay.batches.find((b: any) => b.id === destination.id).snapshot.kits).toBe(6);
+    const history = result.events.find((e: any) => e.kind === "orders_moved");
+    expect(history.detail.beforeSnapshot.kits).toBe(64);
+  });
   it.each([
     ["EU", ["IT", "DE"], "Italy"],
     ["US", ["US"], "United States"],

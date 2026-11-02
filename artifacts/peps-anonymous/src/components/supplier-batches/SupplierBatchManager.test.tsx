@@ -35,6 +35,57 @@ const existingBatch: SupplierBatch = {
   releasedAt: null, releaseReason: null, snapshot: target, exceptions: [],
 };
 
+test("Admin can review and confirm a whole-order move with a reason", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const calls: unknown[] = [];
+  const props = {
+    b: { ...existingBatch, state: "ordered" as const }, busy: false,
+    act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
+    exportCsv: async () => {}, exportTxt: async () => {},
+    context: { groupBuyId: "gb", scope: "admin" as const },
+  };
+  try {
+    await act(async () => root.render(createElement(BatchCard, props)));
+    const button = host.querySelector('[data-testid="button-correct-prepared-uk"]') as HTMLButtonElement;
+    assert.ok(button, "Admin correction entry point must be visible");
+    await act(async () => button.click());
+    // @ts-expect-error Existing workspace browser-test dependency.
+    const { fireEvent } = await import("../../../../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/index.js");
+    await act(async () => fireEvent.click(host.querySelector('[data-testid="move-order-one"]')!));
+    assert.match(host.textContent!, /20 kits.*30 kits/);
+    const confirm = host.querySelector('[data-testid="confirm-move-orders"]') as HTMLButtonElement;
+    assert.equal(confirm.disabled, true);
+    await act(async () => {
+      fireEvent.change(host.querySelector('[data-testid="move-orders-reason"]')!, { target: { value: "Not included in vendor purchase" } });
+      fireEvent.click(host.querySelector('[data-testid="acknowledge-move-orders"]')!);
+    });
+    await act(async () => confirm.click());
+    assert.deepEqual(calls, [["/prepared-uk/move-orders", {
+      orderIds: ["one"], expectedBatchToken: "target-token",
+      reason: "Not included in vendor purchase", confirm: true,
+    }]]);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("organisers see the correction marker but cannot start an Admin correction", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    const snapshot = { ...target, corrections: [{ direction: "out" as const, kits: 6, reference: "GB-TEST / 003",
+      reason: "Not included in vendor purchase", orderCodes: ["12402", "12447"], actor: "admin", createdAt: "2026-11-02T12:00:00Z" }] };
+    await act(async () => root.render(createElement(BatchCard, {
+      b: { ...existingBatch, state: "ordered", snapshot }, busy: false,
+      act: async () => true, exportCsv: async () => {}, exportTxt: async () => {},
+      context: { groupBuyId: "gb", scope: "organiser" },
+    })));
+    assert.equal(host.querySelector('[data-testid="button-correct-prepared-uk"]'), null);
+    assert.ok(host.textContent!.includes("GB-TEST / 003"));
+    assert.ok(host.textContent!.includes("12402"));
+    assert.ok(host.textContent!.includes("Not included in vendor purchase"));
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 test("vendor submission requires confirmation and reuses the existing batch action", async () => {
   const container = document.createElement("div");
   document.body.append(container);

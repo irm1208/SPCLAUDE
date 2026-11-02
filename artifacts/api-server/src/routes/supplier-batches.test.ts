@@ -1,7 +1,7 @@
 import express from "express";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { type Server } from "node:http";
-const calls = vi.hoisted(() => ({ admin: vi.fn(), organiser: vi.fn(), data: vi.fn(), preview: vi.fn(), refresh: vi.fn() }));
+const calls = vi.hoisted(() => ({ admin: vi.fn(), organiser: vi.fn(), data: vi.fn(), preview: vi.fn(), refresh: vi.fn(), move: vi.fn() }));
 vi.mock("../middleware/account-auth", () => ({ requireAccount: (req: any, res: any, next: any) => {
   if (req.headers["x-test-member"] !== "yes") return res.status(401).json({ error: "Sign in" });
   req.account = { telegramUsername: "member" }; next();
@@ -20,6 +20,7 @@ vi.mock("../lib/supplier-batches", () => ({
   supplierData:calls.data,saveSupplierConfig:vi.fn(),confirmSupplierBatch:vi.fn(),orderSupplierBatch:vi.fn(),
   releaseSupplierBatch:vi.fn(),reviewHistoricalSupplierOrder:vi.fn(),exportSupplierBatch:vi.fn(),
   previewSupplierBatchRefresh:calls.preview,refreshSupplierBatch:calls.refresh,
+  moveSupplierBatchOrders:calls.move,
 }));
 import router from "./supplier-batches";
 describe("supplier batch HTTP authentication", () => {
@@ -37,8 +38,20 @@ describe("supplier batch HTTP authentication", () => {
     calls.data.mockImplementation(async(id,actor)=>({id,actor}));
     calls.preview.mockImplementation(async(id,batchId,actor,body)=>({id,batchId,actor,body}));
     calls.refresh.mockImplementation(async(id,batchId,actor,body)=>({id,batchId,actor,body}));
+    calls.move.mockImplementation(async(id,batchId,actor,body)=>({id,batchId,actor,body}));
   });
   afterAll(()=>new Promise<void>((r,e)=>server.close(err=>err?e(err):r())));
+  it("requires Admin authentication for corrections and exposes no organiser correction endpoint", async () => {
+    const url = `${base}/api/admin/group-buys/gb/supplier-batches/batch/move-orders`;
+    const init = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true, orderIds: ["o"] }) };
+    expect((await fetch(url, init)).status).toBe(401);
+    const allowed = await fetch(url, { ...init, headers: { ...init.headers, "x-test-admin": "yes" } });
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toMatchObject({ id: "gb", batchId: "batch", actor: { admin: true } });
+    expect((await fetch(url.replace("/admin/", "/organiser/"), {
+      ...init, headers: { ...init.headers, "x-test-organiser": "yes" },
+    })).status).toBe(404);
+  });
   it("requires Admin auth under an Express mounted prefix, never falls through organiser auth",async()=>{
     calls.organiser.mockClear();
     const denied=await fetch(`${base}/api/admin/group-buys/gb/supplier-batches`);

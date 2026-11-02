@@ -21,6 +21,18 @@ When an existing allocated order changes after preparation, the user wants a rev
 
 **How to apply:** Show old/new changes and require explicit approval; preserve batch identity and allocations. Keep eligibility, payment and concurrency safeguards, and never refresh a batch already submitted to the supplier.
 
+A recorded “submitted to vendor” time does not prove which quantities were
+actually purchased. Reconcile disputed allocations against the vendor purchase
+and received goods, not that timestamp alone.
+
+**Why:** The user reported that the actual vendor purchase excluded whole orders
+that had been appended before staff recorded the batch as submitted.
+
+**How to apply:** An explicit Admin correction may move complete, paid, unshipped
+orders to a new same-region prepared batch. Keep a visible correction marker and
+the original snapshot in the audit history; correct unchecked package manifests
+atomically. Never change customer payments or silently rewrite inspected receipts.
+
 When an enabled supplier region reaches its kit target and Telegram alerts are enabled, notify both the configured Admin Telegram chat and the group-buy organiser. These are staff alerts, not member broadcasts.
 
 **Why:** The user explicitly chose Admin and the organiser as recipients; organiser-only alerts do not notify the Admin who manages supplier purchasing.

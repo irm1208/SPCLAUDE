@@ -6,6 +6,7 @@ import { memberSupplierBatches } from "../lib/member-supplier-batches";
 import { SupplierBatchError } from "../lib/supplier-batches-model";
 import { type UpdateActor } from "../lib/group-buy-updates-model";
 import { supplierData, saveSupplierConfig, confirmSupplierBatch, appendSupplierBatch, previewSupplierBatchRefresh, refreshSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch, supplierDirectOrders, exportSupplierTxt } from "../lib/supplier-batches";
+import { moveSupplierBatchOrders } from "../lib/supplier-batches";
 
 const router = Router();
 const roots = ["/admin/group-buys/:id/supplier-batches", "/organiser/group-buys/:id/supplier-batches"];
@@ -47,6 +48,9 @@ router.post(paths("/:batchId/refresh"), async (req, res) => { res.json(await ref
 router.post(paths("/review/:orderId"), async (req, res) => { res.json(await reviewHistoricalSupplierOrder(param(req, "id"), param(req, "orderId"), actor(req), req.body)); });
 router.post(paths("/:batchId/ordered"), async (req, res) => { res.json(await orderSupplierBatch(param(req, "id"), param(req, "batchId"), actor(req), req.body)); });
 router.post(paths("/:batchId/release"), async (req, res) => { res.json(await releaseSupplierBatch(param(req, "id"), param(req, "batchId"), actor(req), req.body)); });
+router.post("/admin/group-buys/:id/supplier-batches/:batchId/move-orders", async (req, res) => {
+  res.json(await moveSupplierBatchOrders(param(req, "id"), param(req, "batchId"), actor(req), req.body));
+});
 router.get(paths("/:batchId/export"), async (req, res) => {
   const result = await exportSupplierBatch(param(req, "id"), param(req, "batchId"), actor(req));
   res.setHeader("Content-Disposition", `attachment; filename="supplier-batch-${param(req, "batchId").replace(/[^a-zA-Z0-9-]/g, "")}.csv"`);

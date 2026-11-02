@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, Download, Plus, Trash2 } from "lucide-react";
 import { SupplierBatchFulfilment } from "./SupplierBatchFulfilment";
 import { DirectSupplierDownload } from "./DirectSupplierDownload";
 import { BatchRefreshReview } from "./BatchRefreshReview";
+import { BatchCorrection } from "./BatchCorrection";
 import {
   EU_BATCH_COUNTRIES, supplierKey, supplierRequest, downloadSupplierCsv,
   downloadSupplierTxt,
@@ -270,6 +271,7 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
         </ul>
       )}
       <OrdersDetail p={b.snapshot} />
+      <BatchCorrection batch={b} scope={context.scope} busy={busy} onConfirm={act} />
       {b.state === "prepared" && blocked && (
         <BatchRefreshReview batch={b} scope={context.scope} groupBuyId={context.groupBuyId} busy={busy}
           requestPreview={(path, body) => supplierRequest<BatchRefreshPreview>(context.scope, context.groupBuyId, path, body, "POST", context.headers)}
@@ -352,9 +354,14 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
     setMsg(null);
     try {
       await run(() => supplierRequest(scope, groupBuyId, path, body, "POST", headers));
-      if (path.endsWith("/refresh")) {
+      if (path.endsWith("/refresh") || path.endsWith("/move-orders")) {
         await qc.invalidateQueries({ queryKey: ["member-supplier-batches", groupBuyId] });
         await qc.invalidateQueries({ queryKey: supplierKey(scope === "admin" ? "organiser" : "admin", groupBuyId) });
+        if (path.endsWith("/move-orders")) {
+          for (const staffScope of ["admin", "organiser"]) {
+            await qc.invalidateQueries({ queryKey: ["supplier-fulfilment", staffScope, groupBuyId] });
+          }
+        }
       }
       setMsg({ err: false, text: ok }); return true;
     }

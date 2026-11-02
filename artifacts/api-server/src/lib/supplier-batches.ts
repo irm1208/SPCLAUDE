@@ -6,6 +6,7 @@ import {
   gbSupplierAllocationsTable as allocations, gbSupplierEligibilityTable as eligibility,
   gbSupplierEventsTable as events, telegramMessageLogsTable,
   accountsTable, fs3CostsTable,
+  gbSupplierShipmentsTable as shipments,
 } from "@workspace/db";
 import { supplierTxt, type TxtBlock, type SupplierContact } from "./supplier-txt";
 import { getActiveWholesaleVendor } from "../routes/config";
@@ -16,6 +17,7 @@ import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
 import { buildPreparedBatchRefresh, refreshedOrderSnapshot } from "./supplier-batch-refresh-model";
+import { correctionSnapshots } from "./supplier-batch-correction-model";
 
 type Database = typeof db;
 const emptyConfig: SupplierConfig = { enabled: false, telegramAlerts: false, showToMembers: false, regions: [] };
@@ -328,6 +330,80 @@ export async function releaseSupplierBatch(id: string, batchId: string, actor: U
     // Change config generation so re-preparing the same orders gets a fresh token.
     await tx.update(settings).set({ version: sql`${settings.version} + 1` }).where(eq(settings.groupBuyId, id));
     await audit(tx, id, actor.username, "released", { batchId, reason: body.reason.trim() });
+    return state(tx, group);
+  }, database);
+}
+/** Explicit Admin correction, not a release or an edit of a placed vendor purchase. */
+export async function moveSupplierBatchOrders(id: string, batchId: string, actor: UpdateActor, body: any, database = db) {
+  if (!actor.admin) throw new SupplierBatchError("Only Admin can correct a batch already submitted to the vendor.", 403);
+  if (body?.confirm !== true || typeof body.reason !== "string" || !body.reason.trim() || body.reason.length > 1000
+    || typeof body.expectedBatchToken !== "string" || !Array.isArray(body.orderIds)
+    || !body.orderIds.length || body.orderIds.length > 1000 || body.orderIds.some((v: unknown) => typeof v !== "string")
+    || new Set(body.orderIds).size !== body.orderIds.length) {
+    throw new SupplierBatchError("Select whole orders, confirm the correction and give a reason (up to 1000 characters).", 400);
+  }
+  const ids: string[] = [...body.orderIds].sort(), reason = body.reason.trim();
+  const requestKey = fingerprint({ batchId, ids, reason, token: body.expectedBatchToken });
+  return locked(id, actor, async (tx, group) => {
+    const [replay] = await tx.select({ id: events.id }).from(events).where(and(
+      eq(events.groupBuyId, id), eq(events.kind, "orders_moved"), sql`${events.detail}->>'requestKey' = ${requestKey}`,
+    ));
+    if (replay) return state(tx, group);
+    const current = await state(tx, group, false);
+    const source = current.batches.find((b: any) => b.id === batchId);
+    if (!source) throw new SupplierBatchError("Batch not found.", 404);
+    if (source.state !== "ordered" || source.snapshot.token !== body.expectedBatchToken) {
+      throw new SupplierBatchError("The submitted batch changed. Reload and review before correcting it.");
+    }
+    const { remaining, moved } = correctionSnapshots(source.snapshot, ids);
+    if (source.exceptions.some((e: any) => ids.includes(e.orderId))) {
+      throw new SupplierBatchError("Selected orders have changed since preparation. Resolve their exceptions first.");
+    }
+    const selected = await tx.select().from(ordersTable).where(and(
+      eq(ordersTable.groupBuyId, id), inArray(ordersTable.id, ids),
+    )).orderBy(asc(ordersTable.id)).for("update");
+    if (selected.length !== ids.length || selected.some((o: any) => o.status !== "Processing"
+      || o.deletedAt || o.paymentStatus !== "confirmed" || Number(o.amountDue ?? 0) > 0
+      || ["verifying", "pending_confirmation"].includes(o.balancePaymentStatus))) {
+      throw new SupplierBatchError("Only fully paid, unshipped Processing orders without pending balance verification can move.");
+    }
+    await assertNoActiveRefunds(tx, ids);
+    const packages = await tx.select().from(shipments).where(eq(shipments.batchId, batchId))
+      .orderBy(asc(shipments.id)).for("update");
+    const affected = packages.filter((s: any) => !s.cancelledAt
+      && (s.contents as any[]).some(c => ids.includes(c.orderId)));
+    if (affected.some((s: any) => s.receiptChecked || (s.receipt as any[]).length)) {
+      throw new SupplierBatchError("An affected supplier package has an inspected receipt. Its contents cannot be reallocated.");
+    }
+    const sequence = Math.max(0, ...current.batches.map((b: any) => b.sequence)) + 1;
+    const targetId = randomUUID();
+    const reference = regionalBatchReference(`GB-${id.slice(0, 8)} / ${String(sequence).padStart(3, "0")}`, moved.region);
+    const note = { reason, kits: moved.kits, orderCodes: moved.orders.map(o => o.code),
+      createdAt: new Date().toISOString(), actor: actor.username };
+    remaining.corrections = [...(source.snapshot.corrections ?? []), { ...note, direction: "out", reference }];
+    moved.corrections = [{ ...note, direction: "in", reference: source.reference }];
+    await tx.insert(batches).values({ id: targetId, groupBuyId: id, sequence, reference, previewToken: requestKey,
+      snapshot: moved, createdBy: actor.username });
+    const reassigned = await tx.update(allocations).set({ batchId: targetId }).where(and(
+      eq(allocations.batchId, batchId), inArray(allocations.orderId, ids),
+    )).returning({ orderId: allocations.orderId });
+    if (reassigned.length !== ids.length) throw new SupplierBatchError("An order's allocation changed. Reload and review.");
+    await tx.update(batches).set({ snapshot: remaining }).where(eq(batches.id, batchId));
+    await tx.update(ordersTable).set({ status: "Submitted" }).where(inArray(ordersTable.id, ids));
+    for (const s of affected) {
+      const contents = (s.contents as any[]).filter(c => !ids.includes(c.orderId));
+      await tx.update(shipments).set({
+        contents, version: s.version + 1, updatedAt: new Date(),
+        ...(!contents.length ? { cancelledAt: new Date(), cancelReason: `Allocation moved to ${reference}: ${reason}` } : {}),
+      }).where(and(eq(shipments.id, s.id), eq(shipments.version, s.version)));
+    }
+    await tx.update(settings).set({ version: sql`${settings.version} + 1` }).where(eq(settings.groupBuyId, id));
+    await audit(tx, id, actor.username, "orders_moved", {
+      requestKey, batchId, reference: source.reference, targetBatchId: targetId, targetReference: reference,
+      orderIds: ids, kits: moved.kits, reason, beforeSnapshot: source.snapshot,
+      packageChanges: affected.map((s: any) => ({ shipmentId: s.id, beforeContents: s.contents,
+        afterContents: (s.contents as any[]).filter(c => !ids.includes(c.orderId)) })),
+    });
     return state(tx, group);
   }, database);
 }
