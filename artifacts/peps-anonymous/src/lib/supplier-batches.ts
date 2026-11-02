@@ -3,13 +3,14 @@ export type SupplierScope = "admin" | "organiser";
 export interface BatchRegion { id: string; name: string; countries: string[]; targetKits: number }
 export interface BatchConfig { enabled: boolean; telegramAlerts: boolean; showToMembers?: boolean; regions: BatchRegion[] }
 export interface BatchItem { productId: string; productName: string; quantity: number; unitPrice: string; lineTotal: string }
-export interface BatchOrder { id: string; code: string; username: string; country: string; kits: number; paidAt: string | null; orderingAt: string; historicalReviewed: boolean; items: BatchItem[]; /** grandTotal, creditsApplied, amountDue, productSubtotal, vendorShipping, currency, groupBuyId */ money?: string[] }
+export interface BatchOrder { id: string; code: string; username: string; country: string; kits: number; paidAt: string | null; orderingAt: string; historicalReviewed: boolean; items: BatchItem[]; /** grandTotal, creditsApplied, amountDue, productSubtotal, vendorShipping, currency, groupBuyId */ money?: string[]; fullOrder?: BatchOrder; allocationRootBatchId?: string }
 export interface BatchCorrectionNote {
   direction: "in" | "out"; reference: string; kits: number; orderCodes: string[];
   reason: string; createdAt: string; actor: string;
 }
 export interface BatchProposal { region: BatchRegion; token: string; orders: BatchOrder[]; kits: number; queuedKits: number; remainingKits: number; ready: boolean; readyAt: string | null; products: {productId: string; productName: string; quantity: number}[]; allQueued?: BatchProposal; corrections?: BatchCorrectionNote[] }
-export interface SupplierBatch { id: string; reference: string; state: "prepared" | "ordered" | "released"; createdAt: string; createdBy: string; orderedAt: string | null; releasedAt: string | null; releaseReason: string | null; snapshot: BatchProposal; exceptions: {orderId: string; code: string; reason: string}[] }
+export interface AddedBatchQuantity { orderId: string; productId: string; productName: string; quantity: number }
+export interface SupplierBatch { id: string; reference: string; state: "prepared" | "ordered" | "released"; createdAt: string; createdBy: string; orderedAt: string | null; releasedAt: string | null; releaseReason: string | null; snapshot: BatchProposal; additions?: AddedBatchQuantity[]; exceptions: {orderId: string; code: string; reason: string}[] }
 export interface SupplierData {
   groupBuy: {id: string; name: string}; config: BatchConfig; version: number; checkedAt: string | null;
   proposals: BatchProposal[]; batches: SupplierBatch[];

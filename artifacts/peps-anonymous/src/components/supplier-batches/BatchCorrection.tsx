@@ -17,7 +17,7 @@ export function BatchCorrection({ batch, scope, busy, onConfirm }: {
   const orders = batch.snapshot.orders.filter(o => selected.includes(o.id));
   const movedKits = orders.reduce((sum, o) => sum + o.kits, 0);
   const stale = reviewedToken !== batch.snapshot.token;
-  const blockedIds = new Set(batch.exceptions.map(e => e.orderId));
+  const blockedIds = new Set([...batch.exceptions.map(e => e.orderId), ...batch.snapshot.orders.filter(o => o.fullOrder).map(o => o.id)]);
   return <div className="space-y-2 text-xs" style={{ color: "var(--t-text, #0F1F38)" }}>
     {(batch.snapshot.corrections ?? []).map((note, index) => <div key={index}
       className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950">
@@ -45,7 +45,7 @@ export function BatchCorrection({ batch, scope, busy, onConfirm }: {
               setAcknowledged(false);
               setSelected(previous => e.target.checked ? [...previous, o.id] : previous.filter(id => id !== o.id));
             }} />
-          <span>#{o.code} · {o.username} · {o.kits} kits{blockedIds.has(o.id) && " — resolve exception first"}</span>
+          <span>#{o.code} · {o.username} · {o.kits} kits{o.fullOrder ? " — split across batches; use added quantities" : blockedIds.has(o.id) ? " — resolve exception first" : ""}</span>
         </label>)}
       </div>
       <p className="font-semibold">{movedKits} kits move to a new batch; {batch.snapshot.kits - movedKits} kits remain in this batch.</p>

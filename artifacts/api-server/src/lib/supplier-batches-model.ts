@@ -18,6 +18,8 @@ export interface BatchItem { productId: string; productName: string; quantity: n
 export interface BatchOrder {
   id: string; code: string; username: string; country: string; kits: number; paidAt: string | null;
   orderingAt: string; historicalReviewed: boolean; items: BatchItem[]; money: string[];
+  /** A quantity slice retains one unchanged customer order and its root reservation. */
+  fullOrder?: BatchOrder; allocationRootBatchId?: string;
 }
 export function validateRegions(input: unknown): BatchRegion[] {
   if (!Array.isArray(input) || input.length > 50) throw new SupplierBatchError("Provide up to 50 regions.", 400);

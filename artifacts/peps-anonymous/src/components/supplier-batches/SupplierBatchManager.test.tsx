@@ -34,6 +34,37 @@ const existingBatch: SupplierBatch = {
   createdAt: "2026-01-01T00:00:00Z", createdBy: "admin", orderedAt: null,
   releasedAt: null, releaseReason: null, snapshot: target, exceptions: [],
 };
+test("batch rows highlight additions and allow moving five extra kits without moving the whole twenty-kit order", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const calls: unknown[] = [];
+  const product = existingBatch.snapshot.orders[0].items[0];
+  try {
+    await act(async () => root.render(createElement(BatchCard, {
+      b: { ...existingBatch, state: "ordered", additions: [{ orderId: "one", productId: product.productId,
+        productName: product.productName, quantity: 10 }] },
+      busy: false, act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
+      exportCsv: async () => {}, exportTxt: async () => {}, context: { groupBuyId: "gb", scope: "admin" },
+    })));
+    assert.match(host.textContent!, /Added to batch/);
+    const button = host.querySelector('[data-testid="button-move-additions-one"]') as HTMLButtonElement;
+    assert.ok(button);
+    await act(async () => button.click());
+    // @ts-expect-error Existing workspace browser-test dependency.
+    const { fireEvent } = await import("../../../../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/index.js");
+    await act(async () => {
+      fireEvent.change(host.querySelector('[data-testid="addition-quantity-0"]')!, { target: { value: "5" } });
+      fireEvent.change(host.querySelector('[data-testid="addition-reason"]')!, { target: { value: "Only the extra quantity" } });
+      fireEvent.click(host.querySelector('[data-testid="addition-acknowledge"]')!);
+    });
+    assert.match(host.textContent!, /15 kits stay.*5 kits move/);
+    await act(async () => (host.querySelector('[data-testid="confirm-move-additions"]') as HTMLButtonElement).click());
+    assert.deepEqual(calls, [["/prepared-uk/move-additions", {
+      confirm: true, expectedBatchToken: "target-token", reason: "Only the extra quantity",
+      lines: [{ orderId: "one", productId: product.productId, quantity: 5 }],
+    }]]);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 test("Admin can review and confirm a whole-order move with a reason", async () => {
   const host = document.createElement("div"); document.body.append(host);

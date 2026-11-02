@@ -51,6 +51,59 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("moves only an added kit while retaining the original order, full payment, root reservation and split fulfilment", async () => {
+    const f = await fixture([100]);
+    const p = f.result.proposals[0];
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token });
+    const batch = prepared.batches[0];
+    await store.db.update(store.orderLineItemsTable).set({ quantity: 102, lineSubtotal: "1020" }).where(eq(store.orderLineItemsTable.orderId, f.ids[0]));
+    await store.db.update(store.ordersTable).set({ productSubtotal: "1020", grandTotal: "1020" }).where(eq(store.ordersTable.id, f.ids[0]));
+    const preview = await api.previewSupplierBatchRefresh(f.id, batch.id, admin, { expectedBatchToken: batch.snapshot.token });
+    const refreshed = await api.refreshSupplierBatch(f.id, batch.id, admin, {
+      confirm: true, expectedBatchToken: batch.snapshot.token, token: preview.token,
+    });
+    expect(refreshed.batches[0].additions).toMatchObject([{ orderId: f.ids[0], quantity: 2 }]);
+    const submitted = await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    const source = submitted.batches[0], product = source.snapshot.orders[0].items[0];
+    const shipmentId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: source.id, label: "Quantity fixture", createdBy: admin.username,
+      requestKey: randomUUID(), requestHash: "quantity-fixture",
+      contents: [{ orderId: f.ids[0], productId: product.productId, productName: product.productName,
+        quantity: 102, code: "test-0", username: "synthetic-0" }],
+    });
+    const lines = [{ orderId: f.ids[0], productId: product.productId, quantity: 1 }];
+    const body = { mode: "additions", confirm: true, reason: "Extra kit not purchased",
+      expectedBatchToken: source.snapshot.token, lines };
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, {
+      ...body, lines: [{ ...lines[0], quantity: 3 }],
+    })).rejects.toThrow(/highlighted/);
+    const moved = await api.moveSupplierBatchOrders(f.id, batch.id, admin, body);
+    const original = moved.batches.find((b: any) => b.id === batch.id);
+    const next = moved.batches.find((b: any) => b.id !== batch.id);
+    expect(original.snapshot.kits).toBe(101);
+    expect(next.snapshot.kits).toBe(1);
+    expect(original.additions[0].quantity).toBe(1);
+    expect(original.exceptions).toEqual([]);
+    expect(next.exceptions).toEqual([]);
+    const [manifest] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(manifest.contents[0].quantity).toBe(101);
+    expect(manifest.version).toBe(1);
+    const [parent] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect([parent.grandTotal, parent.paymentStatus, parent.status]).toEqual(["1020.00", "confirmed", "Processing"]);
+    const [item] = await store.db.select().from(store.orderLineItemsTable).where(eq(store.orderLineItemsTable.orderId, f.ids[0]));
+    expect(Number(item.quantity)).toBe(102);
+    const [root] = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(root.batchId).toBe(batch.id);
+    await api.orderSupplierBatch(f.id, next.id, admin, { confirm: true });
+    const fulfilment = await import("./supplier-fulfilment");
+    const view = await fulfilment.supplierFulfilmentDetail(f.id, next.id, admin);
+    expect(view.orders[0].exceptions).not.toContain("Supplier batch reservation mismatch.");
+    expect(view.orders[0].items[0].quantity).toBe(1);
+    const replay = await api.moveSupplierBatchOrders(f.id, batch.id, admin, body);
+    expect(replay.batches).toHaveLength(2);
+    await expect(api.releaseSupplierBatch(f.id, next.id, admin, { confirm: true, reason: "Not permitted" })).rejects.toThrow();
+  });
   it("audits an Admin move from an ordered batch, preserves payments, cleans the unchecked manifest, and replays safely", async () => {
     const f = await fixture([58, 2, 4]);
     const configured = await api.saveSupplierConfig(f.id, admin, { expectedVersion: f.result.version,

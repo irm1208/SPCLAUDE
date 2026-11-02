@@ -5,6 +5,7 @@ import { SupplierBatchFulfilment } from "./SupplierBatchFulfilment";
 import { DirectSupplierDownload } from "./DirectSupplierDownload";
 import { BatchRefreshReview } from "./BatchRefreshReview";
 import { BatchCorrection } from "./BatchCorrection";
+import { BatchAdditions } from "./BatchAdditions";
 import {
   EU_BATCH_COUNTRIES, supplierKey, supplierRequest, downloadSupplierCsv,
   downloadSupplierTxt,
@@ -148,7 +149,12 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
   );
 }
 
-function OrdersDetail({ p }: { p: BatchProposal }) {
+function OrdersDetail({ p, batch, scope, busy = false, act }: {
+  p: BatchProposal; batch?: SupplierBatch; scope?: SupplierScope; busy?: boolean;
+  act?: (path: string, body: unknown, message?: string) => Promise<boolean>;
+}) {
+  const [moving, setMoving] = useState<string | null>(null);
+  const canMove = scope === "admin" && batch?.state === "ordered" && !!act;
   return (
     <details className="text-xs">
       <summary className="cursor-pointer font-semibold" style={{ color: V.text }}>Member & product detail ({p.orders.length} orders)</summary>
@@ -156,17 +162,30 @@ function OrdersDetail({ p }: { p: BatchProposal }) {
         <table className="w-full text-left text-[11px]">
           <thead><tr style={{ color: V.muted }}><th className="py-1 pr-2">Order</th><th className="pr-2">Member</th><th className="pr-2">Country</th><th className="pr-2">Kits</th><th className="pr-2">Paid</th><th>Products</th></tr></thead>
           <tbody>
-            {p.orders.map(o => (
-              <tr key={o.id} className="border-t align-top" style={{ borderColor: V.border, color: V.text }}>
+            {p.orders.map(o => {
+              const added = (batch?.additions ?? []).filter(a => a.orderId === o.id);
+              return (
+              <tr key={o.id} className={`border-t align-top ${added.length ? "bg-amber-500/10" : ""}`} style={{ borderColor: V.border, color: V.text }}>
                 <td className="py-1 pr-2 font-mono">{o.code}</td><td className="pr-2">{o.username}</td><td className="pr-2">{o.country}</td>
                 <td className="pr-2">{kits(o.kits)}</td>
                 <td className="pr-2">{o.paidAt ? fmt(o.paidAt) : o.historicalReviewed ? `Reviewed (queued ${fmt(o.orderingAt)})` : "—"}</td>
-                <td>{o.items.map(i => `${i.productName} ×${i.quantity}`).join(", ")}</td>
+                <td>{o.items.map(i => `${i.productName} ×${i.quantity}`).join(", ")}
+                  {o.fullOrder && <p className="font-semibold">Split allocation: {kits(o.kits)} of {kits(o.fullOrder.kits)} kits here</p>}
+                  {added.length > 0 && <div className="my-1 flex flex-wrap items-center gap-2">
+                    <span className="rounded border border-amber-400 px-1.5 py-0.5 font-semibold">Added to batch: +{kits(added.reduce((sum, a) => sum + a.quantity, 0))} kits</span>
+                    {canMove && <button type="button" disabled={busy} className="underline font-semibold"
+                      data-testid={`button-move-additions-${o.id}`} onClick={() => setMoving(o.id)}>Move additions to next batch</button>}
+                  </div>}
+                </td>
               </tr>
-            ))}
+            ); })}
           </tbody>
         </table>
       </div>
+      {canMove && !!batch?.additions?.length && <button type="button" disabled={busy} className="mt-2 rounded-lg border px-3 py-2 font-semibold"
+        onClick={() => setMoving("*")}>Move added quantities across orders</button>}
+      {canMove && moving && batch && act && <BatchAdditions key={moving} batch={batch} orderId={moving}
+        busy={busy} act={act} onClose={() => setMoving(null)} />}
     </details>
   );
 }
@@ -270,7 +289,7 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
           {b.exceptions.map(x => <li key={x.orderId}><span className="font-mono">{x.code}</span>: {x.reason}</li>)}
         </ul>
       )}
-      <OrdersDetail p={b.snapshot} />
+      <OrdersDetail p={b.snapshot} batch={b} scope={context.scope} busy={busy} act={act} />
       <BatchCorrection batch={b} scope={context.scope} busy={busy} onConfirm={act} />
       {b.state === "prepared" && blocked && (
         <BatchRefreshReview batch={b} scope={context.scope} groupBuyId={context.groupBuyId} busy={busy}
@@ -354,10 +373,10 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
     setMsg(null);
     try {
       await run(() => supplierRequest(scope, groupBuyId, path, body, "POST", headers));
-      if (path.endsWith("/refresh") || path.endsWith("/move-orders")) {
+      if (path.endsWith("/refresh") || path.endsWith("/move-orders") || path.endsWith("/move-additions")) {
         await qc.invalidateQueries({ queryKey: ["member-supplier-batches", groupBuyId] });
         await qc.invalidateQueries({ queryKey: supplierKey(scope === "admin" ? "organiser" : "admin", groupBuyId) });
-        if (path.endsWith("/move-orders")) {
+        if (path.endsWith("/move-orders") || path.endsWith("/move-additions")) {
           for (const staffScope of ["admin", "organiser"]) {
             await qc.invalidateQueries({ queryKey: ["supplier-fulfilment", staffScope, groupBuyId] });
           }

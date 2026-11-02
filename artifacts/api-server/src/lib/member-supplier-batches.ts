@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db, accountsTable, accountGroupBuysTable, gbCountryLegsTable, groupBuysTable, ordersTable, orderLineItemsTable, groupBuyRefundsTable, gbSupplierEligibilityTable, gbSupplierSettingsTable, gbSupplierBatchesTable, gbSupplierAllocationsTable, gbSupplierShipmentsTable } from "@workspace/db";
+import { reservationBatch } from "./supplier-batch-additions";
 import { SupplierBatchError, collectSupplierQueues, isDirectSupplierOrder, propose, regionalBatchReference, type BatchOrder, type SupplierConfig } from "./supplier-batches-model";
 import { orderReadiness, type QuantityShipment } from "./supplier-fulfilment-model";
 import { normalizeToCode } from "./country-utils";
@@ -119,7 +120,7 @@ export async function memberSupplierBatches(id: string, username: string, databa
     // Region membership alone does not grant access to another member's batch.
     // Require an exact current allocation of an owned active order in its snapshot.
     const batches = allBatches.filter(b => b.state !== "released" && memberCanViewBatch(b as MemberBatch, countries)
-      && (b.snapshot as MemberBatch["snapshot"]).orders.some(o => ownOrderIds.has(o.id) && allocations.get(o.id) === b.id));
+      && (b.snapshot as MemberBatch["snapshot"]).orders.some(o => ownOrderIds.has(o.id) && allocations.get(o.id) === reservationBatch(o, b.id)));
     // Once assigned, the next queue is relevant only for another owned order.
     // Include unpaid new orders without claiming they are eligible/in the queue.
     const pendingCountries = new Set(ownActiveOrders
@@ -131,13 +132,13 @@ export async function memberSupplierBatches(id: string, username: string, databa
     const shipments = await tx.select({ batchId: gbSupplierShipmentsTable.batchId, contents: gbSupplierShipmentsTable.contents, receipt: gbSupplierShipmentsTable.receipt,
         receiptChecked: gbSupplierShipmentsTable.receiptChecked, cancelledAt: gbSupplierShipmentsTable.cancelledAt })
         .from(gbSupplierShipmentsTable).where(inArray(gbSupplierShipmentsTable.batchId, ids));
-    const own = new Set(used.filter(a => ownOrderIds.has(a.orderId)).map(a => a.batchId));
+    const own = new Set(batches.map(b => b.id));
     return { ...empty, regions, batches: batches.map(b => ({
       ...memberBatchSummary(b as MemberBatch, shipments as unknown as MemberShipment[], own),
       // Read current statuses, not immutable purchase-snapshot statuses. Never
       // expose another member's order codes, even inside a shared batch.
       orders: (b.snapshot as MemberBatch["snapshot"]).orders
-        .filter(o => ownOrderIds.has(o.id) && allocations.get(o.id) === b.id)
+        .filter(o => ownOrderIds.has(o.id) && allocations.get(o.id) === reservationBatch(o, b.id))
         .map(o => {
           const current = ownActiveOrders.find(row => row.id === o.id)!;
           return { code: current.code, status: current.status };

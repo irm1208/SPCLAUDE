@@ -33,6 +33,18 @@ orders to a new same-region prepared batch. Keep a visible correction marker and
 the original snapshot in the audit history; correct unchecked package manifests
 atomically. Never change customer payments or silently rewrite inspected receipts.
 
+For moving **additions**, the user chose **only the extra quantities**: retain
+the base quantity in its current batch, rather than relocating the complete
+customer order.
+
+**Why:** The user explicitly selected “Only the extra quantities” when asked
+whether additions should move as whole orders or quantity increases.
+
+**How to apply:** Highlight recorded batch additions and preview exact per-product
+amounts staying/moving. Treat a partial move as a fulfilment allocation of the
+same customer order, not a new financial order or another payment. Distinguish
+whole rows appended after preparation from reviewed increases to existing rows.
+
 When an enabled supplier region reaches its kit target and Telegram alerts are enabled, notify both the configured Admin Telegram chat and the group-buy organiser. These are staff alerts, not member broadcasts.
 
 **Why:** The user explicitly chose Admin and the organiser as recipients; organiser-only alerts do not notify the Admin who manages supplier purchasing.
