@@ -25,3 +25,9 @@ Member-confirmed order revisions apply to unpaid orders only.
 **Why:** The user explicitly chose “Unpaid orders only” when asked whether paid orders should be included.
 
 **How to apply:** Exclude paid orders from revision requests and recheck payment eligibility when applying an accepted revision.
+
+Order changes in this optional workflow are proposals, not immediate edits: members review before/after details and accept or decline; declined or unanswered requests leave the original order unchanged.
+
+**Why:** The user approved this member-confirmation process for unpaid, organiser-owned-stock group buys.
+
+**How to apply:** Preserve that consent boundary in future bulk-edit, notification and payment work.

@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { GroupBuyStageBadge } from "@/components/group-buy-updates/GroupBuyStageBadge";
 import { MemberBatchStatus } from "@/components/supplier-batches/MemberBatchStatus";
 import { OrderBatchDetails } from "@/components/supplier-batches/OrderBatchDetails";
+import { OrderRevisionLink } from "@/components/group-buy-revisions/OrderRevisionLink";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MemberGroupBuyFilters } from "@/components/MemberGroupBuyFilters";
 import { filterMemberGroupBuys, type MemberGbFilter } from "@/lib/member-group-buys";
@@ -548,6 +549,9 @@ function OrderGridCard({
             style={{ color: "var(--t-blue)" }}>
             <FlaskConical className="w-3.5 h-3.5" />Request a COA
           </a>
+        )}
+        {kind === "gb" && order.groupBuyId && cardAccount && !terminal && (
+          <OrderRevisionLink orderId={order.id} accountName={cardAccount.telegramUsername} />
         )}
         {(order.status === "Shipped" || order.memberReceivedAt) && !order.current && (
           <div className="mt-2">

@@ -8,6 +8,7 @@ import { OnwardDeliveryOrderCard } from "@/components/onward-delivery/OnwardDeli
 import { submittedTimelineLabel, wholesaleStatusLabel } from "@/lib/wholesale-status-label";
 import { CustomerGroupBuyUpdates } from "@/components/group-buy-updates/CustomerGroupBuyUpdates";
 import { MemberCoaRequest } from "@/components/MemberCoaRequest";
+import { MemberOrderRevision } from "@/components/group-buy-revisions/MemberOrderRevision";
 import { useThemeStore } from "@/hooks/use-theme";
 import { useRoute, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2079,6 +2080,7 @@ export default function AccountOrderDetail() {
     : "";
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [revisionRefresh, setRevisionRefresh] = useState(0);
   const vendorShippingIsTbd = order?.vendorShippingIsTbd === true;
   const { data: halfKitAvailability } = useHalfKitAvailability(isLoggedIn && !!order?.groupBuyId);
   const showVendorShipping = vendorShippingIsTbd || (order?.vendorShipping ?? 0) > 0;
@@ -2123,7 +2125,7 @@ export default function AccountOrderDetail() {
       .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error || "Order not found")))
       .then(data => { setOrder(data); setLoading(false); })
       .catch(err => { setError(typeof err === "string" ? err : "Failed to load order"); setLoading(false); });
-  }, [orderId]);
+  }, [orderId, revisionRefresh]);
 
   useEffect(() => {
     if (isAdminPreview) return;
@@ -2438,6 +2440,16 @@ export default function AccountOrderDetail() {
                       gbId={order.groupBuyId}
                       enabled={isLoggedIn}
                     />
+                  )}
+                  {order.groupBuyId && !["wholesale", "wholesale_shared"].includes(order.orderType ?? "") && !isAdminPreview && isLoggedIn && (
+                    <div id="order-changes" className="scroll-mt-24">
+                      <MemberOrderRevision key={`${account?.telegramUsername}:${order.id}`} orderId={order.id}
+                        onChanged={() => {
+                          setRevisionRefresh(value => value + 1);
+                          void queryClient.invalidateQueries({ queryKey: ["account", "orders"] });
+                          void queryClient.invalidateQueries({ queryKey: ["account", "pending-order-revisions"] });
+                        }} />
+                    </div>
                   )}
                   {order.groupBuyId && !["wholesale", "wholesale_shared"].includes(order.orderType ?? "") && !isAdminPreview && isLoggedIn && (
                     <MemberCoaRequest key={`${account?.telegramUsername}:${order.id}`} orderId={order.id} />
