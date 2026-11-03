@@ -219,10 +219,10 @@ export default function DashboardSidebar({
           type="button"
           className="ov2-setup-switch"
           onClick={() => { onNavigate?.(); onSwitchMode?.(); }}
-          aria-label={mode === "setup" ? "Return to workspace" : "Edit group buy setup"}
+          aria-label={mode === "setup" ? "Return to workspace" : "Start a new group buy"}
         >
           <Settings aria-hidden="true" />
-          <span>{mode === "setup" ? "Return to workspace" : "Edit GB setup"}</span>
+          <span>{mode === "setup" ? "Return to workspace" : "New group buy"}</span>
         </button>
       </div>
 

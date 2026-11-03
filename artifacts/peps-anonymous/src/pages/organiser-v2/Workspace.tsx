@@ -183,9 +183,7 @@ export default function Workspace({
   const primaryNavigation = WORKSPACE_PRIMARY_NAVIGATION[active];
   const primaryAction = primaryNavigation
     ? { label: primaryNavigation.label, onClick: () => handleNavigate(primaryNavigation.target) }
-    : onModeChange
-      ? { label: "Edit setup", onClick: onModeChange }
-      : undefined;
+    : { label: "Edit settings", onClick: () => handleNavigate("settings") };
 
   const activeContent = active === "overview" ? (
     <OverviewTabV3
@@ -288,11 +286,9 @@ export default function Workspace({
             onChooseGroupBuy={onChooseGroupBuy}
             secondaryActions={(
               <>
-                {onModeChange ? (
-                  <button type="button" className="ov2-secondary-button" onClick={onModeChange}>
-                    <FolderCog aria-hidden="true" /> <span className="ov2-action-label">Manage</span>
-                  </button>
-                ) : null}
+                <button type="button" className="ov2-secondary-button" onClick={() => handleNavigate("settings")}>
+                  <FolderCog aria-hidden="true" /> <span className="ov2-action-label">Settings</span>
+                </button>
                 <button
                   type="button"
                   className="ov2-secondary-button"

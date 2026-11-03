@@ -107,9 +107,10 @@ export function buildSetupPayload(draft: SetupDraftSnapshot): Record<string, unk
         label,
         price,
         description: clean(option.description),
-        region: clean(option.region),
+        // The server and the Shipping Rates page read `country` and `requiresQrCode`.
+        country: clean(option.region) || undefined,
         requiresAddress: option.requiresAddress,
-        requiresQr: option.requiresQr,
+        requiresQrCode: option.requiresQr,
       }];
     }),
     organiserPayments: {
