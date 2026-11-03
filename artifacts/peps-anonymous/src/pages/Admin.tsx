@@ -6921,11 +6921,18 @@ function PaymentsTab({ secret }: { secret: string }) {
   };
 
   const updatePaymentStatus = async (orderId: string, paymentStatus: string) => {
-    await fetch(apiUrl(`/admin/orders/${orderId}/payment-status`), {
+    // Same server path as Orders › Admin › Save, so confirm/reject stamp the time,
+    // clear the balance, write the activity log and notify the member and admin.
+    const res = await fetch(apiUrl(`/admin/orders/${orderId}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "x-admin-secret": secret },
       body: JSON.stringify({ paymentStatus }),
     });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(`Payment status not saved: ${d.error || `server returned ${res.status}`}`);
+      return;
+    }
     setPaymentOrders(prev => prev.map(o => o.id === orderId ? { ...o, paymentStatus } : o));
   };
 
@@ -28347,7 +28354,9 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
   if (!authed) return <LoginScreen onLogin={handleLogin} theme={theme} onToggleTheme={onToggleTheme} />;
 
   const navigate = (tab: string) => {
-    const resolved = tab === "accounts" ? "usernames" : tab;
+    // Alerts and older links use names that are not tab ids.
+    const TAB_ALIASES: Record<string, string> = { accounts: "usernames", "group-buys": "groupbuy", groupbuys: "groupbuy", customers: "usernames", customer: "usernames" };
+    const resolved = TAB_ALIASES[tab] ?? tab;
     setActiveTab(resolved);
     window.location.hash = resolved;
     setSidebarOpen(false);
