@@ -6,34 +6,47 @@ const key = (o: string, p: string) => JSON.stringify([o, p]);
 export const reservationBatch = (order: BatchOrder, batchId: string) => order.allocationRootBatchId ?? batchId;
 export const wholeSnapshot = (order: BatchOrder) => order.fullOrder ?? order;
 
-/** Replay the complete append/review history, not the last 100 UI events. */
-export function batchAdditions(batch: any, history: any[]): AddedQuantity[] {
+/** Batch appends are NOT customer additions. Prefer original order-edit evidence. */
+export function batchAdditions(batch: any, history: any[], orderEdits: any[] = []): AddedQuantity[] {
   const amounts = new Map<string, number>();
-  for (const event of history) {
-    const d = event.detail;
-    if (d.batchId !== batch.id) continue;
-    if (event.kind === "appended") for (const id of d.orderIds ?? []) {
-      const firstReview = history.find(e => e.kind === "refreshed" && e.detail.batchId === batch.id
-        && e.detail.changes?.some((c: any) => c.orderId === id));
-      const original = firstReview?.detail.changes.find((c: any) => c.orderId === id)?.before
-        ?? d.orders?.find((o: any) => o.id === id)
-        ?? history.find(e => e.kind === "quantities_moved" && e.detail.batchId === batch.id)?.detail.beforeSnapshot?.orders.find((o: any) => o.id === id)
-        ?? batch.snapshot.orders.find((o: any) => o.id === id);
-      for (const item of original?.items ?? []) amounts.set(key(id, item.productId), item.quantity);
-    }
-    if (event.kind === "refreshed") for (const change of d.changes ?? []) {
-      const before = new Map<string, number>();
-      for (const i of change.before?.items ?? []) before.set(i.productId, (before.get(i.productId) ?? 0) + i.quantity);
-      const after = new Map<string, number>();
-      for (const i of change.after?.items ?? []) after.set(i.productId, (after.get(i.productId) ?? 0) + i.quantity);
-      for (const productId of new Set([...before.keys(), ...after.keys()])) {
-        const k = key(change.orderId, productId);
-        amounts.set(k, Math.max(0, (amounts.get(k) ?? 0) + (after.get(productId) ?? 0) - (before.get(productId) ?? 0)));
+  // These records are supplied oldest-first. A before/after edit predating batch
+  // preparation still establishes the original customer quantity (e.g. 1 -> 2).
+  for (const o of batch.snapshot.orders as BatchOrder[]) {
+    const whole = wholeSnapshot(o);
+    const edit = orderEdits.find(e => e.metadata?.orderId === o.id
+      && Array.isArray(e.metadata.before?.lineItems) && Array.isArray(e.metadata.after?.lineItems));
+    const review = history.find(e => e.kind === "refreshed" && e.detail.batchId === batch.id
+      && e.detail.changes?.some((c: any) => c.orderId === o.id && Array.isArray(c.before?.items)))
+      ?.detail.changes.find((c: any) => c.orderId === o.id);
+    if (!edit && !review) continue; // No evidence: never assume the whole order is extra.
+    const before = edit ? edit.metadata.before.lineItems : review.before.items;
+    const after = edit ? edit.metadata.after.lineItems : review.after?.items ?? [];
+    for (const item of o.items) {
+      const k = key(o.id, item.productId);
+      // Historical customer logs omit product IDs. Never guess between products
+      // with the same name or malformed quantities.
+      const matches = whole.items.filter(i => edit
+        ? i.productName === item.productName : i.productId === item.productId);
+      if (matches.length !== 1 || [...before, ...after].some((i: any) =>
+        !Number.isFinite(Number(i.quantity)) || Number(i.quantity) < 0)) {
+        amounts.set(k, 0);
+        continue;
       }
-    }
-    if (event.kind === "quantities_moved") for (const line of d.lines ?? []) {
-      const k = key(line.orderId, line.productId);
-      amounts.set(k, Math.max(0, (amounts.get(k) ?? 0) - line.quantity));
+      const matchesItem = (i: any) => edit ? i.productName === item.productName : i.productId === item.productId;
+      const original = before.filter(matchesItem)
+        .reduce((sum: number, i: any) => sum + Number(i.quantity), 0);
+      const known = before.some(matchesItem) || after.some(matchesItem);
+      if (!known) { amounts.set(k, 0); continue; }
+      const moves = history.filter(e => e.kind === "quantities_moved"
+        && e.detail.lines?.some((l: QuantityMove) => l.orderId === o.id && l.productId === item.productId));
+      const alreadyMoved = moves.reduce((sum, e) => sum + e.detail.lines
+        .filter((l: QuantityMove) => l.orderId === o.id && l.productId === item.productId)
+        .reduce((n: number, l: QuantityMove) => n + l.quantity, 0), 0);
+      const destination = moves.some(e => e.detail.targetBatchId === batch.id)
+        || reservationBatch(o, batch.id) !== batch.id;
+      amounts.set(k, destination ? 0 : Math.max(0, Math.min(
+        item.quantity - original, matches[0].quantity - original - alreadyMoved,
+      )));
     }
   }
   return batch.snapshot.orders.flatMap((o: BatchOrder) => o.items.flatMap(i => {

@@ -25,7 +25,7 @@ export function BatchAdditions({ batch, orderId, busy, act, onClose }: {
   return <div role="group" aria-label="Move added quantities" className="mt-3 rounded-lg border border-amber-300 p-3 space-y-3">
     <strong>Move only added quantities to a new next batch</strong>
     <p>The original quantities stay here. The customer keeps one order and the same payment total.
-      Newly appended orders count as additions to this batch; reviewed increases show only the added amount.
+      Only recorded increases to the customer's quantities are shown. Adding a whole order to a batch does not make its original kits additional kits.
       Enter the quantity to move for each product, leaving other fields blank.</p>
     {additions.map((a, i) => <label key={lineKey(a)} className="flex flex-wrap items-center justify-between gap-2">
       <span>#{batch.snapshot.orders.find(o => o.id === a.orderId)?.code} · {a.productName} · Added: {a.quantity} kits</span>

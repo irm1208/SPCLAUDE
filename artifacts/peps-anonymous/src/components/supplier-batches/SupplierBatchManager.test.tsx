@@ -46,7 +46,7 @@ test("batch rows highlight additions and allow moving five extra kits without mo
       busy: false, act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
       exportCsv: async () => {}, exportTxt: async () => {}, context: { groupBuyId: "gb", scope: "admin" },
     })));
-    assert.match(host.textContent!, /Added to batch/);
+    assert.match(host.textContent!, /Additional kits/);
     const button = host.querySelector('[data-testid="button-move-additions-one"]') as HTMLButtonElement;
     assert.ok(button);
     await act(async () => button.click());

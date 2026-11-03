@@ -45,6 +45,17 @@ amounts staying/moving. Treat a partial move as a fulfilment allocation of the
 same customer order, not a new financial order or another payment. Distinguish
 whole rows appended after preparation from reviewed increases to existing rows.
 
+The “move additions” list must show only customer quantity increases, never all
+kits merely because an entire order was appended to a batch. Original quantities
+can predate first batch allocation; consult the order's before/after edit history.
+Deduct quantities already moved, and do not guess when historical evidence is absent.
+
+**Why:** The user clarified “only shows the additional kits to move not all of them”
+after an original quantity was incorrectly included in a move.
+
+**How to apply:** Preserve original quantities in the source allocation. Keep any
+explicit whole-order correction separate from the additions workflow.
+
 When an enabled supplier region reaches its kit target and Telegram alerts are enabled, notify both the configured Admin Telegram chat and the group-buy organiser. These are staff alerts, not member broadcasts.
 
 **Why:** The user explicitly chose Admin and the organiser as recipients; organiser-only alerts do not notify the Admin who manages supplier purchasing.

@@ -148,8 +148,18 @@ async function state(tx: any, group: any, reconcile = true) {
   const additionHistory = await tx.select({ kind: events.kind, detail: events.detail }).from(events).where(and(
     eq(events.groupBuyId, id), inArray(events.kind, ["appended", "refreshed", "quantities_moved"]),
   )).orderBy(asc(events.createdAt), asc(events.id));
+  const historyOrderIds: string[] = [...new Set<string>(data.history.flatMap((b: any) =>
+    b.snapshot.orders.map((o: BatchOrder) => o.id)))];
+  // One group-scoped query, including edits before first batch allocation.
+  // Keep private customer metadata internal; only derived quantities are returned.
+  const orderEdits = historyOrderIds.length ? await tx.select({ metadata: auditLogsTable.metadata })
+    .from(auditLogsTable).where(and(
+      inArray(sql<string>`${auditLogsTable.metadata}->>'orderId'`, historyOrderIds),
+      sql`${auditLogsTable.metadata}->'before'->'lineItems' IS NOT NULL`,
+      sql`${auditLogsTable.metadata}->'after'->'lineItems' IS NOT NULL`,
+    )).orderBy(asc(auditLogsTable.createdAt), asc(auditLogsTable.id)) : [];
   const history = data.history.map((b: any) => ({
-    ...b, additions: batchAdditions(b, additionHistory), exceptions: b.state === "released" ? [] : b.snapshot.orders.flatMap((old: BatchOrder) => {
+    ...b, additions: batchAdditions(b, additionHistory, orderEdits), exceptions: b.state === "released" ? [] : b.snapshot.orders.flatMap((old: BatchOrder) => {
       const reason = mismatch(b, data.all.find((o: any) => o.id === old.id), data.elig.find((e: any) => e.orderId === old.id));
       return reason ? [{ orderId: old.id, code: old.code, reason }] : [];
     }),

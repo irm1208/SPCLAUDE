@@ -173,7 +173,7 @@ function OrdersDetail({ p, batch, scope, busy = false, act }: {
                 <td>{o.items.map(i => `${i.productName} ×${i.quantity}`).join(", ")}
                   {o.fullOrder && <p className="font-semibold">Split allocation: {kits(o.kits)} of {kits(o.fullOrder.kits)} kits here</p>}
                   {added.length > 0 && <div className="my-1 flex flex-wrap items-center gap-2">
-                    <span className="rounded border border-amber-400 px-1.5 py-0.5 font-semibold">Added to batch: +{kits(added.reduce((sum, a) => sum + a.quantity, 0))} kits</span>
+                    <span className="rounded border border-amber-400 px-1.5 py-0.5 font-semibold">Additional kits: +{kits(added.reduce((sum, a) => sum + a.quantity, 0))}</span>
                     {canMove && <button type="button" disabled={busy} className="underline font-semibold"
                       data-testid={`button-move-additions-${o.id}`} onClick={() => setMoving(o.id)}>Move additions to next batch</button>}
                   </div>}

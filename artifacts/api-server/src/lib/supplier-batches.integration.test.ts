@@ -51,6 +51,48 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("uses customer edits before first allocation and refuses moving original kits from an appended order", async () => {
+    const f = await fixture([2, 100]);
+    await store.db.insert(store.auditLogsTable).values({
+      type: "order", action: "order_updated_by_customer", message: "Synthetic quantity edit",
+      metadata: { groupBuyId: f.id, orderId: f.ids[0],
+        before: { lineItems: [{ productName: "Synthetic product", quantity: "1" }] },
+        after: { lineItems: [{ productName: "Synthetic product", quantity: "2" }] } },
+    });
+    const prepared = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: f.result.proposals[0].allQueued.token, includeAll: true,
+    });
+    const batch = prepared.batches[0];
+    await store.db.insert(store.gbSupplierEventsTable).values({
+      id: randomUUID(), groupBuyId: f.id, kind: "appended",
+      detail: { batchId: batch.id, orderIds: f.ids },
+    });
+    const submitted = await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    const source = submitted.batches[0];
+    expect(source.additions).toEqual([{
+      orderId: f.ids[0], productId: "synthetic-product", productName: "Synthetic product", quantity: 1,
+    }]);
+    const request = { mode: "additions", confirm: true, reason: "Synthetic additional kit",
+      expectedBatchToken: source.snapshot.token };
+    await expect(api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...request, lines: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 2 }],
+    })).rejects.toThrow(/Only the highlighted/);
+    await expect(api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...request, lines: [{ orderId: f.ids[1], productId: "synthetic-product", quantity: 1 }],
+    })).rejects.toThrow(/Only the highlighted/);
+    const moved = await api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...request, lines: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 1 }],
+    });
+    const remaining = moved.batches.find((b: any) => b.id === source.id);
+    const destination = moved.batches.find((b: any) => b.id !== source.id);
+    expect(remaining.snapshot.orders.find((o: any) => o.id === f.ids[0]).kits).toBe(1);
+    expect(destination.snapshot.kits).toBe(1);
+    expect(remaining.additions).toEqual([]);
+    expect(destination.additions).toEqual([]);
+    const [unchanged] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect(unchanged.grandTotal).toBe("20.00");
+    expect(unchanged.paymentStatus).toBe("confirmed");
+  });
   it("moves only an added kit while retaining the original order, full payment, root reservation and split fulfilment", async () => {
     const f = await fixture([100]);
     const p = f.result.proposals[0];
@@ -478,7 +520,8 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const before = await memberSupplierBatches(f.id, "synthetic-owner");
     expect(before.batches).toHaveLength(2);
     expect(before.batches.flatMap((b: any) => b.orders)).toEqual([
-      { code: "test-0", status: "Submitted" }, { code: "test-2", status: "Submitted" },
+      { id: f.ids[0], code: "test-0", status: "Submitted" },
+      { id: f.ids[2], code: "test-2", status: "Submitted" },
     ]);
     expect(before.regions).toEqual([expect.objectContaining({ kits: 15, yourOrderStatus: "included" })]);
     const similarName = await memberSupplierBatches(f.id, "synthetic-owner-other");

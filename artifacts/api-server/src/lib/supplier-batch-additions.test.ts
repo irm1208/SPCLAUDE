@@ -11,8 +11,48 @@ describe("supplier batch quantity additions", () => {
       changes: [{ orderId: "o", before: { ...order, items: [{ ...order.items[0], quantity: 1 }] }, after: order }] } }]);
     expect(additions).toEqual([{ orderId: "o", productId: "p", productName: "HGH", quantity: 2 }]);
   });
-  it("treats a newly appended row as an addition to the batch", () => {
-    expect(batchAdditions(batch, [{ kind: "appended", detail: { batchId: "b", orderIds: ["o"] } }])[0].quantity).toBe(3);
+  it("does not treat a newly appended whole order as extra customer quantities", () => {
+    expect(batchAdditions(batch, [{ kind: "appended", detail: { batchId: "b", orderIds: ["o"] } }])).toEqual([]);
+  });
+  const edit = (quantity: string) => ({ metadata: { orderId: "o", before: {
+    lineItems: [{ productName: "HGH", quantity }],
+  }, after: { lineItems: [{ productName: "HGH", quantity: "3" }] } } });
+  it("uses the original customer quantities even when the increase happened before batch allocation", () => {
+    expect(batchAdditions(batch, [{ kind: "appended", detail: { batchId: "b", orderIds: ["o"] } }], [edit("1")]))
+      .toEqual([{ orderId: "o", productId: "p", productName: "HGH", quantity: 2 }]);
+  });
+  it("deducts previously moved extras and retains the original kits in the source", () => {
+    const history = [{ kind: "quantities_moved", detail: { batchId: "b", targetBatchId: "destination",
+      lines: [{ orderId: "o", productId: "p", quantity: 1 }] } }];
+    const source = { ...batch, snapshot: { ...batch.snapshot, orders: [{
+      ...order, kits: 2, fullOrder: order, items: [{ ...order.items[0], quantity: 2 }],
+    }] } };
+    expect(batchAdditions(source, history, [edit("1")])[0].quantity).toBe(1);
+    expect(batchAdditions({ ...batch, id: "destination" }, history, [edit("1")])).toEqual([]);
+  });
+  it("never advertises a duplicate product-name audit as a safe quantity to move", () => {
+    const ambiguous = { ...batch, snapshot: { ...batch.snapshot, orders: [{ ...order,
+      items: [...order.items, { ...order.items[0], productId: "another" }],
+    }] } };
+    expect(batchAdditions(ambiguous, [], [edit("1")])).toEqual([]);
+  });
+  it("does not count the same increase once in customer history and again in batch review", () => {
+    const history = [{ kind: "refreshed", detail: { batchId: "b", changes: [{
+      orderId: "o", before: { items: [{ ...order.items[0], quantity: 2 }] }, after: order,
+    }] } }];
+    expect(batchAdditions(batch, history, [edit("1")])[0].quantity).toBe(2);
+  });
+  it("uses the earliest original quantity rather than accumulating subsequent edits", () => {
+    expect(batchAdditions(batch, [], [edit("1"), edit("2")])[0].quantity).toBe(2);
+  });
+  it("does not turn a reduction followed by a partial restoration into an addition", () => {
+    const history = [1, 2].map((q, index) => ({ kind: "refreshed", detail: { batchId: "b", changes: [{
+      orderId: "o", before: { items: [{ ...order.items[0], quantity: index ? 1 : 3 }] },
+      after: { items: [{ ...order.items[0], quantity: q }] },
+    }] } }));
+    expect(batchAdditions({ ...batch, snapshot: { ...batch.snapshot, orders: [{
+      ...order, items: [{ ...order.items[0], quantity: 2 }],
+    }] } }, history)).toEqual([]);
   });
   it("splits just one extra kit without splitting the customer's payment or order identity", () => {
     const r = splitBatchQuantities(batch, [{ orderId: "o", productId: "p", quantity: 1 }]);
