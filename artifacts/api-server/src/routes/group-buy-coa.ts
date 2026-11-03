@@ -3,9 +3,7 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { COA_PDF_LIMIT } from "../lib/coa-certificates";
 import { requireAccount } from "../middleware/account-auth";
-import { requireAdmin, getAdminUsername, requireAdminStepUp } from "../middleware/require-admin";
-import { db, groupBuyCoaSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import {
   getMemberCoa, saveMemberCoa, availableCoaRails, saveCoaSettings, inviteCoa, coaPaymentInstructions,
   submitCoaPayment, withdrawCoa, manageCoa, adminCoaList,
@@ -91,10 +89,6 @@ router.get("/admin/coa", async (req, res) => {
 router.put("/admin/group-buys/:id/coa/settings", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
-    const [before] = await db.select().from(groupBuyCoaSettingsTable).where(eq(groupBuyCoaSettingsTable.groupBuyId, String(req.params.id)));
-    const changedDestination = JSON.stringify(before?.rails ?? []) !== JSON.stringify(req.body?.rails ?? [])
-      || (before?.manualInstructions ?? "") !== (req.body?.manualInstructions ?? "");
-    if (changedDestination && !requireAdminStepUp(req, res)) return;
     res.json(await saveCoaSettings(String(req.params.id), getAdminUsername(res), req.body));
   }
   catch (error) { fail(res, error); }

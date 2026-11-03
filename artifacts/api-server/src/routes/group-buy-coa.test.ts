@@ -9,6 +9,10 @@ const calls = vi.hoisted(() => ({
   save: vi.fn().mockResolvedValue({ eligible: true }),
   download: vi.fn().mockResolvedValue(Buffer.from("%PDF-1.4\n%%EOF")),
   attach: vi.fn().mockResolvedValue({ attached: true }),
+  settings: vi.fn().mockResolvedValue({ saved: true }),
+  stepUp: vi.fn((_req: any, res: any) => {
+    res.status(403).json({ error: "step_up_required" }); return false;
+  }),
 }));
 vi.mock("@workspace/db", async () => ({
   ...await import("../../../../lib/db/src/schema"),
@@ -26,12 +30,12 @@ vi.mock("../middleware/require-admin", () => ({
     res.status(401).json({ error: "Unauthorized" }); return false;
   },
   getAdminUsername: () => "synthetic-admin",
-  requireAdminStepUp: () => true,
+  requireAdminStepUp: calls.stepUp,
 }));
 vi.mock("../lib/group-buy-coa", () => ({
   getMemberCoa: calls.member, saveMemberCoa: calls.save,
   adminCoaList: calls.admin, availableCoaRails: async () => [],
-  saveCoaSettings: vi.fn(), inviteCoa: vi.fn(), coaPaymentInstructions: vi.fn(),
+  saveCoaSettings: calls.settings, inviteCoa: vi.fn(), coaPaymentInstructions: vi.fn(),
   submitCoaPayment: vi.fn(), withdrawCoa: vi.fn(), manageCoa: vi.fn(),
   downloadCoaCertificate: calls.download, attachCoaCertificate: calls.attach,
 }));
@@ -47,6 +51,28 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); });
 
 describe("COA route boundaries and export", () => {
+  it("lets an authenticated Admin save COA payment settings without another authenticator code", async () => {
+    calls.settings.mockClear(); calls.stepUp.mockClear();
+    const settings = { mode: "open", fee: "65", currency: "USD", capacity: 20,
+      rails: [{ currency: "USDT", network: "ERC-20", address: "synthetic-wallet" }],
+      manualInstructions: "Synthetic payment instructions" };
+    const response = await fetch(base + "/admin/group-buys/g1/coa/settings", {
+      method: "PUT", headers: { "x-test-admin": "yes", "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+    });
+    expect(response.status).toBe(200);
+    expect(calls.stepUp).not.toHaveBeenCalled();
+    expect(calls.settings).toHaveBeenCalledExactlyOnceWith("g1", "synthetic-admin", settings);
+  });
+  it("still rejects ordinary members changing COA settings", async () => {
+    calls.settings.mockClear();
+    const response = await fetch(base + "/admin/group-buys/g1/coa/settings", {
+      method: "PUT", headers: { "x-test-member": "owner", "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "open" }),
+    });
+    expect(response.status).toBe(401);
+    expect(calls.settings).not.toHaveBeenCalled();
+  });
   it.each([
     ["GET", "/orders/o1/coa"], ["POST", "/orders/o1/coa"],
     ["POST", "/orders/o1/coa/payment-instructions"], ["POST", "/orders/o1/coa/payment"],
