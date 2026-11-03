@@ -19,6 +19,7 @@ import {
 } from "@workspace/db";
 import { eq, and, asc, inArray, sql, gt, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
+import { normalizeToCode } from "../lib/country-utils";
 import { requireAdmin } from "../middleware/require-admin";
 import { requireAccount } from "../middleware/account-auth";
 import { requireOrganiser } from "../middleware/require-organiser";
@@ -87,11 +88,13 @@ async function attachReshippers(gbId: string, legs: typeof gbCountryLegsTable.$i
 
   const byCountry = new Map<string, ReshipperRow[]>();
   for (const r of reshippers) {
-    if (!byCountry.has(r.country)) byCountry.set(r.country, []);
-    byCountry.get(r.country)!.push(r);
+    // Reshippers who joined by invite code may be stored with a country name; legs use codes.
+    const code = r.country ? normalizeToCode(r.country) : r.country;
+    if (!byCountry.has(code)) byCountry.set(code, []);
+    byCountry.get(code)!.push(r);
   }
   return legs.map(l => {
-    const list = byCountry.get(l.countryCode) ?? [];
+    const list = byCountry.get(normalizeToCode(l.countryCode)) ?? [];
     return {
       ...l,
       reshippers: list,

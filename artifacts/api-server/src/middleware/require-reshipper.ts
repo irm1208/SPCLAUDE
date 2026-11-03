@@ -4,6 +4,7 @@ import { accountsTable, gbReshippersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAccount } from "./account-auth";
 import { LEGACY_ADMIN_SESSION_COOKIE, requireAdminForRequest } from "./require-admin";
+import { normalizeToCode } from "../lib/country-utils";
 
 declare global {
   namespace Express {
@@ -100,5 +101,6 @@ export async function verifyReshipperAssignment(
     res.status(403).json({ error: "You are not assigned to this group buy as a reshipper." });
     return null;
   }
-  return assignment;
+  // Older rows may hold a country name; every consumer matches on the ISO code.
+  return { ...assignment, country: assignment.country ? normalizeToCode(assignment.country) : assignment.country };
 }

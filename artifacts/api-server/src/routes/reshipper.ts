@@ -25,6 +25,7 @@ import {
 import { eq, and, desc, or, sql, inArray, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { requireAccount } from "../middleware/account-auth";
+import { normalizeToCode } from "../lib/country-utils";
 import { refreshSingleGbParcel } from "../lib/tracking-auto-refresh";
 import { requireReshipper, verifyReshipperAssignment } from "../middleware/require-reshipper";
 import { consumeAdminActionAssertion } from "./admin-auth";
@@ -237,10 +238,14 @@ router.post("/reshipper/join", requireReshipper, async (req, res): Promise<void>
     return;
   }
 
-  const [existingAssignment] = await db
-    .select({ id: gbReshippersTable.id, reshipperUsername: gbReshippersTable.reshipperUsername })
+  // Store the ISO code: admin, organiser, country legs and payment routing all match on codes,
+  // so a name such as "Germany" would never attach this reshipper to their leg.
+  const countryCode = normalizeToCode(String(country));
+  const sameGbAssignments = await db
+    .select({ id: gbReshippersTable.id, reshipperUsername: gbReshippersTable.reshipperUsername, country: gbReshippersTable.country })
     .from(gbReshippersTable)
-    .where(and(eq(gbReshippersTable.gbId, gb.id), eq(gbReshippersTable.country, country.trim())));
+    .where(eq(gbReshippersTable.gbId, gb.id));
+  const existingAssignment = sameGbAssignments.find(a => normalizeToCode(a.country) === countryCode);
 
   if (existingAssignment) {
     if (existingAssignment.reshipperUsername === username) {
@@ -255,7 +260,7 @@ router.post("/reshipper/join", requireReshipper, async (req, res): Promise<void>
   const id = randomUUID();
   const [assignment] = await db
     .insert(gbReshippersTable)
-    .values({ id, gbId: gb.id, reshipperUsername: username, country: country.trim(), enabledPaymentMethods: {} })
+    .values({ id, gbId: gb.id, reshipperUsername: username, country: countryCode, enabledPaymentMethods: {} })
     .returning();
 
   writeLog("change", "info", "reshipper_joined_via_code", `Reshipper @${username} joined GB ${gb.id} via invite code (country: ${country})`, { username, gbId: gb.id, country }).catch(() => {});
