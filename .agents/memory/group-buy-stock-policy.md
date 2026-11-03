@@ -13,3 +13,9 @@ Bulk selection must submit explicit selected product IDs, including when all loa
 **Why:** Expanding a client selection to server-side “all” could also change products added after the organiser reviewed the catalogue.
 
 **How to apply:** Keep “select visible” and “select all” distinct, and clear selection when switching group buys.
+
+Order price/stock revisions with member acceptance must be optional for group-buy organisers who add their own stock, and must not affect anyone else.
+
+**Why:** The user explicitly repeated this scope restriction.
+
+**How to apply:** Keep the feature opt-in and scoped to the organiser's selected group buy; do not change shared catalogue stock or other organisers' order workflows.
