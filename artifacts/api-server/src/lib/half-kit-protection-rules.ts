@@ -10,6 +10,7 @@ const financialFields = [
 ];
 export function halfKitLegacyMutation(method: string, path: string, body: Record<string, unknown> = {}): HalfKitLegacyPlan | null {
   try { path = decodeURIComponent(path); } catch { return null; } // Express rejects malformed encodings.
+  path = path.replace(/\/+$/, "") || "/"; // "/orders/x/" must match the same rule as "/orders/x".
   const lower = path.toLowerCase();
   if (lower.includes("/half-kit-offers")) return null;
   const role: Role = lower.startsWith("/admin/") ? "admin" : lower.startsWith("/organiser/") ? "organiser" : "member";

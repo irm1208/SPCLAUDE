@@ -1082,6 +1082,11 @@ router.post("/account/order-login", async (req, res): Promise<void> => {
     return;
   }
 
+  if (existing.passwordHash) {
+    // Order numbers are sequential and widely shared; they must never replace a password.
+    res.status(401).json({ error: "This account has a password. Please log in with your password." });
+    return;
+  }
   const needsPassword = !existing.passwordHash;
 
   await issueAccountCookieForAccount(res, tg);
@@ -1469,7 +1474,10 @@ router.post("/account/smart-login", async (req, res): Promise<void> => {
       });
       return;
     }
-    // Password didn't match — try as order code fallback
+    // Password didn't match. An account that has a password can only log in with it:
+    // the old order-code fallback let anyone holding a sequential order number sign in.
+    res.status(401).json({ error: "Invalid username or password" });
+    return;
   }
 
   // ── Path 2: Try order-based login with credential as order code ──
@@ -3464,11 +3472,30 @@ router.patch("/account/health-consent", requireAccount, async (req, res): Promis
 // Takes telegramUsername + optional method ("telegram"|"email").
 // Sends a 6-digit OTP via Telegram DM (default) or email on file.
 // The OTP hash + expiry are stored on the account row.
+// Reset-code protection: one request per identifier per minute, and a 6-digit code is
+// withdrawn after five wrong guesses (otherwise ~13k guesses fit in its 10-minute window).
+const forgotPasswordLastRequest = new Map<string, number>();
+const resetCodeFailures = new Map<string, { count: number; firstAt: number }>();
+const RESET_CODE_MAX_FAILURES = 5;
+function boundedMapSet<K, V>(map: Map<K, V>, key: K, value: V, max = 10_000) {
+  if (map.size >= max) { const oldest = map.keys().next().value; if (oldest !== undefined) map.delete(oldest); }
+  map.set(key, value);
+}
+
 router.post("/account/forgot-password", async (req, res): Promise<void> => {
   const { telegramUsername, method } = req.body as { telegramUsername?: unknown; method?: unknown };
   if (!telegramUsername || typeof telegramUsername !== "string") {
     res.status(400).json({ error: "Username or email is required" });
     return;
+  }
+  {
+    const cooldownKey = telegramUsername.trim().toLowerCase();
+    const last = forgotPasswordLastRequest.get(cooldownKey) ?? 0;
+    if (Date.now() - last < 60_000) {
+      res.status(429).json({ error: "Please wait a minute before requesting another code." });
+      return;
+    }
+    boundedMapSet(forgotPasswordLastRequest, cooldownKey, Date.now());
   }
 
   const resetMethod: "telegram" | "email" = method === "email" ? "email" : "telegram";
@@ -3629,11 +3656,25 @@ router.post("/account/reset-password", async (req, res): Promise<void> => {
     return;
   }
 
+  const failureKey = tg.toLowerCase();
+  const failures = resetCodeFailures.get(failureKey);
+  if (failures && Date.now() - failures.firstAt > 15 * 60_000) resetCodeFailures.delete(failureKey);
   const codeHash = createHash("sha256").update(code.trim()).digest("hex");
   if (codeHash !== account.resetCode) {
+    const rec = resetCodeFailures.get(failureKey) ?? { count: 0, firstAt: Date.now() };
+    rec.count += 1;
+    boundedMapSet(resetCodeFailures, failureKey, rec);
+    if (rec.count >= RESET_CODE_MAX_FAILURES) {
+      // Withdraw the code so it cannot be brute-forced; the member requests a fresh one.
+      await db.update(accountsTable).set({ resetCode: null, resetCodeExpiresAt: null }).where(eq(accountsTable.telegramUsername, tg));
+      resetCodeFailures.delete(failureKey);
+      res.status(429).json({ error: "Too many incorrect codes. Please request a new reset code." });
+      return;
+    }
     res.status(400).json({ error: "Invalid reset code." });
     return;
   }
+  resetCodeFailures.delete(failureKey);
 
   const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 

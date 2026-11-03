@@ -13162,7 +13162,6 @@ export function OrganiserCountryLegsTab({ gb }: { gb: OrganiserGB }) {
                             type="button"
                             title="Open leg view as this reshipper"
                             onClick={() => {
-                              sessionStorage.setItem("peps_admin_preview_secret", (import.meta.env.VITE_ADMIN_PASSWORD as string) ?? "");
                               window.open(`/leg-view/${gb.id}?as=${encodeURIComponent(uname)}`, "_blank");
                             }}
                             className="p-1 rounded-lg hover:bg-blue-50 transition-colors"

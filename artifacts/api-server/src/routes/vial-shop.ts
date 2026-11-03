@@ -547,15 +547,31 @@ router.post("/vial/orders/:id/pay", async (req, res): Promise<void> => {
 // SELLER ROUTES
 // ══════════════════════════════════════════════════════════════
 
+const sellerLoginFailures = new Map<string, { count: number; firstAt: number }>();
+const SELLER_LOGIN_MAX_FAILURES = 10;
+const SELLER_LOGIN_WINDOW_MS = 15 * 60_000;
 router.post("/vial/seller/login", async (req, res): Promise<void> => {
   const { name, password } = req.body;
   if (!name || !password) { res.status(400).json({ error: "Store name and password required" }); return; }
+  const limiterKey = `${req.ip ?? "?"}|${String(name).trim().toLowerCase()}`;
+  const fails = sellerLoginFailures.get(limiterKey);
+  if (fails && Date.now() - fails.firstAt > SELLER_LOGIN_WINDOW_MS) sellerLoginFailures.delete(limiterKey);
+  if ((sellerLoginFailures.get(limiterKey)?.count ?? 0) >= SELLER_LOGIN_MAX_FAILURES) {
+    res.status(429).json({ error: "Too many failed logins. Try again in 15 minutes." }); return;
+  }
+  const recordFailure = () => {
+    const rec = sellerLoginFailures.get(limiterKey) ?? { count: 0, firstAt: Date.now() };
+    rec.count += 1;
+    if (sellerLoginFailures.size >= 10_000) { const oldest = sellerLoginFailures.keys().next().value; if (oldest !== undefined) sellerLoginFailures.delete(oldest); }
+    sellerLoginFailures.set(limiterKey, rec);
+  };
   const vendors = await db.select().from(vialVendorsTable)
     .where(sql`lower(${vialVendorsTable.name}) = lower(${String(name).trim()})`);
   const vendor = vendors.find(v => v.sellerPasswordHash);
-  if (!vendor) { res.status(401).json({ error: "Invalid credentials" }); return; }
+  if (!vendor) { recordFailure(); res.status(401).json({ error: "Invalid credentials" }); return; }
   const hash = hashPassword(String(password));
-  if (!safeCompare(hash, vendor.sellerPasswordHash!)) { res.status(401).json({ error: "Invalid credentials" }); return; }
+  if (!safeCompare(hash, vendor.sellerPasswordHash!)) { recordFailure(); res.status(401).json({ error: "Invalid credentials" }); return; }
+  sellerLoginFailures.delete(limiterKey);
   writeLog("seller", "info", "seller_login", `Seller "${vendor.name}" logged in`, { vendorId: vendor.id, vendorName: vendor.name }, req.ip).catch(() => {});
   res.json({
     vendorId: vendor.id,

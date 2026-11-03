@@ -105,6 +105,7 @@ export function authenticateAdminSecret(req: Request, res: Response, provided: u
     logFailureToDB(ip);
     if (current.count < MAX_ATTEMPTS) syncBlockFromDB(ip, current);
     if (current.count >= MAX_ATTEMPTS) current.blockedUntil = now + BLOCK_MS;
+    if (attempts.size >= 10_000) { for (const [k, v] of attempts) { if (v.blockedUntil <= now) attempts.delete(k); if (attempts.size < 5_000) break; } }
     attempts.set(ip, current);
     res.status(401).json({ error: "Unauthorized" });
     return false;
@@ -319,7 +320,8 @@ function hasRecentStepUp(stepUpAt: Date | null | undefined): boolean {
 // admin session is sufficient for routine operational mutations.
 function isReusableStepUpRoute(req: Request): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
-  const path = req.path;
+  // Express also routes "/payments-config/" and "/Payments-Config" here; compare the normalised path.
+  const path = req.path.replace(/\/+$/, "").toLowerCase();
   return path === "/payments-config" ||
     path === "/anonpay-config" ||
     path === "/wallet-address" ||

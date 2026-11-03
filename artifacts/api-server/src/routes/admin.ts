@@ -10847,6 +10847,7 @@ router.patch("/admin/group-buys/:gbId/country-legs/:legId/kit-excluded-orders", 
   if (!orderId || typeof excluded !== "boolean") {
     res.status(400).json({ error: "orderId and excluded (boolean) are required" });
     return;
+  if (!requireAdmin(req, res)) return;
   }
 
   const [leg] = await db

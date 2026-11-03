@@ -30,7 +30,6 @@ export default defineConfig({
   base: basePath,
   define: {
     'import.meta.env.VITE_VENDOR_DEV_HOSTS': JSON.stringify([process.env.REPLIT_DEV_DOMAIN ?? '', process.env.VENDOR_DEV_HOSTS ?? ''].filter(Boolean).join(',')),
-    'import.meta.env.VITE_ADMIN_PASSWORD': JSON.stringify(process.env.VITE_ADMIN_PASSWORD ?? ''),
   },
   // Pre-scan every page so Vite completes dep optimisation in ONE pass at
   // startup rather than restarting each time a new import is discovered during

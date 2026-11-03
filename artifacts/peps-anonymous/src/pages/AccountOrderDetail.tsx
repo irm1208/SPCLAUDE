@@ -2074,7 +2074,7 @@ export default function AccountOrderDetail() {
   const orderId = params?.id ?? null;
   const isAdminPreview = new URLSearchParams(window.location.search).get("adminPreview") === "1";
   const adminPreviewSecret = isAdminPreview
-    ? (new URLSearchParams(window.location.hash.slice(1)).get("s") ?? localStorage.getItem("peps_admin_preview_secret") ?? "")
+    ? (localStorage.getItem("peps_admin_preview_secret") ?? "")
     : "";
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
