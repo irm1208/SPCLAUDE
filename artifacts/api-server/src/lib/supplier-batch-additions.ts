@@ -8,6 +8,8 @@ export const wholeSnapshot = (order: BatchOrder) => order.fullOrder ?? order;
 
 /** Batch appends are NOT customer additions. Prefer original order-edit evidence. */
 export function batchAdditions(batch: any, history: any[], orderEdits: any[] = []): AddedQuantity[] {
+  const undone = new Set(history.filter(e => e.kind === "move_undone").map(e => e.detail.moveEventId));
+  history = history.filter(e => !e.id || !undone.has(e.id));
   const amounts = new Map<string, number>();
   // These records are supplied oldest-first. A before/after edit predating batch
   // preparation still establishes the original customer quantity (e.g. 1 -> 2).

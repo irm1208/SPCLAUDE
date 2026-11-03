@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { SupplierBatch, SupplierScope } from "@/lib/supplier-batches";
+import { BatchMoveUndo } from "./BatchMoveUndo";
 
 const field = "w-full rounded-lg border p-2 text-sm";
 const button = "rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50";
@@ -25,8 +26,10 @@ export function BatchCorrection({ batch, scope, busy, onConfirm }: {
       <p>Orders: {note.orderCodes.map(code => `#${code}`).join(", ")}.</p>
       <p className="whitespace-pre-wrap">{note.reason}</p>
       <p>{new Date(note.createdAt).toLocaleString("en-GB")} · {note.actor}</p>
+      {note.undoneAt && <p className="font-semibold">Move undone {new Date(note.undoneAt).toLocaleString("en-GB")} · {note.undoneBy}. {note.undoReason}</p>}
       {note.direction === "in" && batch.state === "prepared" && <p>Awaiting a new vendor purchase; not part of the previous delivery.</p>}
     </div>)}
+    {scope === "admin" && <BatchMoveUndo batch={batch} busy={busy} onConfirm={onConfirm} />}
     {scope === "admin" && batch.state === "ordered" && batch.snapshot.orders.length > 0 && !open &&
       <button type="button" className={button} disabled={busy} data-testid={`button-correct-${batch.id}`}
         onClick={() => { setReviewedToken(batch.snapshot.token); setSelected([]); setReason(""); setAcknowledged(false); setOpen(true); }}>

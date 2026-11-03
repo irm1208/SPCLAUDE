@@ -45,6 +45,14 @@ describe("supplier batch quantity additions", () => {
   it("uses the earliest original quantity rather than accumulating subsequent edits", () => {
     expect(batchAdditions(batch, [], [edit("1"), edit("2")])[0].quantity).toBe(2);
   });
+  it("makes the true extras available again after their earlier move is undone", () => {
+    const history = [
+      { id: "move", kind: "quantities_moved", detail: { batchId: "b",
+        lines: [{ orderId: "o", productId: "p", quantity: 2 }] } },
+      { id: "undo", kind: "move_undone", detail: { moveEventId: "move", batchId: "b" } },
+    ];
+    expect(batchAdditions(batch, history, [edit("1")])[0].quantity).toBe(2);
+  });
   it("does not turn a reduction followed by a partial restoration into an addition", () => {
     const history = [1, 2].map((q, index) => ({ kind: "refreshed", detail: { batchId: "b", changes: [{
       orderId: "o", before: { items: [{ ...order.items[0], quantity: index ? 1 : 3 }] },

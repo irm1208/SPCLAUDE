@@ -20,10 +20,25 @@ vi.mock("../lib/supplier-batches", () => ({
   supplierData:calls.data,saveSupplierConfig:vi.fn(),confirmSupplierBatch:vi.fn(),orderSupplierBatch:vi.fn(),
   releaseSupplierBatch:vi.fn(),reviewHistoricalSupplierOrder:vi.fn(),exportSupplierBatch:vi.fn(),
   previewSupplierBatchRefresh:calls.preview,refreshSupplierBatch:calls.refresh,
-  moveSupplierBatchOrders:calls.move,
+  moveSupplierBatchOrders:calls.move, undoSupplierBatchMove:calls.move,
 }));
 import router from "./supplier-batches";
 describe("supplier batch HTTP authentication", () => {
+  it("only Admin can undo a move, and organiser paths expose no undo endpoint", async () => {
+    const path = "/api/admin/group-buys/gb/supplier-batches/batch/undo-move";
+    const body = { confirm: true, moveEventId: "move", reason: "Mistaken move",
+      expectedBatchToken: "source", expectedTargetToken: "target" };
+    const request = (headers = {}) => fetch(base + path, { method: "POST",
+      headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+    expect((await request()).status).toBe(401);
+    expect((await request({ "x-test-organiser": "yes" })).status).toBe(401);
+    const response = await request({ "x-test-admin": "yes" });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.json()).toMatchObject({ id: "gb", batchId: "batch", actor: { admin: true }, body });
+    expect((await fetch(base + path.replace("/admin/", "/organiser/"), { method: "POST",
+      headers: { "Content-Type": "application/json", "x-test-organiser": "yes" }, body: JSON.stringify(body) })).status).toBe(404);
+  });
   it("requires member sign-in for the read-only batch summary and marks it private", async () => {
     expect((await fetch(`${base}/api/group-buys/gb/supplier-batches`)).status).toBe(401);
     const res = await fetch(`${base}/api/group-buys/gb/supplier-batches`, { headers: { "x-test-member": "yes" } });

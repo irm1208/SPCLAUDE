@@ -6,7 +6,7 @@ import { memberSupplierBatches } from "../lib/member-supplier-batches";
 import { SupplierBatchError } from "../lib/supplier-batches-model";
 import { type UpdateActor } from "../lib/group-buy-updates-model";
 import { supplierData, saveSupplierConfig, confirmSupplierBatch, appendSupplierBatch, previewSupplierBatchRefresh, refreshSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch, supplierDirectOrders, exportSupplierTxt } from "../lib/supplier-batches";
-import { moveSupplierBatchOrders } from "../lib/supplier-batches";
+import { moveSupplierBatchOrders, undoSupplierBatchMove } from "../lib/supplier-batches";
 import { previewBatchMessage, queueBatchMessage, batchMessageHistory } from "../lib/supplier-batch-messages";
 
 const router = Router();
@@ -63,6 +63,9 @@ router.post("/admin/group-buys/:id/supplier-batches/:batchId/move-orders", async
 });
 router.post("/admin/group-buys/:id/supplier-batches/:batchId/move-additions", async (req, res) => {
   res.json(await moveSupplierBatchOrders(param(req, "id"), param(req, "batchId"), actor(req), { ...req.body, mode: "additions" }));
+});
+router.post("/admin/group-buys/:id/supplier-batches/:batchId/undo-move", async (req, res) => {
+  res.json(await undoSupplierBatchMove(param(req, "id"), param(req, "batchId"), actor(req), req.body));
 });
 router.get(paths("/:batchId/export"), async (req, res) => {
   const result = await exportSupplierBatch(param(req, "id"), param(req, "batchId"), actor(req));

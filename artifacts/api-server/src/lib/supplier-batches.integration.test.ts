@@ -51,6 +51,68 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("undoes an allocation move atomically, preserves payments, restores manifests and is replay-safe", async () => {
+    const f = await fixture([100]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: f.result.proposals[0].token,
+    });
+    const submitted = await api.orderSupplierBatch(f.id, prepared.batches[0].id, admin, { confirm: true });
+    const source = submitted.batches[0], order = source.snapshot.orders[0];
+    const shipmentId = randomUUID();
+    const contents = [{ orderId: order.id, code: order.code, username: order.username,
+      productId: order.items[0].productId, productName: order.items[0].productName, quantity: 100 }];
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: source.id, createdBy: admin.username, label: "Undo fixture",
+      requestKey: randomUUID(), requestHash: randomUUID(), contents,
+    });
+    const moved = await api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      confirm: true, reason: "Synthetic mistaken move", expectedBatchToken: source.snapshot.token, orderIds: f.ids,
+    });
+    const from = moved.batches.find((b: any) => b.id === source.id);
+    const target = moved.batches.find((b: any) => b.id !== source.id);
+    const [event] = await store.db.select().from(store.gbSupplierEventsTable)
+      .where(and(eq(store.gbSupplierEventsTable.groupBuyId, f.id), eq(store.gbSupplierEventsTable.kind, "orders_moved")));
+    const body = { confirm: true, reason: "Undo mistaken allocation", moveEventId: event.id,
+      expectedBatchToken: from.snapshot.token, expectedTargetToken: target.snapshot.token };
+    expect(from.undoMoves[0]).toMatchObject({ eventId: event.id, targetReference: target.reference, kits: 100 });
+    await expect(api.undoSupplierBatchMove(f.id, source.id, { username: "organiser", admin: false }, body)).rejects.toThrow(/Admin/);
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, { ...body, expectedTargetToken: "stale" })).rejects.toThrow(/changed/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 1 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/receipt/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 0 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await store.db.update(store.gbSupplierShipmentsTable).set({ contents }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/contents changed/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ contents: [] }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    const extraPackageId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: extraPackageId, batchId: target.id, createdBy: admin.username, label: "Destination guard fixture",
+      requestKey: randomUUID(), requestHash: randomUUID(), contents: [],
+    });
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/destination has supplier packages/);
+    await store.db.delete(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, extraPackageId));
+    await store.db.update(store.ordersTable).set({ status: "Shipped" }).where(eq(store.ordersTable.id, order.id));
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/changed|unshipped/);
+    await store.db.update(store.ordersTable).set({ status: "Submitted" }).where(eq(store.ordersTable.id, order.id));
+    const results = await Promise.all([
+      api.undoSupplierBatchMove(f.id, source.id, admin, body),
+      api.undoSupplierBatchMove(f.id, source.id, admin, body),
+    ]);
+    for (const result of results) {
+      expect(result.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(100);
+      expect(result.batches.find((b: any) => b.id === target.id).state).toBe("released");
+      expect(result.batches.find((b: any) => b.id === source.id).undoMoves).toEqual([]);
+    }
+    const [restored] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(restored.contents).toEqual(contents);
+    expect(restored.cancelledAt).toBeNull();
+    const [reservation] = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, order.id));
+    expect(reservation.batchId).toBe(source.id);
+    const [unchanged] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, order.id));
+    expect(unchanged).toMatchObject({ paymentStatus: "confirmed", grandTotal: "1000.00", status: "Processing" });
+    const undos = await store.db.select().from(store.gbSupplierEventsTable)
+      .where(and(eq(store.gbSupplierEventsTable.groupBuyId, f.id), eq(store.gbSupplierEventsTable.kind, "move_undone")));
+    expect(undos).toHaveLength(1);
+  });
   it("uses customer edits before first allocation and refuses moving original kits from an appended order", async () => {
     const f = await fixture([2, 100]);
     await store.db.insert(store.auditLogsTable).values({
@@ -89,6 +151,18 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     expect(destination.snapshot.kits).toBe(1);
     expect(remaining.additions).toEqual([]);
     expect(destination.additions).toEqual([]);
+    await expect(api.undoSupplierBatchMove(f.id, source.id, { ...admin, adminGbId: "another-group" }, {
+      confirm: true, reason: "Wrong scope", moveEventId: remaining.undoMoves[0].eventId,
+      expectedBatchToken: remaining.snapshot.token, expectedTargetToken: destination.snapshot.token,
+    })).rejects.toThrow(/another group/);
+    const undone = await api.undoSupplierBatchMove(f.id, source.id, admin, {
+      confirm: true, reason: "Synthetic undo of a partial quantity move", moveEventId: remaining.undoMoves[0].eventId,
+      expectedBatchToken: remaining.snapshot.token, expectedTargetToken: destination.snapshot.token,
+    });
+    const original = undone.batches.find((b: any) => b.id === source.id);
+    expect(original.snapshot.orders.find((o: any) => o.id === f.ids[0]).kits).toBe(2);
+    expect(original.additions).toMatchObject([{ orderId: f.ids[0], quantity: 1 }]);
+    expect(original.snapshot.orders.find((o: any) => o.id === f.ids[0]).fullOrder).toBeUndefined();
     const [unchanged] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
     expect(unchanged.grandTotal).toBe("20.00");
     expect(unchanged.paymentStatus).toBe("confirmed");
@@ -144,6 +218,13 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     expect(view.orders[0].items[0].quantity).toBe(1);
     const replay = await api.moveSupplierBatchOrders(f.id, batch.id, admin, body);
     expect(replay.batches).toHaveLength(2);
+    const movedSource = replay.batches.find((b: any) => b.id === batch.id);
+    const [moveEvent] = await store.db.select().from(store.gbSupplierEventsTable)
+      .where(and(eq(store.gbSupplierEventsTable.groupBuyId, f.id), eq(store.gbSupplierEventsTable.kind, "quantities_moved")));
+    await expect(api.undoSupplierBatchMove(f.id, batch.id, admin, {
+      confirm: true, reason: "Cannot undo a purchased destination", moveEventId: moveEvent.id,
+      expectedBatchToken: movedSource.snapshot.token, expectedTargetToken: next.snapshot.token,
+    })).rejects.toThrow(/destination still prepared/);
     await expect(api.releaseSupplierBatch(f.id, next.id, admin, { confirm: true, reason: "Not permitted" })).rejects.toThrow();
   });
   it("audits an Admin move from an ordered batch, preserves payments, cleans the unchecked manifest, and replays safely", async () => {

@@ -56,6 +56,18 @@ after an original quantity was incorrectly included in a move.
 **How to apply:** Preserve original quantities in the source allocation. Keep any
 explicit whole-order correction separate from the additions workflow.
 
+Undoing a mistaken allocation move must restore the original batch and unchecked
+package contents without changing customer quantities, prices or payments. Retain
+the move and its reversal as history; retire the unused destination instead of
+deleting it. Block undo when subsequent work or inspected receipts could be overwritten.
+
+**Why:** The user approved a secure Admin Undo action after an additions move
+incorrectly transferred the customer's original kits too.
+
+**How to apply:** Validate the recorded post-move snapshots and current reservations
+inside the same group transaction. A code change is not a live-data reversal:
+with read-only production access, the user must publish and execute the Admin action.
+
 When an enabled supplier region reaches its kit target and Telegram alerts are enabled, notify both the configured Admin Telegram chat and the group-buy organiser. These are staff alerts, not member broadcasts.
 
 **Why:** The user explicitly chose Admin and the organiser as recipients; organiser-only alerts do not notify the Admin who manages supplier purchasing.

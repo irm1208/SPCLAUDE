@@ -19,6 +19,7 @@ import { assertNoActiveRefunds } from "./refund-mutation-guard";
 import { buildPreparedBatchRefresh, refreshedOrderSnapshot } from "./supplier-batch-refresh-model";
 import { correctionSnapshots } from "./supplier-batch-correction-model";
 import { batchAdditions, splitBatchQuantities, reservationBatch, wholeSnapshot, type QuantityMove } from "./supplier-batch-additions";
+import { planMoveUndo, undoMove } from "./supplier-batch-undo";
 
 type Database = typeof db;
 const emptyConfig: SupplierConfig = { enabled: false, telegramAlerts: false, showToMembers: false, regions: [] };
@@ -145,9 +146,9 @@ async function state(tx: any, group: any, reconcile = true) {
     }
     await tx.update(settings).set({ readiness, checkedAt: now }).where(eq(settings.groupBuyId, id));
   }
-  const additionHistory = await tx.select({ kind: events.kind, detail: events.detail }).from(events).where(and(
-    eq(events.groupBuyId, id), inArray(events.kind, ["appended", "refreshed", "quantities_moved"]),
-  )).orderBy(asc(events.createdAt), asc(events.id));
+  const additionHistory = await tx.select({ id: events.id, kind: events.kind, detail: events.detail }).from(events).where(and(
+    eq(events.groupBuyId, id), inArray(events.kind, ["appended", "refreshed", "quantities_moved", "orders_moved", "move_undone"]),
+  )).orderBy(asc(events.createdAt), asc(events.id)) as { id: string; kind: string; detail: any }[];
   const historyOrderIds: string[] = [...new Set<string>(data.history.flatMap((b: any) =>
     b.snapshot.orders.map((o: BatchOrder) => o.id)))];
   // One group-scoped query, including edits before first batch allocation.
@@ -159,6 +160,17 @@ async function state(tx: any, group: any, reconcile = true) {
       sql`${auditLogsTable.metadata}->'after'->'lineItems' IS NOT NULL`,
     )).orderBy(asc(auditLogsTable.createdAt), asc(auditLogsTable.id)) : [];
   const history = data.history.map((b: any) => ({
+    undoMoves: additionHistory.filter(e => e.detail.batchId === b.id
+      && ["orders_moved", "quantities_moved"].includes(e.kind)
+      && !additionHistory.some(u => u.kind === "move_undone" && u.detail.moveEventId === e.id))
+      .flatMap(e => {
+        const target = data.history.find((t: any) => t.id === e.detail.targetBatchId);
+        try {
+          const { moved } = planMoveUndo(b, target, e);
+          return [{ eventId: e.id, targetReference: target!.reference, expectedTargetToken: (target!.snapshot as any).token,
+            kits: moved.kits, orderCodes: moved.orders.map((o: BatchOrder) => o.code) }];
+        } catch { return []; } // Only reconstructable, still-prepared destinations can offer Undo.
+      }),
     ...b, additions: batchAdditions(b, additionHistory, orderEdits), exceptions: b.state === "released" ? [] : b.snapshot.orders.flatMap((old: BatchOrder) => {
       const reason = mismatch(b, data.all.find((o: any) => o.id === old.id), data.elig.find((e: any) => e.orderId === old.id));
       return reason ? [{ orderId: old.id, code: old.code, reason }] : [];
@@ -466,6 +478,13 @@ export async function moveSupplierBatchOrders(id: string, batchId: string, actor
       orderIds: ids, kits: moved.kits, reason, beforeSnapshot: source.snapshot,
       ...(quantityMode ? { lines: body.lines } : {}), packageChanges,
     });
+    return state(tx, group);
+  }, database);
+}
+export async function undoSupplierBatchMove(id: string, batchId: string, actor: UpdateActor, body: any, database = db) {
+  if (!actor.admin) throw new SupplierBatchError("Only Admin can undo a batch allocation move.", 403);
+  return locked(id, actor, async (tx, group) => {
+    await undoMove(tx, group, batchId, actor, body, { state, audit });
     return state(tx, group);
   }, database);
 }

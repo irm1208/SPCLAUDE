@@ -66,6 +66,46 @@ test("batch rows highlight additions and allow moving five extra kits without mo
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
+test("only Admin can review Undo, with both batch tokens, a reason and explicit confirmation", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const calls: unknown[] = [];
+  const batch: SupplierBatch = { ...existingBatch, state: "ordered", undoMoves: [{
+    eventId: "move", targetReference: "GB-TEST / 007", expectedTargetToken: "destination-token",
+    kits: 2, orderCodes: ["12402"],
+  }] };
+  const props = { b: batch, busy: false,
+    act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
+    exportCsv: async () => {}, exportTxt: async () => {}, context: { groupBuyId: "gb", scope: "admin" as const } };
+  try {
+    await act(async () => root.render(createElement(BatchCard, { ...props, context: { groupBuyId: "gb", scope: "organiser" } })));
+    assert.equal(host.querySelector('[data-testid="undo-move-move"]'), null);
+    await act(async () => root.render(createElement(BatchCard, props)));
+    await act(async () => (host.querySelector('[data-testid="undo-move-move"]') as HTMLButtonElement).click());
+    assert.match(host.textContent!, /Return 2 kits from GB-TEST \/ 007 to GB-TEST \/ 001/);
+    assert.match(host.textContent!, /12402/);
+    assert.match(host.textContent!, /prices and payments stay unchanged/);
+    assert.equal((host.querySelector('[data-testid="confirm-undo-move"]') as HTMLButtonElement).disabled, true);
+    const input = host.querySelector('[data-testid="undo-move-reason"]') as HTMLTextAreaElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!.call(input, "Moved original kit by mistake");
+      input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+    await act(async () => (host.querySelector('[data-testid="undo-move-acknowledge"]') as HTMLInputElement).click());
+    await act(async () => (host.querySelector('[data-testid="confirm-undo-move"]') as HTMLButtonElement).click());
+    assert.deepEqual(calls, [["/prepared-uk/undo-move", { confirm: true, moveEventId: "move",
+      reason: "Moved original kit by mistake", expectedBatchToken: "target-token", expectedTargetToken: "destination-token" }]]);
+    await act(async () => (host.querySelector('[data-testid="undo-move-move"]') as HTMLButtonElement).click());
+    await act(async () => root.render(createElement(BatchCard, {
+      ...props, b: { ...batch, undoMoves: [{ ...batch.undoMoves![0], expectedTargetToken: "changed-destination" }] },
+    })));
+    assert.match(host.textContent!, /The batch changed/);
+    assert.equal((host.querySelector('[data-testid="confirm-undo-move"]') as HTMLButtonElement).disabled, true);
+    assert.equal(calls.length, 1);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 test("Admin can review and confirm a whole-order move with a reason", async () => {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);

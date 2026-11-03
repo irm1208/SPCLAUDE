@@ -7,10 +7,12 @@ export interface BatchOrder { id: string; code: string; username: string; countr
 export interface BatchCorrectionNote {
   direction: "in" | "out"; reference: string; kits: number; orderCodes: string[];
   reason: string; createdAt: string; actor: string;
+  undoneAt?: string; undoneBy?: string; undoReason?: string;
 }
 export interface BatchProposal { region: BatchRegion; token: string; orders: BatchOrder[]; kits: number; queuedKits: number; remainingKits: number; ready: boolean; readyAt: string | null; products: {productId: string; productName: string; quantity: number}[]; allQueued?: BatchProposal; corrections?: BatchCorrectionNote[] }
 export interface AddedBatchQuantity { orderId: string; productId: string; productName: string; quantity: number }
-export interface SupplierBatch { id: string; reference: string; state: "prepared" | "ordered" | "released"; createdAt: string; createdBy: string; orderedAt: string | null; releasedAt: string | null; releaseReason: string | null; snapshot: BatchProposal; additions?: AddedBatchQuantity[]; exceptions: {orderId: string; code: string; reason: string}[] }
+export interface SupplierMoveUndo { eventId: string; targetReference: string; expectedTargetToken: string; kits: number; orderCodes: string[] }
+export interface SupplierBatch { id: string; reference: string; state: "prepared" | "ordered" | "released"; createdAt: string; createdBy: string; orderedAt: string | null; releasedAt: string | null; releaseReason: string | null; snapshot: BatchProposal; additions?: AddedBatchQuantity[]; undoMoves?: SupplierMoveUndo[]; exceptions: {orderId: string; code: string; reason: string}[] }
 export interface SupplierData {
   groupBuy: {id: string; name: string}; config: BatchConfig; version: number; checkedAt: string | null;
   proposals: BatchProposal[]; batches: SupplierBatch[];
