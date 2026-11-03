@@ -38,13 +38,33 @@ function safeCompare(a: string, b: string): boolean {
   } catch { return false; }
 }
 
+const SELLER_TOKEN_TTL = "7d";
+/** Short fingerprint of the password hash: a password change invalidates older tokens. */
+function sellerPasswordFingerprint(passwordHash: string): string {
+  return createHash("sha256").update(`vial-seller-pw:${passwordHash}`).digest("hex").slice(0, 16);
+}
+/** Signed, expiring seller session token. Replaces the old scheme where the token WAS the password hash. */
+export function issueSellerToken(vendor: { id: string; sellerPasswordHash: string }): string {
+  return jwt.sign({ sub: vendor.id, typ: "vial-seller", pw: sellerPasswordFingerprint(vendor.sellerPasswordHash) }, getJwtSecret(), { expiresIn: SELLER_TOKEN_TTL });
+}
 async function requireSeller(req: any, res: any): Promise<any | null> {
   const vendorId = req.headers["x-seller-id"];
   const token = req.headers["x-seller-token"];
   if (!vendorId || !token) { res.status(401).json({ error: "Seller auth required" }); return null; }
+  let payload: { sub?: string; typ?: string; pw?: string };
+  try { payload = jwt.verify(String(token), getJwtSecret()) as typeof payload; }
+  catch { res.status(401).json({ error: "Invalid credentials" }); return null; }
+  if (payload.typ !== "vial-seller" || payload.sub !== String(vendorId)) { res.status(401).json({ error: "Invalid credentials" }); return null; }
   const [vendor] = await db.select().from(vialVendorsTable).where(eq(vialVendorsTable.id, String(vendorId)));
   if (!vendor || !vendor.sellerPasswordHash) { res.status(401).json({ error: "Seller not found" }); return null; }
-  if (!safeCompare(String(token), vendor.sellerPasswordHash)) { res.status(401).json({ error: "Invalid credentials" }); return null; }
+  if (!safeCompare(String(payload.pw ?? ""), sellerPasswordFingerprint(vendor.sellerPasswordHash))) { res.status(401).json({ error: "Invalid credentials" }); return null; }
+  return vendor;
+}
+/** Like requireSeller, but the store must have been activated by the admin. */
+async function requireActiveSeller(req: any, res: any): Promise<any | null> {
+  const vendor = await requireSeller(req, res);
+  if (!vendor) return null;
+  if (!vendor.active) { res.status(403).json({ error: "Your store is awaiting approval. You can list products once an admin activates it." }); return null; }
   return vendor;
 }
 
@@ -169,15 +189,17 @@ router.get("/vial/vendors", async (req, res): Promise<void> => {
 
 router.get("/vial/products", async (req, res): Promise<void> => {
   if (!await checkShopAccess(req, res)) return;
-  const products = await db
+  const allProducts = await db
     .select().from(vialProductsTable)
     .where(eq(vialProductsTable.active, true))
     .orderBy(vialProductsTable.sortOrder, vialProductsTable.createdAt);
-  const vendorIds = [...new Set(products.map(p => p.vendorId).filter(Boolean))] as string[];
+  const vendorIds = [...new Set(allProducts.map(p => p.vendorId).filter(Boolean))] as string[];
   const vendors = vendorIds.length
     ? await db.select().from(vialVendorsTable).where(inArray(vialVendorsTable.id, vendorIds))
     : [];
   const vendorMap = Object.fromEntries(vendors.map(v => [v.id, v]));
+  // A product listed by a store that the admin has not activated yet is not public.
+  const products = allProducts.filter(p => !p.vendorId || vendorMap[p.vendorId]?.active);
   res.json(products.map(p => fmtProduct(p, p.vendorId ? vendorMap[p.vendorId] : undefined)));
 });
 
@@ -538,7 +560,7 @@ router.post("/vial/seller/login", async (req, res): Promise<void> => {
   res.json({
     vendorId: vendor.id,
     vendorName: vendor.name,
-    token: hash,
+    token: issueSellerToken({ id: vendor.id, sellerPasswordHash: vendor.sellerPasswordHash! }),
     country: vendor.country,
     rating: vendor.rating ? parseFloat(vendor.rating) : null,
     shipsTo: vendor.shipsTo,
@@ -647,7 +669,7 @@ router.get("/vial/seller/products", async (req, res): Promise<void> => {
 });
 
 router.post("/vial/seller/products", async (req, res): Promise<void> => {
-  const vendor = await requireSeller(req, res);
+  const vendor = await requireActiveSeller(req, res);
   if (!vendor) return;
   const { name, description, category, mgSize, price, currency, stock, manufacturer, batchNumber, labReportUrl, imageUrl } = req.body;
   if (!name?.trim() || price === undefined) { res.status(400).json({ error: "name and price required" }); return; }
@@ -674,7 +696,7 @@ router.post("/vial/seller/products", async (req, res): Promise<void> => {
 });
 
 router.put("/vial/seller/products/:id", async (req, res): Promise<void> => {
-  const vendor = await requireSeller(req, res);
+  const vendor = await requireActiveSeller(req, res);
   if (!vendor) return;
   const [existing] = await db.select().from(vialProductsTable)
     .where(and(eq(vialProductsTable.id, req.params.id), eq(vialProductsTable.vendorId, vendor.id)));
@@ -705,7 +727,7 @@ router.put("/vial/seller/products/:id", async (req, res): Promise<void> => {
 });
 
 router.delete("/vial/seller/products/:id", async (req, res): Promise<void> => {
-  const vendor = await requireSeller(req, res);
+  const vendor = await requireActiveSeller(req, res);
   if (!vendor) return;
   const [existing] = await db.select().from(vialProductsTable)
     .where(and(eq(vialProductsTable.id, req.params.id), eq(vialProductsTable.vendorId, vendor.id)));
@@ -795,14 +817,8 @@ router.get("/vial/seller/shop-config", async (req, res): Promise<void> => {
 router.patch("/vial/seller/shop-config", async (req, res): Promise<void> => {
   const vendor = await requireSeller(req, res);
   if (!vendor) return;
-  const { membersOnly } = req.body;
-  if (typeof membersOnly !== "boolean") { res.status(400).json({ error: "membersOnly (boolean) is required" }); return; }
-  const value = membersOnly ? "true" : "false";
-  const now = new Date();
-  await db.insert(siteConfigTable)
-    .values({ key: "shop_members_only", value, updatedAt: now })
-    .onConflictDoUpdate({ target: siteConfigTable.key, set: { value, updatedAt: now } });
-  res.json({ membersOnly });
+  // shop_members_only is a site-wide switch owned by the admin, not by any one seller.
+  res.status(403).json({ error: "Only the site admin can change the members-only setting." });
 });
 
 router.put("/vial/seller/profile", async (req, res): Promise<void> => {

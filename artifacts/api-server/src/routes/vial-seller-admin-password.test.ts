@@ -56,7 +56,7 @@ vi.mock("../lib/audit-log", () => ({
 vi.mock("../lib/create-alert", () => ({ createAlert: async () => undefined }));
 vi.mock("../lib/telegram", () => ({ sendTelegramMessage: async () => undefined }));
 
-import vialShopRouter from "./vial-shop";
+import vialShopRouter, { issueSellerToken } from "./vial-shop";
 
 async function put(path: string, body: unknown) {
   const app = express();
@@ -113,10 +113,10 @@ describe("admin Vial seller password reset", () => {
     expect(state.logs[0]).toContain("seller_password_reset_by_admin");
     expect(JSON.stringify(state.logs[0])).not.toContain("new-password");
 
-    const oldToken = "old-hash";
-    const newToken = state.update?.sellerPasswordHash;
+    const oldToken = issueSellerToken({ id: "seller-1", sellerPasswordHash: "old-hash" });
+    const newToken = issueSellerToken({ id: "seller-1", sellerPasswordHash: String(state.update?.sellerPasswordHash) });
     expect((await requestSellerProducts(oldToken)).status).toBe(401);
-    expect((await requestSellerProducts(String(newToken))).status).toBe(200);
+    expect((await requestSellerProducts(newToken)).status).toBe(200);
   });
 
   it("rejects unauthenticated admins before reading or mutating the seller", async () => {

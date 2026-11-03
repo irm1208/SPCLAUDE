@@ -59,7 +59,7 @@ vi.mock("../lib/telegram", () => ({ sendTelegramMessage: state.send }));
 vi.mock("../lib/audit-log", () => ({ writeLog: state.log }));
 vi.mock("../lib/create-alert", () => ({ createAlert: async () => undefined }));
 
-import router from "./vial-shop";
+import router, { issueSellerToken } from "./vial-shop";
 
 async function request(path: string, body?: unknown, headers: Record<string, string> = {}, method?: string) {
   const app = express();
@@ -79,7 +79,7 @@ async function request(path: string, body?: unknown, headers: Record<string, str
 
 const checkout = { items: [{ productId: "p-gbp", quantity: 1 }], telegramUsername: "buyer" };
 const token = createHash("sha256").update("password:test-secret").digest("hex");
-const sellerHeaders = { "x-seller-id": "v", "x-seller-token": token };
+const sellerHeaders = { "x-seller-id": "v", "x-seller-token": issueSellerToken({ id: "v", sellerPasswordHash: token }) };
 
 describe("vial checkout denomination and seller settings", () => {
   beforeEach(() => {

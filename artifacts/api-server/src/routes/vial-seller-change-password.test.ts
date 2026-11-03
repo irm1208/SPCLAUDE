@@ -46,7 +46,7 @@ vi.mock("../lib/audit-log", () => ({
 vi.mock("../lib/create-alert", () => ({ createAlert: async () => undefined }));
 vi.mock("../lib/telegram", () => ({ sendTelegramMessage: async () => undefined }));
 
-import vialShopRouter from "./vial-shop";
+import vialShopRouter, { issueSellerToken } from "./vial-shop";
 
 const secret = "test-secret";
 const sellerId = "seller-1";
@@ -55,6 +55,10 @@ const newPassword = "new-password";
 
 function hashPassword(password: string): string {
   return createHash("sha256").update(password + ":" + secret).digest("hex");
+}
+// Seller tokens are signed sessions tied to the current password hash (never the hash itself).
+function tokenFor(password: string): string {
+  return issueSellerToken({ id: sellerId, sellerPasswordHash: hashPassword(password) });
 }
 
 async function put(body: unknown, headers: Record<string, string> = {}) {
@@ -84,7 +88,7 @@ async function put(body: unknown, headers: Record<string, string> = {}) {
   }
 }
 
-async function putAsSeller(body: unknown, token = hashPassword(currentPassword)) {
+async function putAsSeller(body: unknown, token = tokenFor(currentPassword)) {
   return put(body, { "x-seller-id": sellerId, "x-seller-token": token });
 }
 
@@ -150,7 +154,7 @@ describe("Vial seller self-service password change", () => {
     expect(JSON.stringify(state.logs[0])).not.toContain(currentPassword);
     expect(JSON.stringify(state.logs[0])).not.toContain(newPassword);
 
-    expect((await putAsSeller({ currentPassword, newPassword }, hashPassword(currentPassword))).status).toBe(401);
-    expect((await putAsSeller({ currentPassword: newPassword, newPassword }, hashPassword(newPassword))).status).toBe(400);
+    expect((await putAsSeller({ currentPassword, newPassword }, tokenFor(currentPassword))).status).toBe(401);
+    expect((await putAsSeller({ currentPassword: newPassword, newPassword }, tokenFor(newPassword))).status).toBe(400);
   });
 });

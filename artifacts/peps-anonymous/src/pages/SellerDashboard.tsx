@@ -1277,7 +1277,6 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
   });
   const [notifyVendor, setNotifyVendor] = useState(true);
   const [membersOnly, setMembersOnly] = useState(false);
-  const [togglingMO, setTogglingMO] = useState(false);
   const [passwordCurrent, setPasswordCurrent] = useState("");
   const [passwordNew, setPasswordNew] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -1326,19 +1325,6 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
       passwordAbortRef.current = null;
     };
   }, [session]);
-
-  const toggleMembersOnly = async () => {
-    setTogglingMO(true);
-    try {
-      const next = !membersOnly;
-      const res = await fetch("/api/vial/seller/shop-config", {
-        method: "PATCH",
-        headers: sellerHeaders(session),
-        body: JSON.stringify({ membersOnly: next }),
-      });
-      if (res.ok) setMembersOnly(next);
-    } finally { setTogglingMO(false); }
-  };
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -1493,29 +1479,12 @@ export function StoreProfileTab({ session, onPasswordChanged }: { session: Selle
         </div>
       </div>
 
-      <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
-        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Shop Settings</p>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold" style={{ color: "var(--t-text)" }}>Members only</p>
-            <p className="text-xs mt-0.5" style={{ color: "var(--t-muted)" }}>
-              When on, guests see a login prompt instead of the product listing.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={toggleMembersOnly}
-            disabled={togglingMO}
-            className="shrink-0 relative w-11 h-6 rounded-full transition-colors disabled:opacity-50"
-            style={{ background: membersOnly ? "var(--t-blue)" : "var(--t-border)" }}
-          >
-            {togglingMO
-              ? <Loader2 className="absolute inset-0 m-auto w-3.5 h-3.5 animate-spin text-white" />
-              : <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${membersOnly ? "translate-x-5" : ""}`} />
-            }
-          </button>
+      {membersOnly ? (
+        <div className="rounded-xl p-4" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--t-subtle)" }}>Shop Settings</p>
+          <p className="text-sm mt-1" style={{ color: "var(--t-muted)" }}>The shop is currently members only. This is a site-wide setting controlled by the admin.</p>
         </div>
-      </div>
+      ) : null}
 
       <form onSubmit={e => { e.preventDefault(); handlePasswordChange(); }} className="rounded-xl p-4 space-y-3" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
         <div>
