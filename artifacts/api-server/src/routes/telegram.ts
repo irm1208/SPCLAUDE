@@ -5,7 +5,7 @@ import { postWholesaleChatMessage } from "../lib/wholesale-share-chat";
 import { eq, and, inArray, sql, desc, or, ilike, isNull, isNotNull, notInArray } from "drizzle-orm";
 import { randomBytes, randomUUID, createHash, createHmac } from "crypto";
 import { requireAccount, requireAccountIdentity, issueAccountCookieForAccount } from "../middleware/account-auth";
-import { sendTelegramMessage, sendTelegramMessageFull, sendTelegramPhoto, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate } from "../lib/telegram";
+import { sendTelegramMessage, sendTelegramMessageFull, sendTelegramPhoto, sendAdminTicketNotification, answerCallbackQuery, getBotUsername, getAdminChatId, notifyUserTicket, getTemplate, renderTemplate, webhookSecretMatches } from "../lib/telegram";
 import { writeLog } from "../lib/audit-log";
 import { normalizeTg } from "../lib/normalize";
 import { translateZh } from "../lib/translate-zh";
@@ -900,6 +900,12 @@ async function sendMainMenu(chatId: string, username?: string): Promise<void> {
 // ── POST /api/telegram/webhook ────────────────────────────────────────────────
 
 router.post("/telegram/webhook", async (req, res): Promise<void> => {
+  // Only Telegram knows the secret registered with setWebhook. Without this check anyone
+  // could post a forged "admin chat" update and, for example, reply to a member's ticket as admin.
+  if (!(await webhookSecretMatches(req.get("x-telegram-bot-api-secret-token")))) {
+    res.status(401).json({ error: "Invalid webhook secret" });
+    return;
+  }
 
   // ── Inline button callback ────────────────────────────────────────────────
   const callbackQuery = req.body?.callback_query as {

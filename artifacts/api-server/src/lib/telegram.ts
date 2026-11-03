@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { accountsTable, siteConfigTable, telegramMessageLogsTable, ticketTelegramMessagesTable } from "@workspace/db";
 import { and, eq, inArray } from "drizzle-orm";
+import { createHash, timingSafeEqual } from "crypto";
 import { REGISTRY_MAP } from "./telegram-registry";
 import { notifyUserDiscord, sendAdminDiscordMessage } from "./discord";
 
@@ -705,6 +706,18 @@ function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 8_
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
+/** Secret Telegram sends back in X-Telegram-Bot-Api-Secret-Token so forged updates are refused. Derived from the bot token, so it rotates with it. */
+export function mainWebhookSecret(token: string): string {
+  return createHash("sha256").update(`main-webhook:${token}`).digest("hex").slice(0, 48);
+}
+/** True when the request carries the secret registered with setWebhook. */
+export async function webhookSecretMatches(given: string | undefined): Promise<boolean> {
+  const { token } = await getCredentials();
+  if (!token) return false;
+  const expected = mainWebhookSecret(token);
+  const a = Buffer.from(given ?? ""); const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 export async function setWebhook(webhookUrl: string): Promise<boolean> {
   const { token } = await getCredentials();
   if (!token) return false;
@@ -713,6 +726,7 @@ export async function setWebhook(webhookUrl: string): Promise<boolean> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url: webhookUrl,
+      secret_token: mainWebhookSecret(token),
       allowed_updates: ["message", "callback_query"],
     }),
   }).then(r => r.ok).catch(() => false);
