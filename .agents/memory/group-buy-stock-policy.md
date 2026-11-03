@@ -19,3 +19,9 @@ Order price/stock revisions with member acceptance must be optional for group-bu
 **Why:** The user explicitly repeated this scope restriction.
 
 **How to apply:** Keep the feature opt-in and scoped to the organiser's selected group buy; do not change shared catalogue stock or other organisers' order workflows.
+
+Member-confirmed order revisions apply to unpaid orders only.
+
+**Why:** The user explicitly chose “Unpaid orders only” when asked whether paid orders should be included.
+
+**How to apply:** Exclude paid orders from revision requests and recheck payment eligibility when applying an accepted revision.
