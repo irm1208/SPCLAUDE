@@ -2,6 +2,11 @@ import vendorWalletsRouter, { vendorWalletSetupGate } from "./vendor-wallets";
 import vendorPaymentsRouter from "./vendor-payments";
 import vendorAuthRouter from "./vendor-auth";
 import vendorAccountsAdminRouter from "./vendor-accounts-admin";
+import tmdAuthRouter from "./tmd-auth";
+import tmdAccountRouter from "./tmd-account";
+import tmdVendorsRouter from "./tmd-vendors";
+import tmdPoolsRouter from "./tmd-pools";
+import tmdTelegramRouter from "./tmd-telegram";
 import { Router, type IRouter } from "express";
 import {
   strictLimiter,
@@ -151,6 +156,13 @@ router.use(vendorTelegramRouter);
 router.use(vendorThreadsRouter);
 router.use(vendorSecurityRouter);
 router.use(vendorNotificationsRouter);
+
+// Testmedaddy: a separate product under /api/tmd with its own accounts and tables.
+router.use(tmdAuthRouter);
+router.use(tmdAccountRouter);
+router.use(tmdVendorsRouter);
+router.use(tmdPoolsRouter);
+router.use(tmdTelegramRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them
 // after the scoped admin boundary so their /admin handlers receive the

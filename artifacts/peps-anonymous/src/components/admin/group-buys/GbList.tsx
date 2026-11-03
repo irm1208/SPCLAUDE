@@ -229,16 +229,15 @@ export function GBList({ secret, onSelect, onNew }: {
         </div>
       )}
 
-      <div className="flex items-center gap-3">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Search group buys…" value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="sp-page-title-row">
+        <h2 className="sp-h2" style={{ fontSize: 16 }}>All group buys</h2>
+        <div className="sp-page-actions">
+          <button onClick={onNew} className="sp-btn sp-btn--primary"><Plus />Create group buy</button>
         </div>
-        <Button onClick={onNew} className="gap-1.5 shrink-0">
-          <Plus className="w-4 h-4" />New
-        </Button>
       </div>
-      <div className="flex gap-1.5 flex-wrap">
+      <div className="sp-index-card">
+      <div className="sp-index-toolbar">
+      <div className="sp-index-tabs">
         {([
           { value: "all", label: "All", color: "#475569" },
           { value: "active", label: "Active", color: "#16A34A" },
@@ -251,26 +250,28 @@ export function GBList({ secret, onSelect, onNew }: {
           if (t.value !== "all" && count === 0) return null;
           return (
             <button key={t.value} onClick={() => setStatusFilter(t.value)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border"
-              style={{
-                background: active ? t.color : "transparent",
-                color: active ? "#fff" : t.color,
-                borderColor: active ? "transparent" : t.color + "55",
-              }}>
+              className={active ? "sp-index-tab is-active" : "sp-index-tab"}>
               {t.label}
-              <span className="text-[10px] font-bold px-1 py-0.5 rounded-full" style={{ background: active ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.07)" }}>{count}</span>
+              <span className="sp-index-tab-count">{count}</span>
             </button>
           );
         })}
       </div>
+      </div>
+      <div className="sp-index-filters">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input className="pl-9" placeholder="Search group buys…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      </div>
       {loading ? (
         <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-10">
-          {search || statusFilter !== "all" ? "No group buys match your filters." : "No group buys yet. Click New to create one."}
+        <p className="sp-empty" style={{ padding: "48px 16px" }}>
+          {search || statusFilter !== "all" ? "No group buys match your filters." : "No group buys yet. Create one to get started."}
         </p>
       ) : (
-        <div className="space-y-2">
+        <div className="sp-row-list">
           {(sections
             ? sections.flatMap(({ status, items }) => [
                 <div key={`section-${status}`} className="flex items-center gap-2 pt-2 first:pt-0">
@@ -284,6 +285,7 @@ export function GBList({ secret, onSelect, onNew }: {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 

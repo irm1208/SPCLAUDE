@@ -602,8 +602,9 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
       : [];
   // Only the authenticated Admin FS3 caller requests pricing identity. Other
   // consumers of this shared order handler must not gain supplier-cost fields.
-  const fs3Pricing = req.query.fs3Pricing === "true" && res.locals["adminAuthorized"]
-    ? await loadFs3PricingContext(orders, allLineItems) : null;
+  const includeSupplierCosts = req.query.fs3Pricing === "true" && !!res.locals["adminAuthorized"];
+  const supplierIdentity = await loadFs3PricingContext(orders, allLineItems, db, includeSupplierCosts);
+  const fs3Pricing = includeSupplierCosts ? supplierIdentity : null;
 
   const liByOrder = new Map<string, typeof allLineItems>();
   for (const li of allLineItems) {
@@ -719,6 +720,7 @@ export async function adminOrdersHandler(req: Request, res: Response): Promise<v
     return {
       ...fmtOrder({ ...o, currency } as unknown as Record<string, any>, (liByOrder.get(o.id) ?? []).map(li =>
         fs3Pricing ? { ...li, costVendorId: fs3Pricing.vendorIdFor(li) } : li) as unknown as Record<string, any>[]),
+      vendorNames: supplierIdentity.vendorNamesFor(o.id),
       reshipperUsername, accountCountry, isWholesale,
       missingAddress, hasUnresolvedBalance, needsBalanceDueReview, hasDraft,
       customShippingRequiresAddress, customShippingRequiresQrCode,

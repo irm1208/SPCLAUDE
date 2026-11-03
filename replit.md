@@ -56,6 +56,31 @@ afterward so the app can seed and use the new tables.
   artifacts. The application does not delete backups from remote storage or
   enforce remote retention; manage Google Drive retention operationally.
 
+## Testmedaddy (separate product)
+
+`artifacts/testmedaddy` is an independent site (own brand, own accounts, own `tmd_*`
+tables) served by the same API under `/api/tmd/*` only. In development it runs on
+port 21505 (external 3002) from `start.sh`; in production the API serves its build on
+the hosts in `TESTMEDADDY_HOSTS` and blocks every other API path there.
+
+- `TESTMEDADDY_HOSTS`: comma-separated hosts (default `testmedaddy.com,www.testmedaddy.com`)
+- `TMD_PUBLIC_URL`: public origin used in emails (default derived from the dev domain)
+- `TMD_FROM_EMAIL`: Resend sender for Testmedaddy mail (falls back to `RESEND_FROM_EMAIL`)
+- `TMD_REQUIRE_EMAIL_VERIFICATION=1`: require a confirmed email before hosting a pool
+- `TESTMEDADDY_DEV=0`: skip starting the Testmedaddy dev server from `start.sh`
+- Telegram: `TMD_TELEGRAM_BOT_TOKEN` (+ optional `TMD_TELEGRAM_BOT_USERNAME`). Its own bot, webhook
+  `/api/tmd/telegram/webhook` (registered at boot when `TMD_PUBLIC_URL` is set). Users link with
+  `/start CODE` in a private chat; organisers add the bot to a group (as admin, so it sees messages)
+  and send `/link CODE` to bridge the pool chat with the group.
+- Payments: organiser wallets only. USDT/USDC on Ethereum, Arbitrum, Polygon, BNB Chain, Solana and Tron, plus
+  native ETH, SOL and BTC, all auto-verified on-chain by `lib/tmd-payment-auto-verify.ts` through the shared
+  `verifyTransaction`. Volatile coins are quoted at the live CoinGecko price when the member pays
+  (`GET /api/tmd/pools/:slug/quote`), the coin amount is locked on the member row and verified against that.
+  AnonPay is polled; Revolut/PayPal screenshots are confirmed by the organiser. Stripe and an escrow wallet were
+  built and then removed at the user's request (2026-11-01); no card or platform-held money paths remain.
+- Tests: `pnpm --filter @workspace/api-server exec vitest run src/lib/tmd-*.test.ts src/middleware/tmd-auth.test.ts src/lib/site-domain-policy.tmd.test.ts`;
+  the DB-backed lifecycle tests (pools, Telegram bridge) run with `TMD_DB_TESTS=1`.
+
 ## Stack
 
 - **Frontend**: React 19, Vite, Wouter, TanStack React Query, shadcn/ui, Radix UI, Tailwind CSS v4

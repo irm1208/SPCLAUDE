@@ -150,7 +150,8 @@ export function SummarySubTab({ secret, gb }: { secret: string; gb: GroupBuy }) 
     setExpandedProduct(null);
     setBreakdown([]);
     const res = await fetch(apiUrl(`/admin/group-buys/${gb.id}/summary?${buildParams()}`), { headers: { "x-admin-secret": secret } });
-    setRows(res.ok ? await res.json() : []);
+    const body: unknown = res.ok ? await res.json().catch(() => []) : [];
+    setRows(Array.isArray(body) ? body : []);
     setLoading(false);
   }, [gb.id, secret, buildParams]);
 

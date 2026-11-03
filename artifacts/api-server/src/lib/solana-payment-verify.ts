@@ -71,3 +71,51 @@ export async function verifySolanaStablecoinPayment(
   return { verified: false, recipientAddress: wallet, amountUsdt: received.amount, observedTransfers,
     reason: `Underpayment: ${received.amount.toFixed(6)} ${symbol} received, ${expectedAmount.toFixed(6)} expected. Short by ${(expectedAmount - received.amount).toFixed(6)} ${symbol}.` };
 }
+
+const LAMPORTS = 1_000_000_000;
+/**
+ * Native SOL payment: the net lamport change of the destination wallet in the transaction,
+ * which covers plain system transfers and transfers made through inner instructions alike.
+ * `expectedSol` is a coin amount (already converted from USD at the rate shown to the payer).
+ */
+export async function verifySolanaNativePayment(
+  signature: string, wallet: string, expectedSol: number, tolerancePct: number, endpoints: readonly string[],
+): Promise<VerifyResult> {
+  if (!Number.isFinite(expectedSol) || expectedSol <= 0 || !Number.isFinite(tolerancePct) || tolerancePct < 0 || tolerancePct >= 1)
+    return { verified: false, reason: "Invalid expected SOL payment amount." };
+  try { new PublicKey(wallet); } catch { return { verified: false, reason: "Invalid Solana payment destination." }; }
+  let tx: any = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }] }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) continue;
+      const json: any = await response.json();
+      if (json.error || !json.result) continue;
+      tx = json.result; break;
+    } catch { /* try the next node */ }
+  }
+  if (!tx?.meta || !Array.isArray(tx.meta.preBalances) || !Array.isArray(tx.meta.postBalances) || !tx.transaction?.signatures?.includes(signature))
+    return { verified: false, pending: true, reason: "Solana confirmation data is not available yet. Automatic verification will retry; do not send another payment." };
+  if (tx.meta.err != null) return { verified: false, reason: "Solana transaction failed on-chain." };
+  const keys: any[] = tx.transaction.message?.accountKeys ?? [];
+  const observedTransfers: ObservedTransfer[] = [];
+  let received: bigint | null = null;
+  for (let i = 0; i < keys.length; i++) {
+    const key = typeof keys[i] === "string" ? keys[i] : keys[i]?.pubkey;
+    const pre = tx.meta.preBalances[i], post = tx.meta.postBalances[i];
+    if (typeof key !== "string" || !Number.isFinite(pre) || !Number.isFinite(post)) continue;
+    const delta = BigInt(Math.round(post)) - BigInt(Math.round(pre));
+    if (delta > 0n) observedTransfers.push({ recipientAddress: key, amount: Number(delta) / LAMPORTS });
+    if (key === wallet) received = delta;
+  }
+  if (received == null || received <= 0n)
+    return { verified: false, reason: "No SOL payment to the expected Solana wallet found in this transaction.", observedTransfers, ...(observedTransfers[0] ? { recipientAddress: observedTransfers[0].recipientAddress, amountUsdt: observedTransfers[0].amount } : {}) };
+  const amountSol = Number(received) / LAMPORTS;
+  const minimum = expectedSol * (1 - tolerancePct);
+  if (amountSol + 1e-9 >= minimum) return { verified: true, recipientAddress: wallet, amountUsdt: amountSol, blockConfirmations: 1, observedTransfers };
+  return { verified: false, recipientAddress: wallet, amountUsdt: amountSol, observedTransfers, reason: `Underpayment: ${amountSol.toFixed(6)} SOL received, ${expectedSol.toFixed(6)} expected. Short by ${(expectedSol - amountSol).toFixed(6)} SOL.` };
+}

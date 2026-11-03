@@ -8,6 +8,8 @@ export function buildAllowedOrigins(env: OriginEnvironment = process.env): strin
     "http://localhost:3002",
     "http://127.0.0.1:3001",
     "http://127.0.0.1:3002",
+    "http://localhost:21505",
+    "http://127.0.0.1:21505",
     "https://saltandpeps.co.uk",
     "https://www.saltandpeps.co.uk",
   ]);

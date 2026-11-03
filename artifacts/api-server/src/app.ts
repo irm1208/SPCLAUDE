@@ -8,7 +8,7 @@ import { randomBytes } from "crypto";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { globalLimiter } from "./middleware/rate-limits";
 import router from "./routes";
-import { siteDomainPolicy, siteDocument, isVendorHost } from "./lib/site-domain-policy";
+import { siteDomainPolicy, siteDocument, isVendorHost, isTestmedaddyHost, testmedaddyHosts } from "./lib/site-domain-policy";
 import { buildAllowedOrigins, isAllowedOrigin } from "./lib/cors-origin";
 import { refundMutationConflictResponse, refundMutationHttpStatus } from "./lib/refund-mutation-guard";
 
@@ -25,7 +25,12 @@ app.use(siteDomainPolicy({
 // Allows localhost (dev) and Replit workspace / deployed app domains.
 // Use ALLOWED_ORIGINS env var (comma-separated) to add custom domains.
 
-const _allowedOrigins = [...buildAllowedOrigins(), "https://pepsanonymous.com", "https://www.pepsanonymous.com"];
+const _allowedOrigins = [
+  ...buildAllowedOrigins(), "https://pepsanonymous.com", "https://www.pepsanonymous.com",
+  ...[...testmedaddyHosts()].map(host => `https://${host}`),
+  // Testmedaddy's Vite dev server.
+  "http://localhost:21505", "http://127.0.0.1:21505",
+];
 
 app.use(
   cors({
@@ -37,7 +42,7 @@ app.use(
       callback(new Error(`CORS: origin '${origin}' not allowed`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-Admin-Secret", "X-Admin-Csrf", "X-Admin-Action-Assertion", "X-Impersonate-Username", "X-Pool-Access-Code"],
+    allowedHeaders: ["Content-Type", "X-Admin-Secret", "X-Admin-Csrf", "X-Admin-Action-Assertion", "X-Impersonate-Username", "X-Pool-Access-Code", "X-Tmd-Csrf", "X-Tmd-Access-Code"],
     credentials: true,
   })
 );
@@ -244,6 +249,36 @@ if (process.env["NODE_ENV"] !== "production") {
 // When NODE_ENV=production and the Vite build exists, serve the
 // compiled frontend from the Express server with full security headers.
 if (process.env["NODE_ENV"] === "production") {
+  // Testmedaddy: its own build, served only on its own hosts, with its own CSP.
+  const tmdDist = path.resolve(__dirname, "../../testmedaddy/dist/public");
+  if (fs.existsSync(tmdDist)) {
+    const tmdCsp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://js.stripe.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "connect-src 'self' https://api.stripe.com",
+      "img-src 'self' data: blob:",
+      "frame-src 'self' https://trocador.app https://js.stripe.com https://hooks.stripe.com",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ");
+    const tmdStatic = express.static(tmdDist, { index: false });
+    const tmdIndex = path.join(tmdDist, "index.html");
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (!isTestmedaddyHost(req.headers.host ?? "")) { next(); return; }
+      res.setHeader("Content-Security-Policy", tmdCsp);
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+      tmdStatic(req, res, (error?: unknown) => { if (error) { next(error); return; } res.sendFile(tmdIndex); });
+    });
+    console.log("[startup] Testmedaddy build found; serving it on", [...testmedaddyHosts()].join(", "));
+  } else {
+    console.warn(`[startup] Testmedaddy dist not found at ${tmdDist}`);
+  }
+
   const frontendDist = path.resolve(__dirname, "../../peps-anonymous/dist/public");
   if (fs.existsSync(frontendDist)) {
     const csp = [

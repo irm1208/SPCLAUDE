@@ -9,7 +9,7 @@ interface Order {
 }
 interface Line { orderId: string; productId?: string | null; productName: string; vendorId?: string | null; }
 /** One supplier identity and pricing path for FS3 summaries, P&L and batch sheets. */
-export async function loadFs3PricingContext(orders: Order[], lines: Line[], tx: any = db) {
+export async function loadFs3PricingContext(orders: Order[], lines: Line[], tx: any = db, includeCosts = true) {
   const productIds = [...new Set(lines.map(l => l.productId).filter((id): id is string => !!id))];
   const shareIds = [...new Set(orders.map(o => o.sharedOrderId).filter((id): id is string => !!id))];
   const gbIds = [...new Set(orders.map(o => o.groupBuyId).filter((id): id is string => !!id))];
@@ -19,7 +19,7 @@ export async function loadFs3PricingContext(orders: Order[], lines: Line[], tx: 
       .from(wholesaleSharesTable).where(inArray(wholesaleSharesTable.id, shareIds)) : [],
     gbIds.length ? tx.select({ id: groupBuysTable.id, manufacturer: groupBuysTable.manufacturer })
       .from(groupBuysTable).where(inArray(groupBuysTable.id, gbIds)) : [],
-    getVendors(), tx.select().from(fs3CostsTable), loadFs3CostMatches(tx),
+    getVendors(), includeCosts ? tx.select().from(fs3CostsTable) : [], includeCosts ? loadFs3CostMatches(tx) : [],
   ]);
   const productRows = products as (typeof productsTable.$inferSelect)[];
   const productMap = new Map(productRows.map(p => [p.id, p]));
@@ -34,8 +34,34 @@ export async function loadFs3PricingContext(orders: Order[], lines: Line[], tx: 
       legacyVendor: order?.groupBuyId ? gbMap.get(order.groupBuyId) : null,
     }, productMap.get(line.productId ?? "") ?? {}, vendors);
   }
+  const vendorNamesById = new Map(vendors.map(v => [v.id, v.name]));
+  const linesByOrder = new Map<string, Line[]>();
+  for (const line of lines) {
+    const orderLines = linesByOrder.get(line.orderId) ?? [];
+    orderLines.push(line);
+    linesByOrder.set(line.orderId, orderLines);
+  }
+  function vendorNamesFor(orderId: string): string[] {
+    const order = orderMap.get(orderId);
+    const orderLines = linesByOrder.get(orderId) ?? [];
+    const displayLines: Line[] = orderLines.length ? orderLines : [{ orderId, productName: "" }];
+    const names = displayLines.map(line => {
+      const vendorId = vendorIdFor(line);
+      const configuredName = vendorId ? vendorNamesById.get(vendorId) : null;
+      if (configuredName) return configuredName;
+      // Keep historical labels, but never substitute a product's supplier for
+      // a different, explicitly assigned supplier that no longer exists.
+      if (!vendorId || vendorId.startsWith("unresolved:")) {
+        return productMap.get(line.productId ?? "")?.vendor?.trim()
+          || (order?.groupBuyId ? gbMap.get(order.groupBuyId)?.trim() : null)
+          || "Unknown";
+      }
+      return "Unknown";
+    });
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  }
   function unitCostFor(line: Line) {
     return resolveFs3ProductCost(productMap.get(line.productId ?? ""), costs, matches, line.productName, vendorIdFor(line));
   }
-  return { products: productRows, vendors, vendorIdFor, unitCostFor };
+  return { products: productRows, vendors, vendorIdFor, vendorNamesFor, unitCostFor };
 }

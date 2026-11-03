@@ -1,4 +1,4 @@
-import { verifySolanaStablecoinPayment } from "./solana-payment-verify";
+import { verifySolanaStablecoinPayment, verifySolanaNativePayment } from "./solana-payment-verify";
 /**
  * Shared blockchain/payment verification utilities.
  * Used by the payments route and the pool-payment auto-verifier.
@@ -473,6 +473,9 @@ export async function verifyTransaction(
   }
   if (cur === "USDT" && /solana/.test(net)) {
     return verifySolanaTokenTransfer(txHash, walletAddress, expectedAmount, SOL_USDT_MINT, "USDT", tolerancePct);
+  }
+  if (cur === "SOL" && /solana|mainnet/.test(net)) {
+    return verifySolanaNativePayment(txHash, walletAddress, expectedAmount, tolerancePct, SOL_RPC_ENDPOINTS);
   }
   if (cur === "USDT" && /tron|trc/.test(net)) {
     return verifyTronUsdtTransfer(txHash, walletAddress, expectedAmount, tolerancePct);

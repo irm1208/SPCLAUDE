@@ -21,7 +21,11 @@ import {
   Settings2, Home, LayoutGrid, Upload, Sun, Moon, Navigation, UserCheck, ExternalLink, Wallet, SendHorizonal, Copy, Ticket, Building2,
   Link2, Unlink, RefreshCcw, Database, Sparkles, RotateCcw, History, ArrowLeft, ArrowRight, Cpu, UserPlus, TrendingUp,
   Mail, Send,
+  Megaphone, Store, Inbox, PanelLeft, Percent, LogOut, ShoppingBag, ArrowUpRight, ArrowDownRight,
 } from "lucide-react";
+import { SaltPepsMark } from "@/components/SaltPepsMark";
+import "@/styles/admin-polaris.css";
+import { HomeIcon, OrderIcon, ProductIcon, PersonIcon, CalendarIcon, StoreIcon, DiscountIcon, BankIcon, ChartVerticalFilledIcon, TargetIcon, ChatIcon, PackageIcon, DeliveryIcon, MagicIcon, BlogIcon, SettingsIcon, SearchIcon, NotificationIcon, ChevronRightIcon } from "@/components/admin/polaris-icons";
 import { LabTestsTab } from "@/components/LabTestsTab";
 import { EmailTemplatesTab } from "@/components/admin/EmailTemplatesTab";
 import { VialShopTab } from "@/components/VialShopTab";
@@ -168,6 +172,7 @@ function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret
 // ─── Types ───────────────────────────────────────────────────
 interface LineItem { id: string; productId: string | null; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos?: boolean; }
 interface Order {
+  vendorNames?: string[];
   displayReference?: string;
   isAddition?: boolean;
   additionParent?: { id: string; reference: string } | null;
@@ -1886,13 +1891,14 @@ function OrdersTab({ secret }: { secret: string }) {
         });
         if (patchRes.ok) {
           const patched = await patchRes.json();
-          setOrders(prev => prev.map(o => o.id === orderId ? { ...updated, ...patched } : o));
+          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updated, ...patched } : o));
         } else {
-          setOrders(prev => prev.map(o => o.id === orderId ? updated : o));
+          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updated } : o));
         }
       } else {
-        setOrders(prev => prev.map(o => o.id === orderId ? updated : o));
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updated } : o));
       }
+      await load();
       setEditingItems(null);
       setDraftItems([]);
       setMsg(unpaidTotal > 0 ? `Items saved — $${unpaidTotal.toFixed(2)} added to balance owed ✓` : "Items saved ✓");
@@ -1997,7 +2003,7 @@ function OrdersTab({ secret }: { secret: string }) {
         });
         if (res.ok) {
           const data = await res.json();
-          setOrders(prev => prev.map(o => o.id === id ? data : o));
+          setOrders(prev => prev.map(o => o.id === id ? { ...o, ...data } : o));
           successCount++;
         } else {
           failCount++;
@@ -2257,8 +2263,28 @@ function OrdersTab({ secret }: { secret: string }) {
           </Card>
         </div>
       )}
+      <div className="sp-page-title-row">
+        <h1 className="sp-h1">Orders</h1>
+        <div className="sp-page-actions">
+          <button className="sp-btn" onClick={exportFilteredOrders} disabled={filtered.length === 0}><Download />Export</button>
+          <button className="sp-btn" onClick={downloadAdminTemplate} title="Download the CSV import template"><ScrollText />Template</button>
+          <button className="sp-btn" disabled={importing} onClick={() => importRef.current?.click()}>{importing ? <Loader2 className="animate-spin" /> : <Upload />}Import</button>
+          <button className={cn("sp-btn", showTrash && "sp-btn--primary")} onClick={() => { setShowTrash(p => { if (!p) loadTrash(); return !p; }); }}>
+            <Trash2 />{showTrash ? "Close trash" : trashOrders.length > 0 ? `Trash (${trashOrders.length})` : "Trash"}
+          </button>
+          <button className="sp-btn sp-btn--primary" onClick={openCreateForm}><Plus />Create order</button>
+        </div>
+      </div>
+      {(msg || importMsg) && (
+        <div className="flex items-center gap-3">
+          {msg && <span className="text-xs font-medium" style={{ color: "var(--p-success-text)" }}>{msg}</span>}
+          {importMsg && <span className="text-xs font-medium" style={{ color: importMsg.includes("failed") || importMsg.includes("Failed") ? "var(--p-critical-text-strong)" : "var(--p-success-text)" }}>{importMsg}</span>}
+        </div>
+      )}
+      <div className="sp-index-card">
+      <div className="sp-index-toolbar">
       {/* ── Order View Toggle: GB Orders / Wholesale / Shared Order / All ── */}
-      <div className="flex items-center gap-1 p-1 bg-muted rounded-xl w-fit mb-1">
+      <div className="sp-segmented">
         {([
           { value: "gb", label: "GB Orders" },
           { value: "wholesale", label: "Wholesale" },
@@ -2268,11 +2294,7 @@ function OrdersTab({ secret }: { secret: string }) {
           <button
             key={opt.value}
             onClick={() => setOrderView(opt.value)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              orderView === opt.value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={cn("sp-segmented-btn", orderView === opt.value && "is-active")}
           >
             {opt.label}
           </button>
@@ -2292,7 +2314,7 @@ function OrdersTab({ secret }: { secret: string }) {
         const pendingPayCount = orders.filter(o => o.paymentStatus === "pending_confirmation").length;
         const pendingPayActive = paymentStatusFilter === "pending" && statusFilter === "all";
         return (
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="sp-index-tabs">
             {STATUS_TABS.map(t => {
               const count = t.value === "all" ? orders.length : orders.filter(o => o.status === t.value).length;
               const active = statusFilter === t.value && !pendingPayActive;
@@ -2300,28 +2322,26 @@ function OrdersTab({ secret }: { secret: string }) {
                 <button
                   key={t.value}
                   onClick={() => { setStatusFilter(t.value); setPaymentStatusFilter("all"); }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${active ? t.activeColor : `bg-muted ${t.color} hover:bg-muted/80`}`}
+                  className={cn("sp-index-tab", active && "is-active")}
                 >
                   {t.label}
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? "bg-white/25" : "bg-background"}`}>
-                    {count}
-                  </span>
+                  <span className="sp-index-tab-count">{count}</span>
                 </button>
               );
             })}
             {/* Pending Payments shortcut tab */}
             <button
               onClick={() => { setStatusFilter("all"); setPaymentStatusFilter("pending"); }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pendingPayActive ? "bg-amber-500 text-white" : "bg-muted text-amber-600 hover:bg-muted/80"}`}
+              className={cn("sp-index-tab", pendingPayActive && "is-active")}
             >
-              Pending Payments
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${pendingPayActive ? "bg-white/25" : "bg-background"}`}>
-                {pendingPayCount}
-              </span>
+              Pending payments
+              <span className="sp-index-tab-count">{pendingPayCount}</span>
             </button>
           </div>
         );
       })()}
+      </div>
+      <div className="sp-index-filters">
       {/* ── Grouped Filter Bar ── */}
       {(() => {
         const paymentActive = (paymentStatusFilter !== "all" ? 1 : 0) + (paymentMethodFilter !== "all" ? 1 : 0) + (creditFilter !== "all" ? 1 : 0);
@@ -2622,22 +2642,8 @@ function OrdersTab({ secret }: { secret: string }) {
                 <option value="pay_asc">First paid first</option>
               </select>
 
-              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={load}><RefreshCw className="w-4 h-4" /></Button>
-              <Button variant="outline" size="sm" className="gap-1.5 h-9 shrink-0" onClick={exportFilteredOrders} disabled={filtered.length === 0}><Download className="w-4 h-4" />CSV</Button>
-              <Button variant="outline" size="sm" className="gap-1.5 h-9 shrink-0" onClick={downloadAdminTemplate}><ScrollText className="w-4 h-4" />Tmpl</Button>
-              <Button variant="outline" size="sm" className="gap-1.5 h-9 shrink-0" disabled={importing} onClick={() => importRef.current?.click()}>{importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}Import</Button>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={load} title="Refresh"><RefreshCw className="w-4 h-4" /></Button>
               <input ref={importRef} type="file" accept=".csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleAdminImportCsv(f); e.target.value = ""; }} />
-              <Button
-                variant={showTrash ? "default" : "outline"}
-                size="sm"
-                className={cn("gap-1.5 h-9 shrink-0", showTrash ? "bg-red-600 hover:bg-red-700 text-white" : "text-red-600 border-red-300 hover:bg-red-50")}
-                onClick={() => { setShowTrash(p => { if (!p) loadTrash(); return !p; }); }}
-              >
-                <Trash2 className="w-4 h-4" />{trashOrders.length > 0 && !showTrash ? trashOrders.length : "Trash"}
-              </Button>
-              <Button size="sm" className="gap-1.5 h-9 shrink-0" onClick={openCreateForm}><Plus className="w-4 h-4" />New Order</Button>
-              {msg && <span className="text-xs text-green-600 font-medium">{msg}</span>}
-              {importMsg && <span className="text-xs font-medium" style={{ color: importMsg.includes("failed") || importMsg.includes("Failed") ? "#dc2626" : "#16a34a" }}>{importMsg}</span>}
             </div>
 
             {/* Active filter chips */}
@@ -2716,6 +2722,7 @@ function OrdersTab({ secret }: { secret: string }) {
           </>
         );
       })()}
+      </div>
       {/* OOS Management Panel */}
       <div className="border border-red-200 rounded-xl overflow-hidden">
         <button
@@ -3303,7 +3310,7 @@ function OrdersTab({ secret }: { secret: string }) {
           </>
         )}
       </div>
-      <div className="space-y-2">
+      <div className="sp-row-list">
         {(() => {
         const renderOrderCard = (order: Order, nested = false) => {
           const isOpen = expanded === order.id;
@@ -3315,7 +3322,7 @@ function OrdersTab({ secret }: { secret: string }) {
               <div className="flex items-center gap-2 p-4">
                 <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(order.id)}
                   className="w-4 h-4 rounded accent-primary cursor-pointer shrink-0" />
-                <button className="flex items-center gap-3 text-left flex-1 min-w-0"
+                <button className="flex flex-wrap items-center gap-3 text-left flex-1 min-w-0"
                   onClick={() => {
                     const next = isOpen ? null : order.id;
                     setExpanded(next);
@@ -3367,6 +3374,13 @@ function OrdersTab({ secret }: { secret: string }) {
                     🏪 Wholesale
                   </span>
                 )}
+                <span className="flex flex-wrap items-center gap-1 min-w-0">
+                  {(order.vendorNames?.length ? order.vendorNames : ["Unknown"]).map(vendorName => (
+                    <span key={vendorName} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-[#1B3A7A]/20 bg-[#2D6BCC]/5 text-[#1B3A7A] break-words">
+                      Vendor: {vendorName}
+                    </span>
+                  ))}
+                </span>
                 <CreditPaymentPill creditsApplied={order.creditsApplied} grandTotal={order.grandTotal} currency={order.currency} />
                 {order.missingAddress && (
                   <span title="Missing delivery address" className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600 border border-red-200">
@@ -4596,7 +4610,8 @@ function OrdersTab({ secret }: { secret: string }) {
           : renderOrderCard(row.order));
         })()}
         {loadError && <div className="text-center py-8 text-red-500 font-mono text-sm">Orders failed to load: {loadError}</div>}
-        {!loadError && filtered.length === 0 && <div className="text-center py-16 text-muted-foreground">No orders found</div>}
+        {!loadError && filtered.length === 0 && <div className="sp-empty" style={{ padding: "48px 16px" }}>No orders found</div>}
+      </div>
       </div>
 
       {/* ─── Bulk Tracking Section ──────────────────────────────── */}
@@ -4760,6 +4775,7 @@ interface TipsData { total: number; tippers: TipperRow[]; }
 
 function GroupSummaryTab({ secret }: { secret: string }) {
   const [rows, setRows] = useState<GroupRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("Submitted");
   const [gbFilter, setGbFilter] = useState("all");
@@ -4799,8 +4815,20 @@ function GroupSummaryTab({ secret }: { secret: string }) {
     if (gbFilter !== "all") params.set("groupBuyId", gbFilter);
     if (countryFilter.length > 0) params.set("country", countryFilter.join(","));
     if (reshipperFilter !== "all") params.set("reshipper", reshipperFilter);
-    const res = await fetch(apiUrl(`/admin/group-summary?${params}`), { headers: { "x-admin-secret": secret } });
-    setRows(await res.json());
+    try {
+      const res = await fetch(apiUrl(`/admin/group-summary?${params}`), { headers: { "x-admin-secret": secret } });
+      const body: unknown = await res.json().catch(() => null);
+      if (!res.ok || !Array.isArray(body)) {
+        setRows([]);
+        setLoadError(res.ok ? "Unexpected response from the server." : `Could not load the summary (HTTP ${res.status}${body && typeof body === "object" && "error" in body ? `: ${String((body as { error: unknown }).error)}` : ""}).`);
+      } else {
+        setRows(body as GroupRow[]);
+        setLoadError(null);
+      }
+    } catch {
+      setRows([]);
+      setLoadError("Could not reach the server.");
+    }
     setLoading(false);
   }, [secret, statusFilter, gbFilter, countryFilter, reshipperFilter]);
 
@@ -4836,8 +4864,9 @@ function GroupSummaryTab({ secret }: { secret: string }) {
     setBreakdownLoading(false);
   }, [expandedProduct, secret, statusFilter, gbFilter, countryFilter, reshipperFilter]);
 
-  const totalValue = rows.reduce((s, r) => s + r.totalValue, 0);
-  const totalQty = rows.reduce((s, r) => s + r.totalQty, 0);
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const totalValue = safeRows.reduce((s, r) => s + r.totalValue, 0);
+  const totalQty = safeRows.reduce((s, r) => s + r.totalQty, 0);
 
   const displayRows = sortOrder === "az"
     ? [...rows].sort((a, b) => a.productName.localeCompare(b.productName))
@@ -4870,6 +4899,7 @@ function GroupSummaryTab({ secret }: { secret: string }) {
 
   return (
     <div className="space-y-4">
+      {loadError && <div className="sp-card" style={{ padding: "12px 16px", color: "var(--p-critical-text)" }}>{loadError}</div>}
       <div className="flex gap-3 items-center flex-wrap">
         <select className="h-11 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           value={gbFilter} onChange={e => setGbFilter(e.target.value)}>
@@ -5698,9 +5728,20 @@ function ProductsTab({ secret }: { secret: string }) {
         onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvImport(f); e.target.value = ""; }}
       />
 
-      <div className="flex gap-2 items-center flex-wrap">
+      <div className="sp-page-title-row">
+        <h1 className="sp-h1">Products</h1>
+        <div className="sp-page-actions">
+          <button className="sp-btn" onClick={exportCsv} title="Export all products as CSV"><Download />Export</button>
+          <button className="sp-btn" onClick={() => { setShowCsvReview(false); setCsvRows([]); setCsvImportError(""); csvFileInputRef.current?.click(); }} title="Import prices from a CSV file"><Upload />Import</button>
+          <button className="sp-btn" disabled={extracting} onClick={() => { setAddMode(false); fileInputRef.current?.click(); }} title="AI extract from PDF/image/spreadsheet">{extracting ? <Loader2 className="animate-spin" /> : <Sparkles />}AI import</button>
+          <button className="sp-btn sp-btn--primary" onClick={() => { setAddMode(true); setExtracted(null); setImportRows([]); }}><Plus />Add product</button>
+        </div>
+      </div>
+      <div className="sp-index-card">
+      <div className="sp-index-filters">
+      <div className="flex gap-2 items-center flex-wrap w-full">
         <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input className="w-full pl-9 pr-4 h-11 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             placeholder="Search products…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
@@ -5737,27 +5778,6 @@ function ProductsTab({ secret }: { secret: string }) {
           </span>
         )}
         {msg && <div className={cn("text-sm px-1", msg.startsWith("Error:") ? "text-red-600" : "text-green-600")}>{msg}</div>}
-        <Button variant="outline" className="gap-2" onClick={exportCsv} title="Export all products as CSV">
-          <Download className="w-4 h-4" />Export CSV
-        </Button>
-        <Button
-          variant="outline"
-          className="gap-2"
-          onClick={() => { setShowCsvReview(false); setCsvRows([]); setCsvImportError(""); csvFileInputRef.current?.click(); }}
-          title="Import prices from a CSV file"
-        >
-          <Upload className="w-4 h-4" />Import CSV
-        </Button>
-        <Button
-          variant="outline"
-          className="gap-2"
-          disabled={extracting}
-          onClick={() => { setAddMode(false); fileInputRef.current?.click(); }}
-          title="AI extract from PDF/image/spreadsheet"
-        >
-          {extracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-          AI import
-        </Button>
         <Button
           variant="outline"
           className="gap-2 text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
@@ -5768,7 +5788,6 @@ function ProductsTab({ secret }: { secret: string }) {
           {deduping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
           Remove dupes
         </Button>
-        <Button onClick={() => { setAddMode(true); setExtracted(null); setImportRows([]); }} className="gap-2"><Plus className="w-4 h-4" />Add product</Button>
         {showDupeModal && dupePreview && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => { setShowDupeModal(false); setDupePreview(null); }}>
             <Card className="w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -5827,6 +5846,8 @@ function ProductsTab({ secret }: { secret: string }) {
         )}
         {(msg || importMsg || csvImportMsg) && <span className="text-sm text-green-600 font-medium">{csvImportMsg || importMsg || msg}</span>}
         {(extractError || csvImportError) && <span className="text-sm text-red-500 font-medium">{csvImportError || extractError}</span>}
+      </div>
+      </div>
       </div>
 
       {/* File import review panel */}
@@ -6082,12 +6103,13 @@ function ProductsTab({ secret }: { secret: string }) {
         </AnimatePresence>
       </div>
 
-      <div className="text-xs text-muted-foreground px-1">
+      <div className="sp-index-card">
+      <div className="sp-index-summary">
         {filtered.length} product{filtered.length !== 1 ? "s" : ""}
         {vendorFilter ? ` · ${vendorFilter}` : ""}
-        {" — hold & drag to reorder"}
+        <span className="sp-muted"> · hold and drag to reorder</span>
       </div>
-      <div className="space-y-1.5" onDragLeave={() => setDragOverId(null)}>
+      <div className="sp-row-list" onDragLeave={() => setDragOverId(null)}>
         {filtered.map((product) => (
           <DraggableProductRow
             key={product.id}
@@ -6100,6 +6122,7 @@ function ProductsTab({ secret }: { secret: string }) {
             onDragStart={handleDragStart} onDragOver={handleDragOver} onDrop={handleDrop}
           />
         ))}
+      </div>
       </div>
       {showBulkDeleteConfirm && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
@@ -8734,29 +8757,19 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="sp-page-title-row">
         <div>
-          <h2 className="font-bold text-lg">FS3 — Profit Overview</h2>
-          <p className="text-xs text-muted-foreground">{totals?.orderCount ?? 0} active orders · product costs vs. revenue</p>
+          <h1 className="sp-h1">Finances</h1>
+          <p className="sp-muted" style={{ marginTop: 2 }}>Profit overview · {totals?.orderCount ?? 0} active orders · product costs vs. revenue</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs"
-            aria-expanded={showPastedList}
-            onClick={() => { if (!showPastedList) void fetchCosts(); setShowPastedList(v => !v); }}>
-            <FileText className="w-3.5 h-3.5" />{showPastedList ? "Hide pasted list" : "Price a pasted list"}
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs"
-            onClick={() => { setShowImport(v => !v); setImportMsg(""); }}>
-            <Upload className="w-3.5 h-3.5" />{showImport ? "Hide Import" : "Import"}
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs"
-            onClick={() => { setShowPriceEditor(v => !v); setPriceSearch(""); }}>
-            <Pencil className="w-3.5 h-3.5" />{showPriceEditor ? "Hide Prices" : "My Prices"}
-          </Button>
-          <Button variant="outline" size="icon" onClick={fetchData}><RefreshCw className="w-4 h-4" /></Button>
-          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1.5" onClick={onLock}>
-            <Lock className="w-3.5 h-3.5" />Lock
-          </Button>
+        <div className="sp-page-actions">
+          <button className="sp-btn" aria-expanded={showPastedList} onClick={() => { if (!showPastedList) void fetchCosts(); setShowPastedList(v => !v); }}>
+            <FileText />{showPastedList ? "Hide pasted list" : "Price a pasted list"}
+          </button>
+          <button className="sp-btn" onClick={() => { setShowImport(v => !v); setImportMsg(""); }}><Upload />{showImport ? "Hide import" : "Import"}</button>
+          <button className={cn("sp-btn", showPriceEditor && "sp-btn--primary")} onClick={() => { setShowPriceEditor(v => !v); setPriceSearch(""); }}><Pencil />{showPriceEditor ? "Hide prices" : "My prices"}</button>
+          <button className="sp-btn sp-btn--icon" onClick={fetchData} title="Refresh"><RefreshCw /></button>
+          <button className="sp-btn sp-btn--plain" onClick={onLock}><Lock />Lock</button>
         </div>
       </div>
 
@@ -9052,7 +9065,7 @@ function Fs3Content({ secret, onLock }: { secret: string; onLock: () => void }) 
 
       {/* Filters */}
       {(groupBuys.length > 0 || vendors.length > 0 || availableCountries.length > 0) && (
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="sp-card flex flex-wrap gap-3 items-center" style={{ padding: "8px 12px" }}>
           {groupBuys.length > 0 && (
             <div className="flex items-center gap-1.5">
               <label className="text-xs text-muted-foreground font-medium shrink-0">Group Buy</label>
@@ -13614,15 +13627,15 @@ function UsernamesTab({ secret }: { secret: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-lg font-bold text-foreground">Members</h2>
-        <button onClick={fetch$} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-muted text-foreground hover:bg-muted/80 transition-colors">
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
-        </button>
+      <div className="sp-page-title-row">
+        <h1 className="sp-h1">Customers</h1>
+        <div className="sp-page-actions">
+          <button onClick={fetch$} className="sp-btn"><RefreshCw /> Refresh</button>
+        </div>
       </div>
 
       {kpi && (
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+        <div className="sp-card sp-kpi-row">
           {[
             { label: "Total", value: kpi.total },
             { label: "Active", value: kpi.active },
@@ -13632,9 +13645,9 @@ function UsernamesTab({ secret }: { secret: string }) {
             { label: "Organisers", value: kpi.organisers },
             { label: "Pool Leaders", value: kpi.poolLeaders },
           ].map(stat => (
-            <div key={stat.label} className="rounded-xl border border-border bg-white px-3 py-2 text-center">
-              <p className="text-lg font-black text-foreground leading-none">{stat.value}</p>
-              <p className="text-[10px] font-semibold text-muted-foreground mt-0.5">{stat.label}</p>
+            <div key={stat.label} className="sp-kpi">
+              <p className="sp-kpi-label">{stat.label}</p>
+              <p className="sp-kpi-value">{stat.value}</p>
             </div>
           ))}
         </div>
@@ -13916,9 +13929,9 @@ function UsernamesTab({ secret }: { secret: string }) {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : displayed.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">{guestsFilter ? "No guest orderers found." : "No customers found."}</div>
+        <div className="sp-card"><div className="sp-empty" style={{ padding: "48px 16px" }}>{guestsFilter ? "No guest orderers found." : "No customers found."}</div></div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="sp-index-card sp-row-list">
           {displayedPage.map(row => {
             const acctStatus = row.accountStatus ?? "active";
             const joinDate = row.createdAt ? new Date(row.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
@@ -15635,7 +15648,7 @@ function AdminCouponsTab({ secret }: { secret: string }) {
     setLoading(true);
     fetch(apiUrl("/admin/coupon-codes"), { headers: { "x-admin-secret": secret } })
       .then(r => r.json())
-      .then(data => { setCoupons(data.coupons ?? []); setLoading(false); })
+      .then(data => { setCoupons(Array.isArray(data) ? data : (data.coupons ?? [])); setLoading(false); })
       .catch(() => { setError("Failed to load coupons"); setLoading(false); });
   };
 
@@ -15693,20 +15706,27 @@ function AdminCouponsTab({ secret }: { secret: string }) {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold tracking-tight">Coupon Codes</h2>
-        <Button size="sm" onClick={openCreate} className="gap-1.5"><Plus className="w-4 h-4" />Create Coupon</Button>
+    <div className="space-y-4">
+      <div className="sp-page-title-row">
+        <h1 className="sp-h1">Discounts</h1>
+        <div className="sp-page-actions">
+          <button className="sp-btn sp-btn--primary" onClick={openCreate}><Plus />Create discount</button>
+        </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {loading ? (
         <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
       ) : coupons.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground text-sm">
-          <Ticket className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>No coupon codes yet</p>
+        <div className="sp-card">
+          <div className="sp-empty" style={{ padding: "56px 16px" }}>
+            <Percent className="w-8 h-8 mx-auto mb-3" style={{ color: "#8a8a8a" }} />
+            <p style={{ fontWeight: 650, color: "var(--p-text)", fontSize: 14 }}>Manage discounts and promotions</p>
+            <p style={{ marginTop: 4 }}>Create discount codes that apply at checkout.</p>
+            <button className="sp-btn sp-btn--primary" style={{ marginTop: 16 }} onClick={openCreate}>Create discount</button>
+          </div>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-x-auto">
+        <div className="sp-index-card overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b bg-muted/40 text-left">
               <th className="px-3 py-2 font-medium">Code</th>
@@ -17928,7 +17948,7 @@ function KPICard({ label, value, sub, color }: { label: string; value: string; s
 
 interface LowStockProduct { id: string; name: string; vendor: string; stock: number; lowStockThreshold: number; active: boolean; }
 
-function DashboardTab({ secret, onNavigate, openTickets }: { secret: string; onNavigate: (tab: string) => void; openTickets: number }) {
+function DashboardTab({ secret, onNavigate, openTickets, counts }: { secret: string; onNavigate: (tab: string) => void; openTickets: number; counts?: Record<NotifKey, number> }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentLogs, setRecentLogs] = useState<AuditLogEntry[]>([]);
@@ -17938,7 +17958,7 @@ function DashboardTab({ secret, onNavigate, openTickets }: { secret: string; onN
     setLoading(true);
     Promise.all([
       fetch(apiUrl("/admin/dashboard"), { headers: { "x-admin-secret": secret } }).then(r => r.json()),
-      fetch(apiUrl("/admin/audit-logs?limit=10"), { headers: { "x-admin-secret": secret } }).then(r => r.json()).catch(() => ({ logs: [] })),
+      fetch(apiUrl("/admin/audit-logs?limit=8"), { headers: { "x-admin-secret": secret } }).then(r => r.json()).catch(() => ({ logs: [] })),
       fetch(apiUrl("/admin/low-stock"), { headers: { "x-admin-secret": secret } }).then(r => r.json()).catch(() => []),
     ]).then(([dashData, auditData, stockData]) => {
       setData(dashData);
@@ -17948,273 +17968,178 @@ function DashboardTab({ secret, onNavigate, openTickets }: { secret: string; onN
     }).catch(() => setLoading(false));
   }, [secret]);
 
-  if (loading) return <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-muted-foreground" /></div>;
-  if (!data) return <div className="text-center py-12 text-sm text-muted-foreground">Failed to load dashboard</div>;
+  if (loading) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" /></div>;
+  if (!data) return <div className="sp-card"><div className="sp-empty">Failed to load the overview.</div></div>;
 
-  const fmt = (n: number | undefined | null) => `$${(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const money = (n: number | undefined | null) => `$${(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const int = (n: number | undefined | null) => (n ?? 0).toLocaleString("en-US");
+  const sevenDayAvg = (data.sevenDayRevenue ?? 0) / 7;
+  const todayVsAvg = sevenDayAvg > 0 ? ((data.todayRevenue ?? 0) - sevenDayAvg) / sevenDayAvg * 100 : null;
+  const pendingReshippers = counts?.pendingReshippers ?? 0;
+  const pendingPoolPayments = counts?.pendingPoolPayments ?? 0;
+  const unreadFeedback = counts?.unreadFeedback ?? 0;
+  const outOfStock = lowStock.filter(p => p.stock === 0).length;
+
+  const tasks: { key: string; icon: React.ElementType; text: React.ReactNode; sub?: string; tab: string }[] = [];
+  if ((data.pendingPayment ?? 0) > 0) tasks.push({ key: "pay", icon: CreditCard, text: <><strong>{int(data.pendingPayment)}</strong> {data.pendingPayment === 1 ? "payment" : "payments"} to verify</>, sub: "Confirm or reject submitted payments", tab: "payments" });
+  if ((data.processingCount ?? 0) > 0) tasks.push({ key: "ful", icon: Package, text: <><strong>{int(data.processingCount)}</strong> {data.processingCount === 1 ? "order" : "orders"} to fulfil</>, sub: "Paid and waiting to be shipped", tab: "orders" });
+  if (openTickets > 0) tasks.push({ key: "tix", icon: MessageSquare, text: <><strong>{int(openTickets)}</strong> {openTickets === 1 ? "ticket" : "tickets"} awaiting a reply</>, tab: "tickets" });
+  if (lowStock.length > 0) tasks.push({ key: "stock", icon: Tag, text: <><strong>{int(lowStock.length)}</strong> {lowStock.length === 1 ? "product is" : "products are"} low on stock</>, sub: outOfStock > 0 ? `${outOfStock} out of stock` : undefined, tab: "inventory" });
+  if (pendingReshippers > 0) tasks.push({ key: "resh", icon: Truck, text: <><strong>{int(pendingReshippers)}</strong> reshipper {pendingReshippers === 1 ? "application" : "applications"} to review</>, tab: "reshippers" });
+  if (pendingPoolPayments > 0) tasks.push({ key: "pool", icon: TestTube, text: <><strong>{int(pendingPoolPayments)}</strong> testing pool {pendingPoolPayments === 1 ? "payment" : "payments"} to verify</>, tab: "testingpools" });
+  if (unreadFeedback > 0) tasks.push({ key: "fb", icon: MessageSquarePlus, text: <><strong>{int(unreadFeedback)}</strong> new feedback {unreadFeedback === 1 ? "entry" : "entries"}</>, tab: "feedback" });
+  if ((data.unreadAlerts ?? 0) > 0) tasks.push({ key: "alerts", icon: Bell, text: <><strong>{int(data.unreadAlerts)}</strong> unread {data.unreadAlerts === 1 ? "alert" : "alerts"}</>, tab: "alerts" });
+
+  const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"; })();
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-bold text-foreground">Dashboard</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Overview of your platform</p>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2" aria-label={greeting}>
+        <span className="sp-chip"><Calendar /> Today <ChevronDown style={{ width: 14, height: 14 }} /></span>
+        <span className="sp-chip"><span className="sp-muted">Compare:</span> 7-day average</span>
       </div>
 
-      {/* Revenue KPIs */}
-      <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Revenue</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <KPICard label="Today" value={fmt(data.todayRevenue)} color="#16A34A" />
-          <KPICard label="Last 7 Days" value={fmt(data.sevenDayRevenue)} color="#0891B2" />
-          <KPICard label="Last 30 Days" value={fmt(data.thirtyDayRevenue)} color="#F24908" />
-          <KPICard label="All Time" value={fmt(data.totalRevenue)} sub="confirmed" color="#F24908" />
+      {/* Metrics */}
+      <div className="sp-card">
+        <div className="sp-metric-row">
+          <div className="sp-metric">
+            <span className="sp-metric-label">Total sales</span>
+            <div className="sp-metric-value">{money(data.todayRevenue)}</div>
+            <div className={cn("sp-metric-delta", todayVsAvg !== null && todayVsAvg >= 0 && "is-up", todayVsAvg !== null && todayVsAvg < 0 && "is-down")}>
+              {todayVsAvg === null ? <span>No sales in the last 7 days</span> : <>{todayVsAvg >= 0 ? <ArrowUpRight /> : <ArrowDownRight />}<span>{Math.abs(todayVsAvg).toFixed(0)}%</span><span className="sp-muted">· {money(data.sevenDayRevenue)} last 7 days</span></>}
+            </div>
+          </div>
+          <div className="sp-metric">
+            <span className="sp-metric-label">Orders</span>
+            <div className="sp-metric-value">{int(data.weekOrders)}</div>
+            <div className="sp-metric-delta"><span>this week</span><span className="sp-muted">· {int(data.activeOrders)} active</span></div>
+          </div>
+          <div className="sp-metric">
+            <span className="sp-metric-label">Awaiting payment</span>
+            <div className="sp-metric-value">{int(data.pendingPayment)}</div>
+            <div className="sp-metric-delta"><span className="sp-muted">{int(data.processingCount)} processing · {int(data.shippedCount)} shipped</span></div>
+          </div>
+          <div className="sp-metric">
+            <span className="sp-metric-label">Customers</span>
+            <div className="sp-metric-value">{int(data.totalCustomers)}</div>
+            <div className="sp-metric-delta"><span className="sp-muted">{int(data.activeGroupBuys)} active group {data.activeGroupBuys === 1 ? "buy" : "buys"}</span></div>
+          </div>
         </div>
       </div>
 
-      {/* Operations KPIs */}
-      <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Operations</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <KPICard label="Total Orders" value={String(data.totalOrders ?? 0)} sub={`${data.weekOrders ?? 0} this week`} color="#F24908" />
-          <KPICard label="Active Orders" value={String(data.activeOrders ?? 0)} sub={`${data.processingCount ?? 0} processing`} color="#D97706" />
-          <KPICard label="Pending Payment" value={String(data.pendingPayment ?? 0)} sub="awaiting confirmation" color="#DC2626" />
-          <KPICard label="Customers" value={String(data.totalCustomers ?? 0)} color="#F24908" />
-          <KPICard label="Active Group Buys" value={String(data.activeGroupBuys ?? 0)} color="#0891B2" />
-          <KPICard label="Unread Alerts" value={String(data.unreadAlerts ?? 0)} color={(data.unreadAlerts ?? 0) > 0 ? "#DC2626" : "#94A3B8"} />
-          <KPICard label="Open Tickets" value={String(openTickets)} sub={openTickets > 0 ? "need response" : "all clear"} color={openTickets > 0 ? "#2D6BCC" : "#94A3B8"} />
+      {/* Things to do */}
+      <div className="sp-card">
+        <div className="sp-card-head">
+          <div>
+            <div className="sp-card-title">Things to do today</div>
+            <div className="sp-card-sub">{tasks.length === 0 ? "You're all caught up" : `${tasks.length} ${tasks.length === 1 ? "item needs" : "items need"} your attention`}</div>
+          </div>
+          {tasks.length > 0 && <span className="sp-badge">{tasks.length}</span>}
+        </div>
+        <div className="sp-card-body">
+          {tasks.length === 0 ? (
+            <div className="sp-empty"><CheckCircle2 className="w-6 h-6 mx-auto mb-2" style={{ color: "var(--p-success-fill)" }} />Nothing is waiting on you right now.</div>
+          ) : tasks.map(t => (
+            <button key={t.key} className="sp-task" onClick={() => onNavigate(t.tab)}>
+              <span className="sp-task-icon"><t.icon /></span>
+              <span className="sp-task-text"><div>{t.text}</div>{t.sub && <div className="sp-task-sub">{t.sub}</div>}</span>
+              <ChevronRight className="sp-task-chevron" />
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Active Group Buys list */}
-      {data.activeGroupBuysList && data.activeGroupBuysList.length > 0 && (
-        <div>
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Active Group Buys</p>
-          <div className="rounded-2xl bg-white border border-border overflow-hidden divide-y divide-border">
-            {data.activeGroupBuysList.map(gb => (
-              <div key={gb.id} className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-sm font-medium text-foreground truncate">{gb.name}</span>
-                <span className="text-xs text-muted-foreground ml-3 shrink-0">{gb.memberCount} member{gb.memberCount !== 1 ? "s" : ""}</span>
-              </div>
-            ))}
+      <div className="sp-grid-2">
+        {/* Recent orders */}
+        <div className="sp-card">
+          <div className="sp-card-head">
+            <div className="sp-card-title">Recent orders</div>
+            <button className="sp-link" onClick={() => onNavigate("orders")}>View all</button>
           </div>
-        </div>
-      )}
-
-      {/* Low Stock Alerts */}
-      {lowStock.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Low Stock</p>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{lowStock.length} product{lowStock.length !== 1 ? "s" : ""}</span>
-            </div>
-            <button onClick={() => onNavigate("products")} className="text-[11px] text-orange-500 hover:underline">Manage stock</button>
-          </div>
-          <div className="rounded-2xl bg-white border border-amber-200 overflow-hidden divide-y divide-amber-100">
-            {lowStock.map(p => (
-              <div key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-                <div className={cn("w-2 h-2 rounded-full shrink-0", p.stock === 0 ? "bg-red-500" : "bg-amber-400")} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-foreground truncate">{p.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{p.vendor}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className={cn("text-xs font-bold", p.stock === 0 ? "text-red-600" : "text-amber-600")}>{p.stock} in stock</p>
-                  <p className="text-[10px] text-muted-foreground">threshold: {p.lowStockThreshold}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Open Tickets */}
-      {openTickets > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Open Tickets</p>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">{openTickets} open</span>
-            </div>
-            <button onClick={() => onNavigate("tickets")} className="text-[11px] text-[#2D6BCC] hover:underline">View all</button>
-          </div>
-          <div
-            className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-blue-200 bg-blue-50 cursor-pointer hover:bg-blue-100 transition-colors"
-            onClick={() => onNavigate("tickets")}
-          >
-            <div className="w-8 h-8 rounded-full bg-[#2D6BCC] flex items-center justify-center shrink-0">
-              <MessageSquare className="w-4 h-4 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[#1B3A7A]">{openTickets} ticket{openTickets !== 1 ? "s" : ""} awaiting response</p>
-              <p className="text-[10px] text-blue-600 mt-0.5">Click to open the Tickets tab</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-[#2D6BCC] shrink-0" />
-          </div>
-        </div>
-      )}
-
-      {/* Recent Alerts */}
-      {(data.recentAlerts?.length ?? 0) > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Unread Alerts</p>
-            <button onClick={() => onNavigate("alerts")} className="text-[11px] text-orange-500 hover:underline">View all</button>
-          </div>
-          <div className="space-y-2">
-            {data.recentAlerts.map(a => (
-              <div key={a.id} className={cn("rounded-xl px-3 py-2.5 border text-sm", a.priority === "high" ? "border-red-200 bg-red-50" : a.priority === "medium" ? "border-amber-200 bg-amber-50" : "border-border bg-white")}>
-                <p className="font-semibold text-xs text-foreground">{a.title}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{a.message}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Orders */}
-      {data.recentOrders && data.recentOrders.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Recent Orders</p>
-            <button onClick={() => onNavigate("orders")} className="text-[11px] text-orange-500 hover:underline">View all</button>
-          </div>
-          <div className="rounded-2xl bg-white border border-border overflow-hidden divide-y divide-border">
-            {data.recentOrders.map(o => {
-              const statusColors: Record<string, string> = {
-                Draft: "bg-slate-100 text-slate-600",
-                Submitted: "bg-orange-50 text-orange-500",
-                Processing: "bg-amber-100 text-amber-700",
-                Shipped: "bg-sky-100 text-sky-700",
-                Completed: "bg-green-100 text-green-700",
-                Cancelled: "bg-red-100 text-red-600",
-              };
-              const payColors: Record<string, string> = {
-                confirmed: "bg-green-100 text-green-700",
-                pending_confirmation: "bg-amber-100 text-amber-700",
-                failed: "bg-red-100 text-red-600",
-                rejected: "bg-red-100 text-red-600",
-                unpaid: "bg-slate-100 text-slate-500",
-                test_ready: "bg-violet-100 text-orange-500",
-                test_confirmed: "bg-violet-100 text-orange-500",
-              };
-              const ts = o.updatedAt ?? o.createdAt;
+          <div className="sp-card-body">
+            {!data.recentOrders || data.recentOrders.length === 0 ? <div className="sp-empty">No orders yet.</div> : data.recentOrders.slice(0, 6).map(o => {
+              const pay = paymentBadge(o.paymentStatus);
+              const ful = fulfilmentBadge(o.status);
               return (
-                <div key={o.id} className="flex items-center gap-2 px-4 py-2.5">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold text-foreground">{o.code}</span>
-                      <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full", statusColors[o.status] ?? "bg-slate-100 text-slate-600")}>{o.status}</span>
-                      <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full", payColors[o.paymentStatus] ?? "bg-slate-100 text-slate-500")}>{o.paymentStatus?.replace(/_/g, " ")}</span>
+                <div key={o.id} className="sp-list-row" style={{ cursor: "pointer" }} onClick={() => onNavigate("orders")}>
+                  <div className="sp-list-main">
+                    <div className="sp-list-title">#{o.code} <span className="sp-muted" style={{ fontWeight: 450 }}>· <AccountHandle username={o.telegramUsername} /></span></div>
+                    <div className="sp-list-sub flex items-center gap-1.5 flex-wrap" style={{ marginTop: 4 }}>
+                      <PBadge tone={pay.tone} progress={pay.progress}>{pay.label}</PBadge>
+                      <PBadge tone={ful.tone} progress={ful.progress}>{ful.label}</PBadge>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 truncate"><AccountHandle username={o.telegramUsername} />{o.trackingNumber ? ` · 📦 ${o.trackingNumber}` : ""}</p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-medium text-foreground">${parseFloat(String(o.grandTotal ?? "0")).toFixed(2)}</p>
-                    <p className="text-[10px] text-muted-foreground">{relativeTime(ts)}</p>
+                  <div className="sp-list-right">
+                    <div style={{ fontWeight: 550 }}>${parseFloat(String(o.grandTotal ?? "0")).toFixed(2)}</div>
+                    <div className="sp-list-sub">{relativeTime(o.updatedAt ?? o.createdAt)}</div>
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
-      )}
 
-      {/* Recent Changes */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Recent Changes</p>
-          <button onClick={() => onNavigate("activity")} className="text-[11px] text-orange-500 hover:underline">View all</button>
-        </div>
-        <div className="rounded-2xl bg-white border border-border overflow-hidden divide-y divide-border">
-          {recentLogs.length === 0 ? (
-            <div className="px-4 py-6 text-center text-xs text-muted-foreground">No recent activity</div>
-          ) : recentLogs.map(log => {
-            const category = getAuditCategory(log.action);
-            return (
-              <div key={log.id} className="flex items-start gap-3 px-4 py-2.5">
-                <AuditCategoryBadge category={category} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-foreground truncate">{log.message}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{log.action.replace(/_/g, " ")}</p>
+        {/* Active group buys */}
+        <div className="sp-card">
+          <div className="sp-card-head">
+            <div className="sp-card-title">Active group buys</div>
+            <button className="sp-link" onClick={() => onNavigate("groupbuy")}>Manage</button>
+          </div>
+          <div className="sp-card-body">
+            {!data.activeGroupBuysList || data.activeGroupBuysList.length === 0 ? <div className="sp-empty">No group buys are open.</div> : data.activeGroupBuysList.map(gb => (
+              <div key={gb.id} className="sp-list-row" style={{ cursor: "pointer" }} onClick={() => onNavigate("groupbuy")}>
+                <span className="sp-task-icon"><CalendarDays /></span>
+                <div className="sp-list-main">
+                  <div className="sp-list-title">{gb.name}</div>
+                  <div className="sp-list-sub">{gb.memberCount} {gb.memberCount === 1 ? "member" : "members"}</div>
                 </div>
-                <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{relativeTime(log.createdAt)}</span>
+                <PBadge tone="success" progress="partial">Open</PBadge>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Quick nav */}
-      <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Quick Access</p>
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => onNavigate("orders")} className="rounded-2xl p-4 bg-white border border-border text-left hover:bg-slate-50 transition-colors group">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center"><Package className="w-4 h-4 text-purple-700" /></div>
-              <span className="text-sm font-semibold text-foreground">Orders</span>
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground ml-auto group-hover:translate-x-0.5 transition-transform" />
+      <div className="sp-grid-2">
+        {/* Low stock */}
+        <div className="sp-card">
+          <div className="sp-card-head">
+            <div>
+              <div className="sp-card-title">Low stock</div>
+              <div className="sp-card-sub">Products at or below their threshold</div>
             </div>
-            <p className="text-xs text-muted-foreground">{data.shippedCount} shipped · {data.processingCount} processing</p>
-          </button>
-          <button onClick={() => onNavigate("payments")} className="rounded-2xl p-4 bg-white border border-border text-left hover:bg-slate-50 transition-colors group">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center"><CreditCard className="w-4 h-4 text-green-700" /></div>
-              <span className="text-sm font-semibold text-foreground">Payments</span>
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground ml-auto group-hover:translate-x-0.5 transition-transform" />
-            </div>
-            <p className="text-xs text-muted-foreground">{data.pendingPayment} pending review</p>
-          </button>
-          <button onClick={() => onNavigate("bulkship")} className="rounded-2xl p-4 bg-white border border-border text-left hover:bg-slate-50 transition-colors group">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-xl bg-sky-100 flex items-center justify-center"><PackageCheck className="w-4 h-4 text-sky-700" /></div>
-              <span className="text-sm font-semibold text-foreground">Bulk Tracking</span>
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground ml-auto group-hover:translate-x-0.5 transition-transform" />
-            </div>
-            <p className="text-xs text-muted-foreground">Paste CSV to ship many orders</p>
-          </button>
-          <button onClick={() => onNavigate("analytics")} className="rounded-2xl p-4 bg-white border border-border text-left hover:bg-slate-50 transition-colors group">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center"><BarChart3 className="w-4 h-4 text-amber-700" /></div>
-              <span className="text-sm font-semibold text-foreground">Analytics</span>
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground ml-auto group-hover:translate-x-0.5 transition-transform" />
-            </div>
-            <p className="text-xs text-muted-foreground">Revenue & product trends</p>
-          </button>
+            <button className="sp-link" onClick={() => onNavigate("inventory")}>Inventory</button>
+          </div>
+          <div className="sp-card-body">
+            {lowStock.length === 0 ? <div className="sp-empty">All products are above their stock threshold.</div> : lowStock.slice(0, 6).map(p => (
+              <div key={p.id} className="sp-list-row">
+                <div className="sp-list-main">
+                  <div className="sp-list-title">{p.name}</div>
+                  <div className="sp-list-sub">{p.vendor}</div>
+                </div>
+                <PBadge tone={p.stock === 0 ? "critical" : "warning"}>{p.stock === 0 ? "Out of stock" : `${p.stock} in stock`}</PBadge>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Signup / Portal Links */}
-      <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Signup &amp; Portal Links</p>
-        <div className="rounded-2xl bg-white border border-border overflow-hidden divide-y divide-border">
-          {[
-            { label: "Wholesale", description: "Wholesale order application", path: "/wholesale", emoji: "🏭" },
-            { label: "Group Buy Organiser", description: "Organiser registration & dashboard", path: "/gborganiser", emoji: "🛒" },
-            { label: "Reshipper Apply", description: "Reshipper application form", path: "/reshipper-apply", emoji: "📦" },
-            { label: "Reshipper Dashboard", description: "Active reshipper portal", path: "/reshipper", emoji: "🔁" },
-            { label: "Seller Dashboard", description: "Seller login & order view", path: "/seller", emoji: "🏪" },
-            { label: "Customer Portal / Pool Leader", description: "Member account, orders & pool leader dashboard", path: "/account", emoji: "👤" },
-            { label: "Member Login", description: "Sign in page for all member roles", path: "/login", emoji: "🔐" },
-          ].map(({ label, description, path, emoji }) => (
-            <a
-              key={path + label}
-              href={path}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors group"
-            >
-              <span className="text-lg w-7 text-center shrink-0">{emoji}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-foreground">{label}</p>
-                <p className="text-[10px] text-muted-foreground">{description}</p>
+        {/* Recent activity */}
+        <div className="sp-card">
+          <div className="sp-card-head">
+            <div className="sp-card-title">Recent activity</div>
+            <button className="sp-link" onClick={() => onNavigate("auditlog")}>View all</button>
+          </div>
+          <div className="sp-card-body">
+            {recentLogs.length === 0 ? <div className="sp-empty">No recent activity.</div> : recentLogs.slice(0, 6).map(log => (
+              <div key={log.id} className="sp-list-row">
+                <div className="sp-list-main">
+                  <div className="sp-list-title" style={{ fontWeight: 450 }}>{log.message}</div>
+                  <div className="sp-list-sub">{log.action.replace(/_/g, " ")}</div>
+                </div>
+                <div className="sp-list-right sp-list-sub">{relativeTime(log.createdAt)}</div>
               </div>
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
-                <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[9px]">{path}</span>
-                <ExternalLink className="w-3 h-3 opacity-40 group-hover:opacity-70 transition-opacity" />
-              </div>
-            </a>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -20905,8 +20830,8 @@ function WholesaleAccessRequestsAdminTab({ secret }: { secret: string }) {
           <button
             onClick={saveAmount}
             disabled={savingAmount}
-            className="text-xs px-3 py-1.5 rounded font-medium text-white disabled:opacity-50"
-            style={{ background: amountSaved ? "#16a34a" : "var(--adm-accent)" }}
+            className="sp-btn sp-btn--primary"
+            style={amountSaved ? { background: "var(--p-success-fill)", boxShadow: "none" } : undefined}
           >
             {savingAmount ? "…" : amountSaved ? "Saved!" : "Save"}
           </button>
@@ -22726,9 +22651,11 @@ function AdminWholesaleTab({ secret }: { secret: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-bold text-foreground">Wholesale Settings</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Configure vendor shipping, approval flow, and page settings</p>
+      <div className="sp-page-title-row">
+        <div>
+          <h1 className="sp-h1">Wholesale</h1>
+          <p className="sp-muted" style={{ marginTop: 2 }}>Vendor shipping, approval flow and page settings</p>
+        </div>
       </div>
 
       {/* Page Settings */}
@@ -25267,6 +25194,203 @@ const SIDEBAR_SECTIONS = [
     ],
   },
 ];
+
+// ─── Shopify-style navigation registry ───────────────────────────────────────
+// One registry drives the sidebar, the top-bar search and the hash whitelist.
+// Tab ids are unchanged, so every existing #hash link keeps working.
+type NotifKey = "pendingOrders" | "unreadAlerts" | "unreadFeedback" | "pendingPayments" | "pendingPoolPayments" | "pendingReshippers" | "openTickets";
+interface AdminNavChild { id: string; label: string; badge?: NotifKey }
+interface AdminNavItem { id: string; label: string; icon: React.ElementType; badge?: NotifKey; children?: AdminNavChild[] }
+interface AdminNavGroup { heading?: string; items: AdminNavItem[] }
+
+const ADMIN_NAV: AdminNavGroup[] = [
+  {
+    items: [
+      { id: "dashboard", label: "Home", icon: HomeIcon },
+      { id: "orders", label: "Orders", icon: OrderIcon, badge: "pendingOrders", children: [
+        { id: "payments", label: "Payments", badge: "pendingPayments" },
+        { id: "packages", label: "Shipments" },
+        { id: "bulkship", label: "Bulk tracking" },
+        { id: "dispatch", label: "Dispatch" },
+        { id: "import", label: "Import orders" },
+        { id: "payment-audit", label: "Payment audit" },
+      ] },
+      { id: "products", label: "Products", icon: ProductIcon, children: [
+        { id: "inventory", label: "Inventory" },
+        { id: "inventorysync", label: "Inventory sync" },
+        { id: "vendors", label: "Vendors" },
+        { id: "labtests", label: "Lab tests" },
+      ] },
+      { id: "usernames", label: "Customers", icon: PersonIcon, children: [
+        { id: "customerlog", label: "Customer log" },
+        { id: "creditlog", label: "Store credit" },
+        { id: "invite-codes", label: "Invite codes" },
+        { id: "lockouts", label: "Lockouts" },
+        { id: "countryipcheck", label: "Country IP check" },
+        { id: "feedback", label: "Feedback", badge: "unreadFeedback" },
+        { id: "memberhealth", label: "Member health" },
+      ] },
+      { id: "groupbuy", label: "Group buys", icon: CalendarIcon, children: [
+        { id: "summary", label: "Group summary" },
+        { id: "organisers", label: "Organisers" },
+        { id: "reshippers", label: "Reshippers", badge: "pendingReshippers" },
+        { id: "trackinglinks", label: "Tracking links" },
+        { id: "testingpools", label: "Testing pools", badge: "pendingPoolPayments" },
+        { id: "intlshipping", label: "International shipping" },
+        { id: "rolelogs", label: "Role logs" },
+      ] },
+      { id: "wholesale", label: "Wholesale", icon: StoreIcon, children: [
+        { id: "wholesale-setup", label: "Wholesale setup" },
+        { id: "wholesale-shares", label: "Shared orders" },
+        { id: "wholesale-access", label: "Access requests" },
+        { id: "wholesale-tracking", label: "Tracking" },
+      ] },
+      { id: "coupons", label: "Discounts", icon: DiscountIcon },
+      { id: "fs3", label: "Finances", icon: BankIcon, children: [
+        { id: "pnl", label: "Profit & loss" },
+      ] },
+      { id: "analytics", label: "Analytics", icon: ChartVerticalFilledIcon, children: [
+        { id: "activity", label: "Member activity" },
+        { id: "auditlog", label: "Audit log" },
+        { id: "logs", label: "System logs" },
+      ] },
+      { id: "notifications", label: "Marketing", icon: TargetIcon, children: [
+        { id: "announcements", label: "Announcements" },
+        { id: "email-blast", label: "Email blast" },
+        { id: "email-templates", label: "Email templates" },
+        { id: "tg-templates", label: "Telegram templates" },
+        { id: "tglog", label: "Telegram log" },
+      ] },
+      { id: "tickets", label: "Inbox", icon: ChatIcon, badge: "openTickets", children: [
+        { id: "alerts", label: "Alerts", badge: "unreadAlerts" },
+      ] },
+    ],
+  },
+  {
+    heading: "Sales channels",
+    items: [
+      { id: "vialshop", label: "Vial shop", icon: PackageIcon },
+      { id: "vendor-portal", label: "Vendor portal", icon: DeliveryIcon },
+    ],
+  },
+  {
+    heading: "Apps",
+    items: [
+      { id: "ai-chatbot", label: "AI chatbot", icon: MagicIcon },
+      { id: "sage-settings", label: "Sage AI", icon: MagicIcon },
+      { id: "bt-chat", label: "BT chat", icon: BlogIcon },
+    ],
+  },
+];
+
+const ADMIN_NAV_SETTINGS: AdminNavItem = { id: "config", label: "Settings", icon: SettingsIcon };
+
+/** Shopify-style Settings page: its own left navigation with the section content on the right. */
+const SETTINGS_NAV: { id: string; label: string; icon: React.ElementType; hint?: string }[] = [
+  { id: "config", label: "General", icon: Store, hint: "Site name, links, homepage, navigation" },
+  { id: "payments", label: "Payments", icon: CreditCard, hint: "Wallets, gateways, change codes" },
+  { id: "shipping", label: "Shipping and delivery", icon: Truck, hint: "Couriers, rates, package sizes" },
+  { id: "intlshipping", label: "Markets", icon: Globe, hint: "Destinations and zone rates" },
+  { id: "email-templates", label: "Notifications", icon: Mail, hint: "Transactional email templates" },
+  { id: "tg-templates", label: "Telegram notifications", icon: Send, hint: "Bot message templates" },
+  { id: "schedulers", label: "Automation", icon: Clock, hint: "Background jobs and intervals" },
+  { id: "lockouts", label: "Users and permissions", icon: ShieldCheck, hint: "Two-factor, lockouts, IP blocks" },
+  { id: "siteconfig", label: "Custom data", icon: Database, hint: "Advanced key/value store" },
+];
+const SETTINGS_FRAME_TABS = new Set(["config", "shipping", "schedulers", "siteconfig"]);
+
+/** Tabs whose component renders no page title of its own; the shell adds one in Shopify's style. */
+const SHELL_TITLES: Record<string, string> = {
+  payments: "Payments", config: "General", shipping: "Shipping and delivery", intlshipping: "Markets",
+  notifications: "Notifications", announcements: "Announcements", "email-blast": "Email blast", "email-templates": "Email templates",
+  feedback: "Feedback", labtests: "Lab tests", vialshop: "Vial shop", summary: "Group summary", trackinglinks: "Tracking links",
+  tickets: "Inbox", "bt-chat": "BT chat", dispatch: "Dispatch", groupbuy: "Group buys",
+  testingpools: "Testing pools",
+};
+
+/** Tabs that need the full-width canvas (dense tables). Everything else uses Shopify's 998px page width. */
+const WIDE_TABS = new Set(["orders", "groupbuy", "fs3", "pnl", "wholesale", "wholesale-shares", "dispatch", "inventorysync", "testingpools", "reshippers", "organisers", "products", "usernames"]);
+
+const NAV_KEYWORDS: Record<string, string[]> = Object.fromEntries(
+  SIDEBAR_SECTIONS.flatMap(s => s.items.map(i => [i.id, i.keywords] as [string, string[]])),
+);
+
+interface NavSearchEntry { id: string; label: string; icon: React.ElementType; crumb: string; keywords: string[] }
+const NAV_SEARCH_INDEX: NavSearchEntry[] = [
+  ...ADMIN_NAV.flatMap(group => group.items.flatMap(item => [
+    { id: item.id, label: item.label, icon: item.icon, crumb: group.heading ?? "", keywords: NAV_KEYWORDS[item.id] ?? [] },
+    ...(item.children ?? []).map(child => ({ id: child.id, label: child.label, icon: item.icon, crumb: item.label, keywords: NAV_KEYWORDS[child.id] ?? [] })),
+  ])),
+  { id: ADMIN_NAV_SETTINGS.id, label: ADMIN_NAV_SETTINGS.label, icon: ADMIN_NAV_SETTINGS.icon, crumb: "", keywords: NAV_KEYWORDS[ADMIN_NAV_SETTINGS.id] ?? [] },
+  ...SETTINGS_NAV.filter(s => SETTINGS_FRAME_TABS.has(s.id) && s.id !== "config").map(s => ({ id: s.id, label: s.label, icon: s.icon, crumb: "Settings", keywords: NAV_KEYWORDS[s.id] ?? [] })),
+];
+
+function searchNav(query: string): NavSearchEntry[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const scored = NAV_SEARCH_INDEX.map(entry => {
+    const label = entry.label.toLowerCase();
+    let score = 0;
+    if (label === q) score = 100;
+    else if (label.startsWith(q)) score = 80;
+    else if (label.includes(q)) score = 60;
+    else if (entry.crumb.toLowerCase().includes(q)) score = 40;
+    else if (entry.keywords.some(k => k.toLowerCase().startsWith(q))) score = 30;
+    else if (entry.keywords.some(k => k.toLowerCase().includes(q))) score = 20;
+    return { entry, score };
+  }).filter(x => x.score > 0);
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 12).map(x => x.entry);
+}
+
+const KNOWN_TAB_IDS = new Set<string>([
+  ...ALL_TABS_META.map(t => t.id),
+  ...NAV_SEARCH_INDEX.map(e => e.id),
+]);
+
+/** Which top-level nav item owns a tab (itself or one of its children). */
+function navParentOf(tabId: string): string | null {
+  for (const group of ADMIN_NAV) {
+    for (const item of group.items) {
+      if (item.id === tabId || item.children?.some(c => c.id === tabId)) return item.id;
+    }
+  }
+  if (SETTINGS_FRAME_TABS.has(tabId)) return ADMIN_NAV_SETTINGS.id;
+  return null;
+}
+
+// ─── Polaris primitives ─────────────────────────────────────────────────────
+type BadgeTone = "default" | "success" | "warning" | "critical" | "info" | "attention" | "magic";
+type BadgeProgress = "incomplete" | "partial" | "complete";
+function PBadge({ tone = "default", progress, children }: { tone?: BadgeTone; progress?: BadgeProgress; children: React.ReactNode }) {
+  return (
+    <span className={cn("sp-badge", tone !== "default" && `sp-badge--${tone}`)}>
+      {progress && <span className={cn("sp-badge-dot", progress === "complete" && "sp-badge-dot--complete", progress === "partial" && "sp-badge-dot--partial")} />}
+      {children}
+    </span>
+  );
+}
+
+function paymentBadge(paymentStatus: string | null | undefined): { tone: BadgeTone; progress: BadgeProgress; label: string } {
+  switch (paymentStatus) {
+    case "confirmed": return { tone: "default", progress: "complete", label: "Paid" };
+    case "pending_confirmation": return { tone: "warning", progress: "partial", label: "Payment pending" };
+    case "test_ready":
+    case "test_confirmed": return { tone: "info", progress: "partial", label: "Test payment" };
+    case "failed":
+    case "rejected": return { tone: "critical", progress: "incomplete", label: "Payment failed" };
+    default: return { tone: "attention", progress: "incomplete", label: "Unpaid" };
+  }
+}
+function fulfilmentBadge(status: string | null | undefined): { tone: BadgeTone; progress: BadgeProgress; label: string } {
+  switch (status) {
+    case "Shipped": return { tone: "info", progress: "partial", label: "In transit" };
+    case "Completed": return { tone: "default", progress: "complete", label: "Fulfilled" };
+    case "Cancelled": return { tone: "critical", progress: "complete", label: "Cancelled" };
+    case "Draft": return { tone: "default", progress: "incomplete", label: "Draft" };
+    default: return { tone: "attention", progress: "incomplete", label: "Unfulfilled" };
+  }
+}
 
 // ─── Reshippers Admin Tab ────────────────────────────────────
 const RESHIPPER_STATUSES = ["applied", "approved", "suspended", "rejected"] as const;
@@ -28031,12 +28155,34 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
   const [checking, setChecking] = useState(!!initialSecret);
   const [activeTab, setActiveTab] = useState(() => {
     const hash = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
-    const allIds = ALL_TABS_META.map(t => t.id);
-    return allIds.includes(hash) ? hash : "dashboard";
+    return KNOWN_TAB_IDS.has(hash) ? hash : "dashboard";
   });
   const [tabOrder, setTabOrder] = useState<string[]>(ALL_TABS_META.map(t => t.id));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
+  // ─── Shopify-style top bar state (search, profile menu) ───────
+  const [searchFocus, setSearchFocus] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    if (!searchFocus && !profileOpen) return;
+    const handle = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (searchFocus && searchWrapRef.current && !searchWrapRef.current.contains(t)) setSearchFocus(false);
+      if (profileOpen && profileRef.current && !profileRef.current.contains(t)) setProfileOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [searchFocus, profileOpen]);
   const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastVisibilityCheckRef = useRef<number>(0);
 
@@ -28186,8 +28332,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
   useEffect(() => {
     const onHashChange = () => {
       const hash = window.location.hash.slice(1);
-      const allIds = ALL_TABS_META.map(t => t.id);
-      if (allIds.includes(hash)) setActiveTab(hash);
+      if (KNOWN_TAB_IDS.has(hash)) setActiveTab(hash);
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
@@ -28216,261 +28361,208 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
   };
 
 
-  return (
-    <div className="h-screen flex flex-col" style={{ background: "var(--adm-content)" }}>
-      {/* ── Top header bar ── */}
-      <header className="shrink-0 z-40 flex items-center gap-3 px-4 py-3 shadow-sm" style={{ background: "var(--adm-header)", borderBottom: "1px solid var(--adm-border)" }}>
-        {/* Hamburger for mobile */}
-        <button
-          onClick={() => setSidebarOpen(o => !o)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors lg:hidden"
-          style={{ background: "var(--adm-btn)" }}
-        >
-          {sidebarOpen ? <X className="w-4 h-4" style={{ color: "var(--adm-icon-color)" }} /> : <LayoutGrid className="w-4 h-4" style={{ color: "var(--adm-icon-color)" }} />}
-        </button>
+  const activeParent = navParentOf(activeTab);
+  const searchResults = searchNav(navSearch);
+  const showSearch = searchFocus && navSearch.trim().length > 0;
+  const badgeFor = (key?: NotifKey) => (key ? notifCounts[key] : 0);
+  const goSearch = (id: string) => { navigate(id); setNavSearch(""); setSearchFocus(false); searchInputRef.current?.blur(); };
 
-        <div className="flex-1 min-w-0">
-          <h1 className="font-display font-bold text-sm leading-tight" style={{ color: "var(--adm-text)" }}>Admin Panel</h1>
-          <p className="text-[10px]" style={{ color: "var(--adm-muted)" }}>Salt&amp;Peps</p>
+  const renderNavItem = (item: AdminNavItem) => {
+    const expanded = activeParent === item.id;
+    const selfActive = activeTab === item.id;
+    const count = badgeFor(item.badge);
+    return (
+      <li key={item.id}>
+        <button className={cn("sp-nav-item", selfActive && "is-active")} onClick={() => navigate(item.id)} aria-current={selfActive ? "page" : undefined}>
+          <item.icon />
+          <span className="sp-nav-label">{item.label}</span>
+          {count > 0 && <span className="sp-nav-count">{count > 99 ? "99+" : count}</span>}
+        </button>
+        {expanded && item.children && item.children.length > 0 && (
+          <ul className="sp-nav-sub">
+            {item.children.map(child => {
+              const childCount = badgeFor(child.badge);
+              const childActive = activeTab === child.id;
+              return (
+                <li key={child.id}>
+                  <button className={cn("sp-nav-subitem", childActive && "is-active")} onClick={() => navigate(child.id)} aria-current={childActive ? "page" : undefined}>
+                    <span className="sp-nav-label">{child.label}</span>
+                    {childCount > 0 && <span className="sp-nav-count">{childCount > 99 ? "99+" : childCount}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </li>
+    );
+  };
+
+  return (
+    <div className="sp-polaris h-screen flex flex-col">
+      {/* ── Top bar ── */}
+      <header className="sp-topbar">
+        <div className="sp-topbar-left">
+          <button className="sp-topbar-icon lg:hidden" onClick={() => setSidebarOpen(o => !o)} aria-label="Toggle navigation">
+            {sidebarOpen ? <X /> : <PanelLeft />}
+          </button>
+          <button className="sp-topbar-brand" onClick={() => navigate("dashboard")}>
+            <span className="sp-brand-mark"><SaltPepsMark size={16} /></span>
+            <span className="sp-brand-name">Salt &amp; Peps</span>
+          </button>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Alert bell */}
-          <div className="relative" ref={alertRef}>
-            <button
-              onClick={() => setAlertOpen(o => !o)}
-              className="relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{ background: alertOpen ? "var(--adm-btn-hover)" : "var(--adm-btn)" }}
-            >
-              <Bell className="w-4 h-4" style={{ color: "var(--adm-icon-color)" }} />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center text-white" style={{ background: "#EF4444" }}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
+        <div className="sp-topbar-center" ref={searchWrapRef}>
+          <div className="sp-search" onClick={() => searchInputRef.current?.focus()}>
+            <SearchIcon />
+            <input
+              ref={searchInputRef}
+              placeholder="Search"
+              value={navSearch}
+              onChange={e => { setNavSearch(e.target.value); setSearchFocus(true); }}
+              onFocus={() => setSearchFocus(true)}
+              onKeyDown={e => {
+                if (e.key === "Escape") { setNavSearch(""); setSearchFocus(false); searchInputRef.current?.blur(); }
+                if (e.key === "Enter" && searchResults[0]) goSearch(searchResults[0].id);
+              }}
+              aria-label="Search the admin"
+            />
+            <kbd aria-hidden="true"><span>⌘</span><span>K</span></kbd>
+          </div>
+          {showSearch && (
+            <div className="sp-search-results">
+              {searchResults.length === 0 ? (
+                <div className="sp-search-empty">No pages match “{navSearch.trim()}”</div>
+              ) : (
+                <>
+                  <div className="sp-search-section">Pages</div>
+                  {searchResults.map((r, i) => (
+                    <button key={r.id} className={cn("sp-search-row", i === 0 && "is-active")} onMouseDown={e => e.preventDefault()} onClick={() => goSearch(r.id)}>
+                      <r.icon />
+                      <span>{r.label}</span>
+                      {r.crumb && <span className="sp-search-crumb">{r.crumb}</span>}
+                    </button>
+                  ))}
+                </>
               )}
-            </button>
+            </div>
+          )}
+        </div>
 
-            <AnimatePresence>
-              {alertOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                  transition={{ duration: 0.12 }}
-                  className="absolute right-0 top-10 w-80 rounded-2xl shadow-2xl overflow-hidden z-50"
-                  style={{ background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.08)" }}
-                >
-                  <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
-                    <div className="flex items-center gap-2">
-                      <Bell className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="text-sm font-bold text-slate-800">Alerts</span>
-                      {unreadCount > 0 && <span className="text-xs font-bold text-white px-1.5 py-0.5 rounded-full" style={{ background: "#EF4444" }}>{unreadCount}</span>}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {unreadCount > 0 && (
-                        <button onClick={markAllDropdownRead} className="text-[10px] font-semibold text-orange-500 hover:text-orange-500 px-2 py-1 rounded">Mark all read</button>
-                      )}
-                      <button onClick={() => { setAlertOpen(false); navigate("alerts"); }} className="text-[10px] font-semibold text-slate-400 hover:text-slate-600 px-2 py-1 rounded">View all →</button>
-                    </div>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto">
-                    {dropdownAlerts.length === 0 ? (
-                      <div className="text-center py-8 text-slate-400 text-xs">No alerts yet</div>
-                    ) : (
-                      <div className="p-2 space-y-1">
-                        {dropdownAlerts.map(a => {
-                          const ps = PRIORITY_STYLE[a.priority] ?? PRIORITY_STYLE.low;
-                          return (
-                            <div
-                              key={a.id}
-                              onClick={() => {
-                                if (!a.isRead) markDropdownRead(a.id);
-                                if (a.linkUrl) {
-                                  const tab = a.linkUrl.replace(/^#/, "").split(":")[0];
-                                  navigate(tab);
-                                }
-                                setAlertOpen(false);
-                              }}
-                              className="flex items-start gap-2 px-3 py-2.5 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors"
-                              style={{ background: a.isRead ? "transparent" : "rgba(242,73,8,0.04)" }}
-                            >
-                              <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: a.isRead ? "#CBD5E1" : ps.dot }} />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1 mb-0.5">
-                                  <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded" style={{ background: ps.bg, color: ps.text }}>{a.priority}</span>
-                                  <span className="text-[9px] text-slate-300 ml-auto">{timeAgo(a.createdAt)}</span>
-                                </div>
-                                <p className="text-[11px] font-semibold text-slate-800 leading-tight">{a.title}</p>
-                                <p className="text-[10px] text-slate-500 leading-tight mt-0.5 truncate">{a.message}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+        <div className="sp-topbar-right">
+          <div className="relative" ref={alertRef}>
+            <button className="sp-topbar-icon" onClick={() => { setAlertOpen(o => !o); setProfileOpen(false); }} aria-expanded={alertOpen} aria-label="Alerts">
+              <NotificationIcon />
+              {unreadCount > 0 && <span className="sp-topbar-dot">{unreadCount > 9 ? "9+" : unreadCount}</span>}
+            </button>
+            {alertOpen && (
+              <div className="sp-popover" style={{ width: 360 }}>
+                <div className="sp-popover-head">
+                  <span>Alerts{unreadCount > 0 && <span className="sp-badge sp-badge--critical" style={{ marginLeft: 8 }}>{unreadCount}</span>}</span>
+                  <span className="flex items-center gap-3">
+                    {unreadCount > 0 && <button className="sp-link" style={{ fontSize: 12 }} onClick={markAllDropdownRead}>Mark all as read</button>}
+                    <button className="sp-link" style={{ fontSize: 12 }} onClick={() => { setAlertOpen(false); navigate("alerts"); }}>View all</button>
+                  </span>
+                </div>
+                <div className="sp-popover-list">
+                  {dropdownAlerts.length === 0 ? (
+                    <div className="sp-popover-empty">No alerts yet</div>
+                  ) : dropdownAlerts.map(a => (
+                    <button
+                      key={a.id}
+                      className={cn("sp-popover-row", !a.isRead && "is-unread")}
+                      onClick={() => {
+                        if (!a.isRead) markDropdownRead(a.id);
+                        if (a.linkUrl) navigate(a.linkUrl.replace(/^#/, "").split(":")[0]);
+                        setAlertOpen(false);
+                      }}
+                    >
+                      <span className="sp-badge-dot" style={{ marginTop: 4, color: a.priority === "high" ? "var(--p-critical-fill)" : a.priority === "medium" ? "#b98900" : "#8a8a8a", background: a.isRead ? "transparent" : "currentColor" }} />
+                      <span className="flex-1 min-w-0">
+                        <div className="sp-row-title">{a.title}</div>
+                        <div className="sp-row-sub">{a.message}</div>
+                      </span>
+                      <span className="sp-row-time">{timeAgo(a.createdAt)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Theme toggle */}
-          <button
-            onClick={onToggleTheme}
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-            style={{ background: "var(--adm-btn)" }}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark"
-              ? <Sun className="w-4 h-4" style={{ color: "var(--adm-icon-color)" }} />
-              : <Moon className="w-4 h-4" style={{ color: "var(--adm-icon-color)" }} />
-            }
-          </button>
-
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            style={{ background: "var(--adm-btn)", color: "var(--adm-muted)" }}
-          >
-            <Lock className="w-3 h-3" />Sign out
-          </button>
+          <div className="relative" ref={profileRef}>
+            <button className="sp-topbar-store" onClick={() => { setProfileOpen(o => !o); setAlertOpen(false); }} aria-expanded={profileOpen}>
+              <span className="sp-avatar">SP</span>
+              <span className="sp-topbar-store-name">Salt &amp; Peps</span>
+            </button>
+            {profileOpen && (
+              <div className="sp-popover" style={{ width: 260 }}>
+                <div className="sp-menu">
+                  <div className="sp-menu-store">
+                    <span className="sp-avatar sp-avatar--lg">SP</span>
+                    <div>
+                      <div className="sp-menu-store-name">Salt &amp; Peps</div>
+                      <div className="sp-menu-store-sub">{admin2fa ? "Two-factor sign-in" : "Shared-secret sign-in"}</div>
+                    </div>
+                  </div>
+                  <div className="sp-menu-sep" />
+                  <button className="sp-menu-item" onClick={() => { setProfileOpen(false); navigate("config"); }}><Settings2 />Settings</button>
+                  <button className="sp-menu-item" onClick={() => { setProfileOpen(false); navigate("lockouts"); }}><ShieldCheck />Security &amp; two-factor</button>
+                  <button className="sp-menu-item" onClick={() => { setProfileOpen(false); navigate("auditlog"); }}><History />Audit log</button>
+                  <div className="sp-menu-sep" />
+                  <button className="sp-menu-item is-critical" onClick={handleLogout}><LogOut />Log out</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* ── Body: sidebar + main ── */}
-      <div className="flex flex-1 overflow-hidden relative">
+      {/* ── Frame: navigation + page ── */}
+      <div className="sp-frame">
+        {sidebarOpen && <div className="sp-nav-backdrop lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
-        {/* Mobile sidebar backdrop */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-20 bg-black/40 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
+        <nav className={cn("sp-nav", sidebarOpen && "is-open")} aria-label="Admin navigation">
+          <ul>
+            {ADMIN_NAV.map((group, gi) => (
+              <li key={group.heading ?? gi} className="sp-nav-group">
+                {group.heading && <div className="sp-nav-heading"><span>{group.heading}</span><ChevronRightIcon /></div>}
+                <ul>{group.items.map(renderNavItem)}</ul>
+              </li>
+            ))}
+          </ul>
+          <div className="sp-nav-bottom">
+            <ul>{renderNavItem(ADMIN_NAV_SETTINGS)}</ul>
+          </div>
+        </nav>
 
-        {/* Sidebar */}
-        <aside
-          className={cn(
-            "fixed top-[57px] left-0 bottom-0 z-30 w-56 flex flex-col overflow-y-auto transition-transform duration-200",
-            "lg:relative lg:top-auto lg:h-full lg:translate-x-0",
-            sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        <main className="sp-main">
+          <div className={cn("sp-page", (WIDE_TABS.has(activeTab) || SETTINGS_FRAME_TABS.has(activeTab)) && "sp-page--full")}>
+          {SETTINGS_FRAME_TABS.has(activeTab) && (
+            <div className="sp-page-title-row"><h1 className="sp-h1">Settings</h1></div>
           )}
-          style={{ background: "var(--adm-shell)", borderRight: "1px solid var(--adm-border)" }}
-        >
-          <div className="hidden lg:flex items-center gap-2 px-4 py-4" style={{ borderBottom: "1px solid var(--adm-border)" }}>
-            <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: "#F24908" }}>
-              <ShieldCheck className="w-3.5 h-3.5 text-white" />
-            </div>
-            <span className="text-sm font-bold" style={{ color: "var(--adm-text)" }}>Admin Panel</span>
-          </div>
-
-          <div className="px-3 pt-2 pb-1">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-muted-foreground" />
-              <input
-                className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                placeholder="Search settings…"
-                value={navSearch}
-                onChange={e => setNavSearch(e.target.value)}
-                style={{ color: "var(--adm-text)" }}
-              />
-              {navSearch && (
-                <button className="absolute right-2 top-1.5 text-muted-foreground hover:text-foreground" onClick={() => setNavSearch("")}>
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <nav className="flex-1 py-2 px-2 space-y-4">
-            {navSearch.trim() ? (
-              <div>
-                <p className="px-2 mb-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--adm-faint)" }}>Results</p>
-                {(() => {
-                  const q = navSearch.toLowerCase();
-                  const results = SIDEBAR_SECTIONS.flatMap(s =>
-                    s.items
-                      .filter(item =>
-                        item.label.toLowerCase().includes(q) ||
-                        s.label.toLowerCase().includes(q) ||
-                        item.keywords.some(k => k.toLowerCase().includes(q))
-                      )
-                      .map(item => ({ ...item, sectionLabel: s.label }))
-                  );
-                  if (results.length === 0) return <p className="px-3 py-2 text-xs text-muted-foreground">No results found</p>;
-                  return results.map(item => {
-                    const isActive = activeTab === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => { navigate(item.id); setNavSearch(""); }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-colors mb-0.5"
-                        style={{ background: isActive ? "var(--adm-active)" : "transparent", color: isActive ? "var(--adm-text)" : "var(--adm-muted)" }}
-                      >
-                        <item.icon className="w-3.5 h-3.5 shrink-0" />
-                        <div className="flex flex-col items-start min-w-0">
-                          <span className="truncate">{item.label}</span>
-                          <span className="text-[9px] truncate" style={{ color: "var(--adm-faint)" }}>{item.sectionLabel}</span>
-                        </div>
-                      </button>
-                    );
-                  });
-                })()}
+          <div className={cn(SETTINGS_FRAME_TABS.has(activeTab) && "sp-settings")}>
+          {SETTINGS_FRAME_TABS.has(activeTab) && (
+            <aside className="sp-settings-nav">
+              <div className="sp-settings-store">
+                <span className="sp-avatar sp-avatar--lg">SP</span>
+                <div><div className="sp-menu-store-name">Salt &amp; Peps</div><div className="sp-menu-store-sub">Admin settings</div></div>
               </div>
-            ) : (
-              SIDEBAR_SECTIONS.map(section => (
-                <div key={section.label}>
-                  <p className="px-2 mb-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--adm-faint)" }}>{section.label}</p>
-                  {section.items.map(item => {
-                    const isActive = activeTab === item.id;
-                    const badge =
-                      item.id === "alerts" ? notifCounts.unreadAlerts
-                      : item.id === "orders" ? notifCounts.pendingOrders
-                      : item.id === "feedback" ? notifCounts.unreadFeedback
-                      : item.id === "payments" ? notifCounts.pendingPayments
-                      : item.id === "testingpools" ? notifCounts.pendingPoolPayments
-                      : item.id === "reshippers" ? notifCounts.pendingReshippers
-                      : item.id === "tickets" ? notifCounts.openTickets
-                      : 0;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => navigate(item.id)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-colors mb-0.5"
-                        style={{
-                          background: isActive ? "var(--adm-active)" : "transparent",
-                          color: isActive ? "var(--adm-text)" : "var(--adm-muted)",
-                        }}
-                      >
-                        <item.icon className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                        {badge > 0 && (
-                          <span className="ml-auto px-1.5 py-0.5 rounded-full text-[9px] font-black text-white leading-none shrink-0" style={{ background: "#EF4444" }}>
-                            {badge > 9 ? "9+" : badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))
-            )}
-          </nav>
-
-          <div className="px-3 py-3" style={{ borderTop: "1px solid var(--adm-border)" }}>
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium transition-colors"
-              style={{ color: "var(--adm-muted)" }}
-            >
-              <Lock className="w-3.5 h-3.5" /> Sign out
-            </button>
-          </div>
-        </aside>
-
-        {/* Main content */}
-        <main className={`flex-1 min-w-0 overflow-y-auto px-4 py-6 pb-24 lg:pb-8 lg:px-6 lg:py-8 ${activeTab === "orders" || activeTab === "groupbuy" ? "" : "max-w-4xl"}`} style={{ color: "var(--adm-text)" }}>
-          {activeTab === "dashboard"    && <DashboardTab secret={secret} onNavigate={navigate} openTickets={notifCounts.openTickets} />}
+              <ul>
+                {SETTINGS_NAV.map(s => (
+                  <li key={s.id}>
+                    <button className={cn("sp-settings-link", activeTab === s.id && "is-active")} onClick={() => navigate(s.id)}>
+                      <s.icon />
+                      <span>{s.label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+          )}
+          <div className="sp-settings-content">
+          {SHELL_TITLES[activeTab] && <h1 className="sp-h1" style={{ marginBottom: 16 }}>{SHELL_TITLES[activeTab]}</h1>}
+          {activeTab === "dashboard"    && <DashboardTab secret={secret} onNavigate={navigate} openTickets={notifCounts.openTickets} counts={notifCounts} />}
           {activeTab === "alerts"       && <AlertsTab secret={secret} onNavigate={navigate} />}
           {activeTab === "orders"       && <OrdersTab secret={secret} />}
           {activeTab === "summary"      && <GroupSummaryTab secret={secret} />}
@@ -28533,46 +28625,28 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
           {activeTab === "ai-chatbot"   && <AdminAiChatbot secret={secret} />}
           {activeTab === "bt-chat"      && <AdminBtChat secret={secret} />}
           {activeTab === "sage-settings" && <AdminSageSettings secret={secret} />}
+          </div>
+          </div>
+          </div>
         </main>
       </div>
 
-      {/* ── Mobile bottom nav ── */}
-      <nav
-        className="fixed bottom-0 left-0 right-0 z-40 flex lg:hidden"
-        style={{ background: "var(--adm-shell)", borderTop: "1px solid var(--adm-border)" }}
-      >
+      {/* ── Mobile bottom tabs ── */}
+      <nav className="sp-bottombar lg:hidden">
         {[
-          { id: "dashboard", label: "Dashboard", icon: Home },
-          { id: "orders",    label: "Orders",    icon: Package },
-          { id: "payments",  label: "Payments",  icon: CreditCard },
-          { id: "usernames", label: "Members", icon: Users },
-        ].map(item => {
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => { navigate(item.id); setSidebarOpen(false); }}
-              className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors"
-              style={{ color: isActive ? "#F24908" : "var(--adm-muted)" }}
-            >
-              <item.icon className="w-5 h-5" />
-              <span className="text-[9px] font-semibold leading-none">{item.label}</span>
-            </button>
-          );
-        })}
-        {/* More — opens sidebar */}
-        <button
-          onClick={() => setSidebarOpen(o => !o)}
-          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors relative"
-          style={{ color: sidebarOpen ? "#F24908" : "var(--adm-muted)" }}
-        >
-          <LayoutGrid className="w-5 h-5" />
-          {unreadCount > 0 && (
-            <span className="absolute top-1.5 right-[18%] w-3.5 h-3.5 rounded-full text-[8px] font-black flex items-center justify-center text-white" style={{ background: "#EF4444" }}>
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-          <span className="text-[9px] font-semibold leading-none">More</span>
+          { id: "dashboard", label: "Home", icon: HomeIcon },
+          { id: "orders", label: "Orders", icon: OrderIcon },
+          { id: "products", label: "Products", icon: ProductIcon },
+          { id: "usernames", label: "Customers", icon: PersonIcon },
+        ].map(item => (
+          <button key={item.id} className={cn(activeParent === item.id && "is-active")} onClick={() => { navigate(item.id); setSidebarOpen(false); }}>
+            <item.icon />
+            <span>{item.label}</span>
+          </button>
+        ))}
+        <button className={cn(sidebarOpen && "is-active")} onClick={() => setSidebarOpen(o => !o)}>
+          <LayoutGrid />
+          <span>Menu</span>
         </button>
       </nav>
     </div>
@@ -28792,7 +28866,7 @@ function EnabledAdminLogin({ onAuthenticated }: { onAuthenticated: () => void })
 // ─── Server-mode-aware admin gate (wraps AdminInner) ─────────────────────────
 export default function Admin() {
   const [adminTheme, setAdminTheme] = useState<"dark"|"light">(() =>
-    (localStorage.getItem("adminTheme") as "dark"|"light") || "dark"
+    "light" // The Shopify-style shell is light-only; the stored preference is ignored.
   );
   const toggleTheme = () => {
     setAdminTheme(t => {
@@ -28976,26 +29050,16 @@ export default function Admin() {
   );
 
   return (
-    <div data-admin-theme={adminTheme} className={`min-h-screen flex items-center justify-center relative${adminTheme === "dark" ? " dark" : ""}`} style={{ background: "var(--adm-content)" }}>
-      {/* Theme toggle */}
-      <button
-        onClick={toggleTheme}
-        className="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-        style={{ background: "var(--adm-btn)" }}
-        title={adminTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      >
-        {adminTheme === "dark" ? <Sun className="w-4 h-4" style={{ color: "var(--adm-icon-color)" }} /> : <Moon className="w-4 h-4" style={{ color: "var(--adm-icon-color)" }} />}
-      </button>
-
-      <div className="w-full max-w-xs mx-auto px-6">
-        <div className="flex flex-col items-center gap-6">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-            style={{ background: "var(--adm-btn)", border: "1px solid var(--adm-border)" }}>
-            <Lock className="w-6 h-6" style={{ color: "var(--adm-muted)" }} />
+    <div data-admin-theme={adminTheme} className="sp-polaris sp-login min-h-screen flex items-center justify-center relative">
+      <div className="sp-login-card">
+        <div className="flex flex-col gap-5">
+          <div className="sp-login-brand">
+            <span className="sp-brand-mark"><SaltPepsMark size={18} /></span>
+            <span>Salt &amp; Peps</span>
           </div>
-          <div className="text-center">
-            <h1 className="font-bold text-lg tracking-tight" style={{ color: "var(--adm-text)" }}>Admin Access</h1>
-            <p className="text-sm mt-1" style={{ color: "var(--adm-muted)" }}>{mode ? "Sign in with your administrator account" : "Enter password to continue"}</p>
+          <div>
+            <h1 className="sp-h1">Log in</h1>
+            <p className="sp-muted" style={{ marginTop: 4 }}>{mode ? "Continue to the Salt & Peps admin" : "Enter the admin password to continue"}</p>
           </div>
           {mode ? <EnabledAdminLogin onAuthenticated={activateSession} /> : <form onSubmit={tryGate} className="w-full flex flex-col gap-3">
             <div className="relative">
@@ -29005,13 +29069,7 @@ export default function Admin() {
                 onChange={e => { setGateInput(e.target.value); setGateError(false); }}
                 placeholder="Password"
                 autoFocus
-                className="w-full px-4 py-3 pr-10 rounded-xl text-sm outline-none"
-                style={{
-                  background: "var(--adm-btn)",
-                  border: `1px solid ${gateError ? "#EF4444" : "var(--adm-border)"}`,
-                  color: "var(--adm-text)",
-                  transition: "border-color 0.15s",
-                }}
+                className={cn("sp-login-input", gateError && "is-error")}
               />
               <button type="button" onClick={() => setGateShow(s => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
@@ -29034,13 +29092,13 @@ export default function Admin() {
             )}
             <button type="submit"
               disabled={gateLoading || !gateInput}
-              className="w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-95 disabled:opacity-50"
-              style={{ background: "#F24908", color: "#fff" }}>
-              {gateLoading ? "Checking…" : "Unlock"}
+              className="sp-btn sp-btn--primary sp-login-submit">
+              {gateLoading ? "Checking…" : "Log in"}
             </button>
           </form>}
         </div>
       </div>
+      <div className="sp-login-foot">Salt &amp; Peps admin · Restricted access</div>
     </div>
   );
 }
