@@ -3,10 +3,6 @@ import { describe, expect, it } from "vitest";
 
 const routeSource = readFileSync(new URL("../orders.ts", import.meta.url), "utf8");
 const organiserSource = readFileSync(new URL("../organiser.ts", import.meta.url), "utf8");
-const lookupSource = readFileSync(
-  new URL("../../../../peps-anonymous/src/pages/Lookup.tsx", import.meta.url),
-  "utf8",
-);
 const orderFormSource = readFileSync(
   new URL("../../../../peps-anonymous/src/pages/OrderForm.tsx", import.meta.url),
   "utf8",
@@ -17,13 +13,8 @@ const reviewSource = readFileSync(
 );
 
 describe("group-buy order context", () => {
-  it("retains a looked-up group-buy order when opening Edit", () => {
-    const editHandler = lookupSource.slice(
-      lookupSource.indexOf("const handleEdit"),
-      lookupSource.indexOf("const handleTopUp"),
-    );
-    expect(editHandler).toContain("groupBuyId");
-    expect(editHandler).toContain("loadExistingOrder(foundOrder)");
+  // The unrouted Lookup page was removed; the order form keeps the group-buy context itself.
+  it("keeps the group-buy context on an existing order in the order form", () => {
     expect(orderFormSource).toContain("draft.orderId && draft.groupBuyId");
   });
 
