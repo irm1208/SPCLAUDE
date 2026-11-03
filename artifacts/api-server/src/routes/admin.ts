@@ -116,8 +116,11 @@ function exactGrandTotal(
     (total, amount) => total + usdToCents(amount.toFixed(2)),
     0n,
   );
-  const creditsCents = usdToCents(String(creditsApplied ?? "0"));
-  const netCents = grossCents - deductionsCents - creditsCents;
+  // Credits are NOT deducted here: grandTotal is the gross order value everywhere else
+  // (create path) and the payment verifier subtracts creditsApplied itself. Deducting
+  // them here as well charged the member their credits twice after an admin edit.
+  void creditsApplied;
+  const netCents = grossCents - deductionsCents;
   return centsToUsdString(netCents > 0n ? netCents : 0n);
 }
 import {
@@ -9549,11 +9552,14 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
         telegramUsername: ordersTable.telegramUsername,
         code: ordersTable.code,
         refundStatus: ordersTable.refundStatus,
+        paymentStatus: ordersTable.paymentStatus,
       })
       .from(ordersTable)
       .where(eq(ordersTable.id, orderId))
       .for("update");
     if (!order) return { kind: "missing_order" as const };
+    // Only money that was actually received can be turned into credit.
+    if (order.paymentStatus !== "confirmed") return { kind: "not_paid" as const };
     if (!order.telegramUsername || normalizeTg(order.telegramUsername) !== normalizeTg(acct.telegramUsername)) {
       return { kind: "missing_account" as const };
     }
@@ -9594,6 +9600,7 @@ router.post("/admin/orders/:id/refund-to-credits", async (req: any, res: any): P
     return;
   }
   if (outcome.kind === "missing_account") { res.status(400).json({ error: "Order has no linked customer account" }); return; }
+  if (outcome.kind === "not_paid") { res.status(400).json({ error: "Only an order with a confirmed payment can be refunded to credits" }); return; }
   if (outcome.kind === "zero_total") { res.status(400).json({ error: "Order total is zero — nothing to refund" }); return; }
   const { order, accountUsername, totalAmount, newBalance } = outcome;
 
@@ -10840,6 +10847,7 @@ router.patch("/admin/group-buys/:gbId/reshippers/:username/code", async (req, re
 // ── PATCH /api/admin/group-buys/:gbId/country-legs/:legId/kit-excluded-orders ─
 // Toggle an order's inclusion in the kit count viewer total for a country leg.
 router.patch("/admin/group-buys/:gbId/country-legs/:legId/kit-excluded-orders", async (req, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
   const legId = String(req.params["legId"]);
   const gbId = String(req.params["gbId"]);
   const { orderId, excluded } = req.body as { orderId: string; excluded: boolean };
@@ -10847,7 +10855,6 @@ router.patch("/admin/group-buys/:gbId/country-legs/:legId/kit-excluded-orders", 
   if (!orderId || typeof excluded !== "boolean") {
     res.status(400).json({ error: "orderId and excluded (boolean) are required" });
     return;
-  if (!requireAdmin(req, res)) return;
   }
 
   const [leg] = await db

@@ -2567,7 +2567,41 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
     normalizedUpdateContribution = parseFloat(String(updateRound?.contributionAmount ?? "15")) || 15;
   }
 
+  // Unit prices and names come from the catalogue, never from the browser (the create path
+  // already does this; the edit path trusted whatever was submitted). Kit fees are recomputed
+  // from the group buy's per-product fee at the same time.
+  let editKitFees = 0;
+  {
+    const ids = [...new Set((clientLineItems as Array<{ productId?: unknown }>).map(li => String(li?.productId ?? "")).filter(Boolean))];
+    if (ids.length) {
+      const catalogue = await db
+        .select({ id: productsTable.id, name: productsTable.name, price: productsTable.price, wholesalePrice: productsTable.wholesalePrice })
+        .from(productsTable).where(inArray(productsTable.id, ids));
+      const catalogueById = new Map(catalogue.map(p => [p.id, p]));
+      const gbRows = order.groupBuyId && !isWholesaleOrder
+        ? await db
+          .select({ productId: groupBuyProductsTable.productId, priceOverride: groupBuyProductsTable.priceOverride, feePerKit: groupBuyProductsTable.feePerKit })
+          .from(groupBuyProductsTable)
+          .where(and(eq(groupBuyProductsTable.groupBuyId, order.groupBuyId), inArray(groupBuyProductsTable.productId, ids)))
+        : [];
+      const gbById = new Map(gbRows.map(r => [r.productId, r]));
+      for (const li of clientLineItems as Array<{ productId: string; productName: string; quantity: number; unitPrice: number }>) {
+        const product = catalogueById.get(String(li.productId));
+        if (!product) { res.status(400).json({ error: "One or more products are no longer available" }); return; }
+        const gbLink = gbById.get(String(li.productId));
+        li.productName = product.name;
+        li.unitPrice = isWholesaleOrder
+          ? Number(product.wholesalePrice ?? product.price)
+          : parseFloat(String(gbLink?.priceOverride ?? product.price));
+        const fee = gbLink?.feePerKit != null ? parseFloat(String(gbLink.feePerKit)) : 0;
+        if (fee > 0) editKitFees += fee * (parseFloat(String(li.quantity)) || 0);
+      }
+      editKitFees = Number(editKitFees.toFixed(2));
+    }
+  }
   const { productSubtotal, grandTotal: baseUpdateTotal } = recalculateTotals(clientLineItems, deliveryPrice, vendorShipping, tip, normalizedUpdateContribution);
+  // A coupon applied at checkout stays applied (capped at the new product subtotal).
+  const editCouponDiscount = order.couponCode ? Math.min(Math.max(0, parseFloat(String(order.couponDiscount ?? "0")) || 0), productSubtotal) : 0;
   // Resolve the admin fee for this edit. Fixed fees keep the amount stored on the order;
   // percentage fees are recomputed against the new subtotal so the fee tracks line-item changes.
   const storedAdminFee = parseFloat(String(order.adminFee ?? "0"));
@@ -2602,7 +2636,7 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
       recomputedAdminFeeLabel = resolved.label;
     }
   }
-  const grandTotal = Number(Math.max(0, baseUpdateTotal + resolvedAdminFee).toFixed(2));
+  const grandTotal = Number(Math.max(0, baseUpdateTotal + resolvedAdminFee + editKitFees - editCouponDiscount).toFixed(2));
 
   // Capture old line items for audit log before deleting them
   const oldLineItems = await db.select().from(orderLineItemsTable).where(eq(orderLineItemsTable.orderId, rawId));
@@ -2671,6 +2705,8 @@ router.put("/orders/:orderId", requireAccount, async (req, res): Promise<void> =
       testingContribution: normalizedUpdateContribution.toFixed(2),
       grandTotal: grandTotal.toFixed(2),
       adminFee: resolvedAdminFee.toFixed(2),
+      kitFees: editKitFees.toFixed(2),
+      couponDiscount: editCouponDiscount.toFixed(2),
       ...(isWholesaleOrder && {wholesaleVendorId: req.body.wholesaleVendorId}),
       // Editing the order changes the total, so any previously-locked crypto USD
       // amount is now stale. Clear it (unless the order is paid-like) so the payment

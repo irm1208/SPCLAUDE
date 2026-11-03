@@ -4773,7 +4773,10 @@ router.post("/organiser/group-buys/:gbId/orders/apply-intl-shipping", requireOrg
       let { resolvedAdminFee, resolvedAdminFeeLabel } = resolveAdminFeeOnRecompute((order as any).adminFee, (order as any).adminFeeLabel, gb, productSubtotal);
       let newGrandTotal = parseFloat((productSubtotal + ratePrice + vendorShipping + tip + testingContribution + resolvedAdminFee).toFixed(2));
       const prevAmountDue = parseFloat(String((order as any).amountDue ?? "0"));
-      let newAmountDue = isPaid ? prevAmountDue : parseFloat((prevAmountDue + ratePrice).toFixed(2));
+      // Add only the change versus the delivery price already on the order, so re-applying
+      // the rate does not bill it twice.
+      const prevDeliveryPrice = parseFloat(String((order as any).deliveryPrice ?? "0"));
+      let newAmountDue = isPaid ? prevAmountDue : Math.max(0, parseFloat((prevAmountDue + (ratePrice - prevDeliveryPrice)).toFixed(2)));
       const halfPlan = halfIntlPlans.get(order.id);
       if (halfPlan) {
         newGrandTotal = halfPlan.grandTotal;
