@@ -1386,12 +1386,20 @@ router.delete("/organiser/group-buys/:id/products/:productId", requireOrganiser,
     .delete(groupBuyProductsTable)
     .where(and(eq(groupBuyProductsTable.groupBuyId, id), eq(groupBuyProductsTable.productId, productId)));
 
-  // Also delete the underlying product if it belongs to this organiser
-  await db
-    .delete(productsTable)
-    .where(and(eq(productsTable.id, productId), eq(productsTable.organiserId, username)));
+  // Also delete the underlying product if it belongs to this organiser and no other
+  // group buy (for example a clone) still links it. Deleting a linked product would
+  // cascade-remove it from every group buy that shares the row.
+  const [{ remaining }] = await db
+    .select({ remaining: sql<number>`count(*)::int` })
+    .from(groupBuyProductsTable)
+    .where(eq(groupBuyProductsTable.productId, productId));
+  if (Number(remaining) === 0) {
+    await db
+      .delete(productsTable)
+      .where(and(eq(productsTable.id, productId), eq(productsTable.organiserId, username)));
+  }
 
-  res.json({ ok: true });
+  res.json({ ok: true, productDeleted: Number(remaining) === 0 });
 });
 
 // POST /api/organiser/group-buys/:id/import-csv
