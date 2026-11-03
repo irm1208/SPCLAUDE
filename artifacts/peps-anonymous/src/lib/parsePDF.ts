@@ -1,10 +1,14 @@
-import * as pdfjsLib from "pdfjs-dist";
 import mammoth from "mammoth";
 
-// Use the built worker via Vite's ?url import so no CDN dependency
+// pdfjs (about 400 KB) is loaded only when a PDF is actually parsed, so it stays out of the main bundle.
+// The worker comes via Vite's ?url import so there is no CDN dependency.
 // @ts-ignore — Vite resolves this at build time
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+async function loadPdfjs() {
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+  return pdfjsLib;
+}
 
 // ─── Biomarker search index ────────────────────────────────────────────────────
 // Patterns ordered most-specific first to avoid false matches.
@@ -444,6 +448,7 @@ const BIOMARKER_SEARCH_INDEX: SearchEntry[] = [
 
 export async function extractPDFText(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
+  const pdfjsLib = await loadPdfjs();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
   const pageTexts: string[] = [];

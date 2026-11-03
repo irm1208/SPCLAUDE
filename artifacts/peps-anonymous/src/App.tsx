@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import React, { useEffect, useRef } from "react";
+import React, { Suspense, lazy, useEffect, useRef } from "react";
 import { useAccount, useTelegramAutoLogin } from "@/hooks/use-account";
 import { DiscordLoginSetupModal } from "@/components/account/DiscordLoginSetupModal";
 import {
@@ -15,64 +15,62 @@ import {
 import { siteSurface } from "@/lib/site-domain";
 import Home from "@/pages/Home";
 import LegacyOrderRedirect from "@/pages/LegacyOrderRedirect";
-import OrderForm from "@/pages/OrderForm";
-import Review from "@/pages/Review";
-import Success from "@/pages/Success";
-import Admin from "@/pages/Admin";
-import VendorPortal from "@/pages/VendorPortal";
-import VendorLogin from "@/pages/VendorLogin";
-import ProtoypeAdmin from "@/pages/ProtoypeAdmin";
-import JanoshikReceiver from "@/pages/JanoshikReceiver";
-import PrototypeHome from "@/pages/PrototypeHome";
-import PrototypeTestingPools from "@/pages/PrototypeTestingPools";
-import PrototypeProtocols from "@/pages/PrototypeProtocols";
-import PrototypeLearn from "@/pages/PrototypeLearn";
-import PrototypeLabTests from "@/pages/PrototypeLabTests";
-import PrototypeCalculator from "@/pages/PrototypeCalculator";
-import PrototypeSupplements from "@/pages/PrototypeSupplements";
-import Protocols, { MedProtocolsRedirect, TrtAasRedirect } from "@/pages/Protocols";
-import PeptideDetail from "@/pages/PeptideDetail";
-import Calculator from "@/pages/Calculator";
-import LabTests from "@/pages/LabTests";
-import Packages from "@/pages/Packages";
-import Shop from "@/pages/Shop";
-import ShopCheckout from "@/pages/ShopCheckout";
-import SellerDashboard from "@/pages/SellerDashboard";
-import CustomerPortal from "@/pages/CustomerPortal";
-import AccountOrderDetail from "@/pages/AccountOrderDetail";
 import Login from "@/pages/Login";
-import VerifyAccount from "@/pages/VerifyAccount";
-import AccountOrders from "@/pages/AccountOrders";
-import BloodTests from "@/pages/BloodTests";
-import Compounds from "@/pages/Compounds";
-import Members from "@/pages/Members";
-import MedDetail from "@/pages/MedDetail";
-import Learn from "@/pages/Learn";
-import LearnCourse from "@/pages/LearnCourse";
-import LearnLesson from "@/pages/LearnLesson";
-import PeptideExplorer from "@/pages/PeptideExplorer";
 import NotFound from "@/pages/not-found";
-import Feedback from "@/pages/Feedback";
-import GbOrganiser from "@/pages/GbOrganiser";
-import GbOrganiserV2 from "@/pages/GbOrganiserV2";
-import GbQrViewer from "@/pages/GbQrViewer";
-import GbLegViewer from "@/pages/GbLegViewer";
-import GbLegKits from "@/pages/GbLegKits";
-import TrackingPage from "@/pages/TrackingPage";
-import GbTestingPool from "@/pages/GbTestingPool";
-import GbTestingResults from "@/pages/GbTestingResults";
-import TestingPool from "@/pages/TestingPool";
-import GuestContribution from "@/pages/GuestContribution";
-import ReshipperPage from "@/pages/Reshipper";
-import ReshipperApply from "@/pages/ReshipperApply";
-import WholesaleOrder from "@/pages/WholesaleOrder";
-import WholesaleShared from "@/pages/WholesaleShared";
-import WholesaleShareEntry from "@/pages/WholesaleShareEntry";
-import WholesaleTracking from "@/pages/WholesaleTracking";
-import WholesaleInviteLanding from "@/pages/WholesaleInviteLanding";
-import PublicTestingPools from "@/pages/PublicTestingPools";
-import SagePage from "@/pages/SagePage";
-import GroupBuyHalfKits from "@/pages/GroupBuyHalfKits";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const lazyPage = (load: () => Promise<{ default: React.ComponentType<any> }>) => lazy(load) as unknown as React.ComponentType<any>;
+// Route-level code splitting: everything except the landing, login and 404 pages
+// loads on demand, so a visitor downloads the admin, organiser and vendor code only if they open it.
+const OrderForm = lazyPage(() => import("@/pages/OrderForm"));
+const Review = lazyPage(() => import("@/pages/Review"));
+const Success = lazyPage(() => import("@/pages/Success"));
+const Admin = lazyPage(() => import("@/pages/Admin"));
+const VendorPortal = lazyPage(() => import("@/pages/VendorPortal"));
+const VendorLogin = lazyPage(() => import("@/pages/VendorLogin"));
+const JanoshikReceiver = lazyPage(() => import("@/pages/JanoshikReceiver"));
+const Protocols = lazyPage(() => import("@/pages/Protocols"));
+const MedProtocolsRedirect = lazyPage(() => import("@/pages/Protocols").then(m => ({ default: m.MedProtocolsRedirect })));
+const TrtAasRedirect = lazyPage(() => import("@/pages/Protocols").then(m => ({ default: m.TrtAasRedirect })));
+const PeptideDetail = lazyPage(() => import("@/pages/PeptideDetail"));
+const Calculator = lazyPage(() => import("@/pages/Calculator"));
+const LabTests = lazyPage(() => import("@/pages/LabTests"));
+const Packages = lazyPage(() => import("@/pages/Packages"));
+const Shop = lazyPage(() => import("@/pages/Shop"));
+const ShopCheckout = lazyPage(() => import("@/pages/ShopCheckout"));
+const SellerDashboard = lazyPage(() => import("@/pages/SellerDashboard"));
+const CustomerPortal = lazyPage(() => import("@/pages/CustomerPortal"));
+const AccountOrderDetail = lazyPage(() => import("@/pages/AccountOrderDetail"));
+const VerifyAccount = lazyPage(() => import("@/pages/VerifyAccount"));
+const BloodTests = lazyPage(() => import("@/pages/BloodTests"));
+const Compounds = lazyPage(() => import("@/pages/Compounds"));
+const Members = lazyPage(() => import("@/pages/Members"));
+const MedDetail = lazyPage(() => import("@/pages/MedDetail"));
+const Learn = lazyPage(() => import("@/pages/Learn"));
+const LearnCourse = lazyPage(() => import("@/pages/LearnCourse"));
+const LearnLesson = lazyPage(() => import("@/pages/LearnLesson"));
+const PeptideExplorer = lazyPage(() => import("@/pages/PeptideExplorer"));
+const Feedback = lazyPage(() => import("@/pages/Feedback"));
+const GbOrganiser = lazyPage(() => import("@/pages/GbOrganiser"));
+const GbOrganiserV2 = lazyPage(() => import("@/pages/GbOrganiserV2"));
+const GbQrViewer = lazyPage(() => import("@/pages/GbQrViewer"));
+const GbLegViewer = lazyPage(() => import("@/pages/GbLegViewer"));
+const GbLegKits = lazyPage(() => import("@/pages/GbLegKits"));
+const TrackingPage = lazyPage(() => import("@/pages/TrackingPage"));
+const GbTestingPool = lazyPage(() => import("@/pages/GbTestingPool"));
+const GbTestingResults = lazyPage(() => import("@/pages/GbTestingResults"));
+const TestingPool = lazyPage(() => import("@/pages/TestingPool"));
+const GuestContribution = lazyPage(() => import("@/pages/GuestContribution"));
+const ReshipperPage = lazyPage(() => import("@/pages/Reshipper"));
+const ReshipperApply = lazyPage(() => import("@/pages/ReshipperApply"));
+const WholesaleOrder = lazyPage(() => import("@/pages/WholesaleOrder"));
+const WholesaleShared = lazyPage(() => import("@/pages/WholesaleShared"));
+const WholesaleShareEntry = lazyPage(() => import("@/pages/WholesaleShareEntry"));
+const WholesaleTracking = lazyPage(() => import("@/pages/WholesaleTracking"));
+const WholesaleInviteLanding = lazyPage(() => import("@/pages/WholesaleInviteLanding"));
+const PublicTestingPools = lazyPage(() => import("@/pages/PublicTestingPools"));
+const SagePage = lazyPage(() => import("@/pages/SagePage"));
+const GroupBuyHalfKits = lazyPage(() => import("@/pages/GroupBuyHalfKits"));
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -124,8 +122,17 @@ const queryClient = new QueryClient({
   },
 });
 
+function PageLoading() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center" aria-busy="true" aria-live="polite">
+      <div className="w-6 h-6 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+    </div>
+  );
+}
+
 function Router() {
   return (
+    <Suspense fallback={<PageLoading />}>
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/lookup" component={LegacyOrderRedirect} />
@@ -146,7 +153,6 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/verify-account" component={VerifyAccount} />
       <Route path="/groups">{() => { useEffect(() => { window.location.replace("/account?s=groups"); }, []); return null; }}</Route>
-      <Route path="/my-orders" component={AccountOrders} />
       <Route path="/blood-tests" component={BloodTests} />
       <Route path="/compounds" component={Compounds} />
       <Route path="/members" component={Members} />
@@ -183,16 +189,9 @@ function Router() {
       <Route path="/join-wholesale/:code" component={WholesaleInviteLanding} />
       <Route path="/sleepingpepisadmin/janoshik-receiver" component={JanoshikReceiver} />
       <Route path="/sleepingpepisadmin" component={Admin} />
-      <Route path="/prototypeadmin" component={ProtoypeAdmin} />
-      <Route path="/prototypehome" component={PrototypeHome} />
-      <Route path="/prototypetestingpools" component={PrototypeTestingPools} />
-      <Route path="/prototypeprotocols" component={PrototypeProtocols} />
-      <Route path="/prototypelearn" component={PrototypeLearn} />
-      <Route path="/prototypetests" component={PrototypeLabTests} />
-      <Route path="/prototypecalculator" component={PrototypeCalculator} />
-      <Route path="/prototypesupplements" component={PrototypeSupplements} />
       <Route component={NotFound} />
     </Switch>
+    </Suspense>
   );
 }
 
@@ -326,6 +325,7 @@ function SiteContent() {
   }, [surface]);
   if (surface === "blocked") return <SiteNotFound />;
   if (surface === "vendor") return (
+    <Suspense fallback={<PageLoading />}>
     <Switch>
       <Route path="/" component={VendorPortal} />
       <Route path="/vendor" component={VendorPortal} />
@@ -336,6 +336,7 @@ function SiteContent() {
       <Route path="/login/" component={VendorLogin} />
       <Route component={SiteNotFound} />
     </Switch>
+    </Suspense>
   );
   return <>
     <TelegramAutoLogin />
