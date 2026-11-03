@@ -26,3 +26,9 @@ A completed COA request does not itself mean a certificate file is available.
 **Why:** The user explicitly requires notifications not to imply a certificate exists unless one has actually been attached.
 
 **How to apply:** Keep completion wording separate from download availability, including when adding future certificate uploads or changing notification templates.
+
+Finished group-buy COAs are private to the order's current owner, not the account that originally requested the COA. They must not appear in public lab-report lists without separate approval.
+
+**Why:** The user explicitly requested current-owner downloads and a separate approval boundary for public reports.
+
+**How to apply:** Recheck live order ownership on each download; never distribute a public or reusable signed certificate URL. Treat an ownership change as immediate revocation for the previous owner.

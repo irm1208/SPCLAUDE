@@ -14,6 +14,7 @@ export type CoaRequest = {
   payment: { currency: string; network: string; walletAddress: string; amount: number } | null;
   txHash: string | null; reference: string | null; verificationMessage: string | null;
   internalNotes?: string; updatedAt: string;
+  certificate?: { size: number; attachedAt: string } | null;
 };
 export type CoaMemberView = {
   eligible: boolean; reason: string | null; available: number;

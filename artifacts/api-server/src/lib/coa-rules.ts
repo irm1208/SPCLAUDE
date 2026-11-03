@@ -47,8 +47,9 @@ export function coaCanClaim(mode: string, available: number, hasPlace: boolean) 
 }
 export function publicCoaRequest(row: any) {
   if (!row) return null;
-  const { internalNotes, createdBy, confirmedBy, confirmationNote, ...publicRow } = row;
-  return publicRow;
+  const { internalNotes, createdBy, confirmedBy, confirmationNote, certificate, ...publicRow } = row;
+  return { ...publicRow, certificate: certificate && row.status === "completed"
+    ? { size: certificate.size, attachedAt: certificate.attachedAt } : null };
 }
 export function csvCell(value: unknown) {
   let text = String(value ?? "");

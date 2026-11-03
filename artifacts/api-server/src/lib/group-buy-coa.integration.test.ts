@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { CoaCertificateStore } from "./coa-certificates";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import * as store from "@workspace/db";
@@ -33,6 +34,62 @@ async function fixture(fn: (ctx: { tx: any; database: typeof store.db; group: st
 }
 
 describe.skipIf(process.env.COA_DB_TESTS !== "1")("group-buy COA persistence (synthetic rollback fixtures)", () => {
+  it("keeps PDFs private, replaces only completed requests, and checks the live owner on every download", async () => {
+    const { attachCoaCertificate, downloadCoaCertificate } = await import("./group-buy-coa");
+    await fixture(async ({ tx, database, ids, users }) => {
+      const objects = new Map<string, Buffer>();
+      const storage: CoaCertificateStore = {
+        uploadFromBytes: vi.fn(async (key: string, bytes: Buffer) => { objects.set(key, Buffer.from(bytes)); return { ok: true as const, value: null }; }),
+        downloadAsBytes: vi.fn(async key => objects.has(key)
+          ? { ok: true, value: [objects.get(key)!] } : { ok: false, error: { message: "missing" } }) as any,
+        delete: vi.fn(async (key: string) => { objects.delete(key); return { ok: true as const, value: null }; }),
+      };
+      const pdf = (version: string) => ({ originalname: "report.pdf", mimetype: "application/pdf",
+        buffer: Buffer.from(`%PDF-1.4\n${version}\n%%EOF`) });
+      const before = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, ids[0]));
+      const saved = await saveMemberCoa(ids[0], users[0], details, database);
+      const id = saved.request!.id;
+      await expect(downloadCoaCertificate(ids[0], users[0], database, storage)).rejects.toThrow("not available");
+      await expect(attachCoaCertificate(id, "test-admin", pdf("one"), database, storage)).rejects.toThrow("Complete");
+      expect(storage.uploadFromBytes).not.toHaveBeenCalled();
+      await submitCoaPayment(ids[0], users[0], { reference: "synthetic-receipt" }, database);
+      await manageCoa(id, "test-admin", { action: "confirm", note: "Synthetic receipt confirmed" }, database);
+      await manageCoa(id, "test-admin", { action: "completed" }, database);
+      await attachCoaCertificate(id, "test-admin", pdf("one"), database, storage);
+      const firstKey = [...objects.keys()][0];
+      expect(firstKey).toMatch(/^private\/coa-certificates\/.+\.pdf$/);
+      expect((await getMemberCoa(ids[0], users[0], database)).request!.certificate).toEqual({
+        size: pdf("one").buffer.length, attachedAt: expect.any(String),
+      });
+      expect(JSON.stringify(await getMemberCoa(ids[0], users[0], database))).not.toContain(firstKey);
+      expect(JSON.stringify(await adminCoaList({}, database))).not.toContain(firstKey);
+      await expect(downloadCoaCertificate(ids[0], users[1], database, storage)).rejects.toThrow("not found");
+      expect(storage.downloadAsBytes).not.toHaveBeenCalled();
+      expect(await downloadCoaCertificate(ids[0], users[0], database, storage)).toEqual(pdf("one").buffer);
+      await attachCoaCertificate(id, "test-admin", pdf("two"), database, storage);
+      expect(objects.size).toBe(1);
+      expect(objects.has(firstKey)).toBe(false);
+      expect(await downloadCoaCertificate(ids[0], users[0], database, storage)).toEqual(pdf("two").buffer);
+      const failingDb = { transaction: async (fn: any) => tx.transaction(async (nested: any) => {
+        await fn(nested); throw new Error("Synthetic database failure");
+      }) } as typeof store.db;
+      await expect(attachCoaCertificate(id, "test-admin", pdf("rollback"), failingDb, storage)).rejects.toThrow("Synthetic database failure");
+      expect(objects.size).toBe(1);
+      expect(await downloadCoaCertificate(ids[0], users[0], database, storage)).toEqual(pdf("two").buffer);
+      // Failed upload must not destroy the existing attachment or alter request/payment status.
+      vi.mocked(storage.uploadFromBytes).mockResolvedValueOnce({ ok: false, error: { message: "unavailable" } } as any);
+      await expect(attachCoaCertificate(id, "test-admin", pdf("three"), database, storage)).rejects.toThrow("could not be stored");
+      expect(await downloadCoaCertificate(ids[0], users[0], database, storage)).toEqual(pdf("two").buffer);
+      expect(await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, ids[0]))).toEqual(before);
+      // Ownership transfer immediately revokes the original member without re-uploading.
+      await tx.update(store.ordersTable).set({ telegramUsername: users[1] }).where(eq(store.ordersTable.id, ids[0]));
+      await expect(downloadCoaCertificate(ids[0], users[0], database, storage)).rejects.toThrow("not found");
+      expect(await downloadCoaCertificate(ids[0], users[1], database, storage)).toEqual(pdf("two").buffer);
+      await expect(downloadCoaCertificate(ids[1], users[1], database, storage)).rejects.toThrow("not available");
+      await tx.update(store.ordersTable).set({ deletedAt: new Date() }).where(eq(store.ordersTable.id, ids[0]));
+      await expect(downloadCoaCertificate(ids[0], users[1], database, storage)).rejects.toThrow("not available");
+    });
+  });
   it("supports all fields, own-account privacy and separate order finances through manual receipt and completion", async () => {
     await fixture(async ({ tx, database, ids, users, group }) => {
       const before = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, ids[0]));

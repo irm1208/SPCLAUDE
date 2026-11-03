@@ -7,6 +7,8 @@ const calls = vi.hoisted(() => ({
     requests: [{ groupName: "Synthetic", orderCode: "=CMD()", member: "test", client: "@formula", internalNotes: "Admin only" }],
   }),
   save: vi.fn().mockResolvedValue({ eligible: true }),
+  download: vi.fn().mockResolvedValue(Buffer.from("%PDF-1.4\n%%EOF")),
+  attach: vi.fn().mockResolvedValue({ attached: true }),
 }));
 vi.mock("@workspace/db", async () => ({
   ...await import("../../../../lib/db/src/schema"),
@@ -31,6 +33,7 @@ vi.mock("../lib/group-buy-coa", () => ({
   adminCoaList: calls.admin, availableCoaRails: async () => [],
   saveCoaSettings: vi.fn(), inviteCoa: vi.fn(), coaPaymentInstructions: vi.fn(),
   submitCoaPayment: vi.fn(), withdrawCoa: vi.fn(), manageCoa: vi.fn(),
+  downloadCoaCertificate: calls.download, attachCoaCertificate: calls.attach,
 }));
 import router from "./group-buy-coa";
 let server: Server;
@@ -50,6 +53,7 @@ describe("COA route boundaries and export", () => {
     ["POST", "/orders/o1/coa/withdraw"], ["GET", "/admin/coa"], ["GET", "/admin/coa/rails"],
     ["GET", "/admin/coa/export.csv"], ["PUT", "/admin/group-buys/g1/coa/settings"],
     ["POST", "/admin/group-buys/g1/coa/invite"], ["PATCH", "/admin/coa/r1"],
+    ["GET", "/orders/o1/coa/certificate"], ["POST", "/admin/coa/r1/certificate"],
   ])("rejects unauthenticated %s %s", async (method, path) => {
     expect((await fetch(base + path, { method })).status).toBe(401);
   });
@@ -59,6 +63,30 @@ describe("COA route boundaries and export", () => {
     await fetch(base + "/orders/o1/coa", { method: "POST", headers: { "x-test-member": "owner", "Content-Type": "application/json" },
       body: JSON.stringify({ username: "other", client: "Synthetic" }) });
     expect(calls.save).toHaveBeenLastCalledWith("o1", "owner", { username: "other", client: "Synthetic" });
+  });
+  it("serves a non-cacheable attachment using the current authenticated owner", async () => {
+    const res = await fetch(base + "/orders/o1/coa/certificate?username=other", { headers: { "x-test-member": "owner" } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("no-store");
+    expect(res.headers.get("content-type")).toContain("application/pdf");
+    expect(res.headers.get("content-disposition")).toContain("attachment");
+    expect(calls.download).toHaveBeenLastCalledWith("o1", "owner");
+  });
+  it("accepts multipart PDF uploads from Admin only", async () => {
+    const form = () => {
+      const body = new FormData();
+      body.append("certificate", new Blob(["%PDF-1.4\n%%EOF"], { type: "application/pdf" }), "result.pdf");
+      return body;
+    };
+    calls.attach.mockClear();
+    expect((await fetch(base + "/admin/coa/r1/certificate", { method: "POST", headers: { "x-test-member": "owner" }, body: form() })).status).toBe(401);
+    expect(calls.attach).not.toHaveBeenCalled();
+    const res = await fetch(base + "/admin/coa/r1/certificate", { method: "POST", headers: { "x-test-admin": "yes" }, body: form() });
+    expect(res.status).toBe(200);
+    expect(calls.attach).toHaveBeenLastCalledWith("r1", "synthetic-admin", expect.objectContaining({
+      originalname: "result.pdf", mimetype: "application/pdf", buffer: expect.any(Buffer),
+    }));
+    expect((await fetch(base + "/admin/coa/r1/certificate", { method: "POST", headers: { "x-test-admin": "yes" } })).status).toBe(400);
   });
   it("never allows a member session to read the Admin queue or CSV", async () => {
     for (const path of ["/admin/coa", "/admin/coa/export.csv"])

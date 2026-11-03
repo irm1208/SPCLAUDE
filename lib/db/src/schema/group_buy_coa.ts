@@ -4,6 +4,7 @@ import { ordersTable } from "./orders";
 
 export type CoaRail = { currency: string; network: string; walletAddress: string };
 export type CoaPayment = CoaRail & { amount: number; quotedAt?: string };
+export type CoaCertificate = { key: string; size: number; attachedAt: string; attachedBy: string };
 export const groupBuyCoaSettingsTable = pgTable("group_buy_coa_settings", {
   groupBuyId: text("group_buy_id").primaryKey().references(() => groupBuysTable.id, { onDelete: "restrict" }),
   mode: text("mode").notNull().default("disabled"),
@@ -36,6 +37,7 @@ export const groupBuyCoaRequestsTable = pgTable("group_buy_coa_requests", {
   internalNotes: text("internal_notes").notNull().default(""),
   confirmedBy: text("confirmed_by"),
   confirmationNote: text("confirmation_note"),
+  certificate: jsonb("certificate").$type<CoaCertificate>(),
   createdBy: text("created_by").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),

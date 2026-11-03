@@ -132,18 +132,44 @@ function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDo
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const operation = useRef(0);
+  const uploadAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    ++operation.current;
+    setBusy(null); setErr(null);
+    return () => { ++operation.current; uploadAbort.current?.abort(); };
+  }, [r.id, secret]);
   useEffect(() => { setNotes(r.internalNotes ?? ""); }, [r.internalNotes]);
   const phase = coaPhase(r.status);
   const tone = COA_PHASE_TONE[phase];
+  const upload = async (file: File) => {
+    if (!/\.pdf$/i.test(file.name) || file.type !== "application/pdf" || !file.size || file.size > 10 * 1024 * 1024) {
+      setErr("Choose a PDF certificate of 10 MB or smaller."); return;
+    }
+    if (r.certificate && !confirm("Replace the current certificate? Members will only be able to download the new PDF.")) return;
+    setBusy("certificate"); setErr(null);
+    const seq = ++operation.current;
+    const ac = new AbortController(); uploadAbort.current = ac;
+    try {
+      const body = new FormData(); body.append("certificate", file);
+      const res = await fetch(`/api/admin/coa/${encodeURIComponent(r.id)}/certificate`, {
+        method: "POST", credentials: "include", headers: { "x-admin-secret": secret }, body, signal: ac.signal,
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Certificate upload failed.");
+      if (seq === operation.current) onDone();
+    } catch (e) { if (seq === operation.current) setErr(e instanceof Error ? e.message : "Certificate upload failed."); }
+    finally { if (seq === operation.current) setBusy(null); }
+  };
   const act = async (action: "notes" | "confirm" | "processing" | "completed" | "release") => {
     if (action === "confirm" && !confirmNoteOk(note)) { setErr("Add a note (at least 5 characters) explaining how the payment was verified."); return; }
     if (action === "release" && !confirm("Release this unpaid COA place?")) return;
     setBusy(action); setErr(null);
+    const seq = ++operation.current;
     try {
       await coaApi(`/admin/coa/${r.id}`, { method: "PATCH", body: JSON.stringify({ action, internalNotes: notes, ...(note.trim() ? { note: note.trim() } : {}) }) }, secret);
-      setNote(""); onDone();
-    } catch (e) { setErr(e instanceof Error ? e.message : "Action failed."); }
-    setBusy(null);
+      if (seq === operation.current) { setNote(""); onDone(); }
+    } catch (e) { if (seq === operation.current) setErr(e instanceof Error ? e.message : "Action failed."); }
+    if (seq === operation.current) setBusy(null);
   };
   const btn = (a: Parameters<typeof act>[0], label: string, show: boolean) => show && (
     <Button key={a} size="sm" variant={a === "release" ? "outline" : "primary"} disabled={!!busy} onClick={() => act(a)} className="h-8 text-xs gap-1">
@@ -176,6 +202,16 @@ function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDo
         <textarea className="min-h-[56px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs" placeholder="Internal notes (Admin only)" value={notes} onChange={e => setNotes(e.target.value)} />
         <textarea className="min-h-[56px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs" placeholder="Action note, required to confirm payment" value={note} onChange={e => setNote(e.target.value)} />
       </div>
+      {r.status === "completed" && <div className="rounded-lg border p-3 space-y-2 text-xs">
+        <p className="font-semibold">{r.certificate ? "Private certificate attached" : "No certificate attached"}</p>
+        {r.certificate && <p className="text-muted-foreground">Attached {new Date(r.certificate.attachedAt).toLocaleString("en-GB")}</p>}
+        <label className="block space-y-1">
+          <span>{busy === "certificate" ? "Uploading…" : r.certificate ? "Replace COA PDF" : "Attach COA PDF"}</span>
+          <input type="file" accept=".pdf,application/pdf" disabled={!!busy} className="block w-full"
+            onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void upload(file); }} />
+        </label>
+        <p className="text-muted-foreground">PDF only, up to 10 MB. Only the current order owner can download it. This does not publish a lab report.</p>
+      </div>}
       {err && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{err}</p>}
       <div className="flex flex-wrap gap-2">
         {btn("notes", "Save notes", true)}

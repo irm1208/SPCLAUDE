@@ -10,6 +10,7 @@ import { verifyTransaction } from "./payment-verify";
 import { validateOnwardTx } from "./gb-onward-payment-rules";
 import { onwardTransactionTime } from "./gb-onward-chain-time";
 import { queueCoaNotification } from "./coa-notifications";
+import { coaCertificateStore, validateCoaPdf, removeCoaPdf, type CoaCertificateStore } from "./coa-certificates";
 
 type RequestRow = typeof requests.$inferSelect;
 const canonical = (name: string) => name.replace(/^@/, "").toLowerCase();
@@ -64,7 +65,8 @@ function serialise(r: RequestRow | undefined, order: any, group: any, admin = fa
   if (!r) return null;
   const row = { ...r, status: effectiveStatus(r), fee: Number(r.fee),
     member: order.telegramUsername, orderCode: order.code, groupName: group.name };
-  return admin ? row : publicCoaRequest(row);
+  const publicRow = publicCoaRequest(row);
+  return admin ? { ...row, certificate: publicRow.certificate } : publicRow;
 }
 async function memberView(tx: any, order: any) {
   const cfg = await config(tx, order.groupBuyId);
@@ -83,6 +85,50 @@ async function memberView(tx: any, order: any) {
 }
 export async function getMemberCoa(orderId: string, username: string, database = db) {
   return database.transaction(async tx => memberView(tx, await owned(tx, orderId, username)));
+}
+/** No signed/public URLs: ownership is resolved from the live order on every download. */
+export async function downloadCoaCertificate(orderId: string, username: string, database = db,
+  store?: CoaCertificateStore): Promise<Buffer> {
+  return database.transaction(async tx => {
+    const order = await owned(tx, orderId, username);
+    const request = await orderRequest(tx, order.id);
+    if (!request?.certificate || request.status !== "completed" || order.deletedAt)
+      throw new CoaError("Certificate not available.", 404);
+    const result = await (store ?? coaCertificateStore()).downloadAsBytes(request.certificate.key);
+    if (!result.ok) throw new CoaError("The certificate could not be loaded. Please try again.", 503);
+    return result.value[0];
+  });
+}
+
+/** Serialize replacements with all request transitions; preserve the old file on upload/DB failure. */
+export async function attachCoaCertificate(requestId: string, actor: string,
+  file: { buffer: Buffer; originalname: string; mimetype: string }, database = db, store?: CoaCertificateStore) {
+  await validateCoaPdf(file.buffer, file.originalname, file.mimetype);
+  const key = `private/coa-certificates/${randomUUID()}.pdf`;
+  let uploaded = false;
+  let oldKey: string | undefined;
+  const storage = store ?? coaCertificateStore();
+  try {
+    await database.transaction(async tx => {
+      const [hint] = await tx.select().from(requests).where(eq(requests.id, requestId));
+      if (!hint) throw new CoaError("COA request not found.", 404);
+      await lockGroup(tx, hint.groupBuyId);
+      const [r] = await tx.select().from(requests).where(eq(requests.id, requestId)).for("update");
+      if (!r || r.status !== "completed") throw new CoaError("Complete the paid COA request before attaching a certificate.", 409);
+      const result = await storage.uploadFromBytes(key, file.buffer, { compress: false });
+      if (!result.ok) throw new CoaError("The certificate could not be stored. Please try again.", 503);
+      uploaded = true;
+      oldKey = r.certificate?.key;
+      await tx.update(requests).set({ certificate: { key, size: file.buffer.length,
+        attachedAt: new Date().toISOString(), attachedBy: actor }, updatedAt: new Date() }).where(eq(requests.id, requestId));
+      await audit(tx, oldKey ? "certificate_replaced" : "certificate_attached", actor, requestId);
+    });
+  } catch (error) {
+    if (uploaded) await removeCoaPdf(key, storage).catch(() => console.error("[COA] Unused certificate cleanup failed."));
+    throw error;
+  }
+  if (oldKey) await removeCoaPdf(oldKey, storage).catch(() => console.error("[COA] Replaced certificate cleanup failed."));
+  return { attached: true };
 }
 export async function saveMemberCoa(orderId: string, username: string, body: unknown, database = db) {
   const details = coaDetails(body);

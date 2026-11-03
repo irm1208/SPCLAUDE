@@ -49,7 +49,7 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
     setView(null); setError(null); setProof(""); setRailKey("");
     setDetails({ client: "", sample: "", manufacturer: "", batch: "" });
   }, [orderId]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { ++seq.current; }; }, [load]);
   const hasView = !!view;
   useEffect(() => {
     if (hasView && window.location.hash === "#coa") document.getElementById("coa")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -64,11 +64,12 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
       apply(v);
       if (key === "pay") setProof("");
     } catch (e) {
+      if (id !== seq.current) return;
       setError(e instanceof Error ? e.message : "Request failed.");
       // Refresh status but keep typed inputs intact
       try { const v = await coaApi<CoaMemberView>(`/orders/${orderId}/coa`); if (id === seq.current) setView(v); } catch { /* keep current */ }
     }
-    setBusy(null);
+    if (id === seq.current) setBusy(null);
   };
 
   if (loading && !view) {
@@ -125,6 +126,19 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
           </span>
         )}
       </header>
+
+      {req?.status === "completed" && (
+        <div className="rounded-md p-3 space-y-2" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
+          {req.certificate ? <>
+            <p className="text-sm font-semibold">Your certificate is ready</p>
+            <a href={`/api/orders/${encodeURIComponent(orderId)}/coa/certificate`} download
+              className="inline-flex items-center h-10 px-4 rounded-xl text-sm font-bold text-white" style={{ background: "#1B3A7A" }}>
+              Download COA PDF
+            </a>
+            <p className="text-xs" style={{ color: "var(--t-muted)" }}>Private to your order. Attached {new Date(req.certificate.attachedAt).toLocaleDateString("en-GB")}.</p>
+          </> : <p className="text-sm" style={{ color: "var(--t-muted)" }}>Your request is completed. Admin has not attached the certificate yet.</p>}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-md p-3" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>

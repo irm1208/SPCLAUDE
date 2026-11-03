@@ -33,9 +33,9 @@ before(async () => {
   ({ createRoot } = await import("react-dom/client"));
   ({ MemberCoaRequest } = await import("./MemberCoaRequest"));
 });
-async function render(orderId = "o1") {
+async function render(orderId = "o1", account = "synthetic") {
   if (!root) { container = dom.window.document.createElement("div"); dom.window.document.body.append(container); root = createRoot(container); }
-  await act(async () => { root!.render(<MemberCoaRequest orderId={orderId} />); });
+  await act(async () => { root!.render(<MemberCoaRequest key={`${account}:${orderId}`} orderId={orderId} />); });
 }
 afterEach(async () => {
   if (root) { await act(async () => root!.unmount()); root = undefined; container.remove(); }
@@ -125,4 +125,37 @@ test("late responses from a previous order cannot reveal that order's COA fields
   const text = Array.from(container.querySelectorAll("input")).map(i => i.value).join(" ");
   assert.match(text, /New order client/);
   assert.doesNotMatch(text, /Old account private/);
+});
+test("completed requests offer a private download only when a PDF is attached", async () => {
+  globalThis.fetch = async () => json({ ...blank, request: request({ status: "completed" }) });
+  await render();
+  assert.match(container.textContent!, /not attached/);
+  assert.equal(container.querySelector("a[download]"), null);
+  globalThis.fetch = async () => json({ ...blank, request: request({ status: "completed",
+    certificate: { size: 250, attachedAt: "2026-11-02T00:00:00Z" } }) });
+  await render("other");
+  assert.equal(container.querySelector("a[download]")?.getAttribute("href"), "/api/orders/other/coa/certificate");
+});
+test("switching requests removes the previous private download while the next request loads", async () => {
+  globalThis.fetch = async () => json({ ...blank, request: request({ status: "completed",
+    certificate: { size: 250, attachedAt: "2026-11-02T00:00:00Z" } }) });
+  await render("old");
+  assert.ok(container.querySelector("a[download]"));
+  let resolve!: (r: Response) => void;
+  globalThis.fetch = async () => new Promise(r => { resolve = r; });
+  await render("new");
+  assert.equal(container.querySelector("a[download]"), null);
+  await act(async () => resolve(json({ ...blank, request: null })));
+  assert.equal(container.querySelector("a[download]"), null);
+});
+test("switching accounts on the same order cannot restore the old owner's certificate", async () => {
+  let oldResponse!: (r: Response) => void;
+  globalThis.fetch = async () => new Promise(resolve => { oldResponse = resolve; });
+  await render("o1", "old-owner");
+  globalThis.fetch = async () => json({ error: "Order not found." }, 404);
+  await render("o1", "new-owner");
+  await act(async () => oldResponse(json({ ...blank, request: request({ status: "completed",
+    certificate: { size: 250, attachedAt: "2026-11-02T00:00:00Z" } }) })));
+  assert.equal(container.querySelector("a[download]"), null);
+  assert.match(container.textContent!, /Order not found/);
 });

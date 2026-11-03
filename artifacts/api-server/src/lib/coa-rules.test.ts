@@ -27,7 +27,7 @@ describe("separate group-buy COA commitments", () => {
   });
   it("removes Admin notes and neutralises spreadsheet formulas", () => {
     expect(publicCoaRequest({ id: "a", internalNotes: "private", createdBy: "staff", confirmedBy: "staff", confirmationNote: "bank evidence" }))
-      .toEqual({ id: "a" });
+      .toEqual({ id: "a", certificate: null });
     for (const value of ["=SUM(1)", "+cmd", "-1", "@evil", "\t=CMD", "\n+CMD"])
       expect(csvCell(value)).toMatch(/^"'/);
     expect(csvCell('a"b')).toBe('"a""b"');

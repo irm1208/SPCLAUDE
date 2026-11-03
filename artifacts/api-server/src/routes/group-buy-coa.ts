@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
+import multer from "multer";
+import { COA_PDF_LIMIT } from "../lib/coa-certificates";
 import { requireAccount } from "../middleware/account-auth";
 import { requireAdmin, getAdminUsername, requireAdminStepUp } from "../middleware/require-admin";
 import { db, groupBuyCoaSettingsTable } from "@workspace/db";
@@ -7,10 +9,33 @@ import { eq } from "drizzle-orm";
 import {
   getMemberCoa, saveMemberCoa, availableCoaRails, saveCoaSettings, inviteCoa, coaPaymentInstructions,
   submitCoaPayment, withdrawCoa, manageCoa, adminCoaList,
+  attachCoaCertificate, downloadCoaCertificate,
 } from "../lib/group-buy-coa";
 import { CoaError, csvCell } from "../lib/coa-rules";
 
 const router = Router();
+const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: COA_PDF_LIMIT, files: 1, fields: 0 } }).single("certificate");
+router.get("/orders/:orderId/coa/certificate", requireAccount, async (req, res) => {
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  try {
+    const bytes = await downloadCoaCertificate(String(req.params.orderId), req.account!.telegramUsername);
+    res.type("application/pdf").attachment("certificate-of-analysis.pdf").send(bytes);
+  } catch (error) { fail(res, error); }
+});
+router.post("/admin/coa/:id/certificate", (req, res, next) => {
+  if (requireAdmin(req, res)) next();
+}, (req, res, next) => {
+  pdfUpload(req, res, error => {
+    if (error) { res.status(400).json({ error: "Choose one PDF certificate of 10 MB or smaller." }); return; }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file) throw new CoaError("Choose a PDF certificate.");
+    res.json(await attachCoaCertificate(String(req.params.id), getAdminUsername(res), req.file));
+  } catch (error) { fail(res, error); }
+});
 const paymentLimit = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false,
   message: { error: "Too many COA verification attempts. Wait one minute before retrying." } });
 function fail(res: Response, error: unknown) {
