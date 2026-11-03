@@ -67,6 +67,87 @@ test("selects batches, previews before sending, and preserves idempotency on a l
   }
 });
 
+test("selects only specific batch members, previews exact recipients and clears selection when batches change", async () => {
+  const original = globalThis.fetch;
+  const calls: { path: string; body: any }[] = [];
+  globalThis.fetch = async (input, init) => {
+    const path = String(input), body = init?.body ? JSON.parse(String(init.body)) : null;
+    calls.push({ path, body });
+    if (path.endsWith("/recipients")) return Response.json([
+      { username: "alice", displayName: "Alice", telegramAvailable: true },
+      { username: "bob", displayName: "Bob", telegramAvailable: false },
+    ]);
+    if (path.endsWith("/preview")) return Response.json({ token: "selected-preview", references: ["GB / 001"],
+      text: "Only Alice", recipients: ["alice"], recipientCount: 1, telegramCount: 1, missingAccounts: 0 });
+    if (path.endsWith("/send")) return Response.json({ requestKey: body.requestKey, recipientCount: 1, telegramCount: 1 });
+    return Response.json([]);
+  };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const button = (pattern: RegExp) => [...host.querySelectorAll("button")].find(b => pattern.test(b.textContent!))!;
+  const input = (id: string) => host.querySelector(`[data-testid="${id}"]`)!;
+  try {
+    await act(async () => root.render(createElement(QueryClientProvider, { client },
+      createElement(BatchMessages, { groupBuyId: "hgh", batches }))));
+    await act(async () => button(/Message batch members/).click());
+    await act(async () => {
+      fireEvent.click(input("batch-message-batch-a"));
+      fireEvent.click(input("batch-message-select-users"));
+      fireEvent.change(host.querySelector("textarea")!, { target: { value: "Only Alice" } });
+      await new Promise(r => setTimeout(r, 30));
+    });
+    assert.equal(button(/Preview recipients/).disabled, true);
+    await act(async () => fireEvent.click(input("batch-message-member-alice")));
+    await act(async () => { button(/Preview recipients/).click(); await new Promise(r => setTimeout(r, 20)); });
+    assert.deepEqual(calls.find(c => c.path.endsWith("/preview"))!.body,
+      { batchIds: ["a"], message: "Only Alice", targetUsernames: ["alice"] });
+    assert.match(host.querySelector('[data-testid="batch-message-preview"]')!.textContent!, /alice/);
+    await act(async () => { button(/Confirm & send/).click(); await new Promise(r => setTimeout(r, 20)); });
+    assert.deepEqual(calls.find(c => c.path.endsWith("/send"))!.body.targetUsernames, ["alice"]);
+    await act(async () => {
+      fireEvent.click(input("batch-message-batch-a"));
+      fireEvent.change(host.querySelector("textarea")!, { target: { value: "Another update" } });
+      await new Promise(r => setTimeout(r, 20));
+    });
+    await act(async () => fireEvent.click(input("batch-message-member-alice")));
+    await act(async () => fireEvent.click(input("batch-message-batch-b")));
+    await act(async () => { await new Promise(r => setTimeout(r, 30)); });
+    assert.equal((input("batch-message-member-alice") as HTMLInputElement).checked, false);
+    assert.equal(button(/Preview recipients/).disabled, true);
+  } finally {
+    await act(async () => root.unmount()); host.remove(); client.clear(); globalThis.fetch = original;
+  }
+});
+
+test("Broadcast loads authenticated group-specific batches and resets the composer when switching groups", async () => {
+  const { BatchBroadcastPanel } = await import("../admin/group-buys/panels/BatchBroadcastPanel");
+  const original = globalThis.fetch;
+  const calls: { path: string; headers: any }[] = [];
+  globalThis.fetch = async (input, init) => {
+    const path = String(input); calls.push({ path, headers: init?.headers });
+    return Response.json(path.endsWith("/supplier-batches") ? { batches } : []);
+  };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const render = (groupBuyId: string) => root.render(createElement(QueryClientProvider, { client },
+    createElement(BatchBroadcastPanel, { groupBuyId, secret: "synthetic-admin" })));
+  try {
+    await act(async () => { render("hgh"); await new Promise(r => setTimeout(r, 30)); });
+    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+    assert.ok(host.querySelector('[data-testid="broadcast-batch-messaging"]'));
+    assert.equal(calls.find(c => c.path.endsWith("/hgh/supplier-batches"))!.headers["x-admin-secret"], "synthetic-admin");
+    await act(async () => [...host.querySelectorAll("button")].find(b => /Message batch members/.test(b.textContent!))!.click());
+    assert.ok(host.querySelector("textarea"));
+    await act(async () => { render("other"); await new Promise(r => setTimeout(r, 30)); });
+    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+    assert.ok(calls.some(c => c.path.endsWith("/other/supplier-batches")));
+    assert.equal(host.querySelector("textarea"), null);
+    assert.equal(calls.some(c => c.path.endsWith("/send")), false);
+  } finally {
+    await act(async () => root.unmount()); host.remove(); client.clear(); globalThis.fetch = original;
+  }
+});
+
 test("an edited message requires a new preview", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async input => Response.json(String(input).endsWith("/preview")

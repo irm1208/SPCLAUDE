@@ -1,14 +1,17 @@
 import { useState } from "react";
 import type { SupplierBatch } from "@/lib/supplier-batches";
+import { BatchMoveDestination, useBatchMoveDestination } from "./BatchMoveDestination";
 
-export function BatchAdditions({ batch, orderId, busy, act, onClose }: {
+export function BatchAdditions({ batch, batches = [], orderId, busy, act, onClose }: {
   batch: SupplierBatch; orderId: string; busy: boolean; onClose: () => void;
+  batches?: SupplierBatch[];
   act: (path: string, body: unknown, message?: string) => Promise<boolean>;
 }) {
   const [token] = useState(batch.snapshot.token);
   const [values, setValues] = useState<Record<string, string>>({});
   const [reason, setReason] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
+  const destination = useBatchMoveDestination(batch, batches);
   const additions = (batch.additions ?? []).filter(a => orderId === "*" || a.orderId === orderId);
   const lineKey = (a: { orderId: string; productId: string }) => JSON.stringify([a.orderId, a.productId]);
   const lines = additions.flatMap(a => Number(values[lineKey(a)]) > 0
@@ -23,7 +26,7 @@ export function BatchAdditions({ batch, orderId, busy, act, onClose }: {
   const stale = token !== batch.snapshot.token;
   const button = "rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50";
   return <div role="group" aria-label="Move added quantities" className="mt-3 rounded-lg border border-amber-300 p-3 space-y-3">
-    <strong>Move only added quantities to a new next batch</strong>
+    <strong>Move only added quantities to another batch</strong>
     <p>The original quantities stay here. The customer keeps one order and the same payment total.
       Only recorded increases to the customer's quantities are shown. Adding a whole order to a batch does not make its original kits additional kits.
       Enter the quantity to move for each product, leaving other fields blank.</p>
@@ -35,7 +38,9 @@ export function BatchAdditions({ batch, orderId, busy, act, onClose }: {
           setValues(old => ({ ...old, [lineKey(a)]: e.target.value })); setAcknowledged(false);
         }} />
     </label>)}
-    <p className="font-semibold">{current - moving} kits stay · {moving} kits move</p>
+    <BatchMoveDestination destination={destination} busy={busy} testId="move-additions-destination"
+      onChange={() => setAcknowledged(false)} />
+    <p className="font-semibold">{current - moving} kits stay · {moving} kits move to {destination.label}</p>
     <label className="block">Reason
       <textarea maxLength={1000} value={reason} data-testid="addition-reason" disabled={busy}
         className="mt-1 w-full rounded-lg border p-2" onChange={e => { setReason(e.target.value); setAcknowledged(false); }} />
@@ -48,11 +53,11 @@ export function BatchAdditions({ batch, orderId, busy, act, onClose }: {
     {stale && <p role="alert" className="text-red-600">The batch changed. Close and reopen this review before moving quantities.</p>}
     <div className="flex flex-wrap gap-2">
       <button type="button" data-testid="confirm-move-additions" className={button}
-        disabled={busy || stale || invalid || moving <= 0 || !reason.trim() || !acknowledged}
+        disabled={busy || stale || destination.stale || invalid || moving <= 0 || !reason.trim() || !acknowledged}
         onClick={async () => {
           if (await act(`/${encodeURIComponent(batch.id)}/move-additions`, {
-            confirm: true, expectedBatchToken: token, reason: reason.trim(), lines,
-          }, "Added quantities moved to a new prepared batch. Customer order quantities and payments are unchanged.")) onClose();
+            confirm: true, expectedBatchToken: token, reason: reason.trim(), lines, ...destination.payload,
+          }, `Added quantities moved to ${destination.label}. Customer order quantities and payments are unchanged.`)) onClose();
         }}>Move added quantities</button>
       <button type="button" className={button} disabled={busy} onClick={onClose}>Cancel</button>
     </div>

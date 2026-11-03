@@ -1,13 +1,15 @@
 import { useState } from "react";
 import type { SupplierBatch, SupplierScope } from "@/lib/supplier-batches";
 import { BatchMoveUndo } from "./BatchMoveUndo";
+import { BatchMoveDestination, useBatchMoveDestination } from "./BatchMoveDestination";
 
 const field = "w-full rounded-lg border p-2 text-sm";
 const button = "rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50";
 
 /** Staff-only history and an explicitly confirmed Admin correction. */
-export function BatchCorrection({ batch, scope, busy, onConfirm }: {
+export function BatchCorrection({ batch, batches = [], scope, busy, onConfirm }: {
   batch: SupplierBatch; scope: SupplierScope; busy: boolean;
+  batches?: SupplierBatch[];
   onConfirm: (path: string, body: unknown, message?: string) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
@@ -15,6 +17,7 @@ export function BatchCorrection({ batch, scope, busy, onConfirm }: {
   const [reason, setReason] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [reviewedToken, setReviewedToken] = useState("");
+  const destination = useBatchMoveDestination(batch, batches);
   const orders = batch.snapshot.orders.filter(o => selected.includes(o.id));
   const movedKits = orders.reduce((sum, o) => sum + o.kits, 0);
   const stale = reviewedToken !== batch.snapshot.token;
@@ -33,12 +36,13 @@ export function BatchCorrection({ batch, scope, busy, onConfirm }: {
     {scope === "admin" && batch.state === "ordered" && batch.snapshot.orders.length > 0 && !open &&
       <button type="button" className={button} disabled={busy} data-testid={`button-correct-${batch.id}`}
         onClick={() => { setReviewedToken(batch.snapshot.token); setSelected([]); setReason(""); setAcknowledged(false); setOpen(true); }}>
-        Move orders to new batch
+        Move orders to another batch
       </button>}
     {open && <div role="group" aria-label="Correct batch allocation" className="rounded-lg border p-3 space-y-3"
       style={{ borderColor: "var(--t-border, #D0DAE4)", background: "var(--t-surface2, #F1F5F9)" }}>
       <p className="font-semibold">Move whole orders out of {batch.reference}</p>
-      <p>Choose orders not included in this vendor purchase. They will move to a new prepared batch in the same region.
+      <p>Choose complete orders not covered by this delivery, such as orders added after the first batch export.
+        Choose an existing unsubmitted destination or create a new batch in the same region.
         Customer quantities and payments stay unchanged. Processing orders return to Submitted.
         Unchecked package manifests are corrected; inspected packages and shipped orders cannot move.</p>
       <div className="max-h-64 overflow-y-auto space-y-2">
@@ -51,7 +55,9 @@ export function BatchCorrection({ batch, scope, busy, onConfirm }: {
           <span>#{o.code} · {o.username} · {o.kits} kits{o.fullOrder ? " — split across batches; use added quantities" : blockedIds.has(o.id) ? " — resolve exception first" : ""}</span>
         </label>)}
       </div>
-      <p className="font-semibold">{movedKits} kits move to a new batch; {batch.snapshot.kits - movedKits} kits remain in this batch.</p>
+      <BatchMoveDestination destination={destination} busy={busy} testId="move-orders-destination"
+        onChange={() => setAcknowledged(false)} />
+      <p className="font-semibold">{movedKits} kits move to {destination.label}; {batch.snapshot.kits - movedKits} kits remain in this batch.</p>
       <label className="block">Reason for correction
         <textarea className={field} maxLength={1000} data-testid="move-orders-reason" value={reason}
           disabled={busy} onChange={e => { setReason(e.target.value); setAcknowledged(false); }} />
@@ -64,12 +70,13 @@ export function BatchCorrection({ batch, scope, busy, onConfirm }: {
       {stale && <p role="alert" className="text-red-600">This batch changed. Cancel and reopen to review the latest allocation.</p>}
       <div className="flex flex-wrap gap-2">
         <button type="button" className={button} data-testid="confirm-move-orders"
-          disabled={busy || stale || !orders.length || !reason.trim() || !acknowledged}
+          disabled={busy || stale || destination.stale || !orders.length || !reason.trim() || !acknowledged}
           onClick={async () => {
             if (await onConfirm(`/${encodeURIComponent(batch.id)}/move-orders`, {
               orderIds: selected, expectedBatchToken: reviewedToken, reason: reason.trim(), confirm: true,
-            }, "Orders moved to a new prepared batch. Allocation correction recorded; payments unchanged.")) setOpen(false);
-          }}>Confirm move to new batch</button>
+              ...destination.payload,
+            }, `Orders moved to ${destination.label}. Allocation correction recorded; payments unchanged.`)) setOpen(false);
+          }}>Confirm move</button>
         <button type="button" className={button} disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
       </div>
     </div>}

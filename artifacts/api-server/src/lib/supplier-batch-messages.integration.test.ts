@@ -42,6 +42,41 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("batch messaging / 
       });
     } catch (e) { if (e !== rollback) throw e; }
   }
+  it("lists the current batch members and sends only to the explicitly selected member", async () => {
+    await fixture(async ({ tx, id, batchIds, alice, bob }: any) => {
+      const members = await api.listBatchMessageRecipients(id, admin, { batchIds }, tx);
+      expect(members.map((m: any) => m.username).sort()).toEqual([alice, bob].sort());
+      const body = { batchIds, message: "Only Bob", targetUsernames: [bob] };
+      const preview = await api.previewBatchMessage(id, admin, body, tx);
+      expect(preview).toMatchObject({ recipientCount: 1, telegramCount: 0 });
+      const requestKey = randomUUID();
+      const request = { ...body, previewToken: preview.token, requestKey, confirm: true };
+      await api.queueBatchMessage(id, admin, request, tx);
+      await api.queueBatchMessage(id, admin, request, tx);
+      const sent = await tx.select().from(store.gbSupplierEventsTable)
+        .where(eq(store.gbSupplierEventsTable.groupBuyId, id));
+      expect(sent.filter((e: any) => e.kind === "member_message").map((e: any) => e.recipient)).toEqual([bob]);
+      expect((await api.batchMessageHistory(id, admin, tx))[0].targetUsernames).toEqual([bob]);
+      await expect(api.queueBatchMessage(id, admin, { ...request, targetUsernames: [alice] }, tx))
+        .rejects.toMatchObject({ status: 409 });
+    });
+  });
+  it("rejects recipients outside the chosen batches and membership changes after preview", async () => {
+    await fixture(async ({ tx, id, otherId, batchIds, orderIds, bob }: any) => {
+      await expect(api.listBatchMessageRecipients(id, { username: "synthetic-organiser" },
+        { batchIds }, tx)).rejects.toMatchObject({ status: 403 });
+      await expect(api.listBatchMessageRecipients(otherId, admin, { batchIds }, tx)).rejects.toMatchObject({ status: 409 });
+      await expect(api.previewBatchMessage(id, admin,
+        { batchIds: [batchIds[0]], message: "No outsiders", targetUsernames: [bob] }, tx)).rejects.toMatchObject({ status: 409 });
+      const body = { batchIds, message: "Selected current member", targetUsernames: [bob] };
+      const preview = await api.previewBatchMessage(id, admin, body, tx);
+      await tx.update(store.ordersTable).set({ status: "Cancelled" }).where(eq(store.ordersTable.id, orderIds[2]));
+      await expect(api.queueBatchMessage(id, admin, {
+        ...body, previewToken: preview.token, requestKey: randomUUID(), confirm: true,
+      }, tx)).rejects.toMatchObject({ status: 409 });
+      expect(await tx.select().from(store.gbSupplierEventsTable).where(eq(store.gbSupplierEventsTable.groupBuyId, id))).toEqual([]);
+    });
+  });
   it("previews without sending; queues once per member and safely replays, without changing orders", async () => {
     await fixture(async ({ tx, id, batchIds, orderIds }: any) => {
       const body = { batchIds, message: '<b>Hello</b>\nYour batch is arriving.' };

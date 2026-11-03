@@ -87,6 +87,61 @@ for (const scope of ["admin", "organiser"] as const) test(`${scope}: member visi
 async function change(id: string, value: string) { await act(async () => { fireEvent.change(el(id), { target: { value } }); }); }
 async function poll() { await act(async () => { await client.refetchQueries(); await tick(); }); }
 
+test("Admin chooses a prepared destination for whole orders and added quantities in the panel", async () => {
+  const source = { ...batch([]), state: "ordered", orderedAt: "2026-10-03T10:00:00Z",
+    additions: [{ orderId: "o1", productId: "p", productName: "Reta 10mg", quantity: 0.5 }] };
+  const target = { ...batch([]), id: "B2", reference: "SB-002",
+    snapshot: { ...proposal("target-token"), orders: [{ ...order, id: "o2" }] } };
+  const wrongRegion = { ...target, id: "B3", reference: "Wrong region",
+    snapshot: { ...target.snapshot, region: { ...region, id: "other" } } };
+  state = { ...fresh(), batches: [source, target, wrongRegion] };
+  await mount("admin");
+  await click("button-correct-B1");
+  const destination = el<HTMLSelectElement>("move-orders-destination");
+  assert.ok([...destination.options].some(o => o.value === "B2"));
+  assert.ok(![...destination.options].some(o => o.value === "B1" || o.value === "B3"));
+  await change("move-orders-destination", "B2");
+  await click("move-order-o1");
+  await change("move-orders-reason", "Six kits to chosen purchase");
+  await click("acknowledge-move-orders");
+  await click("confirm-move-orders");
+  assert.equal((requests[0].body as any).targetBatchId, "B2");
+  assert.equal((requests[0].body as any).expectedTargetToken, "target-token");
+  await click("button-move-additions-o1");
+  await change("move-additions-destination", "B2");
+  await change("addition-quantity-0", "0.5");
+  await change("addition-reason", "Extra half kit");
+  await click("addition-acknowledge");
+  await click("confirm-move-additions");
+  assert.equal((requests[1].body as any).targetBatchId, "B2");
+  assert.equal((requests[1].body as any).expectedTargetToken, "target-token");
+  assert.deepEqual((requests[1].body as any).lines, [{ orderId: "o1", productId: "p", quantity: 0.5 }]);
+});
+
+test("a polled change to the chosen move destination requires explicit re-review", async () => {
+  const source = { ...batch([]), state: "ordered", orderedAt: "2026-10-03T10:00:00Z" };
+  const target = { ...batch([]), id: "B2", reference: "SB-002",
+    snapshot: { ...proposal("target-token"), orders: [{ ...order, id: "o2" }] } };
+  state = { ...fresh(), batches: [source, target] };
+  await mount("admin");
+  await click("button-correct-B1");
+  await change("move-orders-destination", "B2");
+  await click("move-order-o1");
+  await change("move-orders-reason", "Move after review");
+  await click("acknowledge-move-orders");
+  state = { ...fresh(), batches: [source, { ...target, snapshot: { ...target.snapshot, token: "changed" } }] };
+  await poll();
+  assert.equal(el<HTMLButtonElement>("confirm-move-orders").disabled, true);
+  assert.ok(document.body.textContent?.includes("The destination changed"));
+  assert.equal(requests.length, 0);
+  await change("move-orders-destination", "new");
+  await change("move-orders-destination", "B2");
+  assert.equal(el<HTMLInputElement>("acknowledge-move-orders").checked, false);
+  await click("acknowledge-move-orders");
+  await click("confirm-move-orders");
+  assert.equal((requests[0].body as any).expectedTargetToken, "changed");
+});
+
 for (const scope of ["organiser", "admin"] as const) {
   test(`${scope}: dirty settings survive polled data`, async () => {
     state = fresh(); await mount(scope);

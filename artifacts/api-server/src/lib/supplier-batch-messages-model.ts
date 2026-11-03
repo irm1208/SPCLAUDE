@@ -1,13 +1,19 @@
 import { canonicalUsername } from "./group-buy-updates-model";
 import { SupplierBatchError } from "./supplier-batches-model";
 
-export function messageInput(body: any): { batchIds: string[]; message: string } {
+export function messageInput(body: any): { batchIds: string[]; message: string; targetUsernames?: string[] } {
   if (!Array.isArray(body?.batchIds) || !body.batchIds.length || body.batchIds.length > 50
     || body.batchIds.some((id: unknown) => typeof id !== "string" || !id || id.length > 100))
     throw new SupplierBatchError("Select between 1 and 50 supplier batches.", 400);
   if (typeof body.message !== "string" || !body.message.trim() || body.message.trim().length > 2000)
     throw new SupplierBatchError("Enter a message of 1–2,000 characters.", 400);
-  return { batchIds: [...new Set<string>(body.batchIds)].sort(), message: body.message.trim() };
+  if (Object.prototype.hasOwnProperty.call(body, "targetUsernames")
+    && (!Array.isArray(body.targetUsernames) || !body.targetUsernames.length || body.targetUsernames.length > 5000
+      || body.targetUsernames.some((name: unknown) => typeof name !== "string" || name.length > 200 || !canonicalUsername(name).trim()))) {
+    throw new SupplierBatchError("Select at least one valid member from the chosen batches.", 400);
+  }
+  return { batchIds: [...new Set<string>(body.batchIds)].sort(), message: body.message.trim(),
+    ...(body.targetUsernames ? { targetUsernames: [...new Set<string>(body.targetUsernames.map(canonicalUsername))].sort() } : {}) };
 }
 
 type Batch = { id: string; reference: string; state: string; snapshot: any };

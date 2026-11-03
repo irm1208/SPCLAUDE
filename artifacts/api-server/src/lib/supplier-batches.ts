@@ -392,8 +392,14 @@ export async function moveSupplierBatchOrders(id: string, batchId: string, actor
     throw new SupplierBatchError("Select whole orders, confirm the correction and give a reason (up to 1000 characters).", 400);
   }
   const ids: string[] = [...body.orderIds].sort(), reason = body.reason.trim();
+  if (body.targetBatchId != null && (typeof body.targetBatchId !== "string" || !body.targetBatchId
+    || typeof body.expectedTargetToken !== "string" || !body.expectedTargetToken)) {
+    throw new SupplierBatchError("Choose and review a destination batch.", 400);
+  }
   const kind = quantityMode ? "quantities_moved" : "orders_moved";
-  const requestKey = fingerprint({ batchId, ids, reason, token: body.expectedBatchToken, ...(quantityMode ? { lines: body.lines } : {}) });
+  const requestKey = fingerprint({ batchId, ids, reason, token: body.expectedBatchToken,
+    ...(body.targetBatchId ? { targetBatchId: body.targetBatchId, expectedTargetToken: body.expectedTargetToken } : {}),
+    ...(quantityMode ? { lines: body.lines } : {}) });
   return locked(id, actor, async (tx, group) => {
     const [replay] = await tx.select({ id: events.id }).from(events).where(and(
       eq(events.groupBuyId, id), eq(events.kind, kind), sql`${events.detail}->>'requestKey' = ${requestKey}`,
@@ -437,14 +443,34 @@ export async function moveSupplierBatchOrders(id: string, batchId: string, actor
     if (affected.some((s: any) => s.receiptChecked || (s.receipt as any[]).length)) {
       throw new SupplierBatchError("An affected supplier package has an inspected receipt. Its contents cannot be reallocated.");
     }
+    const target = body.targetBatchId ? current.batches.find((b: any) => b.id === body.targetBatchId) : null;
+    if (body.targetBatchId) {
+      if (!target || target.id === source.id || target.state !== "prepared" || target.orderedAt
+        || target.snapshot.token !== body.expectedTargetToken || target.exceptions.length
+        || target.snapshot.region.id !== source.snapshot.region.id
+        || fingerprint([...target.snapshot.region.countries].sort()) !== fingerprint([...source.snapshot.region.countries].sort())
+        || target.snapshot.orders.some((o: BatchOrder) => ids.includes(o.id))) {
+        throw new SupplierBatchError("The destination must be an unchanged, unsubmitted batch in the same region without overlapping orders. Reload and review.", 409);
+      }
+      const targetPackages = await tx.select({ id: shipments.id }).from(shipments)
+        .where(eq(shipments.batchId, target.id)).for("update");
+      if (targetPackages.length) throw new SupplierBatchError("The destination has supplier packages. Choose another destination.", 409);
+    }
     const sequence = Math.max(0, ...current.batches.map((b: any) => b.sequence)) + 1;
-    const targetId = randomUUID();
-    const reference = regionalBatchReference(`GB-${id.slice(0, 8)} / ${String(sequence).padStart(3, "0")}`, moved.region);
+    const targetId = target?.id ?? randomUUID();
+    const reference = target?.reference ?? regionalBatchReference(`GB-${id.slice(0, 8)} / ${String(sequence).padStart(3, "0")}`, moved.region);
     const note = { reason, kits: moved.kits, orderCodes: moved.orders.map((o: BatchOrder) => o.code),
       createdAt: new Date().toISOString(), actor: actor.username };
     remaining.corrections = [...(source.snapshot.corrections ?? []), { ...note, direction: "out", reference }];
     moved.corrections = [{ ...note, direction: "in", reference: source.reference }];
-    await tx.insert(batches).values({ id: targetId, groupBuyId: id, sequence, reference, previewToken: requestKey,
+    const destinationSnapshot = target ? {
+      ...target.snapshot,
+      ...propose([...target.snapshot.orders, ...moved.orders], target.snapshot.region.targetKits, true),
+      token: fingerprint({ previous: target.snapshot.token, requestKey, orders: moved.orders }),
+      corrections: [...(target.snapshot.corrections ?? []), ...moved.corrections],
+    } : moved;
+    if (target) await tx.update(batches).set({ snapshot: destinationSnapshot }).where(eq(batches.id, targetId));
+    else await tx.insert(batches).values({ id: targetId, groupBuyId: id, sequence, reference, previewToken: requestKey,
       snapshot: moved, createdBy: actor.username });
     const wholeIds = moved.orders.filter((o: BatchOrder) => !o.fullOrder).map((o: BatchOrder) => o.id);
     if (wholeIds.length) {
@@ -476,6 +502,7 @@ export async function moveSupplierBatchOrders(id: string, batchId: string, actor
     await audit(tx, id, actor.username, kind, {
       requestKey, batchId, reference: source.reference, targetBatchId: targetId, targetReference: reference,
       orderIds: ids, kits: moved.kits, reason, beforeSnapshot: source.snapshot,
+      ...(target ? { beforeTargetSnapshot: target.snapshot, afterTargetSnapshot: destinationSnapshot } : {}),
       ...(quantityMode ? { lines: body.lines } : {}), packageChanges,
     });
     return state(tx, group);

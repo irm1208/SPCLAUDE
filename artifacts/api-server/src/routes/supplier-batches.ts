@@ -7,7 +7,7 @@ import { SupplierBatchError } from "../lib/supplier-batches-model";
 import { type UpdateActor } from "../lib/group-buy-updates-model";
 import { supplierData, saveSupplierConfig, confirmSupplierBatch, appendSupplierBatch, previewSupplierBatchRefresh, refreshSupplierBatch, orderSupplierBatch, releaseSupplierBatch, reviewHistoricalSupplierOrder, exportSupplierBatch, supplierDirectOrders, exportSupplierTxt } from "../lib/supplier-batches";
 import { moveSupplierBatchOrders, undoSupplierBatchMove } from "../lib/supplier-batches";
-import { previewBatchMessage, queueBatchMessage, batchMessageHistory } from "../lib/supplier-batch-messages";
+import { previewBatchMessage, queueBatchMessage, batchMessageHistory, listBatchMessageRecipients } from "../lib/supplier-batch-messages";
 
 const router = Router();
 const roots = ["/admin/group-buys/:id/supplier-batches", "/organiser/group-buys/:id/supplier-batches"];
@@ -33,6 +33,9 @@ router.get("/admin/group-buys/:id/supplier-batches/messages", async (req, res) =
 });
 router.post("/admin/group-buys/:id/supplier-batches/messages/preview", async (req, res) => {
   res.json(await previewBatchMessage(param(req, "id"), actor(req), req.body));
+});
+router.post("/admin/group-buys/:id/supplier-batches/messages/recipients", async (req, res) => {
+  res.json(await listBatchMessageRecipients(param(req, "id"), actor(req), req.body));
 });
 router.post("/admin/group-buys/:id/supplier-batches/messages/send", async (req, res) => {
   res.json(await queueBatchMessage(param(req, "id"), actor(req), req.body));

@@ -26,7 +26,7 @@ export function planMoveUndo(source: any, target: any, event: any) {
     return value;
   };
   if (fingerprint(withoutNotes(source.snapshot)) !== fingerprint(withoutNotes(expected.remaining))
-    || fingerprint(withoutNotes(target.snapshot)) !== fingerprint(withoutNotes(expected.moved))) {
+    || fingerprint(withoutNotes(target.snapshot)) !== fingerprint(withoutNotes(d.afterTargetSnapshot ?? expected.moved))) {
     throw new SupplierBatchError("These batches changed after the move. Undo is blocked to protect later work.", 409);
   }
   return expected;
@@ -114,7 +114,11 @@ export async function undoMove(tx: any, group: any, batchId: string, actor: Upda
     corrections: markUndone(source.snapshot.corrections),
   };
   await tx.update(batches).set({ snapshot: restored }).where(eq(batches.id, source.id));
-  await tx.update(batches).set({
+  await tx.update(batches).set(event.detail.beforeTargetSnapshot ? {
+    snapshot: { ...event.detail.beforeTargetSnapshot,
+      token: fingerprint({ undo: event.id, previous: target.snapshot.token }),
+      corrections: markUndone(target.snapshot.corrections) },
+  } : {
     state: "released", releasedAt: now, releaseReason: `Move undone: returned to ${source.reference}. ${reason}`,
     snapshot: { ...target.snapshot, corrections: markUndone(target.snapshot.corrections) },
   }).where(eq(batches.id, target.id));

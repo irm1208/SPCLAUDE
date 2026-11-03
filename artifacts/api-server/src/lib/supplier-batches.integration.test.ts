@@ -259,6 +259,79 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
       .where(and(eq(store.gbSupplierEventsTable.groupBuyId, f.id), eq(store.gbSupplierEventsTable.kind, "move_undone")));
     expect(undos).toHaveLength(1);
   });
+  async function moveDestinationFixture() {
+    const f = await fixture([100, 100]);
+    const first = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const source = first.batches[0];
+    await api.orderSupplierBatch(f.id, source.id, admin, { confirm: true });
+    const next = await api.supplierData(f.id, admin);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: next.proposals[0].token });
+    const target = prepared.batches.find((b: any) => b.id !== source.id);
+    return { f, source, target, body: { confirm: true, reason: "Choose an existing destination",
+      orderIds: [f.ids[0]], expectedBatchToken: source.snapshot.token,
+      targetBatchId: target.id, expectedTargetToken: target.snapshot.token } };
+  }
+  it("moves to the chosen prepared batch, preserves its members and supports safe replay and Undo", async () => {
+    const { f, source, target, body } = await moveDestinationFixture();
+    const result = await api.moveSupplierBatchOrders(f.id, source.id, admin, body);
+    const destination = result.batches.find((b: any) => b.id === target.id);
+    expect(result.batches).toHaveLength(2);
+    expect(destination.snapshot.kits).toBe(200);
+    expect(destination.snapshot.orders.map((o: any) => o.id).sort()).toEqual([...f.ids].sort());
+    expect(result.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(0);
+    const replay = await api.moveSupplierBatchOrders(f.id, source.id, admin, body);
+    expect(replay.batches.find((b: any) => b.id === target.id).snapshot.kits).toBe(200);
+    const updatedSource = replay.batches.find((b: any) => b.id === source.id);
+    expect(updatedSource.undoMoves).toHaveLength(1);
+    const undone = await api.undoSupplierBatchMove(f.id, source.id, admin, {
+      confirm: true, reason: "Restore chosen destination", moveEventId: updatedSource.undoMoves[0].eventId,
+      expectedBatchToken: updatedSource.snapshot.token, expectedTargetToken: destination.snapshot.token,
+    });
+    const restored = undone.batches.find((b: any) => b.id === target.id);
+    expect(restored.state).toBe("prepared");
+    expect(restored.snapshot.kits).toBe(100);
+    expect(restored.snapshot.orders.map((o: any) => o.id)).toEqual([f.ids[1]]);
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect(order).toMatchObject({ paymentStatus: "confirmed", grandTotal: "1000.00", status: "Processing" });
+  });
+  it("moves only an added quantity into the chosen batch while keeping the original reservation and payment", async () => {
+    const { f, source, target, body } = await moveDestinationFixture();
+    await store.db.insert(store.auditLogsTable).values({
+      type: "order", action: "order_updated_by_customer", message: "Synthetic one-kit increase",
+      metadata: { groupBuyId: f.id, orderId: f.ids[0],
+        before: { lineItems: [{ productName: "Synthetic product", quantity: "99" }] },
+        after: { lineItems: [{ productName: "Synthetic product", quantity: "100" }] } },
+    });
+    const result = await api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...body, mode: "additions", lines: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 1 }],
+    });
+    expect(result.batches).toHaveLength(2);
+    expect(result.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(99);
+    const destination = result.batches.find((b: any) => b.id === target.id);
+    expect(destination.snapshot.kits).toBe(101);
+    expect(destination.snapshot.orders.find((o: any) => o.id === f.ids[0]).kits).toBe(1);
+    const [allocation] = await store.db.select().from(store.gbSupplierAllocationsTable)
+      .where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(allocation.batchId).toBe(source.id);
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect(order).toMatchObject({ paymentStatus: "confirmed", grandTotal: "1000.00", status: "Processing" });
+  });
+  it.each(["stale", "submitted", "region", "missing", "packages"])("rejects an unsafe chosen destination: %s", async invalid => {
+    const { f, source, target, body } = await moveDestinationFixture();
+    if (invalid === "stale") body.expectedTargetToken = "outdated";
+    if (invalid === "submitted") await api.orderSupplierBatch(f.id, target.id, admin, { confirm: true });
+    if (invalid === "region") await store.db.update(store.gbSupplierBatchesTable).set({
+      snapshot: { ...target.snapshot, region: { ...target.snapshot.region, id: "other" } },
+    }).where(eq(store.gbSupplierBatchesTable.id, target.id));
+    if (invalid === "missing") body.targetBatchId = randomUUID();
+    if (invalid === "packages") await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: randomUUID(), batchId: target.id, createdBy: "synthetic", label: "Protect destination",
+      requestKey: randomUUID(), requestHash: randomUUID(), contents: [],
+    });
+    await expect(api.moveSupplierBatchOrders(f.id, source.id, admin, body)).rejects.toThrow(/destination/i);
+    const current = await api.supplierData(f.id, admin);
+    expect(current.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(100);
+  });
   it("uses customer edits before first allocation and refuses moving original kits from an appended order", async () => {
     const f = await fixture([2, 100]);
     await store.db.insert(store.auditLogsTable).values({

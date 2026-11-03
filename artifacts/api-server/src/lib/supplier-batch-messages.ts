@@ -20,12 +20,32 @@ async function audience(tx: any, id: string, actor: UpdateActor, input: ReturnTy
     .where(and(eq(ordersTable.groupBuyId, id), inArray(ordersTable.id, orderIds), isNull(ordersTable.deletedAt))).orderBy(ordersTable.id) : [];
   const usernames = [...new Set<string>(orders.map((o: any) => canonicalUsername(o.telegramUsername)))];
   const accounts = usernames.length ? await tx.select({ telegramUsername: accountsTable.telegramUsername,
-    telegramChatId: accountsTable.telegramChatId, telegramNotifications: accountsTable.telegramNotifications })
+    telegramChatId: accountsTable.telegramChatId, telegramNotifications: accountsTable.telegramNotifications,
+    discordUsername: accountsTable.discordUsername })
     .from(accountsTable).where(inArray(sql`lower(regexp_replace(trim(${accountsTable.telegramUsername}), '^@', ''))`, usernames)) : [];
   const result = batchMessageAudience(selected, orders, accounts);
+  const accountsByName = new Map(accounts.map((a: any) => [canonicalUsername(a.telegramUsername), a]));
+  const recipientOptions = result.recipients.map(recipient => {
+    const account = accountsByName.get(canonicalUsername(recipient.username)) as { discordUsername?: string | null } | undefined;
+    return { ...recipient, displayName: account?.discordUsername || recipient.username };
+  });
+  if (input.targetUsernames) {
+    const available = new Set(result.recipients.map(r => canonicalUsername(r.username)));
+    if (input.targetUsernames.some(name => !available.has(name))) {
+      throw new SupplierBatchError("A selected member is no longer in the chosen batches. Refresh the member list and preview again.", 409);
+    }
+    const chosen = new Set(input.targetUsernames);
+    result.recipients = result.recipients.filter(r => chosen.has(canonicalUsername(r.username)));
+    result.missingAccounts = 0;
+  }
   const references = selected.map((b: any) => b.reference);
   const token = fingerprint({ input, batches: selected.map((b: any) => ({ id: b.id, state: b.state, snapshot: b.snapshot })), orders, ...result });
-  return { ...result, token, references, text: batchMessageText(group.name, references, input.message) };
+  return { ...result, recipientOptions, token, references, text: batchMessageText(group.name, references, input.message) };
+}
+export async function listBatchMessageRecipients(id: string, actor: UpdateActor, body: any, database = db) {
+  adminOnly(actor);
+  const input = messageInput({ batchIds: body?.batchIds, message: "Member selection" });
+  return database.transaction(async tx => (await audience(tx, id, actor, input)).recipientOptions);
 }
 export async function previewBatchMessage(id: string, actor: UpdateActor, body: unknown, database = db) {
   adminOnly(actor);
@@ -33,6 +53,7 @@ export async function previewBatchMessage(id: string, actor: UpdateActor, body: 
   return database.transaction(async tx => {
     const result = await audience(tx, id, actor, input);
     return { token: result.token, references: result.references, text: result.text,
+      recipients: result.recipients.map(r => r.username),
       recipientCount: result.recipients.length, telegramCount: result.recipients.filter(r => r.telegramAvailable).length,
       missingAccounts: result.missingAccounts };
   });
@@ -58,7 +79,8 @@ export async function queueBatchMessage(id: string, actor: UpdateActor, body: an
     const receipt = { requestKey: body.requestKey, recipientCount: result.recipients.length,
       telegramCount: result.recipients.filter(r => r.telegramAvailable).length, references: result.references };
     await tx.insert(events).values({ id: requestId, groupBuyId: id, kind: "member_message_request",
-      detail: { requestHash, receipt, batchIds: input.batchIds, message: input.message, actor: actor.username } });
+      detail: { requestHash, receipt, batchIds: input.batchIds, message: input.message,
+        targetUsernames: input.targetUsernames, actor: actor.username } });
     for (const recipient of result.recipients) {
       const eventId = `${requestId}:${fingerprint(canonicalUsername(recipient.username))}`;
       await tx.insert(events).values({ id: eventId, groupBuyId: id, kind: "member_message",
@@ -72,7 +94,8 @@ export async function queueBatchMessage(id: string, actor: UpdateActor, body: an
     }
     await tx.insert(auditLogsTable).values({ type: "change", level: "info", action: "supplier_batch_members_messaged",
       message: `Admin queued a batch message for ${receipt.recipientCount} members.`,
-      metadata: { groupBuyId: id, batchIds: input.batchIds, requestKey: body.requestKey, actor: actor.username, recipientCount: receipt.recipientCount } });
+      metadata: { groupBuyId: id, batchIds: input.batchIds, targetUsernames: input.targetUsernames,
+        requestKey: body.requestKey, actor: actor.username, recipientCount: receipt.recipientCount } });
     return receipt;
   });
 }
@@ -92,7 +115,8 @@ export async function batchMessageHistory(id: string, actor: UpdateActor, databa
       for (const row of deliveries) {
         if ((row.detail as any).requestId === request.id) counts[row.telegram] = (counts[row.telegram] ?? 0) + 1;
       }
-      return { ...detail.receipt, createdAt: request.createdAt, message: detail.message, delivery: counts };
+      return { ...detail.receipt, createdAt: request.createdAt, message: detail.message, delivery: counts,
+        targetUsernames: detail.targetUsernames };
     });
   });
 }

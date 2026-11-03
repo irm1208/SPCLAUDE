@@ -29,7 +29,7 @@ and received goods, not that timestamp alone.
 that had been appended before staff recorded the batch as submitted.
 
 **How to apply:** An explicit Admin correction may move complete, paid, unshipped
-orders to a new same-region prepared batch. Keep a visible correction marker and
+orders to a new or user-chosen existing same-region prepared batch. Keep a visible correction marker and
 the original snapshot in the audit history; correct unchecked package manifests
 atomically. Never change customer payments or silently rewrite inspected receipts.
 
@@ -56,10 +56,19 @@ after an original quantity was incorrectly included in a move.
 **How to apply:** Preserve original quantities in the source allocation. Keep any
 explicit whole-order correction separate from the additions workflow.
 
+The Admin chooses the destination batch in the panel for both whole-order corrections
+and added-quantity moves; do not ask them to name the destination in chat or move live kits on their behalf.
+
+**Why:** The user repeated that the destination must be “of my choosing” and clarified “choose it myself on the panel.”
+
+**How to apply:** Offer unsubmitted same-region destinations and a new-batch option,
+review exact quantities and both snapshots, and preserve customer payments.
+
 Undoing a mistaken allocation move must restore the original batch and unchecked
 package contents without changing customer quantities, prices or payments. Retain
-the move and its reversal as history; retire the unused destination instead of
-deleting it. Block undo when subsequent work or inspected receipts could be overwritten.
+the move and its reversal as history; retire an unused newly-created destination instead of
+deleting it. Restore a pre-existing destination's prior allocations without releasing it.
+Block undo when subsequent work or inspected receipts could be overwritten.
 
 **Why:** The user approved a secure Admin Undo action after an additions move
 incorrectly transferred the customer's original kits too.
@@ -67,6 +76,14 @@ incorrectly transferred the customer's original kits too.
 **How to apply:** Validate the recorded post-move snapshots and current reservations
 inside the same group transaction. A code change is not a live-data reversal:
 with read-only production access, the user must publish and execute the Admin action.
+
+Admin batch-member messaging must also be available in the group-buy Broadcast tab,
+with a choice between all selected-batch members and specific users within those batches.
+
+**Why:** The user explicitly requested messaging from Broadcast and selecting specific users in a batch.
+
+**How to apply:** Reuse batch messaging preview, confirmation, deduplication and delivery history;
+validate the selected audience against current batch membership before sending.
 
 When an enabled supplier region reaches its kit target and Telegram alerts are enabled, notify both the configured Admin Telegram chat and the group-buy organiser. These are staff alerts, not member broadcasts.
 

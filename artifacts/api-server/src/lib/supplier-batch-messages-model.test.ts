@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { messageInput, batchMessageAudience, batchMessageText, escapeBatchMessage } from "./supplier-batch-messages-model";
 
 describe("supplier batch message audience", () => {
+  it("validates and normalizes an explicitly selected recipient list without falling back to everyone", () => {
+    expect(messageInput({ batchIds: ["a"], message: "Hi", targetUsernames: ["@ALICE", "alice", "bob"] }))
+      .toEqual({ batchIds: ["a"], message: "Hi", targetUsernames: ["alice", "bob"] });
+    for (const targetUsernames of [[], null, "alice", [""], [123]]) {
+      expect(() => messageInput({ batchIds: ["a"], message: "Hi", targetUsernames })).toThrow();
+    }
+  });
   const batches = [
     { id: "a", reference: "GB / 001", state: "ordered", snapshot: { orders: [{ id: "1" }, { id: "2" }] } },
     { id: "b", reference: "GB / 002", state: "prepared", snapshot: { orders: [{ id: "1" }, { id: "3" }, { id: "4" }] } },
