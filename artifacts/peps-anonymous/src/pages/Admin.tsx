@@ -938,7 +938,11 @@ function OrdersTab({ secret }: { secret: string }) {
       } else {
         setMoveGbResult(prev => ({ ...prev, [orderId]: { ok: true, text: "Order moved ✓" } }));
         setMoveGbOpen(prev => ({ ...prev, [orderId]: false }));
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, groupBuyId: targetGbId } : o));
+        setOrders(prev => prev.map(o => o.id === orderId ? {
+          ...o, groupBuyId: data.newGbId,
+          reshipperUsername: data.reshipperUsername, routingType: data.routingType,
+          reshipperCleared: data.reshipperCleared, countryLegId: data.countryLegId,
+        } : o));
         setTimeout(() => setMoveGbResult(prev => ({ ...prev, [orderId]: { ok: false, text: "" } })), 3000);
       }
     } catch { setMoveGbResult(prev => ({ ...prev, [orderId]: { ok: false, text: "Network error" } })); }

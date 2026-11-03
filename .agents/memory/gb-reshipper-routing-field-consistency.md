@@ -54,3 +54,9 @@ Multiple reshippers assigned to the same country share automatically routed, una
 **Why:** The user clarified that both US reshippers must be able to claim orders, superseding the earlier request to send all US postage to one recipient.
 
 **How to apply:** Keep automatic postage routing unassigned when more than one reshipper covers the destination. A country-leg setup must not be required for the shared pool. Claims must never steal existing assignments. Supplier Direct Shipping must not appear in Unclaimed or be claimable individually or in bulk, even when its postage label says ordinary home delivery. An explicitly reserved Admin postage option remains reserved unless Admin changes it to automatic routing.
+
+Group-catalogue checkout must not silently become standalone when browser group context is missing. Ordinary group postage must have enabled country coverage; legitimate multi-reshipper unclaimed pools remain allowed. Admin group moves must resolve the destination group's route atomically, not carry over an old-group assignment.
+
+**Why:** The user required prevention after a paid order was found without a group or reshipper. Historical audit entries did not include routing fields, making the original omission difficult to diagnose.
+
+**How to apply:** Preserve genuine standalone retail and wholesale paths, fail explicitly when group context or country coverage is absent, and retain group/route fields in order-creation audit metadata. Do not bulk repair historical orders without staff review.

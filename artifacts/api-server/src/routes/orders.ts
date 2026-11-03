@@ -2,6 +2,7 @@ import { hasFreeDirectHomeShipping, resolveDirectHomeShippingCost } from "@works
 import { getOnwardOrderPreference, saveOnwardOrderPreference, validateEuDeliveryCheckout } from "../lib/gb-onward-delivery";
 import { hasBankTransfer } from "@workspace/api-zod/bank-transfer";
 import { resolveGroupOrderRoute } from "../lib/group-buy-delivery-routing-service";
+import { assertOrderGroupContext, OrderGroupRequiredError } from "../lib/order-group-requirement";
 import { OnwardDeliveryError, validOnwardMethod } from "../lib/gb-onward-delivery-rules";
 import { assertNoActiveRefund, refundMutableOrderWhere, RefundMutationBlockedError } from "../lib/refund-mutation-guard";
 import { assertSupplierOrderEditable } from "../lib/supplier-batch-protection";
@@ -740,6 +741,17 @@ router.post("/orders", async (req, res, next): Promise<void> => {
       if (!(error instanceof SupplierBatchError)) throw error;
       res.status(error.status).json({ error: error.message }); return;
     }
+  }
+
+  try {
+    await assertOrderGroupContext(db, {
+      groupBuyId: normalizedGroupBuyId, isWholesale: isWholesaleOrder,
+      productIds: submittedProductIds.filter((id): id is string => typeof id === "string" && id.length > 0),
+    });
+  } catch (error) {
+    if (!(error instanceof OrderGroupRequiredError)) throw error;
+    res.status(409).json({ error: (error as Error).message, code: "GROUP_BUY_SELECTION_REQUIRED", eligibleGroupBuys: [] });
+    return;
   }
 
   let deliveryMethodRecord: { id: string; name: string; price: string } | null | undefined;
@@ -1822,7 +1834,8 @@ router.post("/orders", async (req, res, next): Promise<void> => {
 
   writeLog("order", "info", "order_created",
     `New order ${code} created by ${tg} (${deliveryMethodRecord.name}, total: ${grandTotal.toFixed(2)})`,
-    { orderId, code, telegramUsername: tg, grandTotal: grandTotal.toFixed(2), deliveryMethod: deliveryMethodRecord.name },
+    { orderId, code, telegramUsername: tg, grandTotal: grandTotal.toFixed(2), deliveryMethod: deliveryMethodRecord.name,
+      groupBuyId: order.groupBuyId, reshipperUsername: order.reshipperUsername, routingType: order.routingType },
     req.ip ?? undefined,
   ).catch(() => {});
 

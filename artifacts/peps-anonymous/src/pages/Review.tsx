@@ -473,7 +473,8 @@ export default function Review() {
         if (
           response.status === 409 &&
           data.code === "GROUP_BUY_SELECTION_REQUIRED" &&
-          Array.isArray(data.eligibleGroupBuys)
+          Array.isArray(data.eligibleGroupBuys) &&
+          data.eligibleGroupBuys.length > 0
         ) {
           const options = data.eligibleGroupBuys as Array<{ id: string; name: string }>;
           setEligibleGroupBuys(options);

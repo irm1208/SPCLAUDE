@@ -46,6 +46,13 @@ describe("group-buy order context", () => {
     expect(reviewSource).toContain("eligibleGroupBuys");
   });
 
+  it("checks missing catalogue context before delivery and shows errors when no eligible group exists", () => {
+    const guard = routeSource.indexOf("await assertOrderGroupContext");
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(routeSource.indexOf("let deliveryMethodRecord"));
+    expect(reviewSource).toContain("data.eligibleGroupBuys.length > 0");
+  });
+
   it("keeps explicit group-buy selections on the existing server validation path", () => {
     expect(reviewSource).toContain("selectedGroupBuyId");
     expect(routeSource).toContain("groupBuyId: clientGroupBuyId");
