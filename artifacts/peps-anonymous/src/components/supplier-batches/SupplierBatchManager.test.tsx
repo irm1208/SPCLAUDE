@@ -106,6 +106,20 @@ test("only Admin can review Undo, with both batch tokens, a reason and explicit 
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
+test("refunded removals are visible on the batch and not mixed into current member items", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(BatchCard, {
+      b: { ...existingBatch, snapshot: { ...existingBatch.snapshot,
+        refundRemovals: [{ refundId: "refund", orderCode: "123", kits: 2 }] } },
+      busy: false, act: async () => true, exportCsv: async () => {}, exportTxt: async () => {},
+      context: { groupBuyId: "gb", scope: "admin" },
+    })));
+    assert.match(host.textContent!, /Refunded order #123 removed · 2 kits excluded from this batch and delivery/);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
 test("Admin can review and confirm a whole-order move with a reason", async () => {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);

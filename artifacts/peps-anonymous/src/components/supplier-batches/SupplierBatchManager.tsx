@@ -280,6 +280,11 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
         <span className="text-sm font-bold font-mono" style={{ color: V.text }}>{b.reference}</span>
         <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${b.state === "ordered" ? "bg-green-100 text-green-700" : b.state === "released" ? "bg-slate-100 text-slate-500" : "bg-amber-100 text-amber-800"}`}>{b.state === "ordered" ? "Submitted to vendor" : b.state}</span>
       </div>
+      {b.snapshot.refundRemovals?.map(r => (
+        <div key={r.refundId} className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+          Refunded order #{r.orderCode} removed · {r.kits} kits excluded from this batch and delivery
+        </div>
+      ))}
       <p className="text-[11px]" style={{ color: V.muted }}>
         {b.snapshot.region.name} · {kits(b.snapshot.kits)} kits · {b.snapshot.orders.length} orders · prepared {fmt(b.createdAt)} by {b.createdBy}
         {b.orderedAt && ` · submitted to vendor ${fmt(b.orderedAt)}`}{b.releasedAt && ` · released ${fmt(b.releasedAt)}`}

@@ -41,12 +41,17 @@ function errorResponse(res: Response, error: unknown): void {
           "active_refund_exists", "active_refund_race", "in_progress", "owned", "txid_replay",
           "concurrent_state_change", "completed_txid_immutable", "invalid_refund_transition",
           "refund_claim_lost", "attempt_ownership_lost", "order_state_changed", "payment_state_changed",
-          "payment_evidence_changed", "refund_active",
+          "payment_evidence_changed", "refund_active", "submitted_to_vendor", "refund_batch_state_changed", "refund_batch_receipt_checked",
         ].includes(code) ? 409
           : ["provider_unavailable", "processing_failure", "audit_failure", "storage_failure", "transient_failure"].includes(code) ? 503
             : ["internal_error", "completed_refund_linkage_mismatch", "invalid_refund_configuration", "invalid_refund_amount"].includes(code) ? 500
               : 400;
-  res.status(status).json({ code, error: code });
+  const messages: Record<string, string> = {
+    submitted_to_vendor: "This order has already been submitted to the vendor and cannot be refunded.",
+    refund_batch_state_changed: "The supplier batch changed. Refresh and review it before refunding.",
+    refund_batch_receipt_checked: "This order has inspected package contents. Admin must review them before refunding.",
+  };
+  res.status(status).json({ code, error: messages[code] ?? code });
 }
 
 function oneQueryValue(value: unknown): string | undefined {

@@ -5,11 +5,16 @@ vi.mock("./telegram", () => ({
   notifyUserFull: vi.fn(async () => ({ok:true})),
   sendAdminMessageFull: vi.fn(async () => ({ok:true,chatId:"synthetic-admin-chat"})),
 }));
+vi.mock("./refund-notifications", async importOriginal => ({
+  ...await importOriginal<typeof import("./refund-notifications")>(),
+  drainRefundAudits: vi.fn(async () => 0), drainRefundNotifications: vi.fn(async () => 0),
+}));
 
 // Only synthetic, isolated fixtures; never mutate a real member's orders.
 describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier batches / PostgreSQL transactions", () => {
   let store: any, api: any, protect: any;
   const fixtures: string[] = [];
+  const refundAccounts: string[] = [];
   const admin = { username: "synthetic-admin", admin: true };
   beforeAll(async () => {
     store = await import("@workspace/db");
@@ -26,10 +31,16 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
           (SELECT id FROM gb_supplier_batches WHERE group_buy_id = ${id})`);
         await tx.delete(store.gbSupplierShipmentsTable).where(sql`${store.gbSupplierShipmentsTable.batchId} IN
           (SELECT id FROM gb_supplier_batches WHERE group_buy_id = ${id})`);
+        for (const table of [store.groupBuyRefundNotificationsTable, store.groupBuyRefundTransitionOutboxTable,
+          store.groupBuyRefundTxClaimsTable, store.groupBuyRefundAttemptsTable, store.creditTransactionsTable]) {
+          await tx.delete(table).where(sql`${table.refundId} IN (SELECT id FROM group_buy_refunds WHERE group_buy_id = ${id})`);
+        }
+        await tx.delete(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.groupBuyId, id));
         await tx.delete(store.ordersTable).where(eq(store.ordersTable.groupBuyId, id));
         await tx.delete(store.groupBuysTable).where(eq(store.groupBuysTable.id, id));
       });
     }
+    for (const username of refundAccounts.splice(0)) await store.db.delete(store.accountsTable).where(eq(store.accountsTable.telegramUsername, username));
   });
   async function fixture(qtys = [95, 10, 20], routes: Record<string, unknown>[] = [], telegramAlerts = false) {
     const id = randomUUID(); fixtures.push(id);
@@ -51,6 +62,141 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("completes a real credit refund and atomically releases its final unsubmitted allocation, without double credit", async () => {
+    const f = await fixture([100]);
+    const username = `refund-${randomUUID()}`; refundAccounts.push(username);
+    await store.db.insert(store.accountsTable).values({ telegramUsername: username, passwordHash: "synthetic-no-login", credits: 0 });
+    await store.db.update(store.ordersTable).set({ telegramUsername: username }).where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.groupBuysTable).set({ cryptoRefundsEnabled: true }).where(eq(store.groupBuysTable.id, f.id));
+    const data = await api.supplierData(f.id, admin), p = data.proposals[0];
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token });
+    const refund = await import("./group-buy-refund");
+    // Processing alone is not evidence of vendor submission.
+    await store.db.update(store.ordersTable).set({ status: "Processing" }).where(eq(store.ordersTable.id, f.ids[0]));
+    const request = await refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0], input: { method: "credit" } });
+    const args = { refundId: request.id, username: admin.username, role: "admin" };
+    const shipmentId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: prepared.batches[0].id, createdBy: admin.username, label: "Legacy prepared parcel",
+      requestKey: randomUUID(), requestHash: randomUUID(), receiptChecked: 1,
+      contents: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 100 }],
+    });
+    await expect(refund.completeCreditRefund(store.db, args)).rejects.toThrow("refund_batch_receipt_checked");
+    const [stillPending] = await store.db.select().from(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.id, request.id));
+    expect(stillPending.status).toBe("requested");
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 0 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect((await refund.completeCreditRefund(store.db, args)).status).toBe("completed");
+    expect((await refund.completeCreditRefund(store.db, args)).status).toBe("completed");
+    const [batch] = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, prepared.batches[0].id));
+    expect([batch.state, batch.snapshot.kits, batch.snapshot.orders.length]).toEqual(["released", 0, 0]);
+    const [account] = await store.db.select().from(store.accountsTable).where(eq(store.accountsTable.telegramUsername, username));
+    expect(Number(account.credits)).toBe(1000);
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect([order.status, order.paymentStatus]).toEqual(["Cancelled", "refunded"]);
+    const ledger = await store.db.select().from(store.creditTransactionsTable).where(eq(store.creditTransactionsTable.refundId, request.id));
+    expect(ledger).toHaveLength(1);
+    const [parcel] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(parcel.contents).toEqual([]);
+    expect(parcel.cancelledAt).not.toBeNull();
+    expect(parcel.version).toBe(1);
+  });
+  it.each(["credit", "crypto", "manual"])("blocks unfinished %s refunds for previously submitted orders without changing money or allocations", async method => {
+    const f = await fixture([100]);
+    const username = `refund-${randomUUID()}`; refundAccounts.push(username);
+    await store.db.insert(store.accountsTable).values({ telegramUsername: username, passwordHash: "synthetic-no-login", credits: 0 });
+    await store.db.update(store.ordersTable).set({ telegramUsername: username }).where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.groupBuysTable).set({ cryptoRefundsEnabled: true }).where(eq(store.groupBuysTable.id, f.id));
+    const data = await api.supplierData(f.id, admin), p = data.proposals[0];
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token });
+    const refund = await import("./group-buy-refund");
+    const request = await refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0],
+      input: method === "credit" ? { method: "credit" } : {
+        method: "crypto", asset: "USDC", network: "Ethereum ERC-20", destinationWallet: "0x" + "c".repeat(40),
+      } });
+    // Simulate a historical pending refund whose vendor submission predates this rule.
+    await store.db.update(store.gbSupplierBatchesTable).set({ state: "ordered", orderedAt: new Date() })
+      .where(eq(store.gbSupplierBatchesTable.id, prepared.batches[0].id));
+    await store.db.update(store.ordersTable).set({ status: "Processing" }).where(eq(store.ordersTable.id, f.ids[0]));
+    const actor = { username: admin.username, role: "admin" }, txid = "0x" + "a".repeat(64);
+    const attempt = method === "credit" ? refund.completeCreditRefund(store.db, { ...actor, refundId: request.id })
+      : method === "crypto" ? refund.submitCryptoRefund(store.db, actor, request.id, txid)
+        : refund.completeManualCryptoRefund(store.db, { ...actor, refundId: request.id, txid, reason: "Synthetic historical refund" });
+    await expect(attempt).rejects.toThrow("submitted_to_vendor");
+    await expect(refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0], input: { method: "credit" } }))
+      .rejects.toThrow("submitted_to_vendor");
+    const [account] = await store.db.select().from(store.accountsTable).where(eq(store.accountsTable.telegramUsername, username));
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    const [pending] = await store.db.select().from(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.id, request.id));
+    expect([Number(account.credits), order.paymentStatus, pending.status]).toEqual([0, "confirmed", "requested"]);
+    const reserved = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(reserved[0].batchId).toBe(prepared.batches[0].id);
+  });
+  it("blocks refunds after any vendor submission, but removes refunded kits from an unsubmitted batch", async () => {
+    const f = await fixture([100, 3]);
+    const helper = await import("./refund-supplier-batches");
+    const p = f.result.proposals[0].allQueued;
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token, includeAll: true });
+    const b = prepared.batches[0];
+    await store.db.transaction(async (tx: any) => {
+      await helper.assertRefundBeforeVendor(tx, { id: f.ids[0], groupBuyId: f.id });
+      await helper.removeRefundedSupplierAllocations(tx, { id: f.ids[0], groupBuyId: f.id, code: "test-0" }, "synthetic-refund", "synthetic-admin");
+    });
+    const data = await api.supplierData(f.id, admin);
+    const current = data.batches.find((x: any) => x.id === b.id);
+    expect(current.snapshot.kits).toBe(3);
+    expect(current.snapshot.orders.map((x: any) => x.id)).toEqual([f.ids[1]]);
+    expect(current.snapshot.token).not.toBe(b.snapshot.token);
+    expect(current.snapshot.refundRemovals).toMatchObject([{ orderCode: "test-0", kits: 100 }]);
+    const [reserved] = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(reserved).toBeUndefined();
+    await api.orderSupplierBatch(f.id, b.id, admin, { confirm: true });
+    await expect(store.db.transaction((tx: any) => helper.assertRefundBeforeVendor(tx, { id: f.ids[1], groupBuyId: f.id })))
+      .rejects.toThrow(/submitted_to_vendor/);
+    // A stale/missing reservation cannot bypass an ordered snapshot.
+    await store.db.delete(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[1]));
+    await expect(store.db.transaction((tx: any) => helper.assertRefundBeforeVendor(tx, { id: f.ids[1], groupBuyId: f.id })))
+      .rejects.toThrow(/submitted_to_vendor/);
+  });
+  it("checks every split allocation even when the reservation root is still prepared", async () => {
+    const f = await fixture([100]);
+    const helper = await import("./refund-supplier-batches");
+    const { splitBatchQuantities } = await import("./supplier-batch-additions");
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const b = prepared.batches[0];
+    const split = splitBatchQuantities(b, [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 1 }]);
+    await store.db.update(store.gbSupplierBatchesTable).set({ snapshot: split.remaining }).where(eq(store.gbSupplierBatchesTable.id, b.id));
+    const targetId = randomUUID();
+    await store.db.insert(store.gbSupplierBatchesTable).values({
+      id: targetId, groupBuyId: f.id, sequence: 2, reference: "SYNTHETIC / 002",
+      previewToken: randomUUID(), snapshot: split.moved, state: "ordered", orderedAt: new Date(), createdBy: admin.username,
+    });
+    await expect(store.db.transaction((tx: any) => helper.assertRefundBeforeVendor(tx, { id: f.ids[0], groupBuyId: f.id })))
+      .rejects.toThrow("submitted_to_vendor");
+    expect(await helper.submittedSupplierOrderIds(store.db, [{ id: f.ids[0], groupBuyId: f.id }])).toEqual(new Set([f.ids[0]]));
+    await store.db.update(store.gbSupplierBatchesTable).set({ state: "prepared", orderedAt: null }).where(eq(store.gbSupplierBatchesTable.id, targetId));
+    await store.db.transaction((tx: any) => helper.removeRefundedSupplierAllocations(tx,
+      { id: f.ids[0], groupBuyId: f.id, code: "test-0" }, "synthetic-refund", admin.username));
+    const result = await api.supplierData(f.id, admin);
+    expect(result.batches.map((b: any) => [b.state, b.snapshot.kits])).toEqual([["released", 0], ["released", 0]]);
+  });
+  it("serialises a simultaneous refund request and vendor submission so only one succeeds", async () => {
+    const f = await fixture([100]);
+    const username = `refund-${randomUUID()}`; refundAccounts.push(username);
+    await store.db.insert(store.accountsTable).values({ telegramUsername: username, passwordHash: "synthetic-no-login", credits: 0 });
+    await store.db.update(store.ordersTable).set({ telegramUsername: username }).where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.groupBuysTable).set({ cryptoRefundsEnabled: true }).where(eq(store.groupBuysTable.id, f.id));
+    const data = await api.supplierData(f.id, admin);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: data.proposals[0].token });
+    const refund = await import("./group-buy-refund");
+    const results = await Promise.allSettled([
+      refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0], input: { method: "credit" } }),
+      api.orderSupplierBatch(f.id, prepared.batches[0].id, admin, { confirm: true }),
+    ]);
+    expect(results.map(r => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const requests = await store.db.select().from(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.groupBuyId, f.id));
+    const [batch] = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, prepared.batches[0].id));
+    expect(requests.length > 0 && batch.state === "ordered").toBe(false);
+  });
   it("undoes an allocation move atomically, preserves payments, restores manifests and is replay-safe", async () => {
     const f = await fixture([100]);
     const prepared = await api.confirmSupplierBatch(f.id, admin, {
