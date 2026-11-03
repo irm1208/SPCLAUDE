@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { siteConfigTable, ruleAcceptancesTable, accountsTable } from "@workspace/db";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { eq, desc, count, sql, inArray } from "drizzle-orm";
 import { invalidateTelegramCache, getTelegramStatus, sendAdminTestMessage, setWebhook, buildWebhookUrl } from "../lib/telegram";
 import { requireAdmin } from "../middleware/require-admin";
 import { getWholesaleVendorMessages } from "../lib/wholesale-vendor-messages";
@@ -48,28 +48,25 @@ router.get("/config", async (_req, res): Promise<void> => {
 
   const pinEnabled = !!process.env["ORDER_PIN"];
 
-  const [
-    rawWarning, groupBuysPageMessage, wholesalePageMessage,
-    rawWholesaleApproval, rawAdminFeeEnabled, rawAdminFeeAmount,
-    rawAdminFeeCountries, rawSignupRequiresInvite, deliveryTips,
-    rawSharedComingSoon, rawSharedComingSoonMessage, rawWholesaleAccess, rawWholesaleAccessAmount,
-    rawTelegramWidgetEnabled,
-  ] = await Promise.all([
-    getConfigValue("vendorShippingWarning"),
-    getConfigValue("groupBuysPageMessage"),
-    getConfigValue("wholesale_page_message"),
-    getConfigValue("wholesale_requires_approval"),
-    getConfigValue("shipping_admin_fee_enabled"),
-    getConfigValue("shipping_admin_fee_amount"),
-    getConfigValue("shipping_admin_fee_countries"),
-    getConfigValue("signup_requires_invite"),
+  // One round trip for all keys instead of thirteen (this endpoint is hit on every page load).
+  const configKeys = [
+    "vendorShippingWarning", "groupBuysPageMessage", "wholesale_page_message", "wholesale_requires_approval",
+    "shipping_admin_fee_enabled", "shipping_admin_fee_amount", "shipping_admin_fee_countries", "signup_requires_invite",
+    "wholesale_shared_coming_soon", "wholesale_shared_coming_soon_message", "wholesale_access_enabled",
+    "wholesale_access_amount", "telegram_widget_enabled",
+  ];
+  const [configRows, deliveryTips] = await Promise.all([
+    db.select({ key: siteConfigTable.key, value: siteConfigTable.value }).from(siteConfigTable).where(inArray(siteConfigTable.key, configKeys)),
     getDeliveryTips(),
-    getConfigValue("wholesale_shared_coming_soon"),
-    getConfigValue("wholesale_shared_coming_soon_message"),
-    getConfigValue("wholesale_access_enabled"),
-    getConfigValue("wholesale_access_amount"),
-    getConfigValue("telegram_widget_enabled"),
   ]);
+  const cfg = new Map(configRows.map(r => [r.key, r.value]));
+  const v = (key: string): string | null => cfg.get(key) ?? null;
+  const rawWarning = v("vendorShippingWarning"), groupBuysPageMessage = v("groupBuysPageMessage"), wholesalePageMessage = v("wholesale_page_message"),
+    rawWholesaleApproval = v("wholesale_requires_approval"), rawAdminFeeEnabled = v("shipping_admin_fee_enabled"), rawAdminFeeAmount = v("shipping_admin_fee_amount"),
+    rawAdminFeeCountries = v("shipping_admin_fee_countries"), rawSignupRequiresInvite = v("signup_requires_invite"),
+    rawSharedComingSoon = v("wholesale_shared_coming_soon"), rawSharedComingSoonMessage = v("wholesale_shared_coming_soon_message"),
+    rawWholesaleAccess = v("wholesale_access_enabled"), rawWholesaleAccessAmount = v("wholesale_access_amount"),
+    rawTelegramWidgetEnabled = v("telegram_widget_enabled");
 
   const vendorShippingWarning = rawWarning === null ? true : rawWarning === "true";
   const wholesaleRequiresApproval = rawWholesaleApproval === "true";

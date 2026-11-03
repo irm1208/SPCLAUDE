@@ -197,6 +197,9 @@ if (process.env.NODE_ENV === "production") {
 } else {
   app.use("/api", router);
 }
+// An unknown /api path must answer with JSON, not fall through to the SPA (production
+// returned HTML 200; development looped between the API and the Vite proxy and never answered).
+app.use("/api", (_req: Request, res: Response) => { res.status(404).json({ error: "Not found" }); });
 
 // ── Dev proxy to Vite ─────────────────────────────────────────
 // In development, the Replit preview always hits port 8080 (externalPort=80).

@@ -52,6 +52,7 @@ function readMem(ip: string): Geo | null {
 }
 
 function writeMem(ip: string, geo: Geo, ttlMs: number) {
+  if (memCache.size >= 5_000) { const oldest = memCache.keys().next().value; if (oldest !== undefined) memCache.delete(oldest); }
   memCache.set(ip, { geo, expiresAt: Date.now() + ttlMs });
 }
 
