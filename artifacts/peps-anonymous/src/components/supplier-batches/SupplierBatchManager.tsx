@@ -4,6 +4,9 @@ import { Loader2, RefreshCw, Download, Plus, Trash2 } from "lucide-react";
 import { SupplierBatchFulfilment } from "./SupplierBatchFulfilment";
 import { DirectSupplierDownload } from "./DirectSupplierDownload";
 import { BatchRefreshReview } from "./BatchRefreshReview";
+import { BatchCorrection } from "./BatchCorrection";
+import { BatchAdditions } from "./BatchAdditions";
+import { BatchMessages } from "./BatchMessages";
 import {
   EU_BATCH_COUNTRIES, supplierKey, supplierRequest, downloadSupplierCsv,
   downloadSupplierTxt,
@@ -147,7 +150,13 @@ function ConfigEditor({ data, busy, run, reload, putConfig }: {
   );
 }
 
-function OrdersDetail({ p }: { p: BatchProposal }) {
+function OrdersDetail({ p, batch, batches = [], scope, busy = false, act }: {
+  p: BatchProposal; batch?: SupplierBatch; scope?: SupplierScope; busy?: boolean;
+  batches?: SupplierBatch[];
+  act?: (path: string, body: unknown, message?: string) => Promise<boolean>;
+}) {
+  const [moving, setMoving] = useState<string | null>(null);
+  const canMove = scope === "admin" && batch?.state === "ordered" && !!act;
   return (
     <details className="text-xs">
       <summary className="cursor-pointer font-semibold" style={{ color: V.text }}>Member & product detail ({p.orders.length} orders)</summary>
@@ -155,17 +164,30 @@ function OrdersDetail({ p }: { p: BatchProposal }) {
         <table className="w-full text-left text-[11px]">
           <thead><tr style={{ color: V.muted }}><th className="py-1 pr-2">Order</th><th className="pr-2">Member</th><th className="pr-2">Country</th><th className="pr-2">Kits</th><th className="pr-2">Paid</th><th>Products</th></tr></thead>
           <tbody>
-            {p.orders.map(o => (
-              <tr key={o.id} className="border-t align-top" style={{ borderColor: V.border, color: V.text }}>
+            {p.orders.map(o => {
+              const added = (batch?.additions ?? []).filter(a => a.orderId === o.id);
+              return (
+              <tr key={o.id} className={`border-t align-top ${added.length ? "bg-amber-500/10" : ""}`} style={{ borderColor: V.border, color: V.text }}>
                 <td className="py-1 pr-2 font-mono">{o.code}</td><td className="pr-2">{o.username}</td><td className="pr-2">{o.country}</td>
                 <td className="pr-2">{kits(o.kits)}</td>
                 <td className="pr-2">{o.paidAt ? fmt(o.paidAt) : o.historicalReviewed ? `Reviewed (queued ${fmt(o.orderingAt)})` : "—"}</td>
-                <td>{o.items.map(i => `${i.productName} ×${i.quantity}`).join(", ")}</td>
+                <td>{o.items.map(i => `${i.productName} ×${i.quantity}`).join(", ")}
+                  {o.fullOrder && <p className="font-semibold">Split allocation: {kits(o.kits)} of {kits(o.fullOrder.kits)} kits here</p>}
+                  {added.length > 0 && <div className="my-1 flex flex-wrap items-center gap-2">
+                    <span className="rounded border border-amber-400 px-1.5 py-0.5 font-semibold">Additional kits: +{kits(added.reduce((sum, a) => sum + a.quantity, 0))}</span>
+                    {canMove && <button type="button" disabled={busy} className="underline font-semibold"
+                      data-testid={`button-move-additions-${o.id}`} onClick={() => setMoving(o.id)}>Move additions to another batch</button>}
+                  </div>}
+                </td>
               </tr>
-            ))}
+            ); })}
           </tbody>
         </table>
       </div>
+      {canMove && !!batch?.additions?.length && <button type="button" disabled={busy} className="mt-2 rounded-lg border px-3 py-2 font-semibold"
+        onClick={() => setMoving("*")}>Move added quantities across orders</button>}
+      {canMove && moving && batch && act && <BatchAdditions key={moving} batch={batch} batches={batches} orderId={moving}
+        busy={busy} act={act} onClose={() => setMoving(null)} />}
     </details>
   );
 }
@@ -247,7 +269,7 @@ export function ProposalCard({ p, enabled, busy, batches = [], onConfirm }: { p:
   );
 }
 
-export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: SupplierBatch; busy: boolean; act: (path: string, body: unknown, ok?: string) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; exportTxt: (id: string) => Promise<void>; context: Props }) {
+export function BatchCard({ b, batches = [], busy, act, exportCsv, exportTxt, context }: { b: SupplierBatch; batches?: SupplierBatch[]; busy: boolean; act: (path: string, body: unknown, ok?: string) => Promise<boolean>; exportCsv: (id: string) => Promise<void>; exportTxt: (id: string) => Promise<void>; context: Props }) {
   const [mode, setMode] = useState<"ordered" | "release" | null>(null);
   const [showFulfilment, setShowFulfilment] = useState(false);
   const [txtMessage, setTxtMessage] = useState<{ err: boolean; text: string } | null>(null);
@@ -259,6 +281,11 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
         <span className="text-sm font-bold font-mono" style={{ color: V.text }}>{b.reference}</span>
         <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${b.state === "ordered" ? "bg-green-100 text-green-700" : b.state === "released" ? "bg-slate-100 text-slate-500" : "bg-amber-100 text-amber-800"}`}>{b.state === "ordered" ? "Submitted to vendor" : b.state}</span>
       </div>
+      {b.snapshot.refundRemovals?.map(r => (
+        <div key={r.refundId} className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+          Refunded order #{r.orderCode} removed · {r.kits} kits excluded from this batch and delivery
+        </div>
+      ))}
       <p className="text-[11px]" style={{ color: V.muted }}>
         {b.snapshot.region.name} · {kits(b.snapshot.kits)} kits · {b.snapshot.orders.length} orders · prepared {fmt(b.createdAt)} by {b.createdBy}
         {b.orderedAt && ` · submitted to vendor ${fmt(b.orderedAt)}`}{b.releasedAt && ` · released ${fmt(b.releasedAt)}`}
@@ -269,7 +296,8 @@ export function BatchCard({ b, busy, act, exportCsv, exportTxt, context }: { b: 
           {b.exceptions.map(x => <li key={x.orderId}><span className="font-mono">{x.code}</span>: {x.reason}</li>)}
         </ul>
       )}
-      <OrdersDetail p={b.snapshot} />
+      <OrdersDetail p={b.snapshot} batch={b} batches={batches} scope={context.scope} busy={busy} act={act} />
+      <BatchCorrection batch={b} batches={batches} scope={context.scope} busy={busy} onConfirm={act} />
       {b.state === "prepared" && blocked && (
         <BatchRefreshReview batch={b} scope={context.scope} groupBuyId={context.groupBuyId} busy={busy}
           requestPreview={(path, body) => supplierRequest<BatchRefreshPreview>(context.scope, context.groupBuyId, path, body, "POST", context.headers)}
@@ -352,9 +380,14 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
     setMsg(null);
     try {
       await run(() => supplierRequest(scope, groupBuyId, path, body, "POST", headers));
-      if (path.endsWith("/refresh")) {
+      if (path.endsWith("/refresh") || path.endsWith("/move-orders") || path.endsWith("/move-additions")) {
         await qc.invalidateQueries({ queryKey: ["member-supplier-batches", groupBuyId] });
         await qc.invalidateQueries({ queryKey: supplierKey(scope === "admin" ? "organiser" : "admin", groupBuyId) });
+        if (path.endsWith("/move-orders") || path.endsWith("/move-additions")) {
+          for (const staffScope of ["admin", "organiser"]) {
+            await qc.invalidateQueries({ queryKey: ["supplier-fulfilment", staffScope, groupBuyId] });
+          }
+        }
       }
       setMsg({ err: false, text: ok }); return true;
     }
@@ -385,6 +418,7 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
       <p className="text-[11px]" style={{ color: V.muted }}>Last checked {fmt(d.checkedAt)}</p>
       <ConfigEditor putConfig={putConfig} data={d} busy={busy} run={run} reload={() => { qc.invalidateQueries({ queryKey: key }); }} />
       <Msg m={msg} id="text-supplier-msg" />
+      {scope === "admin" && <BatchMessages key={groupBuyId} groupBuyId={groupBuyId} batches={d.batches} headers={headers} />}
       {scope === "admin" && <DirectSupplierDownload key={groupBuyId} groupBuyId={groupBuyId} headers={headers} />}
       <section className="space-y-2">
         <p className={label} style={{ color: "#8A9AAA" }}>Proposals</p>
@@ -420,7 +454,7 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
           <summary className="cursor-pointer text-sm font-semibold" style={{ color: V.text }}>Shipping &amp; receipt overview</summary>
           <div className="mt-3"><SupplierBatchFulfilment groupBuyId={groupBuyId} scope={scope} headers={headers} onViewOrders={onViewOrders} onDispatch={onDispatch} /></div>
         </details>
-        {d.batches.map(b => <BatchCard key={b.id} b={b} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} exportTxt={exportTxt} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}
+        {d.batches.map(b => <BatchCard key={b.id} b={b} batches={d.batches} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} exportTxt={exportTxt} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}
       </section>
       {d.events.length > 0 && (
         <section className="space-y-1">

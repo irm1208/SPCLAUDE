@@ -5,6 +5,12 @@ description: Country privacy and eligibility rules for the group-buy card's View
 
 Members may see their own destination region's filling progress, but batch references and statuses only for batches containing their own active orders. Sharing a region is not enough to see another member's batch. This requires the existing explicit member-visibility opt-in.
 
+On an individual order card, show its assigned batch references and statuses directly in the three-dot menu. Do not substitute another order's batch, even if both belong to the same member or have the same display code. No assigned batch means no batch entry.
+
+**Why:** The user requested this placement and approved showing only batches containing that specific order, respecting existing member visibility.
+
+**How to apply:** Resolve inclusion using stable order identity, not a human-readable order number. Preserve all assigned batches when additions are split across batches.
+
 **Why:** The user specifically requested “x amount of 100” from the group-buy card's three dots, with members seeing only their country's/region's batches, not everyone's.
 
 The user subsequently clarified that members should only know the batch codes they are included in, not other batches in their region.

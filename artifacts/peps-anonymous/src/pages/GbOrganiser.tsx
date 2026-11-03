@@ -17,6 +17,7 @@ import { normalizeShippingCountry } from "@/lib/country-shipping-options";
 import { compareOrderAmounts } from "@/lib/order-amount-sort";
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
 import { GroupBuyStockControls } from "@/components/GroupBuyStockControls";
+import { OrganiserOrderRevisions } from "@/components/group-buy-revisions/OrganiserOrderRevisions";
 import { annotateCompleteGbOrderCounts, isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -5736,6 +5737,7 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
   return (
     <div className="space-y-4">
       <GroupBuyProductLabReports key={gb.id} gbId={gb.id} />
+      <OrganiserOrderRevisions key={`revisions-${gb.id}`} groupBuyId={gb.id} />
       <div className="flex items-center justify-between">
         <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Products — {gb.name}</h2>
         <div className="flex gap-2">

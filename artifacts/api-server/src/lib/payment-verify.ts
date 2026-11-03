@@ -451,8 +451,15 @@ export async function verifyTransaction(
   expectedAmount: number,
   currency: string,
   network: string,
-  tolerancePct = 0.01
+  tolerancePct = 0.01,
+  coaRequestId?: string,
 ): Promise<VerifyResult> {
+  // All callers (pool fees, entry fees and product payments included) share
+  // this fence. Only the owning COA workflow can verify a claimed COA transfer.
+  const { coaTransactionConflict } = await import("./coa-payment-claim");
+  if (await coaTransactionConflict(txHash, coaRequestId)) {
+    return { verified: false, reason: "This transaction is reserved for a separate COA payment.", manual: true };
+  }
   const cur = currency.toUpperCase().trim();
   const net = network.toLowerCase().trim();
 

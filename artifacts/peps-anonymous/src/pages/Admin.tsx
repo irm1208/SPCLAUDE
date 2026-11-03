@@ -54,8 +54,10 @@ import { Fs3CostMatches } from "@/components/admin/Fs3CostMatches";
 import type { Fs3CostMatch } from "@workspace/api-zod/fs3-costs";
 import { AdminDispatch } from "@/components/AdminDispatch";
 import { PaymentAuditTab } from "@/components/admin/PaymentAuditTab";
+import { CoaRequests } from "@/components/admin/CoaRequests";
 import { AdminTrackingPackages } from "@/components/admin/AdminTrackingPackages";
 import { SharedOrderFulfilmentPills } from "@/components/admin/SharedOrderFulfilmentPills";
+import { OrderSupplierBadges } from "@/components/admin/OrderSupplierBadges";
 import { TrackingPackageEditor } from "@/components/admin/TrackingPackageEditor";
 import { InvoiceEditor } from "@/components/invoice/InvoiceEditor";
 import {
@@ -173,6 +175,7 @@ function AdminOrderDispatchImages({ orderId, secret }: { orderId: string; secret
 interface LineItem { id: string; productId: string | null; productName: string; quantity: number; unitPrice: number; lineTotal: number; isOos?: boolean; }
 interface Order {
   vendorNames?: string[];
+  supplierLabels?: string[];
   displayReference?: string;
   isAddition?: boolean;
   additionParent?: { id: string; reference: string } | null;
@@ -1553,6 +1556,7 @@ function OrdersTab({ secret }: { secret: string }) {
           </button>
         </div>
         <div className="mx-4 mb-2 flex flex-wrap items-center gap-1.5">
+          <OrderSupplierBadges labels={group.members.flatMap(o => o.supplierLabels ?? [])} />
           <SharedOrderFulfilmentPills statuses={paymentSummary?.orderStatusPills}
             shareStatus={paymentSummary?.status} unavailable={sharedPaymentSummaryError} />
         </div>
@@ -3382,6 +3386,7 @@ function OrdersTab({ secret }: { secret: string }) {
                   ))}
                 </span>
                 <CreditPaymentPill creditsApplied={order.creditsApplied} grandTotal={order.grandTotal} currency={order.currency} />
+                <OrderSupplierBadges labels={order.supplierLabels} />
                 {order.missingAddress && (
                   <span title="Missing delivery address" className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-red-100 text-red-600 border border-red-200">
                     <AlertTriangle className="w-2.5 h-2.5" />Addr
@@ -15845,6 +15850,7 @@ const ALL_TABS_META = [
   { id: "intlshipping", label: "Intl Shipping", icon: Globe },
   { id: "payments", label: "Payments", icon: CreditCard },
   { id: "payment-audit", label: "Payment Audit", icon: ShieldCheck },
+  { id: "coa", label: "COA Requests", icon: FileText },
   { id: "packages", label: "Packages", icon: PackageCheck },
   { id: "fs3", label: "FS3", icon: ShieldCheck },
   { id: "vendor-portal", label: "Vendor portal", icon: Building2 },
@@ -28269,6 +28275,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
           {activeTab === "intlshipping" && <IntlShippingTab secret={secret} />}
           {activeTab === "payments"     && <PaymentsTab secret={secret} />}
           {activeTab === "payment-audit" && <PaymentAuditTab secret={secret} />}
+          {activeTab === "coa"          && <CoaRequests secret={secret} />}
           {activeTab === "packages"     && <ShipmentsTab secret={secret} />}
           {activeTab === "bulkship"     && <BulkShipmentTab secret={secret} />}
           {activeTab === "fs3"          && <Fs3Tab secret={secret} admin2fa={admin2fa} />}

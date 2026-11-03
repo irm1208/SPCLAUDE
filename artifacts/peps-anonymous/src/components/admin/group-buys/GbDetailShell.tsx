@@ -45,9 +45,10 @@ import { GroupBuyRefundQueue } from "@/components/GroupBuyRefundQueue";
 import { SupplierBatchManager } from "@/components/supplier-batches/SupplierBatchManager";
 import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierBatchFulfilment";
 import { selectSupplierOrderBatch } from "@/components/supplier-batches/OrderBatchFilter";
+import { CoaRequests } from "@/components/admin/CoaRequests";
 
 import type { GroupBuy, InfoCard, ShippingOption, EntryFeePayment, GbPaymentConfig, GBProduct, DeliveryMethod, GBDeliveryMethod, Member, Product, CustomCourier } from "./shared/core";
-export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "refunds" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes" | "supplier-batches" | "supplier-receipt" | "packing-slips";
+export type DetailTab = "details" | "products" | "delivery" | "members" | "waitlist" | "payment" | "refunds" | "parcels" | "orders" | "testing" | "intlshipping" | "adminfeecountry" | "pnl" | "countrylegs" | "reshippers" | "sharedshipping" | "rules" | "summary" | "broadcast" | "shippingcalc" | "shippingsplit" | "fulfilment" | "qrcodes" | "supplier-batches" | "supplier-receipt" | "packing-slips" | "coa";
 
 export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
   secret: string;
@@ -104,6 +105,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
         { id: "payment", label: "Payment Status", icon: CreditCard },
         { id: "refunds", label: "Refunds", icon: Wallet },
         { id: "testing", label: "Testing", icon: TestTube },
+        { id: "coa", label: "COA Requests", icon: FileText },
       ],
     },
     {
@@ -257,6 +259,7 @@ export function GBDetail({ secret, gb, onBack, onUpdate, onClone }: {
             onViewOrders={(batchId, orderId) => { selectSupplierOrderBatch("admin", currentGb.id, batchId, orderId); selectTab("orders"); }}
             onDispatch={() => selectTab("fulfilment")} />}
           {activeTab === "testing" && <TestingSubTab secret={secret} gb={currentGb} />}
+          {activeTab === "coa" && <CoaRequests key={currentGb.id} secret={secret} groupBuyId={currentGb.id} />}
           {activeTab === "intlshipping" && <IntlShippingTab secret={secret} groupBuyId={currentGb.id} readonly={false} />}
           {activeTab === "adminfeecountry" && <AdminFeeCountriesSubTab secret={secret} gb={currentGb} onUpdate={handleUpdate} />}
           {activeTab === "pnl" && <PnlSubTab secret={secret} gb={currentGb} />}

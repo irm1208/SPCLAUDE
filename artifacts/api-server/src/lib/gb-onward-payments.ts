@@ -274,6 +274,8 @@ export async function createOnwardPayment(gbId: string, orderId: string, actor: 
 
 /** Additional anti-replay fence used by original product-payment submission. */
 export async function hasOnwardPaymentTransaction(hash: string, database: DataAccess = db) {
+  const { coaTransactionConflict } = await import("./coa-payment-claim");
+  if (await coaTransactionConflict(hash, undefined, database as typeof db)) return true;
   const [claim] = await database.select({ key: siteConfigTable.key }).from(siteConfigTable).where(and(
     like(siteConfigTable.key, "gb_onward_tx:%"), sql`${siteConfigTable.value}::jsonb->>'canonicalHash' = ${canonicalHash(hash)}`,
   )).limit(1);

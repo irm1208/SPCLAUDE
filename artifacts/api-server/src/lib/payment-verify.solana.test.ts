@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { PublicKey } from "@solana/web3.js";
 const configs = vi.hoisted(() => new Map<string, string>());
+// These are chain-provider unit tests; COA's persisted claim fence has its own
+// integration coverage, not a live database dependency in provider fixtures.
+vi.mock("./coa-payment-claim", () => ({ coaTransactionConflict: async () => false }));
 vi.mock("@workspace/db", async () => {
   const schema = await import("../../../../lib/db/src/schema");
   return { ...schema, db: { select: () => ({ from: (table: unknown) => ({ where: (condition: any) => {

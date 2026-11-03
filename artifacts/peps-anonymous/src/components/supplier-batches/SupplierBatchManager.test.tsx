@@ -34,6 +34,142 @@ const existingBatch: SupplierBatch = {
   createdAt: "2026-01-01T00:00:00Z", createdBy: "admin", orderedAt: null,
   releasedAt: null, releaseReason: null, snapshot: target, exceptions: [],
 };
+test("batch rows highlight additions and allow moving five extra kits without moving the whole twenty-kit order", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const calls: unknown[] = [];
+  const product = existingBatch.snapshot.orders[0].items[0];
+  try {
+    await act(async () => root.render(createElement(BatchCard, {
+      b: { ...existingBatch, state: "ordered", additions: [{ orderId: "one", productId: product.productId,
+        productName: product.productName, quantity: 10 }] },
+      busy: false, act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
+      exportCsv: async () => {}, exportTxt: async () => {}, context: { groupBuyId: "gb", scope: "admin" },
+    })));
+    assert.match(host.textContent!, /Additional kits/);
+    const button = host.querySelector('[data-testid="button-move-additions-one"]') as HTMLButtonElement;
+    assert.ok(button);
+    await act(async () => button.click());
+    // @ts-expect-error Existing workspace browser-test dependency.
+    const { fireEvent } = await import("../../../../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/index.js");
+    await act(async () => {
+      fireEvent.change(host.querySelector('[data-testid="addition-quantity-0"]')!, { target: { value: "5" } });
+      fireEvent.change(host.querySelector('[data-testid="addition-reason"]')!, { target: { value: "Only the extra quantity" } });
+      fireEvent.click(host.querySelector('[data-testid="addition-acknowledge"]')!);
+    });
+    assert.match(host.textContent!, /15 kits stay.*5 kits move/);
+    await act(async () => (host.querySelector('[data-testid="confirm-move-additions"]') as HTMLButtonElement).click());
+    assert.deepEqual(calls, [["/prepared-uk/move-additions", {
+      confirm: true, expectedBatchToken: "target-token", reason: "Only the extra quantity",
+      lines: [{ orderId: "one", productId: product.productId, quantity: 5 }],
+    }]]);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("only Admin can review Undo, with both batch tokens, a reason and explicit confirmation", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const calls: unknown[] = [];
+  const batch: SupplierBatch = { ...existingBatch, state: "ordered", undoMoves: [{
+    eventId: "move", targetReference: "GB-TEST / 007", expectedTargetToken: "destination-token",
+    kits: 2, orderCodes: ["12402"],
+  }] };
+  const props = { b: batch, busy: false,
+    act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
+    exportCsv: async () => {}, exportTxt: async () => {}, context: { groupBuyId: "gb", scope: "admin" as const } };
+  try {
+    await act(async () => root.render(createElement(BatchCard, { ...props, context: { groupBuyId: "gb", scope: "organiser" } })));
+    assert.equal(host.querySelector('[data-testid="undo-move-move"]'), null);
+    await act(async () => root.render(createElement(BatchCard, props)));
+    await act(async () => (host.querySelector('[data-testid="undo-move-move"]') as HTMLButtonElement).click());
+    assert.match(host.textContent!, /Return 2 kits from GB-TEST \/ 007 to GB-TEST \/ 001/);
+    assert.match(host.textContent!, /12402/);
+    assert.match(host.textContent!, /prices and payments stay unchanged/);
+    assert.equal((host.querySelector('[data-testid="confirm-undo-move"]') as HTMLButtonElement).disabled, true);
+    const input = host.querySelector('[data-testid="undo-move-reason"]') as HTMLTextAreaElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!.call(input, "Moved original kit by mistake");
+      input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+    await act(async () => (host.querySelector('[data-testid="undo-move-acknowledge"]') as HTMLInputElement).click());
+    await act(async () => (host.querySelector('[data-testid="confirm-undo-move"]') as HTMLButtonElement).click());
+    assert.deepEqual(calls, [["/prepared-uk/undo-move", { confirm: true, moveEventId: "move",
+      reason: "Moved original kit by mistake", expectedBatchToken: "target-token", expectedTargetToken: "destination-token" }]]);
+    await act(async () => (host.querySelector('[data-testid="undo-move-move"]') as HTMLButtonElement).click());
+    await act(async () => root.render(createElement(BatchCard, {
+      ...props, b: { ...batch, undoMoves: [{ ...batch.undoMoves![0], expectedTargetToken: "changed-destination" }] },
+    })));
+    assert.match(host.textContent!, /The batch changed/);
+    assert.equal((host.querySelector('[data-testid="confirm-undo-move"]') as HTMLButtonElement).disabled, true);
+    assert.equal(calls.length, 1);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("refunded removals are visible on the batch and not mixed into current member items", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(BatchCard, {
+      b: { ...existingBatch, snapshot: { ...existingBatch.snapshot,
+        refundRemovals: [{ refundId: "refund", orderCode: "123", kits: 2 }] } },
+      busy: false, act: async () => true, exportCsv: async () => {}, exportTxt: async () => {},
+      context: { groupBuyId: "gb", scope: "admin" },
+    })));
+    assert.match(host.textContent!, /Refunded order #123 removed · 2 kits excluded from this batch and delivery/);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("Admin can review and confirm a whole-order move with a reason", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const calls: unknown[] = [];
+  const props = {
+    b: { ...existingBatch, state: "ordered" as const }, busy: false,
+    act: async (path: string, body: unknown) => { calls.push([path, body]); return true; },
+    exportCsv: async () => {}, exportTxt: async () => {},
+    context: { groupBuyId: "gb", scope: "admin" as const },
+  };
+  try {
+    await act(async () => root.render(createElement(BatchCard, props)));
+    const button = host.querySelector('[data-testid="button-correct-prepared-uk"]') as HTMLButtonElement;
+    assert.ok(button, "Admin correction entry point must be visible");
+    await act(async () => button.click());
+    // @ts-expect-error Existing workspace browser-test dependency.
+    const { fireEvent } = await import("../../../../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/index.js");
+    await act(async () => fireEvent.click(host.querySelector('[data-testid="move-order-one"]')!));
+    assert.match(host.textContent!, /20 kits.*30 kits/);
+    const confirm = host.querySelector('[data-testid="confirm-move-orders"]') as HTMLButtonElement;
+    assert.equal(confirm.disabled, true);
+    await act(async () => {
+      fireEvent.change(host.querySelector('[data-testid="move-orders-reason"]')!, { target: { value: "Not included in vendor purchase" } });
+      fireEvent.click(host.querySelector('[data-testid="acknowledge-move-orders"]')!);
+    });
+    await act(async () => confirm.click());
+    assert.deepEqual(calls, [["/prepared-uk/move-orders", {
+      orderIds: ["one"], expectedBatchToken: "target-token",
+      reason: "Not included in vendor purchase", confirm: true,
+    }]]);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("organisers see the correction marker but cannot start an Admin correction", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    const snapshot = { ...target, corrections: [{ direction: "out" as const, kits: 6, reference: "GB-TEST / 003",
+      reason: "Not included in vendor purchase", orderCodes: ["12402", "12447"], actor: "admin", createdAt: "2026-11-02T12:00:00Z" }] };
+    await act(async () => root.render(createElement(BatchCard, {
+      b: { ...existingBatch, state: "ordered", snapshot }, busy: false,
+      act: async () => true, exportCsv: async () => {}, exportTxt: async () => {},
+      context: { groupBuyId: "gb", scope: "organiser" },
+    })));
+    assert.equal(host.querySelector('[data-testid="button-correct-prepared-uk"]'), null);
+    assert.ok(host.textContent!.includes("GB-TEST / 003"));
+    assert.ok(host.textContent!.includes("12402"));
+    assert.ok(host.textContent!.includes("Not included in vendor purchase"));
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 test("vendor submission requires confirmation and reuses the existing batch action", async () => {
   const container = document.createElement("div");

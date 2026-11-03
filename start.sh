@@ -115,7 +115,7 @@ PORT=8080 NODE_ENV=development pnpm --filter @workspace/api-server run dev &
 # It shares the API on 8080 under /api/tmd only. Set TESTMEDADDY_DEV=0 to skip it.
 if [ "${TESTMEDADDY_DEV:-1}" != "0" ]; then
   echo "[start] Starting Testmedaddy on port 21505..."
-  API_PORT=8080 BASE_PATH=/ PORT=21505 pnpm --filter @workspace/testmedaddy run dev &
+  API_PORT=8080 BASE_PATH=/testmedaddy/ PORT=21505 pnpm --filter @workspace/testmedaddy run dev &
 fi
 
 echo "[start] Starting frontend on port 21504..."

@@ -14,7 +14,12 @@ function Shell({ title, subtitle, children, footer }: { title: string; subtitle?
     </div>
   );
 }
-const nextParam = () => { try { return new URLSearchParams(window.location.search).get("next") || "/dashboard"; } catch { return "/dashboard"; } };
+const nextParam = () => {
+  try {
+    const next = new URLSearchParams(window.location.search).get("next");
+    return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/dashboard";
+  } catch { return "/dashboard"; }
+};
 
 export function Login() {
   const { login, user } = useAuth();
@@ -30,7 +35,7 @@ export function Login() {
         {error && <Alert tone="danger">{error}</Alert>}
         <Field label="Email or handle"><Input autoComplete="username" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required /></Field>
         <Field label="Password"><Input type="password" autoComplete="current-password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required /></Field>
-        <div className="flex items-center justify-between"><Toggle checked={form.rememberMe} onChange={v => setForm({ ...form, rememberMe: v })} label="Keep me signed in" /><Link href="/forgot-password" className="text-sm text-muted hover:text-fg">Forgot password?</Link></div>
+        <div className="flex items-center justify-between"><Toggle checked={form.rememberMe} onChange={v => setForm({ ...form, rememberMe: v })} label="Keep me signed in" /></div>
         <Button type="submit" className="w-full" loading={busy}>Sign in</Button>
       </form>
     </Shell>
@@ -49,12 +54,12 @@ export function Signup() {
     <Shell title="Create your account" subtitle="One account to host pools, join pools and follow results." footer={<>Already have one? <Link href="/login" className="text-brand hover:underline">Sign in</Link></>}>
       <form onSubmit={submit} className="space-y-4">
         {error && <Alert tone="danger">{error}</Alert>}
-        <Field label="Email" hint="We send a confirmation link. Your email is never shown to anyone."><Input type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required /></Field>
+        <Field label="Email" hint="Your email is never shown to other members."><Input type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required /></Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Handle" hint="Letters, numbers, - and _"><Input autoComplete="username" placeholder="labrat" value={form.handle} onChange={e => setForm({ ...form, handle: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "") })} required minLength={3} maxLength={30} /></Field>
           <Field label="Display name"><Input placeholder="Optional" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} maxLength={60} /></Field>
         </div>
-        <Field label="Password" hint="At least 10 characters."><Input type="password" autoComplete="new-password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required minLength={10} /></Field>
+        <Field label="Password" hint="At least 10 characters. Password recovery is not available in this release."><Input type="password" autoComplete="new-password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required minLength={10} /></Field>
         <Button type="submit" className="w-full" loading={busy}>Create account</Button>
       </form>
     </Shell>

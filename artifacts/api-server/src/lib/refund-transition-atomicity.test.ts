@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("./refund-supplier-batches", () => ({
+  lockRefundSupplierGroup: vi.fn(), assertRefundBeforeVendor: vi.fn(),
+  removeRefundedSupplierAllocations: vi.fn(),
+}));
 
 const state = vi.hoisted(() => ({
   account: { telegramUsername: "buyer", credits: 0 },

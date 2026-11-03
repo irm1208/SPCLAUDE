@@ -5,11 +5,16 @@ vi.mock("./telegram", () => ({
   notifyUserFull: vi.fn(async () => ({ok:true})),
   sendAdminMessageFull: vi.fn(async () => ({ok:true,chatId:"synthetic-admin-chat"})),
 }));
+vi.mock("./refund-notifications", async importOriginal => ({
+  ...await importOriginal<typeof import("./refund-notifications")>(),
+  drainRefundAudits: vi.fn(async () => 0), drainRefundNotifications: vi.fn(async () => 0),
+}));
 
 // Only synthetic, isolated fixtures; never mutate a real member's orders.
 describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier batches / PostgreSQL transactions", () => {
   let store: any, api: any, protect: any;
   const fixtures: string[] = [];
+  const refundAccounts: string[] = [];
   const admin = { username: "synthetic-admin", admin: true };
   beforeAll(async () => {
     store = await import("@workspace/db");
@@ -24,10 +29,18 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
         await tx.delete(store.auditLogsTable).where(sql`${store.auditLogsTable.metadata}->>'groupBuyId' = ${id}`);
         await tx.delete(store.gbSupplierAllocationsTable).where(sql`${store.gbSupplierAllocationsTable.batchId} IN
           (SELECT id FROM gb_supplier_batches WHERE group_buy_id = ${id})`);
+        await tx.delete(store.gbSupplierShipmentsTable).where(sql`${store.gbSupplierShipmentsTable.batchId} IN
+          (SELECT id FROM gb_supplier_batches WHERE group_buy_id = ${id})`);
+        for (const table of [store.groupBuyRefundNotificationsTable, store.groupBuyRefundTransitionOutboxTable,
+          store.groupBuyRefundTxClaimsTable, store.groupBuyRefundAttemptsTable, store.creditTransactionsTable]) {
+          await tx.delete(table).where(sql`${table.refundId} IN (SELECT id FROM group_buy_refunds WHERE group_buy_id = ${id})`);
+        }
+        await tx.delete(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.groupBuyId, id));
         await tx.delete(store.ordersTable).where(eq(store.ordersTable.groupBuyId, id));
         await tx.delete(store.groupBuysTable).where(eq(store.groupBuysTable.id, id));
       });
     }
+    for (const username of refundAccounts.splice(0)) await store.db.delete(store.accountsTable).where(eq(store.accountsTable.telegramUsername, username));
   });
   async function fixture(qtys = [95, 10, 20], routes: Record<string, unknown>[] = [], telegramAlerts = false) {
     const id = randomUUID(); fixtures.push(id);
@@ -49,6 +62,439 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const result = await api.saveSupplierConfig(id, admin, {expectedVersion: 0, config: {enabled:true,telegramAlerts,regions:[{id:"eu",name:"EU",countries:["IT","DE"],targetKits:100}]}});
     return {id, ids, result};
   }
+  it("completes a real credit refund and atomically releases its final unsubmitted allocation, without double credit", async () => {
+    const f = await fixture([100]);
+    const username = `refund-${randomUUID()}`; refundAccounts.push(username);
+    await store.db.insert(store.accountsTable).values({ telegramUsername: username, passwordHash: "synthetic-no-login", credits: 0 });
+    await store.db.update(store.ordersTable).set({ telegramUsername: username }).where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.groupBuysTable).set({ cryptoRefundsEnabled: true }).where(eq(store.groupBuysTable.id, f.id));
+    const data = await api.supplierData(f.id, admin), p = data.proposals[0];
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token });
+    const refund = await import("./group-buy-refund");
+    // Processing alone is not evidence of vendor submission.
+    await store.db.update(store.ordersTable).set({ status: "Processing" }).where(eq(store.ordersTable.id, f.ids[0]));
+    const request = await refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0], input: { method: "credit" } });
+    const args = { refundId: request.id, username: admin.username, role: "admin" };
+    const shipmentId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: prepared.batches[0].id, createdBy: admin.username, label: "Legacy prepared parcel",
+      requestKey: randomUUID(), requestHash: randomUUID(), receiptChecked: 1,
+      contents: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 100 }],
+    });
+    await expect(refund.completeCreditRefund(store.db, args)).rejects.toThrow("refund_batch_receipt_checked");
+    const [stillPending] = await store.db.select().from(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.id, request.id));
+    expect(stillPending.status).toBe("requested");
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 0 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect((await refund.completeCreditRefund(store.db, args)).status).toBe("completed");
+    expect((await refund.completeCreditRefund(store.db, args)).status).toBe("completed");
+    const [batch] = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, prepared.batches[0].id));
+    expect([batch.state, batch.snapshot.kits, batch.snapshot.orders.length]).toEqual(["released", 0, 0]);
+    const [account] = await store.db.select().from(store.accountsTable).where(eq(store.accountsTable.telegramUsername, username));
+    expect(Number(account.credits)).toBe(1000);
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect([order.status, order.paymentStatus]).toEqual(["Cancelled", "refunded"]);
+    const ledger = await store.db.select().from(store.creditTransactionsTable).where(eq(store.creditTransactionsTable.refundId, request.id));
+    expect(ledger).toHaveLength(1);
+    const [parcel] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(parcel.contents).toEqual([]);
+    expect(parcel.cancelledAt).not.toBeNull();
+    expect(parcel.version).toBe(1);
+  });
+  it.each(["credit", "crypto", "manual"])("blocks unfinished %s refunds for previously submitted orders without changing money or allocations", async method => {
+    const f = await fixture([100]);
+    const username = `refund-${randomUUID()}`; refundAccounts.push(username);
+    await store.db.insert(store.accountsTable).values({ telegramUsername: username, passwordHash: "synthetic-no-login", credits: 0 });
+    await store.db.update(store.ordersTable).set({ telegramUsername: username }).where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.groupBuysTable).set({ cryptoRefundsEnabled: true }).where(eq(store.groupBuysTable.id, f.id));
+    const data = await api.supplierData(f.id, admin), p = data.proposals[0];
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token });
+    const refund = await import("./group-buy-refund");
+    const request = await refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0],
+      input: method === "credit" ? { method: "credit" } : {
+        method: "crypto", asset: "USDC", network: "Ethereum ERC-20", destinationWallet: "0x" + "c".repeat(40),
+      } });
+    // Simulate a historical pending refund whose vendor submission predates this rule.
+    await store.db.update(store.gbSupplierBatchesTable).set({ state: "ordered", orderedAt: new Date() })
+      .where(eq(store.gbSupplierBatchesTable.id, prepared.batches[0].id));
+    await store.db.update(store.ordersTable).set({ status: "Processing" }).where(eq(store.ordersTable.id, f.ids[0]));
+    const actor = { username: admin.username, role: "admin" }, txid = "0x" + "a".repeat(64);
+    const attempt = method === "credit" ? refund.completeCreditRefund(store.db, { ...actor, refundId: request.id })
+      : method === "crypto" ? refund.submitCryptoRefund(store.db, actor, request.id, txid)
+        : refund.completeManualCryptoRefund(store.db, { ...actor, refundId: request.id, txid, reason: "Synthetic historical refund" });
+    await expect(attempt).rejects.toThrow("submitted_to_vendor");
+    await expect(refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0], input: { method: "credit" } }))
+      .rejects.toThrow("submitted_to_vendor");
+    const [account] = await store.db.select().from(store.accountsTable).where(eq(store.accountsTable.telegramUsername, username));
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    const [pending] = await store.db.select().from(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.id, request.id));
+    expect([Number(account.credits), order.paymentStatus, pending.status]).toEqual([0, "confirmed", "requested"]);
+    const reserved = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(reserved[0].batchId).toBe(prepared.batches[0].id);
+  });
+  it("blocks refunds after any vendor submission, but removes refunded kits from an unsubmitted batch", async () => {
+    const f = await fixture([100, 3]);
+    const helper = await import("./refund-supplier-batches");
+    const p = f.result.proposals[0].allQueued;
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token, includeAll: true });
+    const b = prepared.batches[0];
+    await store.db.transaction(async (tx: any) => {
+      await helper.assertRefundBeforeVendor(tx, { id: f.ids[0], groupBuyId: f.id });
+      await helper.removeRefundedSupplierAllocations(tx, { id: f.ids[0], groupBuyId: f.id, code: "test-0" }, "synthetic-refund", "synthetic-admin");
+    });
+    const data = await api.supplierData(f.id, admin);
+    const current = data.batches.find((x: any) => x.id === b.id);
+    expect(current.snapshot.kits).toBe(3);
+    expect(current.snapshot.orders.map((x: any) => x.id)).toEqual([f.ids[1]]);
+    expect(current.snapshot.token).not.toBe(b.snapshot.token);
+    expect(current.snapshot.refundRemovals).toMatchObject([{ orderCode: "test-0", kits: 100 }]);
+    const [reserved] = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(reserved).toBeUndefined();
+    await api.orderSupplierBatch(f.id, b.id, admin, { confirm: true });
+    await expect(store.db.transaction((tx: any) => helper.assertRefundBeforeVendor(tx, { id: f.ids[1], groupBuyId: f.id })))
+      .rejects.toThrow(/submitted_to_vendor/);
+    // A stale/missing reservation cannot bypass an ordered snapshot.
+    await store.db.delete(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[1]));
+    await expect(store.db.transaction((tx: any) => helper.assertRefundBeforeVendor(tx, { id: f.ids[1], groupBuyId: f.id })))
+      .rejects.toThrow(/submitted_to_vendor/);
+  });
+  it("checks every split allocation even when the reservation root is still prepared", async () => {
+    const f = await fixture([100]);
+    const helper = await import("./refund-supplier-batches");
+    const { splitBatchQuantities } = await import("./supplier-batch-additions");
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const b = prepared.batches[0];
+    const split = splitBatchQuantities(b, [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 1 }]);
+    await store.db.update(store.gbSupplierBatchesTable).set({ snapshot: split.remaining }).where(eq(store.gbSupplierBatchesTable.id, b.id));
+    const targetId = randomUUID();
+    await store.db.insert(store.gbSupplierBatchesTable).values({
+      id: targetId, groupBuyId: f.id, sequence: 2, reference: "SYNTHETIC / 002",
+      previewToken: randomUUID(), snapshot: split.moved, state: "ordered", orderedAt: new Date(), createdBy: admin.username,
+    });
+    await expect(store.db.transaction((tx: any) => helper.assertRefundBeforeVendor(tx, { id: f.ids[0], groupBuyId: f.id })))
+      .rejects.toThrow("submitted_to_vendor");
+    expect(await helper.submittedSupplierOrderIds(store.db, [{ id: f.ids[0], groupBuyId: f.id }])).toEqual(new Set([f.ids[0]]));
+    await store.db.update(store.gbSupplierBatchesTable).set({ state: "prepared", orderedAt: null }).where(eq(store.gbSupplierBatchesTable.id, targetId));
+    await store.db.transaction((tx: any) => helper.removeRefundedSupplierAllocations(tx,
+      { id: f.ids[0], groupBuyId: f.id, code: "test-0" }, "synthetic-refund", admin.username));
+    const result = await api.supplierData(f.id, admin);
+    expect(result.batches.map((b: any) => [b.state, b.snapshot.kits])).toEqual([["released", 0], ["released", 0]]);
+  });
+  it("serialises a simultaneous refund request and vendor submission so only one succeeds", async () => {
+    const f = await fixture([100]);
+    const username = `refund-${randomUUID()}`; refundAccounts.push(username);
+    await store.db.insert(store.accountsTable).values({ telegramUsername: username, passwordHash: "synthetic-no-login", credits: 0 });
+    await store.db.update(store.ordersTable).set({ telegramUsername: username }).where(eq(store.ordersTable.id, f.ids[0]));
+    await store.db.update(store.groupBuysTable).set({ cryptoRefundsEnabled: true }).where(eq(store.groupBuysTable.id, f.id));
+    const data = await api.supplierData(f.id, admin);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: data.proposals[0].token });
+    const refund = await import("./group-buy-refund");
+    const results = await Promise.allSettled([
+      refund.createRefundRequest(store.db, { accountId: username, orderId: f.ids[0], input: { method: "credit" } }),
+      api.orderSupplierBatch(f.id, prepared.batches[0].id, admin, { confirm: true }),
+    ]);
+    expect(results.map(r => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const requests = await store.db.select().from(store.groupBuyRefundsTable).where(eq(store.groupBuyRefundsTable.groupBuyId, f.id));
+    const [batch] = await store.db.select().from(store.gbSupplierBatchesTable).where(eq(store.gbSupplierBatchesTable.id, prepared.batches[0].id));
+    expect(requests.length > 0 && batch.state === "ordered").toBe(false);
+  });
+  it("undoes an allocation move atomically, preserves payments, restores manifests and is replay-safe", async () => {
+    const f = await fixture([100]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: f.result.proposals[0].token,
+    });
+    const submitted = await api.orderSupplierBatch(f.id, prepared.batches[0].id, admin, { confirm: true });
+    const source = submitted.batches[0], order = source.snapshot.orders[0];
+    const shipmentId = randomUUID();
+    const contents = [{ orderId: order.id, code: order.code, username: order.username,
+      productId: order.items[0].productId, productName: order.items[0].productName, quantity: 100 }];
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: source.id, createdBy: admin.username, label: "Undo fixture",
+      requestKey: randomUUID(), requestHash: randomUUID(), contents,
+    });
+    const moved = await api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      confirm: true, reason: "Synthetic mistaken move", expectedBatchToken: source.snapshot.token, orderIds: f.ids,
+    });
+    const from = moved.batches.find((b: any) => b.id === source.id);
+    const target = moved.batches.find((b: any) => b.id !== source.id);
+    const [event] = await store.db.select().from(store.gbSupplierEventsTable)
+      .where(and(eq(store.gbSupplierEventsTable.groupBuyId, f.id), eq(store.gbSupplierEventsTable.kind, "orders_moved")));
+    const body = { confirm: true, reason: "Undo mistaken allocation", moveEventId: event.id,
+      expectedBatchToken: from.snapshot.token, expectedTargetToken: target.snapshot.token };
+    expect(from.undoMoves[0]).toMatchObject({ eventId: event.id, targetReference: target.reference, kits: 100 });
+    await expect(api.undoSupplierBatchMove(f.id, source.id, { username: "organiser", admin: false }, body)).rejects.toThrow(/Admin/);
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, { ...body, expectedTargetToken: "stale" })).rejects.toThrow(/changed/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 1 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/receipt/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 0 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await store.db.update(store.gbSupplierShipmentsTable).set({ contents }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/contents changed/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ contents: [] }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    const extraPackageId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: extraPackageId, batchId: target.id, createdBy: admin.username, label: "Destination guard fixture",
+      requestKey: randomUUID(), requestHash: randomUUID(), contents: [],
+    });
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/destination has supplier packages/);
+    await store.db.delete(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, extraPackageId));
+    await store.db.update(store.ordersTable).set({ status: "Shipped" }).where(eq(store.ordersTable.id, order.id));
+    await expect(api.undoSupplierBatchMove(f.id, source.id, admin, body)).rejects.toThrow(/changed|unshipped/);
+    await store.db.update(store.ordersTable).set({ status: "Submitted" }).where(eq(store.ordersTable.id, order.id));
+    const results = await Promise.all([
+      api.undoSupplierBatchMove(f.id, source.id, admin, body),
+      api.undoSupplierBatchMove(f.id, source.id, admin, body),
+    ]);
+    for (const result of results) {
+      expect(result.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(100);
+      expect(result.batches.find((b: any) => b.id === target.id).state).toBe("released");
+      expect(result.batches.find((b: any) => b.id === source.id).undoMoves).toEqual([]);
+    }
+    const [restored] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(restored.contents).toEqual(contents);
+    expect(restored.cancelledAt).toBeNull();
+    const [reservation] = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, order.id));
+    expect(reservation.batchId).toBe(source.id);
+    const [unchanged] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, order.id));
+    expect(unchanged).toMatchObject({ paymentStatus: "confirmed", grandTotal: "1000.00", status: "Processing" });
+    const undos = await store.db.select().from(store.gbSupplierEventsTable)
+      .where(and(eq(store.gbSupplierEventsTable.groupBuyId, f.id), eq(store.gbSupplierEventsTable.kind, "move_undone")));
+    expect(undos).toHaveLength(1);
+  });
+  async function moveDestinationFixture() {
+    const f = await fixture([100, 100]);
+    const first = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: f.result.proposals[0].token });
+    const source = first.batches[0];
+    await api.orderSupplierBatch(f.id, source.id, admin, { confirm: true });
+    const next = await api.supplierData(f.id, admin);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: next.proposals[0].token });
+    const target = prepared.batches.find((b: any) => b.id !== source.id);
+    return { f, source, target, body: { confirm: true, reason: "Choose an existing destination",
+      orderIds: [f.ids[0]], expectedBatchToken: source.snapshot.token,
+      targetBatchId: target.id, expectedTargetToken: target.snapshot.token } };
+  }
+  it("moves to the chosen prepared batch, preserves its members and supports safe replay and Undo", async () => {
+    const { f, source, target, body } = await moveDestinationFixture();
+    const result = await api.moveSupplierBatchOrders(f.id, source.id, admin, body);
+    const destination = result.batches.find((b: any) => b.id === target.id);
+    expect(result.batches).toHaveLength(2);
+    expect(destination.snapshot.kits).toBe(200);
+    expect(destination.snapshot.orders.map((o: any) => o.id).sort()).toEqual([...f.ids].sort());
+    expect(result.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(0);
+    const replay = await api.moveSupplierBatchOrders(f.id, source.id, admin, body);
+    expect(replay.batches.find((b: any) => b.id === target.id).snapshot.kits).toBe(200);
+    const updatedSource = replay.batches.find((b: any) => b.id === source.id);
+    expect(updatedSource.undoMoves).toHaveLength(1);
+    const undone = await api.undoSupplierBatchMove(f.id, source.id, admin, {
+      confirm: true, reason: "Restore chosen destination", moveEventId: updatedSource.undoMoves[0].eventId,
+      expectedBatchToken: updatedSource.snapshot.token, expectedTargetToken: destination.snapshot.token,
+    });
+    const restored = undone.batches.find((b: any) => b.id === target.id);
+    expect(restored.state).toBe("prepared");
+    expect(restored.snapshot.kits).toBe(100);
+    expect(restored.snapshot.orders.map((o: any) => o.id)).toEqual([f.ids[1]]);
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect(order).toMatchObject({ paymentStatus: "confirmed", grandTotal: "1000.00", status: "Processing" });
+  });
+  it("moves only an added quantity into the chosen batch while keeping the original reservation and payment", async () => {
+    const { f, source, target, body } = await moveDestinationFixture();
+    await store.db.insert(store.auditLogsTable).values({
+      type: "order", action: "order_updated_by_customer", message: "Synthetic one-kit increase",
+      metadata: { groupBuyId: f.id, orderId: f.ids[0],
+        before: { lineItems: [{ productName: "Synthetic product", quantity: "99" }] },
+        after: { lineItems: [{ productName: "Synthetic product", quantity: "100" }] } },
+    });
+    const result = await api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...body, mode: "additions", lines: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 1 }],
+    });
+    expect(result.batches).toHaveLength(2);
+    expect(result.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(99);
+    const destination = result.batches.find((b: any) => b.id === target.id);
+    expect(destination.snapshot.kits).toBe(101);
+    expect(destination.snapshot.orders.find((o: any) => o.id === f.ids[0]).kits).toBe(1);
+    const [allocation] = await store.db.select().from(store.gbSupplierAllocationsTable)
+      .where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(allocation.batchId).toBe(source.id);
+    const [order] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect(order).toMatchObject({ paymentStatus: "confirmed", grandTotal: "1000.00", status: "Processing" });
+  });
+  it.each(["stale", "submitted", "region", "missing", "packages"])("rejects an unsafe chosen destination: %s", async invalid => {
+    const { f, source, target, body } = await moveDestinationFixture();
+    if (invalid === "stale") body.expectedTargetToken = "outdated";
+    if (invalid === "submitted") await api.orderSupplierBatch(f.id, target.id, admin, { confirm: true });
+    if (invalid === "region") await store.db.update(store.gbSupplierBatchesTable).set({
+      snapshot: { ...target.snapshot, region: { ...target.snapshot.region, id: "other" } },
+    }).where(eq(store.gbSupplierBatchesTable.id, target.id));
+    if (invalid === "missing") body.targetBatchId = randomUUID();
+    if (invalid === "packages") await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: randomUUID(), batchId: target.id, createdBy: "synthetic", label: "Protect destination",
+      requestKey: randomUUID(), requestHash: randomUUID(), contents: [],
+    });
+    await expect(api.moveSupplierBatchOrders(f.id, source.id, admin, body)).rejects.toThrow(/destination/i);
+    const current = await api.supplierData(f.id, admin);
+    expect(current.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(100);
+  });
+  it("uses customer edits before first allocation and refuses moving original kits from an appended order", async () => {
+    const f = await fixture([2, 100]);
+    await store.db.insert(store.auditLogsTable).values({
+      type: "order", action: "order_updated_by_customer", message: "Synthetic quantity edit",
+      metadata: { groupBuyId: f.id, orderId: f.ids[0],
+        before: { lineItems: [{ productName: "Synthetic product", quantity: "1" }] },
+        after: { lineItems: [{ productName: "Synthetic product", quantity: "2" }] } },
+    });
+    const prepared = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: f.result.proposals[0].allQueued.token, includeAll: true,
+    });
+    const batch = prepared.batches[0];
+    await store.db.insert(store.gbSupplierEventsTable).values({
+      id: randomUUID(), groupBuyId: f.id, kind: "appended",
+      detail: { batchId: batch.id, orderIds: f.ids },
+    });
+    const submitted = await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    const source = submitted.batches[0];
+    expect(source.additions).toEqual([{
+      orderId: f.ids[0], productId: "synthetic-product", productName: "Synthetic product", quantity: 1,
+    }]);
+    const request = { mode: "additions", confirm: true, reason: "Synthetic additional kit",
+      expectedBatchToken: source.snapshot.token };
+    await expect(api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...request, lines: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 2 }],
+    })).rejects.toThrow(/Only the highlighted/);
+    await expect(api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...request, lines: [{ orderId: f.ids[1], productId: "synthetic-product", quantity: 1 }],
+    })).rejects.toThrow(/Only the highlighted/);
+    const moved = await api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      ...request, lines: [{ orderId: f.ids[0], productId: "synthetic-product", quantity: 1 }],
+    });
+    const remaining = moved.batches.find((b: any) => b.id === source.id);
+    const destination = moved.batches.find((b: any) => b.id !== source.id);
+    expect(remaining.snapshot.orders.find((o: any) => o.id === f.ids[0]).kits).toBe(1);
+    expect(destination.snapshot.kits).toBe(1);
+    expect(remaining.additions).toEqual([]);
+    expect(destination.additions).toEqual([]);
+    await expect(api.undoSupplierBatchMove(f.id, source.id, { ...admin, adminGbId: "another-group" }, {
+      confirm: true, reason: "Wrong scope", moveEventId: remaining.undoMoves[0].eventId,
+      expectedBatchToken: remaining.snapshot.token, expectedTargetToken: destination.snapshot.token,
+    })).rejects.toThrow(/another group/);
+    const undone = await api.undoSupplierBatchMove(f.id, source.id, admin, {
+      confirm: true, reason: "Synthetic undo of a partial quantity move", moveEventId: remaining.undoMoves[0].eventId,
+      expectedBatchToken: remaining.snapshot.token, expectedTargetToken: destination.snapshot.token,
+    });
+    const original = undone.batches.find((b: any) => b.id === source.id);
+    expect(original.snapshot.orders.find((o: any) => o.id === f.ids[0]).kits).toBe(2);
+    expect(original.additions).toMatchObject([{ orderId: f.ids[0], quantity: 1 }]);
+    expect(original.snapshot.orders.find((o: any) => o.id === f.ids[0]).fullOrder).toBeUndefined();
+    const [unchanged] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect(unchanged.grandTotal).toBe("20.00");
+    expect(unchanged.paymentStatus).toBe("confirmed");
+  });
+  it("moves only an added kit while retaining the original order, full payment, root reservation and split fulfilment", async () => {
+    const f = await fixture([100]);
+    const p = f.result.proposals[0];
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token });
+    const batch = prepared.batches[0];
+    await store.db.update(store.orderLineItemsTable).set({ quantity: 102, lineSubtotal: "1020" }).where(eq(store.orderLineItemsTable.orderId, f.ids[0]));
+    await store.db.update(store.ordersTable).set({ productSubtotal: "1020", grandTotal: "1020" }).where(eq(store.ordersTable.id, f.ids[0]));
+    const preview = await api.previewSupplierBatchRefresh(f.id, batch.id, admin, { expectedBatchToken: batch.snapshot.token });
+    const refreshed = await api.refreshSupplierBatch(f.id, batch.id, admin, {
+      confirm: true, expectedBatchToken: batch.snapshot.token, token: preview.token,
+    });
+    expect(refreshed.batches[0].additions).toMatchObject([{ orderId: f.ids[0], quantity: 2 }]);
+    const submitted = await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    const source = submitted.batches[0], product = source.snapshot.orders[0].items[0];
+    const shipmentId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: source.id, label: "Quantity fixture", createdBy: admin.username,
+      requestKey: randomUUID(), requestHash: "quantity-fixture",
+      contents: [{ orderId: f.ids[0], productId: product.productId, productName: product.productName,
+        quantity: 102, code: "test-0", username: "synthetic-0" }],
+    });
+    const lines = [{ orderId: f.ids[0], productId: product.productId, quantity: 1 }];
+    const body = { mode: "additions", confirm: true, reason: "Extra kit not purchased",
+      expectedBatchToken: source.snapshot.token, lines };
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, {
+      ...body, lines: [{ ...lines[0], quantity: 3 }],
+    })).rejects.toThrow(/highlighted/);
+    const moved = await api.moveSupplierBatchOrders(f.id, batch.id, admin, body);
+    const original = moved.batches.find((b: any) => b.id === batch.id);
+    const next = moved.batches.find((b: any) => b.id !== batch.id);
+    expect(original.snapshot.kits).toBe(101);
+    expect(next.snapshot.kits).toBe(1);
+    expect(original.additions[0].quantity).toBe(1);
+    expect(original.exceptions).toEqual([]);
+    expect(next.exceptions).toEqual([]);
+    const [manifest] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(manifest.contents[0].quantity).toBe(101);
+    expect(manifest.version).toBe(1);
+    const [parent] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
+    expect([parent.grandTotal, parent.paymentStatus, parent.status]).toEqual(["1020.00", "confirmed", "Processing"]);
+    const [item] = await store.db.select().from(store.orderLineItemsTable).where(eq(store.orderLineItemsTable.orderId, f.ids[0]));
+    expect(Number(item.quantity)).toBe(102);
+    const [root] = await store.db.select().from(store.gbSupplierAllocationsTable).where(eq(store.gbSupplierAllocationsTable.orderId, f.ids[0]));
+    expect(root.batchId).toBe(batch.id);
+    await api.orderSupplierBatch(f.id, next.id, admin, { confirm: true });
+    const fulfilment = await import("./supplier-fulfilment");
+    const view = await fulfilment.supplierFulfilmentDetail(f.id, next.id, admin);
+    expect(view.orders[0].exceptions).not.toContain("Supplier batch reservation mismatch.");
+    expect(view.orders[0].items[0].quantity).toBe(1);
+    const replay = await api.moveSupplierBatchOrders(f.id, batch.id, admin, body);
+    expect(replay.batches).toHaveLength(2);
+    const movedSource = replay.batches.find((b: any) => b.id === batch.id);
+    const [moveEvent] = await store.db.select().from(store.gbSupplierEventsTable)
+      .where(and(eq(store.gbSupplierEventsTable.groupBuyId, f.id), eq(store.gbSupplierEventsTable.kind, "quantities_moved")));
+    await expect(api.undoSupplierBatchMove(f.id, batch.id, admin, {
+      confirm: true, reason: "Cannot undo a purchased destination", moveEventId: moveEvent.id,
+      expectedBatchToken: movedSource.snapshot.token, expectedTargetToken: next.snapshot.token,
+    })).rejects.toThrow(/destination still prepared/);
+    await expect(api.releaseSupplierBatch(f.id, next.id, admin, { confirm: true, reason: "Not permitted" })).rejects.toThrow();
+  });
+  it("audits an Admin move from an ordered batch, preserves payments, cleans the unchecked manifest, and replays safely", async () => {
+    const f = await fixture([58, 2, 4]);
+    const configured = await api.saveSupplierConfig(f.id, admin, { expectedVersion: f.result.version,
+      config: { ...f.result.config, regions: [{ ...f.result.config.regions[0], targetKits: 50 }] } });
+    const p = configured.proposals[0].allQueued;
+    const prepared = await api.confirmSupplierBatch(f.id, admin, { regionId: "eu", token: p.token, includeAll: true });
+    const batch = prepared.batches[0];
+    await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
+    const shipmentId = randomUUID();
+    await store.db.insert(store.gbSupplierShipmentsTable).values({
+      id: shipmentId, batchId: batch.id, requestKey: randomUUID(), requestHash: "fixture",
+      label: "Unchecked fixture", createdBy: admin.username,
+      contents: f.ids.map((orderId, i) => ({ orderId, productId: "synthetic-product", quantity: [58, 2, 4][i] })),
+    });
+    const before = await store.db.select().from(store.ordersTable).where(inArray(store.ordersTable.id, f.ids));
+    const body = { confirm: true, reason: "Excluded from the actual vendor purchase", expectedBatchToken: batch.snapshot.token, orderIds: f.ids.slice(1) };
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, { username: "synthetic-organiser", admin: false }, body)).rejects.toThrow(/Admin/);
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, { ...body, expectedBatchToken: "stale" })).rejects.toThrow(/changed/);
+    await store.db.update(store.ordersTable).set({ status: "Shipped" }).where(eq(store.ordersTable.id, f.ids[1]));
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, body)).rejects.toThrow(/unshipped/);
+    await store.db.update(store.ordersTable).set({ status: "Processing" }).where(eq(store.ordersTable.id, f.ids[1]));
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 1 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    await expect(api.moveSupplierBatchOrders(f.id, batch.id, admin, body)).rejects.toThrow(/inspected/);
+    await store.db.update(store.gbSupplierShipmentsTable).set({ receiptChecked: 0 }).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    const [result, concurrent] = await Promise.all([
+      api.moveSupplierBatchOrders(f.id, batch.id, admin, body),
+      api.moveSupplierBatchOrders(f.id, batch.id, admin, body),
+    ]);
+    expect(concurrent.batches).toHaveLength(2);
+    const source = result.batches.find((b: any) => b.id === batch.id);
+    const destination = result.batches.find((b: any) => b.id !== batch.id);
+    expect(source.state).toBe("ordered");
+    expect(source.snapshot.kits).toBe(58);
+    expect(source.snapshot.corrections[0]).toMatchObject({ direction: "out", kits: 6, reference: destination.reference });
+    expect(destination).toMatchObject({ state: "prepared", snapshot: { kits: 6 } });
+    const after = await store.db.select().from(store.ordersTable).where(inArray(store.ordersTable.id, f.ids));
+    for (const o of after) {
+      const previous = before.find((v: any) => v.id === o.id);
+      expect([o.grandTotal, o.paymentStatus, o.creditsApplied]).toEqual([previous.grandTotal, previous.paymentStatus, previous.creditsApplied]);
+      expect(o.status).toBe(o.id === f.ids[0] ? "Processing" : "Submitted");
+    }
+    const [shipment] = await store.db.select().from(store.gbSupplierShipmentsTable).where(eq(store.gbSupplierShipmentsTable.id, shipmentId));
+    expect(shipment.contents.map((c: any) => c.orderId)).toEqual([f.ids[0]]);
+    const replay = await api.moveSupplierBatchOrders(f.id, batch.id, admin, body);
+    expect(replay.batches).toHaveLength(2);
+    expect(replay.batches.find((b: any) => b.id === destination.id).snapshot.kits).toBe(6);
+    const history = result.events.find((e: any) => e.kind === "orders_moved");
+    expect(history.detail.beforeSnapshot.kits).toBe(64);
+  });
   it.each([
     ["EU", ["IT", "DE"], "Italy"],
     ["US", ["US"], "United States"],
@@ -374,7 +820,8 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const before = await memberSupplierBatches(f.id, "synthetic-owner");
     expect(before.batches).toHaveLength(2);
     expect(before.batches.flatMap((b: any) => b.orders)).toEqual([
-      { code: "test-0", status: "Submitted" }, { code: "test-2", status: "Submitted" },
+      { id: f.ids[0], code: "test-0", status: "Submitted" },
+      { id: f.ids[2], code: "test-2", status: "Submitted" },
     ]);
     expect(before.regions).toEqual([expect.objectContaining({ kits: 15, yourOrderStatus: "included" })]);
     const similarName = await memberSupplierBatches(f.id, "synthetic-owner-other");
@@ -487,6 +934,9 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const de = await memberSupplierBatches(f.id, "synthetic-3");
     const uk = await memberSupplierBatches(f.id, "synthetic-1");
     const us = await memberSupplierBatches(f.id, "synthetic-2");
+    expect(eu.batches[0].orders.map((o: any) => o.id)).toEqual([f.ids[0]]);
+    expect(uk.batches[0].orders.map((o: any) => o.id)).toEqual([f.ids[1]]);
+    expect(us.batches[0].orders.map((o: any) => o.id)).toEqual([f.ids[2]]);
     expect(eu.regions).toEqual([]);
     expect(de.regions).toEqual([{ id: "eu", name: "EU", kits: 18.5, targetKits: 100, status: "Filling", yourOrderStatus: "included" }]);
     expect(uk.regions).toEqual([]);

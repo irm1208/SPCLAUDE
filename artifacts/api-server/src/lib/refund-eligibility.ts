@@ -2,6 +2,7 @@ import { normalizeTg } from "./normalize";
 import { centsToUsdString, usdToCents } from "./refund-money";
 
 export const REFUND_ELIGIBILITY_CODES = [
+  "submitted_to_vendor",
   "refunds_disabled",
   "not_owner",
   "not_group_buy_order",
@@ -22,6 +23,8 @@ export type RefundEligibility = {
 };
 
 export type RefundEligibilityOrder = {
+  supplierSubmitted?: boolean;
+  batchLocked?: boolean;
   telegramUsername: string;
   groupBuyId: string | null | undefined;
   orderType?: string | null;
@@ -107,6 +110,7 @@ function evaluateRefundEligibilityCore(input: RefundRequestAvailabilityInput): R
   if (order.deletedAt != null) {
     return ineligible("deleted_order");
   }
+  if (order.supplierSubmitted || order.batchLocked) return ineligible("submitted_to_vendor");
   if (
     order.paymentStatus !== "confirmed"
     || order.paymentConfirmedAt == null

@@ -154,6 +154,11 @@ export default defineConfig({
       "Referrer-Policy": "strict-origin-when-cross-origin",
     },
     proxy: {
+      "/testmedaddy": {
+        target: "http://127.0.0.1:21505",
+        changeOrigin: false,
+        ws: true,
+      },
       "/api": {
         target: `http://127.0.0.1:${process.env.API_PORT ?? "5000"}`,
         // Admin CSRF checks compare Origin with Host; retain the browser host.

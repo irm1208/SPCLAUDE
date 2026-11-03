@@ -1,11 +1,10 @@
-import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
   timestamp,
   jsonb,
   index,
-  uniqueIndex,
+  unique,
 } from "drizzle-orm/pg-core";
 import { vendorSubmissionsTable } from "./vendor_portal";
 export type VendorWalletSnapshot = {
@@ -48,6 +47,7 @@ export const vendorPaymentsTable = pgTable(
       .$type<VendorWalletSnapshot>()
       .notNull(),
     txid: text("txid").notNull(),
+    activeTxKey: text("active_tx_key"),
     currency: text("currency").notNull(),
     network: text("network").notNull(),
     cryptoAmount: text("crypto_amount").notNull(),
@@ -65,12 +65,7 @@ export const vendorPaymentsTable = pgTable(
   },
   (t) => [
     index("vendor_payments_vendor_idx").on(t.vendorId),
-    uniqueIndex("vendor_payments_active_chain_txid_unique")
-      .on(
-        sql`(CASE WHEN ${t.network} IN ('Ethereum', 'ERC-20') THEN 'Ethereum' ELSE ${t.network} END)`,
-        t.txid,
-      )
-      .where(sql`${t.voidedAt} IS NULL`),
+    unique("vendor_payments_active_tx_key_unique").on(t.activeTxKey),
   ],
 );
 export const vendorPaymentAllocationsTable = pgTable(

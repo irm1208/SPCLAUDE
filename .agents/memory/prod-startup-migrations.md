@@ -17,6 +17,18 @@ Replit promotes the **applied development database schema**, including changes m
 
 Before approving a publish diff, investigate any unexpected drop or truncate. A safe additive change should not silently remove production structure or data.
 
+Exporting a table from the ORM is not sufficient: its definition must also exist
+in the applied development database. Production-only tables can otherwise be
+scheduled for deletion even when their definitions are present in the source.
+
+**Why:** A vendor publish preview proposed dropping live account, session and
+message-history tables that were already exported by Drizzle but absent from
+development.
+
+**How to apply:** Compare both catalogs read-only, restore missing development
+structures with matching existing constraint names, and inspect the publish
+diff again before recommending publishing.
+
 Never perform payment-balance reconciliation at startup. Schema rollout and settlement-state mutation are separate concerns.
 
 ## Failed publish after schema application

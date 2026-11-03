@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/"
+previewPath = "/testmedaddy"
 title = "Testmedaddy"
 description = "Independent peptide testing pools: host, share, pay, publish."
 version = "1.0.0"
@@ -9,21 +9,15 @@ router = "path"
 [[services]]
 localPort = 21505
 name = "web"
-paths = ["/"]
+paths = ["/testmedaddy"]
 
 [services.development]
 run = "pnpm --filter @workspace/testmedaddy run dev"
 
 [services.env]
 PORT = "21505"
-BASE_PATH = "/"
+BASE_PATH = "/testmedaddy/"
 API_PORT = "8080"
 
-[services.production]
-build = ["pnpm", "--filter", "@workspace/testmedaddy", "run", "build"]
-publicDir = "artifacts/testmedaddy/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+# Production is built by api-server's build:sites and served by its hostname router.
+# Keep this artifact's own Vite service for independent development previews.

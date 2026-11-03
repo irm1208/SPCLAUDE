@@ -8,3 +8,12 @@ After admin login, require an extra Authenticator prompt only for admin 2FA/reco
 **Why:** The user explicitly rejected step-up authentication on every routine admin button. Extra prompts are reserved for actions that can weaken admin security or redirect money.
 
 **How to apply:** New admin mutations should not inherit step-up by default. Add step-up only when the action changes admin authentication/recovery or a money destination/routing configuration, and action-bind destination changes where practical.
+
+COA settings are an explicit exception: an authenticated Admin can save COA settings,
+including payment wallets and instructions, without another authenticator code.
+Keep the normal Admin session and CSRF protections.
+
+**Why:** The user said, “No, no need for a code. Since I'm the admin,” specifically for COA settings.
+
+**How to apply:** Do not reintroduce extra authenticator prompts when saving COA settings.
+This exception does not remove extra verification from unrelated payment or security settings.

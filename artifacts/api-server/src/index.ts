@@ -1,8 +1,4 @@
-import { ensureVendorPaymentSchema } from "./lib/vendor-payment-schema";
 import { ensureVendorAccountSchema } from "./lib/vendor-account-schema";
-import { ensureTestmedaddySchema } from "./lib/tmd-schema";
-import { startTmdPaymentAutoVerify } from "./lib/tmd-payment-auto-verify";
-import { registerTmdTelegram } from "./lib/tmd-telegram";
 import { registerVendorPortalScheduler } from "./lib/vendor-portal-worker";
 import { registerVendorTelegramScheduler } from "./lib/vendor-telegram";
 import {
@@ -30,10 +26,12 @@ import { startDbBackupSchedule } from "./lib/db-backup";
 import { startDbBackupVerificationSchedule } from "./lib/db-backup-verifier";
 import { ensureSystemEmailTemplates } from "./lib/email-templates";
 import { runSecurityIncidentRemediation } from "./lib/security-incident-remediation";
+import { correctWholesaleAccessFee } from "./lib/wholesale-access-fee-correction";
 import { repairOrder11688InvoiceDamage } from "./lib/order-11688-invoice-damage-repair";
 import { repairApprovedOrderOwner } from "./lib/approved-order-owner-repair";
 import { registerRefundNotificationScheduler } from "./lib/refund-notifications";
 import { registerGroupBuyUpdateNotificationScheduler } from "./lib/group-buy-update-notifications";
+import { registerCoaNotificationScheduler } from "./lib/coa-notifications";
 import { registerSupplierBatchScheduler } from "./lib/supplier-batch-worker";
 import { stopAllSchedulers } from "./lib/scheduler-registry";
 import { ensureSupplierTestingSchema } from "./lib/supplier-testing-migration";
@@ -91,8 +89,6 @@ async function runStartupRefundSafeRepair(
 
 async function runStartupMigrations(): Promise<void> {
     await ensureVendorAccountSchema(db);
-    await ensureVendorPaymentSchema(db);
-    await ensureTestmedaddySchema(db);
     await ensureSupplierTestingSchema(db);
     // Startup compatibility only adds columns/tables that are absent. It must
     // never change an existing production column type or constraint: publish
@@ -1183,10 +1179,6 @@ async function runStartupMigrations(): Promise<void> {
     await db.execute(sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS wholesale_invite_prompt_seen_at timestamptz`);
     // orders — top-up order reference (self-heal: added via direct SQL in deploy.sh)
     await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS addition_of_order_id text`);
-    // orders — display reference for top-up orders (schema: ordersTable.additionDisplayReference, unique).
-    // Without this column every `select * from orders` fails (seen as HTTP 500 on /admin/group-summary).
-    await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS addition_display_reference text`);
-    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS orders_addition_display_reference_unique ON orders (addition_display_reference)`);
     // wholesale_shares — organiser-configurable rules + organiser fee fields
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS min_kits_per_member integer`);
     await db.execute(sql`ALTER TABLE wholesale_shares ADD COLUMN IF NOT EXISTS max_kits_per_member integer`);
@@ -1428,8 +1420,6 @@ function startBackgroundServices(): void {
   startGbAutoClose();
   startWholesaleShareAutoLock();
   startPoolPaymentAutoVerify();
-  startTmdPaymentAutoVerify();
-  registerTmdTelegram();
   startGbEntryFeeAutoVerify();
   startOrderPaymentAutoVerify();
   import("./lib/reshipper-chain-payments").then(m => m.startReshipperChainPaymentChecks())
@@ -1444,6 +1434,7 @@ function startBackgroundServices(): void {
   startDbBackupVerificationSchedule();
   registerRefundNotificationScheduler(db);
   registerGroupBuyUpdateNotificationScheduler();
+  registerCoaNotificationScheduler();
   registerSupplierBatchScheduler();
   registerVendorPortalScheduler();
   registerVendorTelegramScheduler();
@@ -1467,6 +1458,7 @@ runStartupMigrations()
   .then(() => ensureSystemEmailTemplates())
   .then(() => purgeExpiredDeletedOrders())
   .then(() => runSecurityIncidentRemediation())
+  .then(() => correctWholesaleAccessFee())
   .then(() => repairOrder11688InvoiceDamage())
   .then(() => repairApprovedOrderOwner())
   .then(() => {

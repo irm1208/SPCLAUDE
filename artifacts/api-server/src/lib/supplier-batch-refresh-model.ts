@@ -22,6 +22,9 @@ export function refreshedOrderSnapshot(order: any, old: BatchOrder): BatchOrder 
 /** Pure preview. It never repairs an order, its allocation, or its payment. */
 export function buildPreparedBatchRefresh(batch: RefreshBatch, data: RefreshData, actual: Allocation[], currency: string) {
   if (batch.state !== "prepared") throw new SupplierBatchError("Only prepared batches can be updated, before supplier submission.");
+  if (batch.snapshot.orders.some((o: BatchOrder) => o.fullOrder)) {
+    throw new SupplierBatchError("A split-quantity batch cannot be replaced with whole customer orders. Ask Admin to review its allocation.");
+  }
   const blockers: { orderId: string | null; code: string | null; reason: string }[] = [];
   const block = (reason: string, old?: BatchOrder) => blockers.push({ orderId: old?.id ?? null, code: old?.code ?? null, reason });
   if (!data.config.enabled) block("Supplier batching is disabled.");

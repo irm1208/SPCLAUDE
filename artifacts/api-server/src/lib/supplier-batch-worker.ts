@@ -45,13 +45,13 @@ export function requestSupplierReconciliation() {
   pending.unref();
 }
 const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-export async function drainSupplierAlerts(groupBuyId?: string) {
+export async function drainSupplierAlerts(groupBuyId?: string, database = db) {
   const now = new Date();
-  const rows = await db.select().from(events).where(and(inArray(events.telegram, ["pending", "retry", "sending"]), lte(events.availableAt, now),
+  const rows = await database.select().from(events).where(and(inArray(events.telegram, ["pending", "retry", "sending"]), lte(events.availableAt, now),
     groupBuyId ? eq(events.groupBuyId, groupBuyId) : undefined)).orderBy(asc(events.availableAt)).limit(10);
   for (const row of rows) {
     const lease = new Date(Date.now() + 120_000);
-    const [claimed] = await db.update(events).set({ telegram: "sending", availableAt: lease, attempts: row.attempts + 1 })
+    const [claimed] = await database.update(events).set({ telegram: "sending", availableAt: lease, attempts: row.attempts + 1 })
       // PostgreSQL default now() has microseconds; JS Date loses them. CAS on
       // the integer generation/state, not equality with a rounded timestamp.
       .where(and(eq(events.id, row.id), eq(events.telegram, row.telegram), lte(events.availableAt, now), eq(events.attempts, row.attempts))).returning();
@@ -59,7 +59,7 @@ export async function drainSupplierAlerts(groupBuyId?: string) {
     // Telegram has no idempotency token. An interrupted delivery is marked for
     // manual review rather than retried blindly and potentially duplicated.
     if (row.telegram === "sending") {
-      await db.update(events).set({ telegram: "delivery_uncertain", lastError: "Delivery was interrupted. Check Telegram before retrying; no automatic duplicate sent." }).where(eq(events.id, row.id));
+      await database.update(events).set({ telegram: "delivery_uncertain", lastError: "Delivery was interrupted. Check Telegram before retrying; no automatic duplicate sent." }).where(eq(events.id, row.id));
       continue;
     }
     try {
@@ -67,17 +67,17 @@ export async function drainSupplierAlerts(groupBuyId?: string) {
       const result = row.kind === "ready_admin"
         ? await sendAdminMessageFull(text)
         : await notifyUserFull(row.recipient!, "status", text, undefined,
-          { eventKey: `supplier-ready:${row.id}`, websiteAlreadyRecorded: true });
+          { eventKey: `${row.kind === "member_message" ? "supplier-message" : "supplier-ready"}:${row.id}`, websiteAlreadyRecorded: true });
       const skipped = "skipped" in result && result.skipped;
       const missingAdminChat = row.kind === "ready_admin" && "chatId" in result && !result.chatId;
-      await db.update(events).set({
+      await database.update(events).set({
         telegram: result.ok ? "delivered" : skipped ? "skipped" : "retry",
         lastError: result.ok ? null : missingAdminChat ? "Admin Telegram chat is not configured; retry scheduled."
           : skipped ? "Telegram disabled by preferences, not linked, or unavailable. Website alert remains visible." : "Telegram delivery failed; retry scheduled.",
         availableAt: new Date(Date.now() + Math.min(3_600_000, 30_000 * 2 ** Math.min(row.attempts, 7))),
       }).where(and(eq(events.id, row.id), eq(events.availableAt, lease)));
     } catch (error) {
-      await db.update(events).set({ telegram: "delivery_uncertain", lastError: error instanceof Error ? error.message : "Interrupted delivery—check Telegram." })
+      await database.update(events).set({ telegram: "delivery_uncertain", lastError: error instanceof Error ? error.message : "Interrupted delivery—check Telegram." })
         .where(and(eq(events.id, row.id), eq(events.availableAt, lease)));
     }
   }

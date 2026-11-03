@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { GroupBuyRefundError } from "./group-buy-refund-error";
+export { GroupBuyRefundError } from "./group-buy-refund-error";
+import { lockRefundSupplierGroup, assertRefundBeforeVendor, removeRefundedSupplierAllocations } from "./refund-supplier-batches";
 import {
   accountsTable,
   creditTransactionsTable,
@@ -98,15 +101,6 @@ export type CompleteCreditRefundArgs = {
   groupBuyId?: string;
 };
 
-export class GroupBuyRefundError extends Error {
-  readonly code: string;
-
-  constructor(code: string, message = code) {
-    super(message);
-    this.name = "GroupBuyRefundError";
-    this.code = code;
-  }
-}
 
 
 function asRefundResult(refund: Record<string, any>): RefundRequestResult {
@@ -234,6 +228,7 @@ async function returnCompletedIfValid(
 ): Promise<RefundRequestResult | null> {
   if (!forceRecheck && unlockedRefund.status !== "completed") return null;
   return database.transaction(async (tx: DatabaseLike) => {
+    await lockRefundSupplierGroup(tx, unlockedRefund.groupBuyId);
     const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, unlockedRefund.accountId));
     const [order] = await lockRows(tx, ordersTable, eq(ordersTable.id, unlockedRefund.orderId));
     const [groupBuy] = await lockRows(tx, groupBuysTable, eq(groupBuysTable.id, unlockedRefund.groupBuyId));
@@ -279,6 +274,7 @@ export async function createRefundRequest(
   }
 
   const result = await database.transaction(async (tx: DatabaseLike) => {
+    await lockRefundSupplierGroup(tx, unlockedOrder.groupBuyId);
     const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, accountId));
     if (!account) throw new GroupBuyRefundError("account_not_found");
 
@@ -296,6 +292,8 @@ export async function createRefundRequest(
       ),
     );
     const activeRefund = activeRows[0];
+    if (activeRefund?.status === "completed") return asRefundResult(activeRefund);
+    await assertRefundBeforeVendor(tx, order);
     if (activeRefund) return asRefundResult(activeRefund);
     const eligibility = evaluateRefundEligibility({
       accountId,
@@ -426,6 +424,7 @@ export async function completeCreditRefund(
   if (alreadyCompleted) return alreadyCompleted;
 
   const result = await database.transaction(async (tx: DatabaseLike) => {
+    await lockRefundSupplierGroup(tx, unlockedRefund.groupBuyId);
     // Every refund mutation uses account -> order -> group buy -> refund.
     // The initial read only discovers immutable foreign-key identities; no
     // write occurs until those rows are acquired in this order.
@@ -445,6 +444,7 @@ export async function completeCreditRefund(
       validateCompletedTerminal(order);
       return asRefundResult(refund);
     }
+    await assertRefundBeforeVendor(tx, order);
     if (
       order.deletedAt != null
       || order.status === "Cancelled"
@@ -503,6 +503,7 @@ export async function completeCreditRefund(
       .returning();
     if (!claimed) throw new GroupBuyRefundError("refund_claim_lost");
 
+    await removeRefundedSupplierAllocations(tx, order, refund.id, args.username);
     const credits = addMoney(String(account.credits ?? "0"), amountUsd);
     await tx
       .update(accountsTable)
@@ -724,6 +725,7 @@ export async function completeManualCryptoRefund(
       validateCompletedTerminal(locked.order);
       return completedCryptoResult(locked.refund, canonicalTxid, canonicalTxid2);
     }
+    await assertRefundBeforeVendor(tx, locked.order);
     if (!["requested", "verification_failed", "verifying"].includes(String(lockedRefund.status))) {
       throw new GroupBuyRefundError("invalid_refund_transition");
     }
@@ -841,6 +843,7 @@ export async function completeManualCryptoRefund(
       throw error;
     }
     if (!completedRefund) throw new GroupBuyRefundError("refund_claim_lost");
+    await removeRefundedSupplierAllocations(tx, locked.order, locked.refund.id, processor.username);
 
     const [updatedOrder] = await tx.update(ordersTable).set({
       refundStatus: "refunded",
@@ -916,6 +919,7 @@ async function lockCryptoRows(
   refund: Record<string, any> | undefined;
   attempts: Record<string, any>[];
 }> {
+  await lockRefundSupplierGroup(tx, refund.groupBuyId);
   // Keep this order identical for claims, failures, and completion. In
   // particular, no attempt lock is acquired before the refund lock.
   const [account] = await lockRows(tx, accountsTable, eq(accountsTable.telegramUsername, refund.accountId));
@@ -1208,6 +1212,7 @@ export async function submitCryptoRefund(
       completedDuringClaim = completedCryptoResult(locked.refund, canonicalTxid, canonicalTxid2);
       return;
     }
+    await assertRefundBeforeVendor(tx, locked.order);
     if (locked.refund.status === "verifying") {
       throw new GroupBuyRefundError(
         normalizeUsername(locked.refund.processorUsername ?? "") === normalizeUsername(actor.username)
@@ -1367,6 +1372,8 @@ export async function submitCryptoRefund(
     validateCryptoRefundAmount(locked.refund);
     const now = new Date();
     const failureCode = verification.verified ? null : verification.code;
+    // Recheck after external verification, before any terminal writes.
+    if (verification.verified) await removeRefundedSupplierAllocations(tx, locked.order, locked.refund.id, processor.username);
     const failureMessage = verification.verified ? null : verification.message;
     await tx.update(groupBuyRefundAttemptsTable).set({
       endedAt: now,

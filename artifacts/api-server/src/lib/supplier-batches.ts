@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import {
   db, groupBuysTable, ordersTable, orderLineItemsTable, groupBuyRefundsTable, auditLogsTable,
   gbSupplierSettingsTable as settings, gbSupplierBatchesTable as batches,
   gbSupplierAllocationsTable as allocations, gbSupplierEligibilityTable as eligibility,
   gbSupplierEventsTable as events, telegramMessageLogsTable,
   accountsTable, fs3CostsTable,
+  gbSupplierShipmentsTable as shipments,
 } from "@workspace/db";
 import { supplierTxt, type TxtBlock, type SupplierContact } from "./supplier-txt";
 import { getActiveWholesaleVendor } from "../routes/config";
@@ -16,6 +17,9 @@ import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
 import { buildPreparedBatchRefresh, refreshedOrderSnapshot } from "./supplier-batch-refresh-model";
+import { correctionSnapshots } from "./supplier-batch-correction-model";
+import { batchAdditions, splitBatchQuantities, reservationBatch, wholeSnapshot, type QuantityMove } from "./supplier-batch-additions";
+import { planMoveUndo, undoMove } from "./supplier-batch-undo";
 
 type Database = typeof db;
 const emptyConfig: SupplierConfig = { enabled: false, telegramAlerts: false, showToMembers: false, regions: [] };
@@ -72,11 +76,11 @@ async function load(tx: any, id: string) {
 function mismatch(batch: any, order: any, currentEligibility: any) {
   const old = batch.snapshot.orders.find((o: BatchOrder) => o.id === order?.id);
   if (!order || !old) return "Order is missing or moved out of this group buy";
-  const reason = eligibleOrder(order, batch.state === "ordered", !!currentEligibility?.reviewedAt);
+  const reason = eligibleOrder(order, batch.state === "ordered" || !!old.fullOrder, !!currentEligibility?.reviewedAt);
   if (reason) return reason;
   // Settling timestamps don't alter a purchased snapshot; material product/money changes do.
-  return fingerprint(refreshedOrderSnapshot(order, old))
-    !== fingerprint(old) ? "Products, destination, member or order amounts changed since preparation" : null;
+  return fingerprint(refreshedOrderSnapshot(order, wholeSnapshot(old)))
+    !== fingerprint(wholeSnapshot(old)) ? "Products, destination, member or order amounts changed since preparation" : null;
 }
 async function state(tx: any, group: any, reconcile = true) {
   const id = group.id, data = await load(tx, id), now = new Date();
@@ -142,13 +146,39 @@ async function state(tx: any, group: any, reconcile = true) {
     }
     await tx.update(settings).set({ readiness, checkedAt: now }).where(eq(settings.groupBuyId, id));
   }
+  const additionHistory = await tx.select({ id: events.id, kind: events.kind, detail: events.detail }).from(events).where(and(
+    eq(events.groupBuyId, id), inArray(events.kind, ["appended", "refreshed", "quantities_moved", "orders_moved", "move_undone"]),
+  )).orderBy(asc(events.createdAt), asc(events.id)) as { id: string; kind: string; detail: any }[];
+  const historyOrderIds: string[] = [...new Set<string>(data.history.flatMap((b: any) =>
+    b.snapshot.orders.map((o: BatchOrder) => o.id)))];
+  // One group-scoped query, including edits before first batch allocation.
+  // Keep private customer metadata internal; only derived quantities are returned.
+  const orderEdits = historyOrderIds.length ? await tx.select({ metadata: auditLogsTable.metadata })
+    .from(auditLogsTable).where(and(
+      inArray(sql<string>`${auditLogsTable.metadata}->>'orderId'`, historyOrderIds),
+      sql`${auditLogsTable.metadata}->'before'->'lineItems' IS NOT NULL`,
+      sql`${auditLogsTable.metadata}->'after'->'lineItems' IS NOT NULL`,
+    )).orderBy(asc(auditLogsTable.createdAt), asc(auditLogsTable.id)) : [];
   const history = data.history.map((b: any) => ({
-    ...b, exceptions: b.state === "released" ? [] : b.snapshot.orders.flatMap((old: BatchOrder) => {
+    undoMoves: additionHistory.filter(e => e.detail.batchId === b.id
+      && ["orders_moved", "quantities_moved"].includes(e.kind)
+      && !additionHistory.some(u => u.kind === "move_undone" && u.detail.moveEventId === e.id))
+      .flatMap(e => {
+        const target = data.history.find((t: any) => t.id === e.detail.targetBatchId);
+        try {
+          const { moved } = planMoveUndo(b, target, e);
+          return [{ eventId: e.id, targetReference: target!.reference, expectedTargetToken: (target!.snapshot as any).token,
+            kits: moved.kits, orderCodes: moved.orders.map((o: BatchOrder) => o.code) }];
+        } catch { return []; } // Only reconstructable, still-prepared destinations can offer Undo.
+      }),
+    ...b, additions: batchAdditions(b, additionHistory, orderEdits), exceptions: b.state === "released" ? [] : b.snapshot.orders.flatMap((old: BatchOrder) => {
       const reason = mismatch(b, data.all.find((o: any) => o.id === old.id), data.elig.find((e: any) => e.orderId === old.id));
       return reason ? [{ orderId: old.id, code: old.code, reason }] : [];
     }),
   }));
-  const eventRows = await tx.select().from(events).where(eq(events.groupBuyId, id)).orderBy(sql`${events.createdAt} desc`).limit(100);
+  // Per-member message deliveries have their own Admin history, not the shared batch event list.
+  const eventRows = await tx.select().from(events).where(and(eq(events.groupBuyId, id),
+    notInArray(events.kind, ["member_message", "member_message_request"]))).orderBy(sql`${events.createdAt} desc`).limit(100);
   return { groupBuy: { id, name: group.name }, config: data.config, version: data.stored?.version ?? 0,
     checkedAt: reconcile && data.stored ? now.toISOString() : asDate(data.stored?.checkedAt),
     proposals, batches: history.reverse(), review, events: eventRows };
@@ -235,6 +265,7 @@ export async function appendSupplierBatch(id: string, batchId: string, actor: Up
     await tx.insert(allocations).values(p.orders.map(o => ({ orderId: o.id, batchId })));
     await audit(tx, id, actor.username, "appended", {
       requestKey, batchId, reference: batch.reference, orderIds: p.orders.map(o => o.id),
+      orders: p.orders,
       addedKits: p.kits, totalKits: snapshot.kits,
     });
     return state(tx, group);
@@ -305,10 +336,20 @@ export async function orderSupplierBatch(id: string, batchId: string, actor: Upd
     if (batch.exceptions.length) throw new SupplierBatchError("Batch has order/payment exceptions. Resolve them or explicitly release this unsent batch.");
     const ids = batch.snapshot.orders.map((o: BatchOrder) => o.id);
     await assertNoActiveRefunds(tx, ids);
-    const actual = await tx.select().from(allocations).where(eq(allocations.batchId, batchId));
-    if (fingerprint(actual.map((a: any) => a.orderId).sort()) !== fingerprint([...ids].sort())) throw new SupplierBatchError("Batch allocation mismatch. Contact Admin for review.");
+    const actual = await tx.select().from(allocations).where(inArray(allocations.orderId, ids));
+    if (actual.length !== ids.length || batch.snapshot.orders.some((o: BatchOrder) =>
+      !actual.some((a: any) => a.orderId === o.id && a.batchId === reservationBatch(o, batchId)))) {
+      throw new SupplierBatchError("Batch allocation mismatch. Contact Admin for review.");
+    }
+    const partialIds = batch.snapshot.orders.filter((o: BatchOrder) => o.fullOrder).map((o: BatchOrder) => o.id);
+    const normalIds = ids.filter((orderId: string) => !partialIds.includes(orderId));
+    const anchored = await tx.select().from(allocations).where(eq(allocations.batchId, batchId));
+    if (anchored.some((a: any) => !ids.includes(a.orderId))) throw new SupplierBatchError("Batch allocation mismatch. Contact Admin for review.");
     const changed = await tx.update(ordersTable).set({ status: "Processing", updatedAt: new Date() })
-      .where(and(inArray(ordersTable.id, ids), eq(ordersTable.status, "Submitted"), eq(ordersTable.paymentStatus, "confirmed"), isNull(ordersTable.deletedAt),
+      .where(and(inArray(ordersTable.id, ids), or(
+        and(inArray(ordersTable.id, normalIds), eq(ordersTable.status, "Submitted")),
+        and(inArray(ordersTable.id, partialIds), eq(ordersTable.status, "Processing"))),
+        eq(ordersTable.paymentStatus, "confirmed"), isNull(ordersTable.deletedAt),
         sql`coalesce(${ordersTable.amountDue},0) <= 0`)).returning({ id: ordersTable.id });
     if (changed.length !== ids.length) throw new SupplierBatchError("An order changed while this batch was being processed. Reload and review.");
     await tx.update(batches).set({ state: "ordered", orderedAt: new Date(), orderedBy: actor.username }).where(eq(batches.id, batchId));
@@ -323,11 +364,154 @@ export async function releaseSupplierBatch(id: string, batchId: string, actor: U
     if (!batch) throw new SupplierBatchError("Batch not found.", 404);
     if (batch.state === "released") return state(tx, group);
     if (batch.state !== "prepared") throw new SupplierBatchError("This batch was ordered from the supplier. It cannot be released or requeued.");
+    if ((batch.snapshot as any).orders.some((o: BatchOrder) => o.fullOrder)) {
+      throw new SupplierBatchError("This batch contains split quantities from an existing purchased order. It cannot be released as a whole order.");
+    }
     await tx.delete(allocations).where(eq(allocations.batchId, batchId));
     await tx.update(batches).set({ state: "released", releasedAt: new Date(), releaseReason: body.reason.trim() }).where(eq(batches.id, batchId));
     // Change config generation so re-preparing the same orders gets a fresh token.
     await tx.update(settings).set({ version: sql`${settings.version} + 1` }).where(eq(settings.groupBuyId, id));
     await audit(tx, id, actor.username, "released", { batchId, reason: body.reason.trim() });
+    return state(tx, group);
+  }, database);
+}
+/** Explicit Admin correction, not a release or an edit of a placed vendor purchase. */
+export async function moveSupplierBatchOrders(id: string, batchId: string, actor: UpdateActor, body: any, database = db) {
+  if (!actor.admin) throw new SupplierBatchError("Only Admin can correct a batch already submitted to the vendor.", 403);
+  const quantityMode = body?.mode === "additions";
+  if (quantityMode) {
+    if (!Array.isArray(body.lines) || !body.lines.length || body.lines.some((l: any) => !l || typeof l.orderId !== "string")) {
+      throw new SupplierBatchError("Choose added quantities.", 400);
+    }
+    body = { ...body, orderIds: [...new Set(body.lines.map((l: any) => l.orderId))] };
+  }
+  if (body?.confirm !== true || typeof body.reason !== "string" || !body.reason.trim() || body.reason.length > 1000
+    || typeof body.expectedBatchToken !== "string" || !Array.isArray(body.orderIds)
+    || !body.orderIds.length || body.orderIds.length > 1000 || body.orderIds.some((v: unknown) => typeof v !== "string")
+    || new Set(body.orderIds).size !== body.orderIds.length) {
+    throw new SupplierBatchError("Select whole orders, confirm the correction and give a reason (up to 1000 characters).", 400);
+  }
+  const ids: string[] = [...body.orderIds].sort(), reason = body.reason.trim();
+  if (body.targetBatchId != null && (typeof body.targetBatchId !== "string" || !body.targetBatchId
+    || typeof body.expectedTargetToken !== "string" || !body.expectedTargetToken)) {
+    throw new SupplierBatchError("Choose and review a destination batch.", 400);
+  }
+  const kind = quantityMode ? "quantities_moved" : "orders_moved";
+  const requestKey = fingerprint({ batchId, ids, reason, token: body.expectedBatchToken,
+    ...(body.targetBatchId ? { targetBatchId: body.targetBatchId, expectedTargetToken: body.expectedTargetToken } : {}),
+    ...(quantityMode ? { lines: body.lines } : {}) });
+  return locked(id, actor, async (tx, group) => {
+    const [replay] = await tx.select({ id: events.id }).from(events).where(and(
+      eq(events.groupBuyId, id), eq(events.kind, kind), sql`${events.detail}->>'requestKey' = ${requestKey}`,
+    ));
+    if (replay) return state(tx, group);
+    const current = await state(tx, group, false);
+    const source = current.batches.find((b: any) => b.id === batchId);
+    if (!source) throw new SupplierBatchError("Batch not found.", 404);
+    if (source.state !== "ordered" || source.snapshot.token !== body.expectedBatchToken) {
+      throw new SupplierBatchError("The submitted batch changed. Reload and review before correcting it.");
+    }
+    if (!quantityMode && source.snapshot.orders.some((o: BatchOrder) => ids.includes(o.id) && o.fullOrder)) {
+      throw new SupplierBatchError("This order is split across batches. Move only its available added quantities.");
+    }
+    const { remaining, moved } = quantityMode ? splitBatchQuantities(source, body.lines) : correctionSnapshots(source.snapshot, ids);
+    if (quantityMode && (body.lines as QuantityMove[]).some(line => {
+      const available = source.additions.find((a: any) => a.orderId === line.orderId && a.productId === line.productId);
+      return !available || line.quantity > available.quantity;
+    })) throw new SupplierBatchError("Only the highlighted added quantities can move. Reload and review the latest additions.");
+    const reserved = await tx.select().from(allocations).where(inArray(allocations.orderId, ids));
+    if (ids.some(orderId => !reserved.some((a: any) => a.orderId === orderId
+      && a.batchId === reservationBatch(source.snapshot.orders.find((o: BatchOrder) => o.id === orderId), batchId)))) {
+      throw new SupplierBatchError("The order reservation changed. Reload and review.");
+    }
+    if (source.exceptions.some((e: any) => ids.includes(e.orderId))) {
+      throw new SupplierBatchError("Selected orders have changed since preparation. Resolve their exceptions first.");
+    }
+    const selected = await tx.select().from(ordersTable).where(and(
+      eq(ordersTable.groupBuyId, id), inArray(ordersTable.id, ids),
+    )).orderBy(asc(ordersTable.id)).for("update");
+    if (selected.length !== ids.length || selected.some((o: any) => o.status !== "Processing"
+      || o.deletedAt || o.paymentStatus !== "confirmed" || Number(o.amountDue ?? 0) > 0
+      || ["verifying", "pending_confirmation"].includes(o.balancePaymentStatus))) {
+      throw new SupplierBatchError("Only fully paid, unshipped Processing orders without pending balance verification can move.");
+    }
+    await assertNoActiveRefunds(tx, ids);
+    const packages = await tx.select().from(shipments).where(eq(shipments.batchId, batchId))
+      .orderBy(asc(shipments.id)).for("update");
+    const affected = packages.filter((s: any) => !s.cancelledAt
+      && (s.contents as any[]).some(c => ids.includes(c.orderId)));
+    if (affected.some((s: any) => s.receiptChecked || (s.receipt as any[]).length)) {
+      throw new SupplierBatchError("An affected supplier package has an inspected receipt. Its contents cannot be reallocated.");
+    }
+    const target = body.targetBatchId ? current.batches.find((b: any) => b.id === body.targetBatchId) : null;
+    if (body.targetBatchId) {
+      if (!target || target.id === source.id || target.state !== "prepared" || target.orderedAt
+        || target.snapshot.token !== body.expectedTargetToken || target.exceptions.length
+        || target.snapshot.region.id !== source.snapshot.region.id
+        || fingerprint([...target.snapshot.region.countries].sort()) !== fingerprint([...source.snapshot.region.countries].sort())
+        || target.snapshot.orders.some((o: BatchOrder) => ids.includes(o.id))) {
+        throw new SupplierBatchError("The destination must be an unchanged, unsubmitted batch in the same region without overlapping orders. Reload and review.", 409);
+      }
+      const targetPackages = await tx.select({ id: shipments.id }).from(shipments)
+        .where(eq(shipments.batchId, target.id)).for("update");
+      if (targetPackages.length) throw new SupplierBatchError("The destination has supplier packages. Choose another destination.", 409);
+    }
+    const sequence = Math.max(0, ...current.batches.map((b: any) => b.sequence)) + 1;
+    const targetId = target?.id ?? randomUUID();
+    const reference = target?.reference ?? regionalBatchReference(`GB-${id.slice(0, 8)} / ${String(sequence).padStart(3, "0")}`, moved.region);
+    const note = { reason, kits: moved.kits, orderCodes: moved.orders.map((o: BatchOrder) => o.code),
+      createdAt: new Date().toISOString(), actor: actor.username };
+    remaining.corrections = [...(source.snapshot.corrections ?? []), { ...note, direction: "out", reference }];
+    moved.corrections = [{ ...note, direction: "in", reference: source.reference }];
+    const destinationSnapshot = target ? {
+      ...target.snapshot,
+      ...propose([...target.snapshot.orders, ...moved.orders], target.snapshot.region.targetKits, true),
+      token: fingerprint({ previous: target.snapshot.token, requestKey, orders: moved.orders }),
+      corrections: [...(target.snapshot.corrections ?? []), ...moved.corrections],
+    } : moved;
+    if (target) await tx.update(batches).set({ snapshot: destinationSnapshot }).where(eq(batches.id, targetId));
+    else await tx.insert(batches).values({ id: targetId, groupBuyId: id, sequence, reference, previewToken: requestKey,
+      snapshot: moved, createdBy: actor.username });
+    const wholeIds = moved.orders.filter((o: BatchOrder) => !o.fullOrder).map((o: BatchOrder) => o.id);
+    if (wholeIds.length) {
+      const reassigned = await tx.update(allocations).set({ batchId: targetId }).where(and(
+        eq(allocations.batchId, batchId), inArray(allocations.orderId, wholeIds),
+      )).returning({ orderId: allocations.orderId });
+      if (reassigned.length !== wholeIds.length) throw new SupplierBatchError("An order's allocation changed. Reload and review.");
+    }
+    await tx.update(batches).set({ snapshot: remaining }).where(eq(batches.id, batchId));
+    if (wholeIds.length) await tx.update(ordersTable).set({ status: "Submitted" }).where(inArray(ordersTable.id, wholeIds));
+    const allowance = new Map<string, number>();
+    for (const o of remaining.orders as BatchOrder[]) for (const i of o.items) allowance.set(JSON.stringify([o.id, i.productId]), i.quantity);
+    const packageChanges: any[] = [];
+    for (const s of affected) {
+      const contents = (s.contents as any[]).flatMap(c => {
+        if (!ids.includes(c.orderId)) return [c];
+        const k = JSON.stringify([c.orderId, c.productId]);
+        const keep = Math.min(c.quantity, allowance.get(k) ?? 0);
+        allowance.set(k, (allowance.get(k) ?? 0) - keep);
+        return keep > 0 ? [{ ...c, quantity: keep }] : [];
+      });
+      packageChanges.push({ shipmentId: s.id, beforeContents: s.contents, afterContents: contents });
+      await tx.update(shipments).set({
+        contents, version: s.version + 1, updatedAt: new Date(),
+        ...(!contents.length ? { cancelledAt: new Date(), cancelReason: `Allocation moved to ${reference}: ${reason}` } : {}),
+      }).where(and(eq(shipments.id, s.id), eq(shipments.version, s.version)));
+    }
+    await tx.update(settings).set({ version: sql`${settings.version} + 1` }).where(eq(settings.groupBuyId, id));
+    await audit(tx, id, actor.username, kind, {
+      requestKey, batchId, reference: source.reference, targetBatchId: targetId, targetReference: reference,
+      orderIds: ids, kits: moved.kits, reason, beforeSnapshot: source.snapshot,
+      ...(target ? { beforeTargetSnapshot: target.snapshot, afterTargetSnapshot: destinationSnapshot } : {}),
+      ...(quantityMode ? { lines: body.lines } : {}), packageChanges,
+    });
+    return state(tx, group);
+  }, database);
+}
+export async function undoSupplierBatchMove(id: string, batchId: string, actor: UpdateActor, body: any, database = db) {
+  if (!actor.admin) throw new SupplierBatchError("Only Admin can undo a batch allocation move.", 403);
+  return locked(id, actor, async (tx, group) => {
+    await undoMove(tx, group, batchId, actor, body, { state, audit });
     return state(tx, group);
   }, database);
 }

@@ -14,6 +14,12 @@ export function quantity(value: unknown, zero = false): number {
   }
   return value;
 }
+/** Local counts stay local, but dispatch readiness covers the complete customer order. */
+export function splitOrderReadiness(order: BatchOrder, packages: QuantityShipment[], exceptions: string[], otherPackages: QuantityShipment[]) {
+  const local = orderReadiness(order, packages, exceptions);
+  return { ...local, ready: local.ready && (!order.fullOrder
+    || orderReadiness(order.fullOrder, [...packages, ...otherPackages], exceptions).ready) };
+}
 export function routeOf(order: any) {
   const reshipperUsername = canonicalUsername(order.reshipperUsername ?? "") || null;
   // Ownership takes precedence over the legacy routingType default.

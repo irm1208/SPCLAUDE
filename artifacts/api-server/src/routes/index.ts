@@ -2,11 +2,6 @@ import vendorWalletsRouter, { vendorWalletSetupGate } from "./vendor-wallets";
 import vendorPaymentsRouter from "./vendor-payments";
 import vendorAuthRouter from "./vendor-auth";
 import vendorAccountsAdminRouter from "./vendor-accounts-admin";
-import tmdAuthRouter from "./tmd-auth";
-import tmdAccountRouter from "./tmd-account";
-import tmdVendorsRouter from "./tmd-vendors";
-import tmdPoolsRouter from "./tmd-pools";
-import tmdTelegramRouter from "./tmd-telegram";
 import { Router, type IRouter } from "express";
 import {
   strictLimiter,
@@ -82,8 +77,10 @@ import peppysRouter from "./peppys";
 import emailTemplatesRouter from "./email-templates";
 import groupBuyBreakdownRouter from "./group-buy-breakdown";
 import groupBuyRefundsRouter from "./group-buy-refunds";
+import groupBuyCoaRouter from "./group-buy-coa";
 import halfKitOffersRouter from "./half-kit-offers";
 import { halfKitProtection } from "../middleware/half-kit-protection";
+import groupBuyOrderRevisionsRouter from "./group-buy-order-revisions";
 import supplierBatchesRouter from "./supplier-batches";
 import supplierFulfilmentRouter from "./supplier-fulfilment";
 import { requestSupplierReconciliation } from "../lib/supplier-batch-worker";
@@ -98,7 +95,12 @@ import vendorSecurityRouter from "./vendor-security";
 import vendorNotificationsRouter from "./vendor-notifications";
 import { adminAuthorizationMiddleware } from "../middleware/require-admin";
 
+import testmedaddyRouter from "./testmedaddy";
+
 const router: IRouter = Router();
+
+// Dedicated namespace must run before legacy, path-less account guards.
+router.use("/tmd", testmedaddyRouter);
 
 router.use(healthRouter);
 
@@ -157,12 +159,6 @@ router.use(vendorThreadsRouter);
 router.use(vendorSecurityRouter);
 router.use(vendorNotificationsRouter);
 
-// Testmedaddy: a separate product under /api/tmd with its own accounts and tables.
-router.use(tmdAuthRouter);
-router.use(tmdAccountRouter);
-router.use(tmdVendorsRouter);
-router.use(tmdPoolsRouter);
-router.use(tmdTelegramRouter);
 
 // These routers expose both public and admin-prefixed endpoints. Mount them
 // after the scoped admin boundary so their /admin handlers receive the
@@ -212,6 +208,7 @@ router.use(compoundsRouter);
 router.use(glp1Router);
 router.use(plotterRouter);
 router.use(organiserRouter);
+router.use(groupBuyOrderRevisionsRouter);
 router.use(organiserMarkPaidRouter);
 router.use(organiserAdminRouter);
 router.use(reshipperRouter);
@@ -248,6 +245,7 @@ router.use(peppysRouter);
 router.use(emailTemplatesRouter);
 router.use(groupBuyBreakdownRouter);
 router.use(groupBuyRefundsRouter);
+router.use(groupBuyCoaRouter);
 router.use(halfKitOffersRouter);
 router.use(wholesaleTrackingRouter);
 

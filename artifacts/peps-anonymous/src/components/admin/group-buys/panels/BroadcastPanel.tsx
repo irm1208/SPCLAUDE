@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePickerField } from "@/components/DatePickerField";
+import { BatchBroadcastPanel } from "./BatchBroadcastPanel";
 import {
   Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, Save, X, Check,
   Users, Package, Truck, Info, Search, RefreshCw, KeyRound, Bell,
@@ -326,6 +327,8 @@ export function BroadcastSubTab({ secret, gb }: { secret: string; gb: GroupBuy }
   };
 
   return (
+    <div className="space-y-4">
+    <BatchBroadcastPanel key={gb.id} groupBuyId={gb.id} secret={secret} />
     <Card className="p-5">
       <h3 className="text-sm font-semibold mb-1">Send Telegram Message</h3>
       <p className="text-xs text-muted-foreground mb-4">
@@ -539,6 +542,7 @@ export function BroadcastSubTab({ secret, gb }: { secret: string; gb: GroupBuy }
         </Button>
       </div>
     </Card>
+    </div>
   );
 }
 

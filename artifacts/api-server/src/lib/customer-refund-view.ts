@@ -6,6 +6,7 @@ import {
   paymentAuditResultsTable,
 } from "@workspace/db";
 import { db } from "@workspace/db";
+import { submittedSupplierOrderIds } from "./refund-supplier-batches";
 import {
   evaluateRefundRequestAvailability,
   isSupportedRefundPaymentRail,
@@ -104,6 +105,7 @@ function buildView(
   refunds: Array<Record<string, any>>,
   audits: Array<Record<string, any>>,
   accountId: string,
+  supplierSubmitted = false,
 ): CustomerRefundView {
   const current = refunds[0] ? safeRefund(refunds[0]) : null;
   const active = refunds.find(row => ["requested", "verifying", "verification_failed"].includes(String(row.status)));
@@ -119,7 +121,7 @@ function buildView(
     : "USDC";
   const eligibility = evaluateRefundRequestAvailability({
     accountId,
-    order,
+    order: { ...order, supplierSubmitted },
     groupBuy,
     activeRefund: active ? { id: String(active.id), status: String(active.status) } : null,
   });
@@ -155,12 +157,13 @@ export async function getCustomerRefundViews(orderIds: string[], accountId: stri
   const ids = orders.map(order => order.id);
   if (ids.length === 0) return result;
   const groupIds = [...new Set(orders.map(order => order.groupBuyId).filter((id): id is string => !!id))];
-  const [groups, refunds, audits] = await Promise.all([
+  const [groups, refunds, audits, submittedIds] = await Promise.all([
     groupIds.length
       ? db.select({ id: groupBuysTable.id, cryptoRefundsEnabled: groupBuysTable.cryptoRefundsEnabled }).from(groupBuysTable).where(inArray(groupBuysTable.id, groupIds))
       : Promise.resolve([]),
     db.select().from(groupBuyRefundsTable).where(inArray(groupBuyRefundsTable.orderId, ids)).orderBy(desc(groupBuyRefundsTable.requestedAt)),
     db.select().from(paymentAuditResultsTable).where(inArray(paymentAuditResultsTable.orderId, ids)).orderBy(desc(paymentAuditResultsTable.checkedAt)),
+    submittedSupplierOrderIds(db, orders),
   ]);
   const groupsById = new Map(groups.map(group => [group.id, group]));
   for (const order of orders) {
@@ -170,6 +173,7 @@ export async function getCustomerRefundViews(orderIds: string[], accountId: stri
       refunds.filter(row => row.orderId === order.id),
       audits.filter(row => row.orderId === order.id),
       accountId,
+      submittedIds.has(order.id),
     ));
   }
   return result;

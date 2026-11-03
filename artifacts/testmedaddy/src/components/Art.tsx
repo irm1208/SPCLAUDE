@@ -3,11 +3,12 @@ type ArtProps = { className?: string };
 
 function Illustration({ name, alt, className = "", hero = false, square = false }: ArtProps & { name: string; alt: string; hero?: boolean; square?: boolean }) {
   const width = hero ? 1536 : square ? 960 : 1280;
+  const imageBase = `${import.meta.env.BASE_URL}img/generated/lab-v2`;
   return (
     <div className={`pointer-events-none overflow-hidden ${className}`}>
       <img
-        src={`/img/generated/lab-v2/${name}.webp`}
-        srcSet={`/img/generated/lab-v2/${name}-small.webp ${width / 2}w, /img/generated/lab-v2/${name}.webp ${width}w`}
+        src={`${imageBase}/${name}.webp`}
+        srcSet={`${imageBase}/${name}-small.webp ${width / 2}w, ${imageBase}/${name}.webp ${width}w`}
         sizes={hero ? "(max-width: 1023px) calc(100vw - 32px), 620px" : square ? "(max-width: 639px) calc(100vw - 96px), 300px" : "(max-width: 767px) calc(100vw - 32px), (max-width: 1199px) 58vw, 660px"}
         width={width}
         height={square ? width : Math.round(width * 2 / 3)}

@@ -1,10 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X, Bell, ChevronDown } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Menu, X, ChevronDown } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { get, fileUrl } from "@/lib/api";
-import { Button, cn } from "./ui";
+import { fileUrl } from "@/lib/api";
+import { Button, cn, useToast } from "./ui";
 
 export function Mark({ className }: { className?: string }) {
   return (
@@ -22,15 +21,15 @@ export function Logo({ className }: { className?: string }) {
   );
 }
 
-const NAV = [{ href: "/explore", label: "Pools" }, { href: "/vendors", label: "Vendors" }, { href: "/how-it-works", label: "How it works" }];
+const NAV = [{ href: "/explore", label: "Pools" }, { href: "/how-it-works", label: "How it works" }];
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, loading, logout } = useAuth();
+  const toast = useToast();
+  const signOut = () => { logout().catch(error => toast(error.message || "Could not sign out. Please try again.", "danger")); };
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
-  const me = useQuery({ queryKey: ["me"], queryFn: () => get("/api/tmd/me"), enabled: !!user, refetchInterval: 60_000 });
-  const unread = me.data?.stats?.unread ?? 0;
   const landing = location === "/";
   const navLink = (href: string, label: string) => (
     <Link key={href} href={href} className={cn("rounded-full px-3 py-1.5 text-[13px] font-medium text-muted transition hover:text-fg", location.startsWith(href) && "text-fg")}>{label}</Link>
@@ -47,7 +46,6 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="ml-auto hidden items-center gap-2 md:flex">
             {loading ? null : user ? (
               <>
-                <Link href="/dashboard?tab=inbox" className="relative rounded-full p-2 text-muted transition hover:bg-surface-2 hover:text-fg" aria-label="Inbox"><Bell className="size-[18px]" />{unread > 0 && <span className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-brand-fg">{unread > 9 ? "9+" : unread}</span>}</Link>
                 <Link href="/host/new"><Button size="sm">Host a pool</Button></Link>
                 <div className="relative">
                   <button onClick={() => setMenu(m => !m)} className="flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pl-1 pr-2 text-sm transition hover:bg-surface-2" aria-haspopup="menu" aria-expanded={menu}>
@@ -59,7 +57,7 @@ export function Layout({ children }: { children: ReactNode }) {
                       <div className="border-b border-line px-4 py-2.5"><p className="truncate text-sm font-medium">{user.displayName}</p><p className="truncate text-xs text-muted">@{user.handle}</p></div>
                       <Link href="/dashboard" className="block px-4 py-2 text-sm hover:bg-surface-2">Dashboard</Link>
                       <Link href="/settings" className="block px-4 py-2 text-sm hover:bg-surface-2">Settings</Link>
-                      <button className="block w-full px-4 py-2 text-left text-sm text-muted hover:bg-surface-2" onClick={() => logout()}>Sign out</button>
+                      <button className="block w-full px-4 py-2 text-left text-sm text-muted hover:bg-surface-2" onClick={signOut}>Sign out</button>
                     </div>
                   )}
                 </div>
@@ -78,10 +76,10 @@ export function Layout({ children }: { children: ReactNode }) {
             <div className="flex flex-col gap-1">
               {NAV.map(n => <Link key={n.href} href={n.href} className="rounded-lg px-3 py-2 text-sm font-medium">{n.label}</Link>)}
               {user ? (<>
-                <Link href="/dashboard" className="rounded-lg px-3 py-2 text-sm font-medium">Dashboard{unread > 0 && <span className="ml-2 rounded-full bg-brand px-1.5 text-[10px] font-bold text-brand-fg">{unread}</span>}</Link>
+                <Link href="/dashboard" className="rounded-lg px-3 py-2 text-sm font-medium">Dashboard</Link>
                 <Link href="/host/new" className="rounded-lg px-3 py-2 text-sm font-medium text-brand">Host a pool</Link>
                 <Link href="/settings" className="rounded-lg px-3 py-2 text-sm font-medium">Settings</Link>
-                <button className="rounded-lg px-3 py-2 text-left text-sm text-muted" onClick={() => logout()}>Sign out</button>
+                <button className="rounded-lg px-3 py-2 text-left text-sm text-muted" onClick={signOut}>Sign out</button>
               </>) : (<>
                 <Link href="/login" className="rounded-lg px-3 py-2 text-sm font-medium">Sign in</Link>
                 <Link href="/signup" className="rounded-lg px-3 py-2 text-sm font-medium text-brand">Create account</Link>
@@ -95,12 +93,12 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="card-2 grid gap-10 p-8 md:grid-cols-[1.5fr_1fr_1fr_1fr] md:p-12">
           <div className="space-y-4">
             <Logo />
-            <p className="max-w-sm text-sm text-muted">Community-funded lab testing for peptide batches. Organisers run their own pools; results belong to the people who paid for them.</p>
+            <p className="max-w-sm text-sm text-muted">Coordinate interest in independent peptide batch testing. Core release pools are planning tools: joining does not collect money.</p>
             <Link href="/signup"><Button size="sm">Create account</Button></Link>
           </div>
-          <FooterColumn title="Product" links={[["/explore", "Browse pools"], ["/vendors", "Vendors"], ["/how-it-works", "How it works"], ["/host/new", "Host a pool"]]} />
+          <FooterColumn title="Product" links={[["/explore", "Browse pools"], ["/how-it-works", "How it works"], ["/host/new", "Host a pool"]]} />
           <FooterColumn title="Account" links={[["/signup", "Create account"], ["/login", "Sign in"], ["/dashboard", "Dashboard"], ["/settings", "Settings"]]} />
-          <FooterColumn title="Trust" links={[["/how-it-works", "On-chain verification"], ["/how-it-works", "Results visibility"], ["/vendors", "Vendor pages"]]} />
+          <FooterColumn title="Release" links={[["/how-it-works", "Core release scope"], ["/explore", "Pool visibility"], ["/settings", "Account settings"]]} />
         </div>
         <div className="flex flex-col gap-2 px-2 pt-6 text-xs text-dim sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Testmedaddy. Independent of every vendor and lab.</p>

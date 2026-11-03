@@ -28,6 +28,14 @@ const base = {
 };
 
 describe("refund eligibility", () => {
+  it("blocks actual vendor submission, including legacy locks, but not Processing alone", () => {
+    expect(evaluateRefundEligibility({ ...base, order: { ...base.order, status: "Processing" } }).eligible).toBe(true);
+    for (const flags of [{ supplierSubmitted: true }, { batchLocked: true }]) {
+      expect(evaluateRefundRequestAvailability({ ...base, order: { ...base.order, ...flags } })).toMatchObject({
+        eligible: false, reasonCode: "submitted_to_vendor",
+      });
+    }
+  });
   it("uses the persisted order grandTotal, not paymentUsdAmount or a client amount", () => {
     const result = evaluateRefundEligibility(base);
     expect(result).toEqual({

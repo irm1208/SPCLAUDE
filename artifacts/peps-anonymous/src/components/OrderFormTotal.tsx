@@ -1,6 +1,6 @@
 export function OrderFormTotal({
   total, products, delivery, vendorShipping, adminFee, adminFeeLabel,
-  tip, testing, shippingPending, formatPrice, hidden,
+  tip, testing, shippingPending, formatPrice, hidden, deliveryFree = false,
 }: {
   total: number;
   products: number;
@@ -13,6 +13,7 @@ export function OrderFormTotal({
   shippingPending: boolean;
   formatPrice: (amount: number) => string;
   hidden: boolean;
+  deliveryFree?: boolean;
 }) {
   if (hidden) return null;
   const rows = [
@@ -30,7 +31,7 @@ export function OrderFormTotal({
         {rows.map(row => (
           <div key={row.label} className="flex justify-between gap-4">
             <span>{row.label}</span>
-            <span className="tabular-nums">{formatPrice(row.amount)}</span>
+            <span className="tabular-nums">{row.label === "Delivery" && deliveryFree ? "FREE" : formatPrice(row.amount)}</span>
           </div>
         ))}
       </div>
@@ -42,7 +43,9 @@ export function OrderFormTotal({
       </div>
       <p className="text-xs leading-relaxed" style={{ color: "var(--t-muted)" }}>
         {shippingPending && <>Shipping still to be quoted is not included. </>}
-        Final shipping is confirmed on Review Order, where you can also apply credits and discounts.
+        {deliveryFree
+          ? "Direct-to-home shipping is free. You can apply credits and discounts on Review Order."
+          : "Final shipping is confirmed on Review Order, where you can also apply credits and discounts."}
       </p>
     </section>
   );

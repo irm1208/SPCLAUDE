@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+// Lifecycle adapter has no supplier tables; real batch behaviour is PostgreSQL-tested.
+vi.mock("./refund-supplier-batches", () => ({
+  lockRefundSupplierGroup: vi.fn(), assertRefundBeforeVendor: vi.fn(),
+  removeRefundedSupplierAllocations: vi.fn(),
+}));
 
 const harness = vi.hoisted(() => {
   const tables = {

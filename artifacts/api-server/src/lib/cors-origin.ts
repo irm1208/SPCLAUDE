@@ -12,6 +12,8 @@ export function buildAllowedOrigins(env: OriginEnvironment = process.env): strin
     "http://127.0.0.1:21505",
     "https://saltandpeps.co.uk",
     "https://www.saltandpeps.co.uk",
+    "https://testmedaddy.com",
+    "https://www.testmedaddy.com",
   ]);
 
   for (const port of [env.PORT, env.VITE_PORT]) {

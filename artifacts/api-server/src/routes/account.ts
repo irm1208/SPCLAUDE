@@ -1789,7 +1789,8 @@ router.get("/account/notifications", requireAccount, async (req, res): Promise<v
       .from(telegramMessageLogsTable)
       .where(and(
         eq(telegramMessageLogsTable.recipientType, "user"),
-        eq(telegramMessageLogsTable.recipientUsername, tg),
+        // Username migration historically writes @name; new logs use bare name.
+        inArray(telegramMessageLogsTable.recipientUsername, [tg, `@${tg}`]),
       ))
       .orderBy(desc(telegramMessageLogsTable.sentAt))
       .limit(20);
@@ -3932,7 +3933,11 @@ router.get("/account/wholesale-access", requireAccount, async (req: any, res: an
       .orderBy(desc(wholesaleAccessRequestsTable.createdAt))
       .limit(1);
     const cryptoOptions = await getAdminCryptoOptions();
-    res.json({ request: existing ?? null, cryptoOptions });
+    const [amountRow] = await db.select({ value: siteConfigTable.value }).from(siteConfigTable)
+      .where(eq(siteConfigTable.key, "wholesale_access_amount"));
+    const configuredAmount = Number(amountRow?.value);
+    res.json({ request: existing ?? null, cryptoOptions,
+      accessFee: Number.isFinite(configuredAmount) && configuredAmount > 0 ? configuredAmount : null });
   } catch (err: any) {
     console.error("[GET /account/wholesale-access]", err);
     res.status(500).json({ error: "Internal error" });

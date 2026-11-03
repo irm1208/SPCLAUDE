@@ -6,6 +6,9 @@ import {
   verifyTransaction,
 } from "./payment-verify";
 
+const coaClaim = vi.hoisted(() => ({ conflict: vi.fn().mockResolvedValue(false) }));
+vi.mock("./coa-payment-claim", () => ({ coaTransactionConflict: coaClaim.conflict }));
+
 const EXPECTED_WALLET = "0x1111111111111111111111111111111111111111";
 const OTHER_WALLET = "0x2222222222222222222222222222222222222222";
 
@@ -15,9 +18,18 @@ function topicForAddress(address: string): string {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  coaClaim.conflict.mockReset().mockResolvedValue(false);
 });
 
 describe("payment audit evidence", () => {
+  it("blocks a transaction reserved for a COA before contacting a chain provider", async () => {
+    coaClaim.conflict.mockResolvedValue(true);
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    expect(await verifyTransaction(`0x${"a".repeat(64)}`, EXPECTED_WALLET, 25, "USDT", "ERC-20"))
+      .toMatchObject({ verified: false, reason: expect.stringContaining("COA") });
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it.each([
     ["EVM", `0x${"a".repeat(64)}`],
     ["plain hex", "b".repeat(64)],

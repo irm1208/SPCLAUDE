@@ -294,6 +294,7 @@ export async function recordVendorPayment(
             label: wallet.label,
           },
           txid: input.txid,
+          activeTxKey: `${chain}:${input.txid}`,
           currency: wallet.currency,
           network: wallet.network,
           cryptoAmount: input.cryptoAmount,
@@ -369,7 +370,7 @@ export async function voidVendorPayment(
       .where(eq(vendorPaymentAllocationsTable.paymentId, id));
     const [receipt] = await tx
       .update(vendorPaymentsTable)
-      .set({ voidedAt: new Date(), voidedBy: actor, voidReason: reason.trim() })
+      .set({ voidedAt: new Date(), voidedBy: actor, voidReason: reason.trim(), activeTxKey: null })
       .where(eq(vendorPaymentsTable.id, id))
       .returning();
     await auditVendor(tx, actor, "payment_voided", null, {

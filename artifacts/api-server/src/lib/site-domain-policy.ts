@@ -1,10 +1,7 @@
 import type { RequestHandler } from "express";
 
 const VENDOR_HOSTS = new Set(["pepsanonymous.com", "www.pepsanonymous.com"]);
-/** Testmedaddy is a separate product served from its own hosts with only its own API. */
-export function testmedaddyHosts(env: Record<string, string | undefined> = process.env): Set<string> {
-  return new Set((env.TESTMEDADDY_HOSTS ?? "testmedaddy.com,www.testmedaddy.com").split(",").map(h => h.trim().toLowerCase()).filter(Boolean));
-}
+const TESTING_HOSTS = new Set(["testmedaddy.com", "www.testmedaddy.com"]);
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 const VENDOR_PAGES = new Set(["/", "/vendor", "/vendor/", "/vendor/login", "/vendor/login/", "/login", "/login/"]);
 const HEALTH_PATHS = new Set(["/health", "/_health", "/api", "/api/health", "/api/healthz"]);
@@ -17,9 +14,8 @@ function authority(value: string): { host: string; authority: string } | null {
   return { host: match[1].toLowerCase(), authority: value.toLowerCase() };
 }
 
-export function siteDomainPolicy(options: { production: boolean; developmentHosts?: string[]; testmedaddyHosts?: string[] }): RequestHandler {
+export function siteDomainPolicy(options: { production: boolean; developmentHosts?: string[] }): RequestHandler {
   const developmentHosts = new Set([...LOCAL_HOSTS, ...(options.developmentHosts ?? [])].map(host => host.toLowerCase()));
-  const TMD_HOSTS = options.testmedaddyHosts ? new Set(options.testmedaddyHosts.map(h => h.toLowerCase())) : testmedaddyHosts();
   return (req, res, next) => {
     const host = authority(req.headers.host ?? "");
     const path = req.originalUrl.split("?", 1)[0];
@@ -32,6 +28,7 @@ export function siteDomainPolicy(options: { production: boolean; developmentHost
       try { decodedPath = decodeURIComponent(decodedPath); } catch { break; }
     }
     const vendorHost = !!host && VENDOR_HOSTS.has(host.host);
+    const testingHost = !!host && TESTING_HOSTS.has(host.host);
     const vendorResource = /^\/(?:vendor(?:\/|$)|api\/vendor(?:\/|$))/i.test(decodedPath);
     if (!host || !path.startsWith("/") || /[\\\x00-\x20\x7f]/.test(path)
       || /[\\\x00-\x1f\x7f]/.test(decodedPath) || decodedPath.includes("//")
@@ -41,31 +38,23 @@ export function siteDomainPolicy(options: { production: boolean; developmentHost
     }
     const localDevelopment = !options.production && developmentHosts.has(host.host);
     const vendorApi = /^\/api\/vendor(?:\/|$)/i.test(path);
+    const testingApi = /^\/api\/tmd(?:\/|$)/i.test(decodedPath);
     const vendorPage = /^\/vendor(?:\/|$)/i.test(path);
-    const tmdHost = TMD_HOSTS.has(host.host);
-    const tmdApi = /^\/api\/tmd(?:\/|$)/i.test(path);
     const origin = req.headers.origin;
     if (origin) {
       let originUrl: URL;
       try { originUrl = new URL(origin); } catch { res.status(403).json({ error: "Origin not allowed" }); return; }
       const vendorOrigin = VENDOR_HOSTS.has(originUrl.hostname.toLowerCase());
-      const tmdOrigin = TMD_HOSTS.has(originUrl.hostname.toLowerCase());
-      if ((vendorOrigin && !vendorHost) || ((vendorHost || vendorApi) && (originUrl.origin !== origin || originUrl.host.toLowerCase() !== host.authority || !["http:", "https:"].includes(originUrl.protocol) || (options.production && vendorHost && originUrl.protocol !== "https:")))) {
+      const testingOrigin = TESTING_HOSTS.has(originUrl.hostname.toLowerCase());
+      if ((vendorOrigin && !vendorHost) || (testingOrigin && !testingHost) || ((vendorHost || vendorApi || testingHost) && (originUrl.origin !== origin || originUrl.host.toLowerCase() !== host.authority || !["http:", "https:"].includes(originUrl.protocol) || (options.production && (vendorHost || testingHost) && originUrl.protocol !== "https:")))) {
         res.status(403).json({ error: "Origin not allowed" }); return;
       }
-      if ((tmdOrigin && !tmdHost && !localDevelopment) || ((tmdHost || tmdApi) && (originUrl.origin !== origin || originUrl.host.toLowerCase() !== host.authority || !["http:", "https:"].includes(originUrl.protocol) || (options.production && tmdHost && originUrl.protocol !== "https:")))) {
-        res.status(403).json({ error: "Origin not allowed" }); return;
-      }
+    }
+    if ((testingApi && !testingHost && !localDevelopment)
+      || (testingHost && /^\/api(?:\/|$)/i.test(decodedPath) && !testingApi && !HEALTH_PATHS.has(path))) {
+      res.status(404).json({ error: "Not found" }); return;
     }
     if ((vendorApi || vendorPage) && !vendorHost && !localDevelopment) {
-      res.status(404).json({ error: "Not found" }); return;
-    }
-    // Testmedaddy's API answers only on its own hosts (and local development), and its
-    // hosts expose nothing but that API, health checks and the SPA.
-    if (tmdApi && !tmdHost && !localDevelopment) {
-      res.status(404).json({ error: "Not found" }); return;
-    }
-    if (tmdHost && /^\/api(?:\/|$)/i.test(path) && !tmdApi && !HEALTH_PATHS.has(path)) {
       res.status(404).json({ error: "Not found" }); return;
     }
     if (vendorHost) {
@@ -83,9 +72,10 @@ export function isVendorHost(hostHeader: string): boolean {
   const host = authority(hostHeader);
   return !!host && VENDOR_HOSTS.has(host.host);
 }
-export function isTestmedaddyHost(hostHeader: string, hosts: Set<string> = testmedaddyHosts()): boolean {
+
+export function isTestmedaddyHost(hostHeader: string): boolean {
   const host = authority(hostHeader);
-  return !!host && hosts.has(host.host);
+  return !!host && TESTING_HOSTS.has(host.host);
 }
 
 /** Shared build, distinct vendor document: no member Mini App bootstrap. */

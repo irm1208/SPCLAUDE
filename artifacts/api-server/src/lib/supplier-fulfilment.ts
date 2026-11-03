@@ -8,7 +8,8 @@ import {
 import { canonicalUsername, type UpdateActor } from "./group-buy-updates-model";
 import { lockHalfKitMoney } from "./half-kit-lock";
 import { SupplierBatchError, fingerprint, snapshotOrder, csv, regionalBatchReference, type BatchOrder } from "./supplier-batches-model";
-import { allocateContents, validateReceipt, orderReadiness, routeOf, type ShipmentLine, type ReceiptLine } from "./supplier-fulfilment-model";
+import { allocateContents, validateReceipt, splitOrderReadiness, routeOf, type ShipmentLine, type ReceiptLine } from "./supplier-fulfilment-model";
+import { reservationBatch, wholeSnapshot } from "./supplier-batch-additions";
 
 export type FulfilmentActor = UpdateActor & { reshipper?: boolean };
 type Database = typeof db;
@@ -79,16 +80,26 @@ async function loadBatch(tx: any, id: string, batchId: string, actor: Fulfilment
   const parentMap = new Map(parents.map(o => [o.id, o]));
   const lineMap = new Map<string, any[]>(); for (const l of lines) lineMap.set(l.orderId, [...(lineMap.get(l.orderId) ?? []), l]);
   const usedMap = new Map(used.map((a: any) => [a.orderId, a.batchId]));
+  // A root reservation still protects the single customer order. Quantity slices
+  // live in immutable batch snapshots; never expose other package data to staff
+  // who are scoped to just one recipient.
+  const splitIds = purchased.filter(o => o.fullOrder).map(o => o.id);
+  const otherPackages = splitIds.length ? await tx.select({ contents: shipments.contents, receipt: shipments.receipt,
+    receiptChecked: shipments.receiptChecked, cancelledAt: shipments.cancelledAt })
+    .from(shipments).innerJoin(batches, eq(batches.id, shipments.batchId))
+    .where(and(eq(batches.groupBuyId, id), sql`${shipments.batchId} <> ${batchId}`,
+      sql`${shipments.contents} @> ANY(ARRAY[${sql.join(splitIds.map(orderId => sql`${JSON.stringify([{ orderId }])}::jsonb`), sql`, `)}])`)) : [];
   const refundSet = new Set(refunds.filter((r: any) => !["rejected", "cancelled", "canceled"].includes(r.status)).map((r: any) => r.orderId));
   const orders = purchased.map(o => {
     const current = parentMap.get(o.id), problems: string[] = [];
     if (!current || current.deletedAt) problems.push("Order removed — Admin review required.");
     if (current && (current.paymentStatus !== "confirmed" || Number(current.amountDue ?? 0) > 0 || current.status === "Cancelled")) problems.push("Payment or cancellation changed — review before dispatch.");
     if (refundSet.has(o.id)) problems.push("Refund exists — resolve before dispatch.");
-    if (usedMap.get(o.id) !== batchId) problems.push("Supplier batch reservation mismatch.");
+    if (usedMap.get(o.id) !== reservationBatch(o, batchId)) problems.push("Supplier batch reservation mismatch.");
     if (current) {
       const latest = snapshotOrder({ ...current, lineItems: lineMap.get(o.id) ?? [] }, o.orderingAt);
-      if (fingerprint(latest.items) !== fingerprint(o.items) || fingerprint(latest.money) !== fingerprint(o.money) || latest.country !== o.country) problems.push("Purchased products, charges or country changed — do not change the supplier snapshot.");
+      const full = wholeSnapshot(o);
+      if (fingerprint(latest.items) !== fingerprint(full.items) || fingerprint(latest.money) !== fingerprint(full.money) || latest.country !== full.country) problems.push("Purchased products, charges or country changed — do not change the supplier snapshot.");
     }
     const route = routeOf(current ?? {});
     if (!route.direct && !route.reshipperUsername) problems.push("Assign a reshipper, or explicitly enable direct shipping on this order. A legacy Direct label alone is not enough.");
@@ -105,9 +116,11 @@ async function loadBatch(tx: any, id: string, batchId: string, actor: Fulfilment
         if (missing > 0) problems.push(`Received package: ${missing} missing kits of ${l.productName} (${s.label}).`);
       }
     }
+    const readiness = splitOrderReadiness(o, packages.map((s: any) => ({ ...s, receiptChecked: !!s.receiptChecked })), problems,
+      otherPackages.map((s: any) => ({ ...s, receiptChecked: !!s.receiptChecked })));
     return {
       id: o.id, code: o.code, username: o.username, country: o.country, status: current?.status ?? "Missing",
-      ...route, ...orderReadiness(o, packages.map((s: any) => ({ ...s, receiptChecked: !!s.receiptChecked })), problems),
+      ...route, ...readiness,
       exceptions: problems,
     };
   });
