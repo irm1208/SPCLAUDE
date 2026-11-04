@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DatePickerField } from "@/components/DatePickerField";
-import { BatchBroadcastPanel } from "./BatchBroadcastPanel";
+import { supplierUrl, type SupplierBatch } from "@/lib/supplier-batches";
 import {
   Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, Save, X, Check,
   Users, Package, Truck, Info, Search, RefreshCw, KeyRound, Bell,
@@ -236,6 +236,11 @@ export function BroadcastSubTab({ secret, gb }: { secret: string; gb: GroupBuy }
   const [memberSearch, setMemberSearch] = useState("");
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
   const [selectedProductNames, setSelectedProductNames] = useState<Set<string>>(new Set());
+  const [batches, setBatches] = useState<SupplierBatch[]>([]);
+  const [batchId, setBatchId] = useState("");
+  const [batchesLoading, setBatchesLoading] = useState(true);
+  const [batchesError, setBatchesError] = useState("");
+  const [membersError, setMembersError] = useState("");
   const MAX = 4000;
 
   const PAYMENT_STATUS_OPTIONS = [
@@ -249,15 +254,43 @@ export function BroadcastSubTab({ secret, gb }: { secret: string; gb: GroupBuy }
   ];
 
   useEffect(() => {
+    const controller = new AbortController();
+    setBatchId("");
+    setBatches([]);
+    setBatchesLoading(true);
+    setBatchesError("");
+    fetch(supplierUrl("admin", gb.id), { headers: { "x-admin-secret": secret }, signal: controller.signal })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data.batches)) throw new Error(data.error || "Could not load supplier batches.");
+        if (!controller.signal.aborted) setBatches(data.batches.filter((batch: SupplierBatch) => batch.state !== "released"));
+      })
+      .catch(error => { if (!controller.signal.aborted) setBatchesError(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setBatchesLoading(false); });
+    return () => controller.abort();
+  }, [gb.id, secret]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     setMembersLoading(true);
+    setMembersError("");
+    setMembers([]);
     setSelectedUsernames(new Set());
+    const query = batchId ? `?${new URLSearchParams({ batchId })}` : "";
+    fetch(apiUrl(`/admin/group-buys/${gb.id}/members${query}`), { headers: { "x-admin-secret": secret }, signal: controller.signal })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok || !Array.isArray(data)) throw new Error(data.error || "Could not load recipients.");
+        if (!controller.signal.aborted) setMembers(data);
+      })
+      .catch(error => { if (!controller.signal.aborted) setMembersError(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setMembersLoading(false); });
+    return () => controller.abort();
+  }, [gb.id, secret, batchId]);
+
+  useEffect(() => {
     setTargetMode("all");
     setCountryLegFilter("all");
-    fetch(apiUrl(`/admin/group-buys/${gb.id}/members`), { headers: { "x-admin-secret": secret } })
-      .then(r => r.ok ? r.json() : [])
-      .then(setMembers)
-      .catch(() => setMembers([]))
-      .finally(() => setMembersLoading(false));
     fetch(apiUrl(`/admin/group-buys/${gb.id}/products`), { headers: { "x-admin-secret": secret } })
       .then(r => r.ok ? r.json() : [])
       .then((data: { id: string; name: string }[]) => setProducts(data))
@@ -293,17 +326,19 @@ export function BroadcastSubTab({ secret, gb }: { secret: string; gb: GroupBuy }
   };
 
   const handleSend = async () => {
-    if (!msg.trim()) return;
+    if (!msg.trim() || membersLoading || batchesLoading || membersError) return;
     const isTargeted = targetMode === "selected";
     const targets = isTargeted ? Array.from(selectedUsernames) : [];
     if (isTargeted && targets.length === 0) { setError("Select at least one recipient."); return; }
-    const recipientLabel = isTargeted ? `${targets.length} selected member${targets.length !== 1 ? "s" : ""}` : `all members of ${gb.name}`;
+    const recipientLabel = (isTargeted ? `${targets.length} selected member${targets.length !== 1 ? "s" : ""}` : `matching members of ${gb.name}`)
+      + (batchId ? ` in ${batches.find(batch => batch.id === batchId)?.reference ?? "the selected batch"}` : "");
     if (!confirm(`Send this message to ${recipientLabel} on Telegram?`)) return;
     setSending(true);
     setError(null);
     setResult(null);
     try {
       const body: Record<string, unknown> = { message: msg };
+      if (batchId) body.batchId = batchId;
       if (isTargeted) {
         body.targetUsernames = targets;
       } else {
@@ -328,12 +363,25 @@ export function BroadcastSubTab({ secret, gb }: { secret: string; gb: GroupBuy }
 
   return (
     <div className="space-y-4">
-    <BatchBroadcastPanel key={gb.id} groupBuyId={gb.id} secret={secret} />
     <Card className="p-5">
       <h3 className="text-sm font-semibold mb-1">Send Telegram Message</h3>
       <p className="text-xs text-muted-foreground mb-4">
         Send a message to members of <strong>{gb.name}</strong> who have linked their Telegram account. Choose all members or select specific recipients.
       </p>
+
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-muted-foreground mb-1" htmlFor="broadcast-batch-filter">Filter by supplier batch</label>
+        <select id="broadcast-batch-filter" aria-label="Filter by supplier batch" value={batchId}
+          disabled={batchesLoading || sending}
+          onChange={event => { setBatchId(event.target.value); setSelectedUsernames(new Set()); setResult(null); setError(null); }}
+          className="w-full rounded-xl text-sm px-3 py-2 border border-input bg-background">
+          <option value="">{batchesLoading ? "Loading batches…" : "All batches / all members"}</option>
+          {batches.map(batch => <option key={batch.id} value={batch.id}>{batch.reference}</option>)}
+        </select>
+        {batchesError && <p role="alert" className="mt-1 text-xs text-red-600">{batchesError} Refresh to load batch filters; no batch filter is applied.</p>}
+        {membersError && <p role="alert" className="mt-1 text-xs text-red-600">{membersError} Sending is disabled until recipients can be loaded.</p>}
+        {batchId && <p className="mt-1 text-xs text-muted-foreground">Only members currently allocated to this batch can receive this message.</p>}
+      </div>
 
       <div className="flex gap-2 mb-3">
         {(["all", "selected"] as const).map(mode => (
@@ -534,11 +582,11 @@ export function BroadcastSubTab({ secret, gb }: { secret: string; gb: GroupBuy }
       <div className="mt-4 flex justify-end">
         <Button
           onClick={handleSend}
-          disabled={sending || !msg.trim() || (targetMode === "selected" && selectedUsernames.size === 0)}
+          disabled={sending || membersLoading || batchesLoading || !!membersError || !msg.trim() || (targetMode === "selected" && selectedUsernames.size === 0)}
           className="gap-2"
         >
           {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <SendHorizonal className="w-4 h-4" />}
-          {sending ? "Sending…" : targetMode === "all" ? "Send to all members" : `Send to ${selectedUsernames.size} member${selectedUsernames.size !== 1 ? "s" : ""}`}
+          {sending ? "Sending…" : targetMode === "all" ? (batchId ? "Send to batch members" : "Send to all members") : `Send to ${selectedUsernames.size} member${selectedUsernames.size !== 1 ? "s" : ""}`}
         </Button>
       </div>
     </Card>

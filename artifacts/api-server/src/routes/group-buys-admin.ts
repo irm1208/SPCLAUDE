@@ -45,6 +45,7 @@ import {
 } from "../lib/group-buy-shipping-adjustment";
 import { halfKitShippingSnapshots, preserveHalfKitShipping } from "../lib/half-kit-shipping";
 import { activeSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
+import { BroadcastBatchFilterError, broadcastBatchUsernames } from "../lib/broadcast-batch-filter";
 
 function shortId(len = 5): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -714,6 +715,12 @@ router.get("/admin/group-buys/:id/members", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 
   const { id } = req.params;
+  let batchMembers: Set<string> | null;
+  try { batchMembers = await broadcastBatchUsernames(db, id, req.query.batchId); }
+  catch (error) {
+    if (error instanceof BroadcastBatchFilterError) { res.status(400).json({ error: error.message }); return; }
+    throw error;
+  }
 
   const rows = await db
     .select({
@@ -732,7 +739,7 @@ router.get("/admin/group-buys/:id/members", async (req, res): Promise<void> => {
     .where(eq(accountGroupBuysTable.groupBuyId, id));
 
   // Return hasPassword and hasTelegram as booleans, not raw values
-  res.json(rows.map((r: typeof rows[number]) => ({
+  res.json(rows.filter((r: typeof rows[number]) => !batchMembers || batchMembers.has(r.telegramUsername.replace(/^@/, "").toLowerCase())).map((r: typeof rows[number]) => ({
     telegramUsername: r.telegramUsername,
     email: r.email,
     accountStatus: r.accountStatus,
@@ -1514,10 +1521,16 @@ router.post("/admin/group-buys/:id/broadcast", async (req, res): Promise<void> =
 
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const { id } = req.params;
-  const { message, targetUsernames, paymentStatusFilter, productFilter, countryLegFilter } = req.body as { message?: string; targetUsernames?: string[]; paymentStatusFilter?: string; productFilter?: string[]; countryLegFilter?: string };
+  const { message, targetUsernames, paymentStatusFilter, productFilter, countryLegFilter, batchId } = req.body as { message?: string; targetUsernames?: string[]; paymentStatusFilter?: string; productFilter?: string[]; countryLegFilter?: string; batchId?: string };
   if (!message || typeof message !== "string" || !message.trim()) {
     res.status(400).json({ error: "message is required" });
     return;
+  }
+  let batchMembers: Set<string> | null;
+  try { batchMembers = await broadcastBatchUsernames(db, id, batchId); }
+  catch (error) {
+    if (error instanceof BroadcastBatchFilterError) { res.status(400).json({ error: error.message }); return; }
+    throw error;
   }
 
   const [gb] = await db
@@ -1592,6 +1605,14 @@ router.post("/admin/group-buys/:id/broadcast", async (req, res): Promise<void> =
     const targetSet = targeting ? new Set(targetUsernames.map(u => u.replace(/^@/, "").toLowerCase())) : null;
     const members = targeting ? allMembers.filter(m => targetSet!.has(m.accountId.toLowerCase())) : allMembers;
     for (const m of members) recipientChatIds.set(m.accountId.toLowerCase(), m.chatId ?? null);
+  }
+
+  // All filters intersect, including explicitly selected recipients. Never widen
+  // an empty or changed batch back to the full group.
+  const explicitTargets = Array.isArray(targetUsernames)
+    ? new Set(targetUsernames.map(username => username.replace(/^@/, "").toLowerCase())) : null;
+  for (const username of recipientChatIds.keys()) {
+    if ((batchMembers && !batchMembers.has(username)) || (explicitTargets && !explicitTargets.has(username))) recipientChatIds.delete(username);
   }
 
   let sent = 0;

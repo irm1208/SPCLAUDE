@@ -22,6 +22,15 @@ export function BatchCorrection({ batch, batches = [], scope, busy, onConfirm }:
   const movedKits = orders.reduce((sum, o) => sum + o.kits, 0);
   const stale = reviewedToken !== batch.snapshot.token;
   const blockedIds = new Set([...batch.exceptions.map(e => e.orderId), ...batch.snapshot.orders.filter(o => o.fullOrder).map(o => o.id)]);
+  const lateIds = new Set((batch.lateOrders ?? []).map(order => order.orderId));
+  const lateOrders = batch.snapshot.orders.filter(order => lateIds.has(order.id));
+  const openCorrection = (ids: string[]) => {
+    setReviewedToken(batch.snapshot.token);
+    setSelected(ids);
+    setReason(ids.length ? "Orders added after batch preparation and not covered by this delivery." : "");
+    setAcknowledged(false);
+    setOpen(true);
+  };
   return <div className="space-y-2 text-xs" style={{ color: "var(--t-text, #0F1F38)" }}>
     {(batch.snapshot.corrections ?? []).map((note, index) => <div key={index}
       className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950">
@@ -33,9 +42,18 @@ export function BatchCorrection({ batch, batches = [], scope, busy, onConfirm }:
       {note.direction === "in" && batch.state === "prepared" && <p>Awaiting a new vendor purchase; not part of the previous delivery.</p>}
     </div>)}
     {scope === "admin" && <BatchMoveUndo batch={batch} busy={busy} onConfirm={onConfirm} />}
+    {scope === "admin" && batch.state === "ordered" && lateOrders.length > 0 && !open &&
+      <button type="button" className={`${button} border-amber-400 bg-amber-50 text-amber-950`}
+        disabled={busy || lateOrders.some(order => blockedIds.has(order.id))}
+        data-testid={`button-move-late-orders-${batch.id}`}
+        onClick={() => openCorrection(lateOrders.map(order => order.id))}>
+        Move orders added after preparation ({lateOrders.reduce((sum, order) => sum + order.kits, 0)} kits)
+      </button>}
+    {scope === "admin" && lateOrders.some(order => blockedIds.has(order.id)) &&
+      <p className="text-amber-700">Some late orders have exceptions or split allocations. Resolve those before moving them together.</p>}
     {scope === "admin" && batch.state === "ordered" && batch.snapshot.orders.length > 0 && !open &&
       <button type="button" className={button} disabled={busy} data-testid={`button-correct-${batch.id}`}
-        onClick={() => { setReviewedToken(batch.snapshot.token); setSelected([]); setReason(""); setAcknowledged(false); setOpen(true); }}>
+        onClick={() => openCorrection([])}>
         Move orders to another batch
       </button>}
     {open && <div role="group" aria-label="Correct batch allocation" className="rounded-lg border p-3 space-y-3"
@@ -52,7 +70,7 @@ export function BatchCorrection({ batch, batches = [], scope, busy, onConfirm }:
               setAcknowledged(false);
               setSelected(previous => e.target.checked ? [...previous, o.id] : previous.filter(id => id !== o.id));
             }} />
-          <span>#{o.code} · {o.username} · {o.kits} kits{o.fullOrder ? " — split across batches; use added quantities" : blockedIds.has(o.id) ? " — resolve exception first" : ""}</span>
+          <span>#{o.code} · {o.username} · {o.kits} kits{lateIds.has(o.id) ? " — added after batch preparation" : ""}{o.fullOrder ? " — split across batches; use added quantities" : blockedIds.has(o.id) ? " — resolve exception first" : ""}</span>
         </label>)}
       </div>
       <BatchMoveDestination destination={destination} busy={busy} testId="move-orders-destination"

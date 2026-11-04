@@ -17,6 +17,7 @@ import { requireAdmin } from "../middleware/require-admin";
 import { writeLog } from "../lib/audit-log";
 import { notifyUserFromTemplate } from "../lib/telegram";
 import { randomUUID, randomBytes } from "crypto";
+import { moveOrderGroup } from "../lib/move-order-group";
 
 const router: IRouter = Router();
 
@@ -319,42 +320,16 @@ router.post("/admin/orders/:orderId/move-gb", async (req, res): Promise<void> =>
     return;
   }
 
-  const [order] = await db
-    .select({ id: ordersTable.id, groupBuyId: ordersTable.groupBuyId, telegramUsername: ordersTable.telegramUsername })
-    .from(ordersTable)
-    .where(eq(ordersTable.id, orderId));
-
-  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-
-  const [targetGb] = await db
-    .select({ id: groupBuysTable.id })
-    .from(groupBuysTable)
-    .where(eq(groupBuysTable.id, targetGbId));
-
-  if (!targetGb) { res.status(404).json({ error: "Target group buy not found" }); return; }
-
-  // Update the order's group_buy_id. Order line items only link to the order via
-  // order_id (they have no independent group_buy_id column), so they automatically
-  // follow the order to the target GB without further update.
-  await db.update(ordersTable).set({ groupBuyId: targetGbId }).where(refundMutableOrderWhere(eq(ordersTable.id, orderId)));
-
-  // Ensure the member is joined to the target GB.
-  // account_group_buys.account_id references accounts.telegram_username (primary key),
-  // so use the order's telegramUsername directly (already normalized: @username lowercase).
-  const accountId = order.telegramUsername;
-  const [membership] = await db
-    .select({ id: accountGroupBuysTable.id })
-    .from(accountGroupBuysTable)
-    .where(and(eq(accountGroupBuysTable.accountId, accountId), eq(accountGroupBuysTable.groupBuyId, targetGbId)));
-
-  if (!membership) {
-    const joinId = randomUUID();
-    await db.insert(accountGroupBuysTable).values({ id: joinId, accountId, groupBuyId: targetGbId }).catch(() => {});
+  try {
+    const moved = await moveOrderGroup(db, orderId, targetGbId);
+    writeLog("change", "info", "order_moved_gb", `Admin moved order ${orderId} from GB ${moved.previousGbId ?? "none"} to GB ${targetGbId}`, { orderId, fromGb: moved.previousGbId, toGb: targetGbId }).catch(() => {});
+    res.json({ ok: true, orderId, ...moved });
+  } catch (error) {
+    if (error instanceof Error && "status" in error && typeof error.status === "number") {
+      res.status(error.status).json({ error: error.message }); return;
+    }
+    throw error;
   }
-
-  writeLog("change", "info", "order_moved_gb", `Admin moved order ${orderId} from GB ${order.groupBuyId ?? "none"} to GB ${targetGbId}`, { orderId, fromGb: order.groupBuyId, toGb: targetGbId }).catch(() => {});
-
-  res.json({ ok: true, orderId, previousGbId: order.groupBuyId, newGbId: targetGbId });
 });
 
 // ── PATCH /admin/orders/:orderId/reassign-reshipper ────────────────────────────

@@ -6,6 +6,41 @@ const key = (o: string, p: string) => JSON.stringify([o, p]);
 export const reservationBatch = (order: BatchOrder, batchId: string) => order.allocationRootBatchId ?? batchId;
 export const wholeSnapshot = (order: BatchOrder) => order.fullOrder ?? order;
 
+const timestamp = (value: unknown) => value instanceof Date ? value.getTime()
+  : typeof value === "string" && value ? Date.parse(value) : NaN;
+
+/** Whole orders appended to this batch, not historical customer quantity edits. */
+export function appendedBatchOrders(batch: any, history: any[]): { orderId: string; kits: number; addedAt: string }[] {
+  if (batch.state === "released") return [];
+  const preparedAt = timestamp(batch.createdAt);
+  if (!Number.isFinite(preparedAt)) return [];
+  const appended = new Map<string, string>();
+  for (const event of history) {
+    const at = timestamp(event.createdAt);
+    if (event.kind !== "appended" || event.detail.batchId !== batch.id || !(at > preparedAt)) continue;
+    for (const id of event.detail.orderIds ?? []) {
+      if (!appended.has(id)) appended.set(id, new Date(at).toISOString());
+    }
+  }
+  return (batch.snapshot.orders as BatchOrder[]).flatMap(order => {
+    const addedAt = appended.get(order.id);
+    const kits = order.items.reduce((sum, item) => sum + Number(item.quantity), 0);
+    return addedAt && reservationBatch(order, batch.id) === batch.id && kits > 0
+      ? [{ orderId: order.id, kits, addedAt }] : [];
+  });
+}
+
+/** The allocation baseline is batch preparation, never the customer's first order. */
+export function postPreparationAdditions(batch: any, history: any[], orderEdits: any[] = []): AddedQuantity[] {
+  if (batch.state === "released" || !Number.isFinite(timestamp(batch.createdAt))) return [];
+  const preparedAt = timestamp(batch.createdAt);
+  const late = new Set(appendedBatchOrders(batch, history).map(order => order.orderId));
+  return batchAdditions({ ...batch, snapshot: { ...batch.snapshot,
+    orders: batch.snapshot.orders.filter((order: BatchOrder) => !late.has(order.id)),
+  } }, history.filter(event => event.kind !== "refreshed" || timestamp(event.createdAt) > preparedAt),
+  orderEdits.filter(edit => timestamp(edit.createdAt) > preparedAt));
+}
+
 /** Batch appends are NOT customer additions. Prefer original order-edit evidence. */
 export function batchAdditions(batch: any, history: any[], orderEdits: any[] = []): AddedQuantity[] {
   const undone = new Set(history.filter(e => e.kind === "move_undone").map(e => e.detail.moveEventId));

@@ -32,6 +32,38 @@ const fresh = () => ({
 const batch = (exceptions: unknown[]) => ({ id: "B1", reference: "SB-001", state: "prepared", createdAt: "2026-10-02T10:00:00Z",
   createdBy: "staff", orderedAt: null, releasedAt: null, releaseReason: null, snapshot: proposal("tok-A"), exceptions });
 
+test("late-order shortcut selects only the appended six kits and released batches are collapsed", async () => {
+  state = fresh();
+  const makeOrder = (id: string, kits: number) => ({ ...order, id, code: id, kits,
+    items: [{ ...order.items[0], quantity: kits }] });
+  const source = { ...batch([]), state: "ordered", snapshot: { ...proposal("source"), kits: 26,
+    orders: [makeOrder("original", 20), makeOrder("late-one", 2), makeOrder("late-two", 4)] },
+    lateOrders: [{ orderId: "late-one", kits: 2, addedAt: "2026-10-03T13:20:00Z" },
+      { orderId: "late-two", kits: 4, addedAt: "2026-10-03T13:20:00Z" }] };
+  state.batches = [source, { ...batch([]), id: "B2", snapshot: proposal("destination") },
+    { ...batch([]), id: "B7", reference: "SB-007", state: "released", releasedAt: "2026-10-03T12:00:00Z" }];
+  await mount("admin");
+  const archive = document.querySelector('[data-testid="released-batch-history"]') as HTMLDetailsElement;
+  assert.ok(archive);
+  assert.equal(archive.open, false);
+  assert.ok(archive.querySelector('[data-testid="card-batch-B7"]'));
+  assert.ok(!archive.querySelector('[data-testid="card-batch-B1"]'));
+  assert.match(document.body.textContent!, /Added after batch preparation: 2 kits/);
+  assert.match(document.body.textContent!, /Added after batch preparation: 4 kits/);
+  assert.doesNotMatch(document.body.textContent!, /Additional kits: \+10/);
+  await click("button-move-late-orders-B1");
+  assert.equal(el<HTMLInputElement>("move-order-original").checked, false);
+  assert.equal(el<HTMLInputElement>("move-order-late-one").checked, true);
+  assert.equal(el<HTMLInputElement>("move-order-late-two").checked, true);
+  await change("move-orders-destination", "B2");
+  assert.match(document.body.textContent!, /6 kits move to SB-001; 20 kits remain/);
+  await click("acknowledge-move-orders");
+  await click("confirm-move-orders");
+  assert.deepEqual((requests.at(-1)!.body as any).orderIds, ["late-one", "late-two"]);
+  assert.equal((requests.at(-1)!.body as any).targetBatchId, "B2");
+  assert.match(requests.at(-1)!.url, /B1\/move-orders$/);
+});
+
 before(async () => {
   dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "https://example.test/" });
   const globals = globalThis as unknown as Record<string, unknown>;

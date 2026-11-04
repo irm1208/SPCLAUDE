@@ -16,9 +16,16 @@ it("routes Germany EU postage to its multi-country reshipper, never direct", asy
   where.mockResolvedValueOnce([group]).mockResolvedValueOnce(assignments);
   await expect(resolveGroupOrderRoute(request)).resolves.toEqual({ reshipperUsername: "fazi28", routingType: "reshipper", fixedReshipper: true });
 });
-it("keeps nonmatching or ambiguous ordinary postage unrouted instead of direct", async () => {
+it("rejects ordinary postage with no enabled coverage instead of accepting an orphan", async () => {
   where.mockResolvedValueOnce([group]).mockResolvedValueOnce([]);
-  await expect(resolveGroupOrderRoute({ ...request, methodId: "ordinary" })).resolves.toMatchObject({ routingType: "unrouted", reshipperUsername: null });
+  await expect(resolveGroupOrderRoute({ ...request, methodId: "ordinary" })).rejects.toThrow(/reshipper.*country/i);
+});
+it("preserves the unclaimed pool when multiple enabled reshippers cover the country", async () => {
+  where.mockResolvedValueOnce([group]).mockResolvedValueOnce([
+    ...assignments, { reshipperUsername: "second", country: "DE", enabled: true },
+  ]);
+  await expect(resolveGroupOrderRoute({ ...request, methodId: "ordinary" }))
+    .resolves.toMatchObject({ routingType: "unrouted", reshipperUsername: null });
 });
 it("does not let a stale or forged direct flag route an ordinary shipping option directly", async () => {
   where.mockResolvedValueOnce([group]);
