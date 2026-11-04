@@ -5,6 +5,20 @@ description: Why the build script was decoupled from typecheck, and the recurrin
 
 # Build vs typecheck separation
 
+## Workspace build memory
+If a frontend production build exits 137 with only “Killed” and no compiler error,
+check container memory before changing application code. In a busy workspace,
+retrying the normal Vite build alone with `NODE_OPTIONS=--max-old-space-size=2048`
+can avoid the container OOM limit by making Node collect garbage earlier.
+
+**Why:** The workspace also runs development servers and a memory-heavy TypeScript
+language server; Node's default heap plus those services can exhaust the container
+even though the unchanged build succeeds with a smaller heap.
+
+**How to apply:** Use a per-command heap cap for verification after confirming memory
+pressure. Do not disable production minification or change deployment settings just
+to make a development verification pass.
+
 ## Rule
 `pnpm run build` in `Product-Landing-Page/package.json` does NOT run typecheck.
 Typecheck runs via `pnpm run check` (separate) or `pnpm run typecheck`.

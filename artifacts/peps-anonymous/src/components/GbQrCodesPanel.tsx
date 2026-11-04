@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { RoyalMailLabelsExport } from "./royal-mail-labels/RoyalMailLabelsExport";
 import { Loader2, QrCode, Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, X, Truck, Package, CheckCircle2, RotateCcw, Download, ExternalLink } from "lucide-react";
 // @ts-ignore — Vite resolves the bundled PDF.js worker URL at build time.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -523,6 +524,9 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "not-posted" | "posted" | "waiting">("all");
   const [batchId, setBatchId] = useState("");
+  const [exportScope, setExportScope] = useState<string | null>(null);
+  const scope = JSON.stringify([gbId, mode, adminSecret, batchId, filter, search]);
+  useEffect(() => { setExportScope(null); }, [scope, loading]);
   const requestRef = useRef<AbortController | null>(null);
 
   const fetchHeaders: Record<string, string> = mode === "admin" && adminSecret
@@ -630,6 +634,9 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
   const filteredNotPosted = notPostedOrders;
   const filteredPosted = postedOrders;
   const filteredWaiting = waitingOrders;
+  const visibleOrders = filter === "not-posted" ? notPostedOrders : filter === "posted" ? postedOrders : filter === "waiting" ? waitingOrders : allOrders;
+  const royalMailOrders = visibleOrders.filter(order => order.hasRoyalMailQr);
+  const scopeDescription = `${selectedBatch?.reference ?? "All batches"} · ${{ all: "All statuses", "not-posted": "Not Posted", posted: "Posted", waiting: "Waiting" }[filter]}${search ? ` · Search: ${search}` : ""}`;
 
   return (
     <div className="space-y-4">
@@ -729,6 +736,20 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
       )}
 
       {/* Error */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-input bg-background p-3">
+        <p className="text-xs text-muted-foreground">{royalMailOrders.length} orders with Royal Mail uploads in the current filters. PDF label counts are checked during review.</p>
+        <button type="button" disabled={loading || !!error || !royalMailOrders.length}
+          onClick={() => setExportScope(scope)}
+          className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+          <Download className="h-4 w-4" /> Download all Royal Mail labels
+        </button>
+        {!loading && !royalMailOrders.length && <p className="w-full text-xs text-muted-foreground">No Royal Mail PDFs are available in this view. Change the batch, search or status filter.</p>}
+      </div>
+      {exportScope === scope && !loading && !error && data && <RoyalMailLabelsExport
+        gbId={gbId} gbName={data.gbName} batchName={selectedBatch?.reference ?? "all-batches"}
+        orders={royalMailOrders} scopeDescription={scopeDescription} mode={mode} adminSecret={adminSecret}
+        onClose={() => setExportScope(null)} />}
+
       {error && (
         <div className="rounded-xl p-4" style={{ background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.15)" }}>
           <p className="text-sm font-medium" style={{ color: "#DC2626" }}>{error}</p>

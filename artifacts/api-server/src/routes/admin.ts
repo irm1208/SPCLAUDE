@@ -2396,7 +2396,7 @@ router.get("/admin/group-buys/:id/all-orders-qr", async (req, res): Promise<void
       telegramUsername: o.telegramUsername,
       deliveryMethod: o.deliveryMethod,
       hasInpostQr: o.inpostQrCode !== null,
-      hasRoyalMailQr: o.royalMailQrCode !== null,
+      hasRoyalMailQr: o.royalMailQrCode !== null || !!(o.qrCodes as Record<string, string> | null)?.["royal-mail"],
       hasQrCodes: o.qrCodes !== null && Object.keys(o.qrCodes as Record<string, string>).length > 0,
       qrPosted: o.qrPosted,
       status: o.status,
