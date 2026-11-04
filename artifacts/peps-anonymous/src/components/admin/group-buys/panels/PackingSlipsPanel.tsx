@@ -29,6 +29,13 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
   const [batchFilter, setBatchFilter] = useState("");
 
   useEffect(() => {
+    setBatchFilter("");
+    setCountryFilter("");
+    setReshipperFilter("");
+    setStatusFilter("pending");
+  }, [groupBuyId, secret]);
+
+  useEffect(() => {
     const controller = new AbortController();
     setOrders([]);
     setBatches([]);
@@ -73,7 +80,12 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
   useEffect(() => { setSelected(new Set()); setPrinting(false); }, [countryFilter, reshipperFilter, statusFilter, batchFilter, groupBuyId]);
   const selectedBatch = batches.find(batch => batch.id === batchFilter);
   const batchOrders = useMemo(() => {
-    if (!batchFilter) return orders;
+    if (!batchFilter) return orders.map(order => ({
+      ...order,
+      supplierBatchReferences: batches.filter(batch => batch.snapshot.orders.some(allocation =>
+        allocation.id === order.id && allocation.items.some(item => Number(item.quantity) > 0)
+      )).map(batch => batch.reference),
+    }));
     // Never fall back to full-order quantities when a batch was released or removed.
     if (!selectedBatch) return [];
     const currentOrders = new Map(orders.map(order => [order.id, order]));
@@ -81,9 +93,9 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
       const order = currentOrders.get(allocation.id);
       const lineItems = allocation.items.filter(item => Number(item.quantity) > 0)
         .map(item => ({ productName: item.productName, quantity: Number(item.quantity) }));
-      return order && lineItems.length ? [{ ...order, lineItems }] : [];
+      return order && lineItems.length ? [{ ...order, lineItems, supplierBatchReferences: [selectedBatch.reference] }] : [];
     });
-  }, [orders, selectedBatch, batchFilter]);
+  }, [orders, batches, selectedBatch, batchFilter]);
   const countries = useMemo(() => [...new Set(orders.map(country).filter(Boolean))].sort(), [orders]);
   const reshippers = useMemo(() => [...new Set(orders.map(reshipper).filter(Boolean))].sort(), [orders]);
   const filtered = useMemo(() => batchOrders.filter(order =>
@@ -103,6 +115,7 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
         <label className="grid gap-1 text-xs font-medium">Batch
           <select aria-label="Batch" className={`${fieldClass} max-w-full`} value={batchFilter} onChange={e => setBatchFilter(e.target.value)} disabled={loading || !!error}>
             <option value="">All orders (full quantities)</option>
+            {batchFilter && !selectedBatch && <option value={batchFilter} disabled>Selected batch is no longer available</option>}
             {batches.map(batch => <option key={batch.id} value={batch.id}>{batch.reference} · {batch.snapshot.region.name} · {batch.state === "ordered" ? "Submitted to vendor" : "Prepared"}</option>)}
           </select>
         </label>
@@ -130,6 +143,7 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
         </button>
       </div>
       {selectedBatch && <p className="text-sm text-muted-foreground">Printing allocations for <strong>{selectedBatch.reference}</strong> only. Items allocated to other batches are not included.</p>}
+      {batchFilter && !selectedBatch && !loading && !error && <p role="alert" className="text-sm text-amber-700">The selected batch is no longer available. Choose another batch or all orders.</p>}
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div className="overflow-hidden rounded-xl border border-border">
         <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/30 p-3 text-xs">
@@ -156,7 +170,7 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
             </label>)}
           </div>}
       </div>
-      {printing && printOrders.length > 0 && <PrintModal orders={printOrders} gbName={selectedBatch ? `${groupBuyName} · ${selectedBatch.reference}` : groupBuyName} onClose={() => setPrinting(false)} />}
+      {printing && printOrders.length > 0 && <PrintModal orders={printOrders} gbName={groupBuyName} onClose={() => setPrinting(false)} />}
     </div>
   );
 }

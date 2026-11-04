@@ -1,3 +1,4 @@
+import { qrOrderBatches } from "../lib/qr-order-batches";
 import { withAdditionReferences } from "../lib/addition-order-references";
 import { validateGroupProductLabReport } from "../lib/group-product-lab-report";
 import { parseBankTransfer } from "@workspace/api-zod/bank-transfer";
@@ -1565,7 +1566,8 @@ router.get("/organiser/group-buys/:id/all-orders-qr", requireAccount, async (req
       status: o.status,
     }));
 
-    res.json({ gbName: gb.name, orders });
+    const batches = await qrOrderBatches(db, id, orders.filter(o => o.status !== "Cancelled").map(o => o.id));
+    res.json({ gbName: gb.name, orders, batches });
   } catch (err) {
     console.error(`[all-orders-qr] GB=${id} user=${username} error:`, err);
     const msg = err instanceof Error ? err.message : String(err);
