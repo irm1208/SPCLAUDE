@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Loader2, Printer, RefreshCw } from "lucide-react";
 import { PrintModal, type DispatchOrder } from "@/components/AdminDispatch";
 import { COUNTRY_LIST } from "@/data/countries";
+import { supplierUrl, type SupplierBatch } from "@/lib/supplier-batches";
 
 const countryNames = new Map(COUNTRY_LIST.map(c => [c.code.toLowerCase(), c.name]));
 function country(order: DispatchOrder) {
@@ -24,15 +25,24 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
   const [statusFilter, setStatusFilter] = useState("pending");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [printing, setPrinting] = useState(false);
+  const [batches, setBatches] = useState<SupplierBatch[]>([]);
+  const [batchFilter, setBatchFilter] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
     setOrders([]);
+    setBatches([]);
     setSelected(new Set());
     setPrinting(false);
     setLoading(true);
     setError("");
     async function load() {
+      const batchResponse = await fetch(supplierUrl("admin", groupBuyId), {
+        headers: { "x-admin-secret": secret }, credentials: "omit", signal: controller.signal,
+      });
+      const batchData = await batchResponse.json();
+      if (!batchResponse.ok) throw new Error(batchData.error || "Could not load batches");
+      if (!Array.isArray(batchData.batches)) throw new Error("Invalid batches response");
       const all: DispatchOrder[] = [];
       let page = 1;
       let totalPages = 1;
@@ -50,6 +60,7 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
       } while (page <= totalPages);
       if (!controller.signal.aborted) {
         setOrders([...new Map(all.filter(o => o.status !== "Cancelled").map(o => [o.id, o])).values()]);
+        setBatches(batchData.batches.filter((batch: SupplierBatch) => batch.state !== "released"));
       }
     }
     load().catch(err => {
@@ -59,14 +70,27 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
   }, [secret, groupBuyId, revision]);
 
   // Changing filters must never leave hidden orders selected for printing.
-  useEffect(() => { setSelected(new Set()); setPrinting(false); }, [countryFilter, reshipperFilter, statusFilter, groupBuyId]);
+  useEffect(() => { setSelected(new Set()); setPrinting(false); }, [countryFilter, reshipperFilter, statusFilter, batchFilter, groupBuyId]);
+  const selectedBatch = batches.find(batch => batch.id === batchFilter);
+  const batchOrders = useMemo(() => {
+    if (!batchFilter) return orders;
+    // Never fall back to full-order quantities when a batch was released or removed.
+    if (!selectedBatch) return [];
+    const currentOrders = new Map(orders.map(order => [order.id, order]));
+    return selectedBatch.snapshot.orders.flatMap(allocation => {
+      const order = currentOrders.get(allocation.id);
+      const lineItems = allocation.items.filter(item => Number(item.quantity) > 0)
+        .map(item => ({ productName: item.productName, quantity: Number(item.quantity) }));
+      return order && lineItems.length ? [{ ...order, lineItems }] : [];
+    });
+  }, [orders, selectedBatch, batchFilter]);
   const countries = useMemo(() => [...new Set(orders.map(country).filter(Boolean))].sort(), [orders]);
   const reshippers = useMemo(() => [...new Set(orders.map(reshipper).filter(Boolean))].sort(), [orders]);
-  const filtered = useMemo(() => orders.filter(order =>
+  const filtered = useMemo(() => batchOrders.filter(order =>
     (!countryFilter || country(order) === countryFilter)
     && (!reshipperFilter || (reshipperFilter === "__none__" ? !reshipper(order) : reshipper(order) === reshipperFilter))
     && (statusFilter === "all" || !["Shipped", "Completed"].includes(order.status))
-  ), [orders, countryFilter, reshipperFilter, statusFilter]);
+  ), [batchOrders, countryFilter, reshipperFilter, statusFilter]);
   const printOrders = filtered.filter(order => selected.has(order.id));
   const fieldClass = "h-10 rounded-lg border border-input bg-background px-3 text-sm";
   return (
@@ -76,6 +100,12 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
         <p className="text-sm text-muted-foreground">Print directly from this group buy, with or without an assigned reshipper. Printing does not mark orders as dispatched or notify members.</p>
       </div>
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-background p-4">
+        <label className="grid gap-1 text-xs font-medium">Batch
+          <select aria-label="Batch" className={`${fieldClass} max-w-full`} value={batchFilter} onChange={e => setBatchFilter(e.target.value)} disabled={loading || !!error}>
+            <option value="">All orders (full quantities)</option>
+            {batches.map(batch => <option key={batch.id} value={batch.id}>{batch.reference} · {batch.snapshot.region.name} · {batch.state === "ordered" ? "Submitted to vendor" : "Prepared"}</option>)}
+          </select>
+        </label>
         <label className="grid gap-1 text-xs font-medium">Country
           <select aria-label="Country" className={fieldClass} value={countryFilter} onChange={e => setCountryFilter(e.target.value)}>
             <option value="">All countries</option>
@@ -99,6 +129,7 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
           <RefreshCw className="h-4 w-4" /> Refresh
         </button>
       </div>
+      {selectedBatch && <p className="text-sm text-muted-foreground">Printing allocations for <strong>{selectedBatch.reference}</strong> only. Items allocated to other batches are not included.</p>}
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <div className="overflow-hidden rounded-xl border border-border">
         <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/30 p-3 text-xs">
@@ -119,12 +150,13 @@ export function PackingSlipsPanel({ secret, groupBuyId, groupBuyName }: {
               <span className="min-w-0 flex-1">
                 <span className="font-semibold">#{order.code || order.id}</span> {order.telegramUsername && <span>@{order.telegramUsername.replace(/^@/, "")}</span>}
                 <span className="block break-words text-xs text-muted-foreground">{order.shippingName} · {country(order) || "Country not provided"} · {reshipper(order) ? `@${reshipper(order)}` : "No assigned reshipper"}</span>
+                {selectedBatch && <span className="block text-xs text-muted-foreground">{order.lineItems.reduce((sum, item) => sum + item.quantity, 0)} kits in this batch</span>}
               </span>
               <span className="text-xs text-muted-foreground">{order.status}</span>
             </label>)}
           </div>}
       </div>
-      {printing && printOrders.length > 0 && <PrintModal orders={printOrders} gbName={groupBuyName} onClose={() => setPrinting(false)} />}
+      {printing && printOrders.length > 0 && <PrintModal orders={printOrders} gbName={selectedBatch ? `${groupBuyName} · ${selectedBatch.reference}` : groupBuyName} onClose={() => setPrinting(false)} />}
     </div>
   );
 }

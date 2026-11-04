@@ -34,6 +34,7 @@ it("loads all pages, filters countries and unassigned reshippers, and prints onl
   const base = { status: "Submitted", telegramUsername: "example", deliveryMethod: "Post", shippingAddress: "Example Street", lineItems: [{ productName: "Example product", quantity: 2 }] };
   const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, options) => {
     const url = new URL(String(input), "https://example.test");
+    if (url.pathname.endsWith("/supplier-batches")) return Response.json({ batches: [] });
     expect(url.pathname).toBe("/api/admin/orders");
     expect(url.searchParams.get("groupBuyId")).toBe("gb-example");
     expect(options?.headers).toEqual({ "x-admin-secret": "test-admin" });
@@ -51,7 +52,7 @@ it("loads all pages, filters countries and unassigned reshippers, and prints onl
   const root = createRoot(el);
   try {
     await React.act(async () => { root.render(<PackingSlipsPanel secret="test-admin" groupBuyId="gb-example" groupBuyName="Example GB" />); });
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(3);
     expect(el.textContent).toContain("Third recipient");
     await select(el, "Country", "United Kingdom");
     expect(el.textContent).not.toContain("Assigned recipient");
@@ -68,6 +69,52 @@ it("loads all pages, filters countries and unassigned reshippers, and prints onl
     await select(el, "Reshipper", "examplelead");
     expect(button(el, "Print Packing Slips (0)").disabled).toBe(true);
     expect(el.textContent).toContain("Third recipient");
+    expect(request).toHaveBeenCalledTimes(3);
+  } finally { await React.act(async () => root.unmount()); }
+});
+
+it("prints only selected-batch allocations with its reference, preserves unassigned orders and clears hidden selections", async () => {
+  const base = { status: "Submitted", telegramUsername: "example", deliveryMethod: "Post", shippingCountry: "GB", reshipperUsername: null,
+    shippingName: "Batch recipient", lineItems: [{ productName: "HGH full order", quantity: 12 }] };
+  const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, options) => {
+    expect(options?.method ?? "GET").toBe("GET");
+    expect(options?.headers).toEqual({ "x-admin-secret": "test-admin" });
+    return Response.json(String(input).includes("/supplier-batches") ? { batches: [
+      { id: "batch-one", reference: "GB-UAJBM / 001", state: "ordered", snapshot: { region: { name: "United Kingdom" }, orders: [
+        { id: "one", items: [{ productId: "hgh", productName: "HGH 36IU", quantity: 2 }] },
+      ] } },
+      { id: "batch-two", reference: "GB-UAJBM / 002", state: "prepared", snapshot: { region: { name: "United Kingdom" }, orders: [
+        { id: "one", items: [{ productId: "hgh", productName: "HGH 36IU", quantity: 10 }] },
+      ] } },
+      { id: "released", reference: "Released batch", state: "released", snapshot: { orders: [] } },
+    ] } : { orders: [{ ...base, id: "one", code: "10001" }, { ...base, id: "two", code: "10002", shippingName: "Outside batch" }] });
+  });
+  const el = document.createElement("div");
+  document.body.append(el);
+  const root = createRoot(el);
+  try {
+    await React.act(async () => { root.render(<PackingSlipsPanel secret="test-admin" groupBuyId="gb-example" groupBuyName="HGH GB" />); });
+    await select(el, "Batch", "batch-one");
+    expect(el.textContent).not.toContain("Outside batch");
+    expect(el.textContent).not.toContain("Released batch");
+    await React.act(async () => { button(el, "Select all filtered").click(); });
+    await React.act(async () => { button(el, "Print Packing Slips (1)").click(); });
+    const modal = button(el, "Print / Save PDF").closest(".fixed")!;
+    expect(modal.textContent).toContain("GB-UAJBM / 001");
+    expect(modal.textContent).toContain("HGH 36IU");
+    expect(modal.textContent).not.toContain("HGH full order");
+    expect(modal.textContent).toContain("Total Kits — 2");
+    expect(modal.textContent).not.toContain("Total Kits — 12");
+    await React.act(async () => { button(modal, "4×6 Labels").click(); });
+    expect(modal.textContent).toContain("GB-UAJBM / 001");
+    expect(modal.textContent).toContain("HGH 36IU");
+    expect(modal.textContent).not.toContain("HGH full order");
+    await React.act(async () => { button(el, "Close packing slips").click(); });
+    await select(el, "Batch", "batch-two");
+    expect(button(el, "Print Packing Slips (0)").disabled).toBe(true);
+    await React.act(async () => { button(el, "Select all filtered").click(); });
+    await React.act(async () => { button(el, "Print Packing Slips (1)").click(); });
+    expect(button(el, "Print / Save PDF").closest(".fixed")!.textContent).toContain("Total Kits — 10");
     expect(request).toHaveBeenCalledTimes(2);
   } finally { await React.act(async () => root.unmount()); }
 });

@@ -3,6 +3,15 @@ name: Supplier batch policies
 description: Full FS3 supplier TXT requirements and the boundary for adding orders to existing batches.
 ---
 
+Batch packing slips must show only the quantities allocated to the selected batch,
+not the customer's entire order, and remain printable without a reshipper.
+
+**Why:** The user approved batch-filtered packing slips for HGH 36IU, including
+split allocations and unassigned reshippers.
+
+**How to apply:** Retain the batch reference on both print formats. Printing is
+paperwork only; never mark dispatch, move kits or notify members as a side effect.
+
 Supplier batch TXT downloads must retain the full FS3 format, including supplier costs and delivery contact details. Do not silently substitute a quantities-only file when setup is missing.
 
 **Why:** The user explicitly chose to keep the full format and show exactly what needs setting up, rather than allow incomplete downloads.
