@@ -166,15 +166,20 @@ function OrdersDetail({ p, batch, batches = [], scope, busy = false, act }: {
           <tbody>
             {p.orders.map(o => {
               const added = (batch?.additions ?? []).filter(a => a.orderId === o.id);
+              const late = batch?.state === "released" ? undefined : batch?.lateOrders?.find(a => a.orderId === o.id);
               return (
-              <tr key={o.id} className={`border-t align-top ${added.length ? "bg-amber-500/10" : ""}`} style={{ borderColor: V.border, color: V.text }}>
+              <tr key={o.id} className={`border-t align-top ${added.length || late ? "bg-amber-500/10" : ""}`} style={{ borderColor: V.border, color: V.text }}>
                 <td className="py-1 pr-2 font-mono">{o.code}</td><td className="pr-2">{o.username}</td><td className="pr-2">{o.country}</td>
                 <td className="pr-2">{kits(o.kits)}</td>
                 <td className="pr-2">{o.paidAt ? fmt(o.paidAt) : o.historicalReviewed ? `Reviewed (queued ${fmt(o.orderingAt)})` : "—"}</td>
                 <td>{o.items.map(i => `${i.productName} ×${i.quantity}`).join(", ")}
                   {o.fullOrder && <p className="font-semibold">Split allocation: {kits(o.kits)} of {kits(o.fullOrder.kits)} kits here</p>}
+                  {late && <div className="my-1 space-y-1">
+                    <span className="inline-block rounded border border-amber-400 px-1.5 py-0.5 font-semibold">Added after batch preparation: {kits(late.kits)} kits</span>
+                    <p style={{ color: V.muted }}>Added {fmt(late.addedAt)} · this entire allocation was appended, not an earlier customer quantity edit.</p>
+                  </div>}
                   {added.length > 0 && <div className="my-1 flex flex-wrap items-center gap-2">
-                    <span className="rounded border border-amber-400 px-1.5 py-0.5 font-semibold">Additional kits: +{kits(added.reduce((sum, a) => sum + a.quantity, 0))}</span>
+                    <span className="rounded border border-amber-400 px-1.5 py-0.5 font-semibold">Quantity increased after preparation: +{kits(added.reduce((sum, a) => sum + a.quantity, 0))}</span>
                     {canMove && <button type="button" disabled={busy} className="underline font-semibold"
                       data-testid={`button-move-additions-${o.id}`} onClick={() => setMoving(o.id)}>Move additions to another batch</button>}
                   </div>}
@@ -454,7 +459,12 @@ function Body({ groupBuyId, scope, headers, onViewOrders, onDispatch }: Props) {
           <summary className="cursor-pointer text-sm font-semibold" style={{ color: V.text }}>Shipping &amp; receipt overview</summary>
           <div className="mt-3"><SupplierBatchFulfilment groupBuyId={groupBuyId} scope={scope} headers={headers} onViewOrders={onViewOrders} onDispatch={onDispatch} /></div>
         </details>
-        {d.batches.map(b => <BatchCard key={b.id} b={b} batches={d.batches} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} exportTxt={exportTxt} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}
+        {d.batches.filter(b => b.state !== "released").map(b => <BatchCard key={b.id} b={b} batches={d.batches} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} exportTxt={exportTxt} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}
+        {d.batches.some(b => b.state === "released") && <details data-testid="released-batch-history" className="rounded-xl border p-3" style={{ borderColor: V.border }}>
+          <summary className="cursor-pointer text-sm font-semibold" style={{ color: V.muted }}>Released / undone history ({d.batches.filter(b => b.state === "released").length})</summary>
+          <p className="my-2 text-xs" style={{ color: V.muted }}>Historical records only. These batches do not allocate kits to a current delivery. Contents show the old snapshot, not an active allocation.</p>
+          <div className="space-y-2">{d.batches.filter(b => b.state === "released").map(b => <BatchCard key={b.id} b={b} batches={d.batches} busy={busy} act={(p, body) => act(p, body)} exportCsv={exportCsv} exportTxt={exportTxt} context={{ groupBuyId, scope, headers, onViewOrders, onDispatch }} />)}</div>
+        </details>}
       </section>
       {d.events.length > 0 && (
         <section className="space-y-1">

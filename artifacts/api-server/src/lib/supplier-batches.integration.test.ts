@@ -332,21 +332,17 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const current = await api.supplierData(f.id, admin);
     expect(current.batches.find((b: any) => b.id === source.id).snapshot.kits).toBe(100);
   });
-  it("uses customer edits before first allocation and refuses moving original kits from an appended order", async () => {
+  it("uses customer edits after preparation and refuses moving original kits", async () => {
     const f = await fixture([2, 100]);
+    const prepared = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: f.result.proposals[0].allQueued.token, includeAll: true,
+    });
+    const batch = prepared.batches[0];
     await store.db.insert(store.auditLogsTable).values({
       type: "order", action: "order_updated_by_customer", message: "Synthetic quantity edit",
       metadata: { groupBuyId: f.id, orderId: f.ids[0],
         before: { lineItems: [{ productName: "Synthetic product", quantity: "1" }] },
         after: { lineItems: [{ productName: "Synthetic product", quantity: "2" }] } },
-    });
-    const prepared = await api.confirmSupplierBatch(f.id, admin, {
-      regionId: "eu", token: f.result.proposals[0].allQueued.token, includeAll: true,
-    });
-    const batch = prepared.batches[0];
-    await store.db.insert(store.gbSupplierEventsTable).values({
-      id: randomUUID(), groupBuyId: f.id, kind: "appended",
-      detail: { batchId: batch.id, orderIds: f.ids },
     });
     const submitted = await api.orderSupplierBatch(f.id, batch.id, admin, { confirm: true });
     const source = submitted.batches[0];
@@ -385,6 +381,39 @@ describe.skipIf(process.env.SUPPLIER_BATCH_DB_TESTS !== "1")("regional supplier 
     const [unchanged] = await store.db.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.ids[0]));
     expect(unchanged.grandTotal).toBe("20.00");
     expect(unchanged.paymentStatus).toBe("confirmed");
+  });
+
+  it("exposes appended whole allocations separately and moves only those orders without changing payments", async () => {
+    const f = await fixture([100, 2, 4]);
+    await store.db.insert(store.auditLogsTable).values({
+      type: "order", action: "order_updated_by_customer", message: "Synthetic pre-batch increase",
+      metadata: { groupBuyId: f.id, orderId: f.ids[0],
+        before: { lineItems: [{ productName: "Synthetic product", quantity: "90" }] },
+        after: { lineItems: [{ productName: "Synthetic product", quantity: "100" }] } },
+    });
+    const prepared = await api.confirmSupplierBatch(f.id, admin, {
+      regionId: "eu", token: f.result.proposals[0].token,
+    });
+    const source = prepared.batches[0];
+    const queue = prepared.proposals.find((p: any) => p.region.id === "eu").allQueued;
+    const appended = await api.appendSupplierBatch(f.id, source.id, admin, {
+      regionId: "eu", token: queue.token, includeAll: true, expectedBatchToken: source.snapshot.token,
+    });
+    const allocated = appended.batches.find((b: any) => b.id === source.id);
+    expect(allocated.additions).toEqual([]);
+    expect(allocated.lateOrders.map((o: any) => [o.orderId, o.kits])).toEqual([[f.ids[1], 2], [f.ids[2], 4]]);
+    expect(allocated.lateOrders.every((o: any) => Date.parse(o.addedAt) > Date.parse(source.createdAt))).toBe(true);
+    const submitted = await api.orderSupplierBatch(f.id, source.id, admin, { confirm: true });
+    const before = await store.db.select().from(store.ordersTable).where(inArray(store.ordersTable.id, f.ids));
+    const moved = await api.moveSupplierBatchOrders(f.id, source.id, admin, {
+      orderIds: [f.ids[1], f.ids[2]], confirm: true, reason: "Late whole orders not covered by this delivery",
+      expectedBatchToken: submitted.batches.find((b: any) => b.id === source.id).snapshot.token,
+    });
+    expect(moved.batches.find((b: any) => b.id === source.id)).toMatchObject({ snapshot: { kits: 100 }, additions: [], lateOrders: [] });
+    expect(moved.batches.find((b: any) => b.id !== source.id)).toMatchObject({ snapshot: { kits: 6 }, additions: [], lateOrders: [] });
+    const after = await store.db.select().from(store.ordersTable).where(inArray(store.ordersTable.id, f.ids));
+    const financials = (rows: any[]) => rows.map(o => [o.id, o.grandTotal, o.paymentStatus, o.paymentUsdAmount]).sort();
+    expect(financials(after)).toEqual(financials(before));
   });
   it("moves only an added kit while retaining the original order, full payment, root reservation and split fulfilment", async () => {
     const f = await fixture([100]);

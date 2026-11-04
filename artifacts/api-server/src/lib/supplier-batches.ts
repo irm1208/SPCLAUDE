@@ -18,7 +18,7 @@ import { lockHalfKitMoney } from "./half-kit-lock";
 import { assertNoActiveRefunds } from "./refund-mutation-guard";
 import { buildPreparedBatchRefresh, refreshedOrderSnapshot } from "./supplier-batch-refresh-model";
 import { correctionSnapshots } from "./supplier-batch-correction-model";
-import { batchAdditions, splitBatchQuantities, reservationBatch, wholeSnapshot, type QuantityMove } from "./supplier-batch-additions";
+import { appendedBatchOrders, postPreparationAdditions, splitBatchQuantities, reservationBatch, wholeSnapshot, type QuantityMove } from "./supplier-batch-additions";
 import { planMoveUndo, undoMove } from "./supplier-batch-undo";
 
 type Database = typeof db;
@@ -146,14 +146,14 @@ async function state(tx: any, group: any, reconcile = true) {
     }
     await tx.update(settings).set({ readiness, checkedAt: now }).where(eq(settings.groupBuyId, id));
   }
-  const additionHistory = await tx.select({ id: events.id, kind: events.kind, detail: events.detail }).from(events).where(and(
+  const additionHistory = await tx.select({ id: events.id, kind: events.kind, detail: events.detail, createdAt: events.createdAt }).from(events).where(and(
     eq(events.groupBuyId, id), inArray(events.kind, ["appended", "refreshed", "quantities_moved", "orders_moved", "move_undone"]),
-  )).orderBy(asc(events.createdAt), asc(events.id)) as { id: string; kind: string; detail: any }[];
+  )).orderBy(asc(events.createdAt), asc(events.id)) as { id: string; kind: string; detail: any; createdAt: Date }[];
   const historyOrderIds: string[] = [...new Set<string>(data.history.flatMap((b: any) =>
     b.snapshot.orders.map((o: BatchOrder) => o.id)))];
-  // One group-scoped query, including edits before first batch allocation.
+  // Keep timestamps so pre-preparation edits never masquerade as late allocations.
   // Keep private customer metadata internal; only derived quantities are returned.
-  const orderEdits = historyOrderIds.length ? await tx.select({ metadata: auditLogsTable.metadata })
+  const orderEdits = historyOrderIds.length ? await tx.select({ metadata: auditLogsTable.metadata, createdAt: auditLogsTable.createdAt })
     .from(auditLogsTable).where(and(
       inArray(sql<string>`${auditLogsTable.metadata}->>'orderId'`, historyOrderIds),
       sql`${auditLogsTable.metadata}->'before'->'lineItems' IS NOT NULL`,
@@ -171,7 +171,8 @@ async function state(tx: any, group: any, reconcile = true) {
             kits: moved.kits, orderCodes: moved.orders.map((o: BatchOrder) => o.code) }];
         } catch { return []; } // Only reconstructable, still-prepared destinations can offer Undo.
       }),
-    ...b, additions: batchAdditions(b, additionHistory, orderEdits), exceptions: b.state === "released" ? [] : b.snapshot.orders.flatMap((old: BatchOrder) => {
+    ...b, lateOrders: appendedBatchOrders(b, additionHistory),
+    additions: postPreparationAdditions(b, additionHistory, orderEdits), exceptions: b.state === "released" ? [] : b.snapshot.orders.flatMap((old: BatchOrder) => {
       const reason = mismatch(b, data.all.find((o: any) => o.id === old.id), data.elig.find((e: any) => e.orderId === old.id));
       return reason ? [{ orderId: old.id, code: old.code, reason }] : [];
     }),

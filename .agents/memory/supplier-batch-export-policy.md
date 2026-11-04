@@ -54,16 +54,29 @@ amounts staying/moving. Treat a partial move as a fulfilment allocation of the
 same customer order, not a new financial order or another payment. Distinguish
 whole rows appended after preparation from reviewed increases to existing rows.
 
-The “move additions” list must show only customer quantity increases, never all
-kits merely because an entire order was appended to a batch. Original quantities
-can predate first batch allocation; consult the order's before/after edit history.
-Deduct quantities already moved, and do not guess when historical evidence is absent.
+Use batch preparation as the baseline for late additions. Customer edits before
+preparation are already included, not quantities to flag or move. Distinguish
+whole orders appended after preparation from subsequent increases to existing
+allocated orders; show the append date and current allocation for the former.
 
-**Why:** The user clarified “only shows the additional kits to move not all of them”
-after an original quantity was incorrectly included in a move.
+**Why:** The user repeatedly corrected the panel: it highlighted older customer
+edits instead of the two whole orders added after preparation and not covered by
+the physical delivery.
 
-**How to apply:** Preserve original quantities in the source allocation. Keep any
-explicit whole-order correction separate from the additions workflow.
+**How to apply:** Derive whole-order additions from recorded append events, not
+customer edit history or the recorded vendor submission time. Offer those orders
+preselected in the protected whole-order correction, with an Admin-chosen
+destination. Only offer partial quantity moves for evidenced post-preparation
+increases. Deduct prior moves and never guess when timing evidence is missing.
+
+Keep released/undone batches out of the normal batch list, in collapsed history.
+Their old contents are historical snapshots, not active allocations.
+
+**Why:** The user approved removing an undone batch from the normal list while
+preserving its audit history.
+
+**How to apply:** Keep the database record and reversal evidence, suppress active
+addition badges/actions for released snapshots, and never reuse their references.
 
 The Admin chooses the destination batch in the panel for both whole-order corrections
 and added-quantity moves; do not ask them to name the destination in chat or move live kits on their behalf.
@@ -86,13 +99,16 @@ incorrectly transferred the customer's original kits too.
 inside the same group transaction. A code change is not a live-data reversal:
 with read-only production access, the user must publish and execute the Admin action.
 
-Admin batch-member messaging must also be available in the group-buy Broadcast tab,
-with a choice between all selected-batch members and specific users within those batches.
+Admin batch-member messaging belongs in the existing group-buy Broadcast form as
+a supplier-batch filter, with all batch members or specific recipients.
 
-**Why:** The user explicitly requested messaging from Broadcast and selecting specific users in a batch.
+**Why:** The user rejected the separate batch-message composer: "Just add a filter
+rather than creating a new message system."
 
-**How to apply:** Reuse batch messaging preview, confirmation, deduplication and delivery history;
-validate the selected audience against current batch membership before sending.
+**How to apply:** Reuse the existing broadcast sender and recipient picker, not a
+parallel composer. Intersect batch membership with selected recipients and other
+active filters on the server; released, unavailable or empty batches must never
+fall back to broadcasting to the entire group.
 
 When an enabled supplier region reaches its kit target and Telegram alerts are enabled, notify both the configured Admin Telegram chat and the group-buy organiser. These are staff alerts, not member broadcasts.
 

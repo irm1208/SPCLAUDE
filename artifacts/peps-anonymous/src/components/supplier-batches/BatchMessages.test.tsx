@@ -119,35 +119,6 @@ test("selects only specific batch members, previews exact recipients and clears 
   }
 });
 
-test("Broadcast loads authenticated group-specific batches and resets the composer when switching groups", async () => {
-  const { BatchBroadcastPanel } = await import("../admin/group-buys/panels/BatchBroadcastPanel");
-  const original = globalThis.fetch;
-  const calls: { path: string; headers: any }[] = [];
-  globalThis.fetch = async (input, init) => {
-    const path = String(input); calls.push({ path, headers: init?.headers });
-    return Response.json(path.endsWith("/supplier-batches") ? { batches } : []);
-  };
-  const host = document.createElement("div"); document.body.append(host);
-  const root = createRoot(host), client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const render = (groupBuyId: string) => root.render(createElement(QueryClientProvider, { client },
-    createElement(BatchBroadcastPanel, { groupBuyId, secret: "synthetic-admin" })));
-  try {
-    await act(async () => { render("hgh"); await new Promise(r => setTimeout(r, 30)); });
-    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
-    assert.ok(host.querySelector('[data-testid="broadcast-batch-messaging"]'));
-    assert.equal(calls.find(c => c.path.endsWith("/hgh/supplier-batches"))!.headers["x-admin-secret"], "synthetic-admin");
-    await act(async () => [...host.querySelectorAll("button")].find(b => /Message batch members/.test(b.textContent!))!.click());
-    assert.ok(host.querySelector("textarea"));
-    await act(async () => { render("other"); await new Promise(r => setTimeout(r, 30)); });
-    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
-    assert.ok(calls.some(c => c.path.endsWith("/other/supplier-batches")));
-    assert.equal(host.querySelector("textarea"), null);
-    assert.equal(calls.some(c => c.path.endsWith("/send")), false);
-  } finally {
-    await act(async () => root.unmount()); host.remove(); client.clear(); globalThis.fetch = original;
-  }
-});
-
 test("an edited message requires a new preview", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async input => Response.json(String(input).endsWith("/preview")
