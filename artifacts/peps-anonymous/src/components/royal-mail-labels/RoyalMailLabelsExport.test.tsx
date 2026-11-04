@@ -83,13 +83,13 @@ it("supports uncertain multipage crops, explicit page exclusion and multiple lab
     const regionCheckboxes = [...document.querySelectorAll("label")].filter(label => label.textContent === "Exclude this region").map(label => label.querySelector("input")!);
     await React.act(async () => regionCheckboxes[1].click());
     await React.act(async () => button("Preview / adjust crop").click());
-    await React.act(async () => button("Confirm this label crop").click());
+    await React.act(async () => button("Confirm label").click());
     expect(button("Download combined 4×6 PDF (1)").disabled).toBe(false);
     await React.act(async () => button("Add another label region").click());
     expect(button("Download combined 4×6 PDF (2)").disabled).toBe(true);
     await React.act(async () => button("Confirm this label crop").click());
     await React.act(async () => button("Download combined 4×6 PDF (2)").click());
-    expect(mocks.compose.mock.calls[0][0][0].labels.map((label: any) => label.pageIndex)).toEqual([0, 0]);
+    expect(mocks.compose.mock.calls.at(-1)![0][0].labels.map((label: any) => label.pageIndex)).toEqual([0, 0]);
   } finally { await React.act(async () => root.unmount()); }
 });
 
@@ -122,4 +122,48 @@ it("bounds loading to one order at a time and ignores late data after unmount", 
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(mocks.inspect).not.toHaveBeenCalled();
   expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+
+it("shows an identified print preview and confirms straight through the pending labels", async () => {
+  mocks.inspect.mockResolvedValue([{ ...page, confirmed: false }]);
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ royalMailQrCode: source }));
+  const root = mount();
+  try {
+    await React.act(async () => root.render(<RoyalMailLabelsExport {...props} orders={[...props.orders, { id: "two", code: "10002", telegramUsername: "second-member" }]} />));
+    await React.act(async () => button("Show preview").click());
+    const current = () => document.querySelector('[aria-label="Current label"]')!;
+    expect(current().textContent).toContain("#10001 · @synthetic");
+    expect(current().textContent).toContain("Label 1 of 2");
+    expect(document.querySelectorAll("canvas")).toHaveLength(1);
+    expect(document.querySelectorAll("section")).toHaveLength(1);
+    expect(button("Download combined 4×6 PDF (2)").disabled).toBe(true);
+    await React.act(async () => button("Confirm & next").click());
+    expect(current().textContent).toContain("#10002 · @second-member");
+    expect(current().textContent).toContain("Label 2 of 2");
+    expect(document.body.textContent).toContain("1 awaiting confirmation");
+    await React.act(async () => button("Confirm label").click());
+    expect(document.body.textContent).toContain("0 need attention");
+    expect(button("Download combined 4×6 PDF (2)").disabled).toBe(false);
+    expect(mocks.compose.mock.calls.flatMap(call => call[0]).every(file => file.labels.length === 1)).toBe(true);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  } finally { await React.act(async () => root.unmount()); }
+});
+
+it("does not confirm by browsing previews and disables confirmation when rendering fails", async () => {
+  mocks.inspect.mockResolvedValue([{ ...page, confirmed: false }, { ...page, pageIndex: 1, confirmed: false }]);
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ royalMailQrCode: source }));
+  const root = mount();
+  try {
+    await React.act(async () => root.render(<RoyalMailLabelsExport {...props} />));
+    await React.act(async () => button("Show preview").click());
+    mocks.render.mockRejectedValueOnce(new Error("Could not render this label"));
+    await React.act(async () => button("Next label").click());
+    expect(document.body.textContent).toContain("2 awaiting confirmation");
+    expect(document.querySelector('[aria-label="Current label"]')?.textContent).toContain("Page 2");
+    expect(document.body.textContent).toContain("Could not render this label");
+    expect(button("Confirm & next").disabled).toBe(true);
+    await React.act(async () => button("Back to list").click());
+    expect(document.body.textContent).toContain("2 need attention");
+    expect(button("Download combined 4×6 PDF (2)").disabled).toBe(true);
+  } finally { await React.act(async () => root.unmount()); }
 });

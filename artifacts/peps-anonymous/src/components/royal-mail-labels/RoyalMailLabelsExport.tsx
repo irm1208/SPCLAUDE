@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LabelCropPreview } from "./LabelCropPreview";
+import { LabelReviewPanel } from "./LabelReviewPanel";
 import { inspectRoyalMailPdf, type InspectedPage } from "@/lib/royal-mail-pdf-preview";
 import { checkCancelled, composeLabelPdf, labelFilename, MAX_LABELS, MAX_TOTAL_BYTES, royalMailUploads, sourcePdfBytes, type Crop } from "@/lib/royal-mail-labels";
 
@@ -99,6 +99,18 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
   const exclusions = files.reduce((sum, file) => sum + (file.excluded ? Math.max(1, file.regions.length) : file.regions.filter(region => region.excluded).length), 0);
   const canDownload = phase === "review" && !unresolved && included.length > 0 && included.length <= MAX_LABELS;
   const editable = phase === "review";
+  const reviewEntries = files.filter(file => !file.excluded && !file.error && file.bytes)
+    .flatMap(file => file.regions.filter(region => !region.excluded).map(region => ({ file, region })));
+  const reviewIndex = reviewEntries.findIndex(entry => entry.region.id === preview);
+  const currentReview = editable ? reviewEntries[reviewIndex] : undefined;
+  const nextPending = currentReview ? [...reviewEntries.slice(reviewIndex + 1), ...reviewEntries.slice(0, reviewIndex)]
+    .find(entry => !entry.region.confirmed) : undefined;
+  function finishReview(excluded = false) {
+    if (!currentReview) return;
+    changeRegion(currentReview.file.id, currentReview.region.id, excluded ? { excluded: true } : { confirmed: true, reason: "Crop reviewed and confirmed." });
+    setPreview(nextPending?.region.id ?? null);
+    if (!nextPending) setNotice("Preview review finished. Download the selected labels once any remaining file errors are resolved.");
+  }
   function close() { controller.current?.abort(); onClose(); }
   function changeRegion(fileId: string, regionId: string, update: Partial<Region>) {
     setNotice("");
@@ -137,20 +149,25 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
     } finally { if (!signal.aborted) { setPhase("review"); setProgress(""); } }
   }
   return <Dialog open onOpenChange={open => { if (!open) close(); }}>
-    <DialogContent className="max-h-[92dvh] max-w-3xl overflow-y-auto">
-      <DialogHeader>
+    <DialogContent className="flex max-h-[92dvh] max-w-3xl flex-col overflow-hidden">
+      <DialogHeader className="shrink-0">
         <DialogTitle>Royal Mail 4×6 labels</DialogTitle>
         <DialogDescription>{scopeDescription} · {orders.length} orders with Royal Mail uploads. Only PDF labels will be included. Originals are unchanged.</DialogDescription>
       </DialogHeader>
-      <p className="text-sm">One label per 4×6-inch page. Review uncertain crops and exclude any instructions or unwanted pages. For several labels on one page, use “Add another label region”.</p>
-      <p className="rounded-lg bg-muted p-3 text-sm" aria-live="polite">
-        {included.length} labels included · {exclusions} exclusions · {unresolved} need attention
-      </p>
+      {!currentReview && <div className="shrink-0 space-y-3">
+        <p className="text-sm">Show preview to check each 4×6 label and confirm straight through. Use “Adjust crop” only if needed. For several labels on one page, use “Add another label region”.</p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted p-3 text-sm">
+          <p aria-live="polite">{included.length} labels included · {exclusions} exclusions · {unresolved} need attention</p>
+          <button type="button" disabled={!editable || !reviewEntries.length}
+            className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+            onClick={() => { setNotice(""); setPreview((reviewEntries.find(entry => !entry.region.confirmed) ?? reviewEntries[0]).region.id); }}>Show preview</button>
+        </div>
+      </div>}
       {(phase === "loading" || phase === "exporting") && <p role="status" className="text-sm font-medium">{progress || "Preparing labels…"} You can cancel at any time.</p>}
       {error && <p role="alert" className="break-words text-sm text-red-600">{error}</p>}
       {notice && <p role="status" className="text-sm text-green-700">{notice}</p>}
       {phase === "failed" && <button type="button" className="rounded-lg border p-2 text-sm" onClick={() => setRevision(value => value + 1)}>Retry loading labels</button>}
-      <div className="space-y-3">
+      {!currentReview && <div className="min-h-0 overflow-y-auto space-y-3">
         {files.map(file => <section key={file.id} className={`space-y-2 rounded-xl border border-border p-3 ${file.excluded ? "bg-muted/50" : ""}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="break-words text-sm font-semibold">{file.title}</h3>
@@ -169,28 +186,33 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
             {!region.excluded && <>
               <p className="text-xs text-muted-foreground">{region.reason}</p>
               <div className="flex flex-wrap gap-3 text-xs">
-                <button type="button" disabled={!editable} className="font-semibold underline" onClick={() => setPreview(preview === region.id ? null : region.id)}>{preview === region.id ? "Hide preview" : "Preview / adjust crop"}</button>
+                <button type="button" disabled={!editable} className="font-semibold underline" onClick={() => { setNotice(""); setPreview(region.id); }}>Preview / adjust crop</button>
                 <button type="button" disabled={!editable || files.reduce((sum, item) => sum + item.regions.length, 0) >= MAX_LABELS} className="underline" onClick={() => {
                   const clone = { ...region, id: `${file.id}:extra-${++sequence.current}`, confirmed: false, excluded: false, reason: "Select and confirm another label on this source page." };
                   setFiles(previous => previous.map(item => item.id === file.id ? { ...item, regions: [...item.regions, clone] } : item));
                   setPreview(clone.id);
                 }}>Add another label region</button>
               </div>
-              {preview === region.id && file.bytes && editable && <LabelCropPreview bytes={file.bytes} pageIndex={region.pageIndex} crop={region.crop}
-                onChange={crop => changeCrop(file.id, region.id, crop)}
-                onConfirm={() => { changeRegion(file.id, region.id, { confirmed: true, reason: "Crop reviewed and confirmed." }); setPreview(null); }} />}
             </>}
           </div>)}
         </section>)}
-      </div>
+      </div>}
+      {currentReview && <LabelReviewPanel key={currentReview.region.id} title={currentReview.file.title}
+        bytes={currentReview.file.bytes!} region={currentReview.region} position={reviewIndex + 1} total={reviewEntries.length}
+        pending={included.filter(region => !region.confirmed).length} morePending={!!nextPending} initialAdjust={currentReview.region.id.includes(":extra-")}
+        onChange={crop => changeCrop(currentReview.file.id, currentReview.region.id, crop)}
+        onConfirm={() => finishReview()} onExclude={() => finishReview(true)}
+        onPrevious={() => setPreview(reviewEntries[reviewIndex - 1]?.region.id ?? preview)}
+        onNext={() => setPreview(reviewEntries[reviewIndex + 1]?.region.id ?? preview)}
+        onBack={() => setPreview(null)} />}
       {phase === "review" && !included.length && <p className="text-sm text-muted-foreground">No PDF labels are selected. Review the exclusions or use the original downloads.</p>}
-      <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t border-border bg-background py-3">
+      <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-background py-3">
         <button type="button" className="rounded-lg border border-input px-4 py-2 text-sm" onClick={close}>{phase === "loading" || phase === "exporting" ? "Cancel export" : "Close"}</button>
         <button type="button" disabled={!canDownload} onClick={download} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">
           Download combined 4×6 PDF ({included.length})
         </button>
       </div>
-      <p className="text-xs text-muted-foreground">Print at actual size / 100%, not “fit to A4”. Downloads never mark orders posted. Up to 500 labels, 20 MB per file and 100 MB of source PDFs per export.</p>
+      {!currentReview && <p className="shrink-0 text-xs text-muted-foreground">Print at actual size / 100%, not “fit to A4”. Downloads never mark orders posted. Up to 500 labels, 20 MB per file and 100 MB of source PDFs per export.</p>}
     </DialogContent>
   </Dialog>;
 }
