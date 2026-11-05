@@ -54,6 +54,35 @@ describe.skipIf(process.env.ORDER_REVISION_DB_TESTS !== "1")("own-stock revision
     await expect(service.createOrderRevisions(f.groupId, f.actor, f.input, f.tx)).rejects.toThrow("Enable");
     expect((await f.order()).grandTotal).toBe("128.00");
   }));
+  it("exposes only own product IDs, strengths and group-specific current prices for CSV updates", async () => fixture(async f => {
+    await f.tx.update(store.productsTable).set({ mgSize: "10mg" }).where(eq(store.productsTable.id, f.own));
+    const { and } = await import("drizzle-orm");
+    await f.tx.update(store.groupBuyProductsTable).set({ priceOverride: "45" })
+      .where(and(eq(store.groupBuyProductsTable.groupBuyId, f.groupId), eq(store.groupBuyProductsTable.productId, f.own)));
+    const view = await service.organiserRevisionList(f.groupId, f.actor, f.tx);
+    expect(view.products).toEqual([{ id: f.own, name: "Own product", mgSize: "10mg", price: "45.00" }]);
+    const other = await service.organiserRevisionList(f.otherGroup, f.actor, f.tx);
+    expect(other.products[0].price).toBe("50.00");
+    expect((await f.order()).grandTotal).toBe("128.00");
+  }));
+  it("applies a price-only proposal only on acceptance, preserving quantities, credits, shipping and catalogue", async () => fixture(async f => {
+    await service.setRevisionEnabled(f.groupId, f.actor, true, f.tx);
+    const proposed = await service.createOrderRevisions(f.groupId, f.actor, {
+      message: "Negotiated supplier price",
+      changes: [{ orderId: f.orderId, items: [
+        { id: f.ownLine, quantity: 2, unitPrice: 40 }, { id: f.otherLine, quantity: 1, unitPrice: 20 },
+      ] }],
+    }, f.tx);
+    expect((await f.order()).grandTotal).toBe("128.00");
+    await service.decideOrderRevision(f.orderId, proposed.notifications[0].id, f.member, "accepted", f.tx);
+    const order = await f.order();
+    expect(order).toMatchObject({ productSubtotal: "100.00", grandTotal: "108.00",
+      deliveryPrice: "8.00", vendorShipping: "4.00", tip: "1.00", couponDiscount: "5.00", creditsApplied: 2 });
+    const lines = await f.tx.select().from(store.orderLineItemsTable).where(eq(store.orderLineItemsTable.orderId, f.orderId));
+    expect(Number(lines.find((line: any) => line.id === f.ownLine).quantity)).toBe(2);
+    expect(Number(lines.find((line: any) => line.id === f.otherLine).quantity)).toBe(1);
+    expect((await f.tx.select().from(store.productsTable).where(eq(store.productsTable.id, f.own)))[0].price).toBe("50.00");
+  }));
   it("proposes without writing orders, exposes only the member's pending link", async () => fixture(async f => {
     const result = await f.create();
     expect(result.created).toBe(1);

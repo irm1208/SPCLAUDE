@@ -18,6 +18,7 @@ import { compareOrderAmounts } from "@/lib/order-amount-sort";
 import { GbMultipleOrderBadge, GbMultipleOrderNotice } from "@/components/GbMultipleOrders";
 import { GroupBuyStockControls } from "@/components/GroupBuyStockControls";
 import { OrganiserOrderRevisions } from "@/components/group-buy-revisions/OrganiserOrderRevisions";
+import { useProductPriceProposals, ProductNewPrice, ProductPriceImport, type ProductPricing } from "@/components/group-buy-revisions/ProductPriceProposals";
 import { annotateCompleteGbOrderCounts, isMultipleGbOrder } from "@/lib/gb-multiple-orders";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -5512,6 +5513,11 @@ const matchKey = (name: string, mgSize: string) =>
   `${name.trim().toLowerCase()}|${(mgSize || "").trim().toLowerCase()}`;
 
 export function ProductsTab({ gb }: { gb: OrganiserGB }) {
+  return <ProductsTabContent key={gb.id} gb={gb} />;
+}
+
+function ProductsTabContent({ gb }: { gb: OrganiserGB }) {
+  const pricing = useProductPriceProposals(gb.currency);
   const [products, setProducts] = useState<OrgProduct[]>([]);
   const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set());
   const [stockSaving, setStockSaving] = useState(false);
@@ -5738,7 +5744,8 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
   return (
     <div className="space-y-4">
       <GroupBuyProductLabReports key={gb.id} gbId={gb.id} />
-      <OrganiserOrderRevisions key={`revisions-${gb.id}`} groupBuyId={gb.id} />
+      <OrganiserOrderRevisions key={`revisions-${gb.id}`} groupBuyId={gb.id} pricing={pricing} />
+      <ProductPriceImport pricing={pricing} />
       <div className="flex items-center justify-between">
         <h2 className="text-base font-bold" style={{ color: "var(--t-text)" }}>Products — {gb.name}</h2>
         <div className="flex gap-2">
@@ -5976,7 +5983,7 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
       <AnimatePresence>
         {(showAdd || editTarget) && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
-            <ProductForm product={editTarget} gbId={gb.id} currency={gb.currency} existingVendors={[...new Set([gb.manufacturer, ...products.map(p => p.vendor)].filter((v): v is string => !!v))]} allowedVendors={allowedVendors} onSaved={async () => { setShowAdd(false); setEditTarget(null); await load(); }} onCancel={() => { setShowAdd(false); setEditTarget(null); }} />
+            <ProductForm product={editTarget} gbId={gb.id} currency={gb.currency} pricing={pricing} existingVendors={[...new Set([gb.manufacturer, ...products.map(p => p.vendor)].filter((v): v is string => !!v))]} allowedVendors={allowedVendors} onSaved={async () => { setShowAdd(false); setEditTarget(null); await load(); }} onCancel={() => { setShowAdd(false); setEditTarget(null); }} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -6072,6 +6079,7 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
               )}
             </div>
             <span className="text-sm font-bold tabular-nums" style={{ color: "var(--t-text)" }}>{gb.currency} {p.price.toFixed(2)}</span>
+            <ProductNewPrice pricing={pricing} productId={p.id} />
             <button
               onClick={() => handleHalfKitToggle(p.id, p.halfKitEnabled)}
               disabled={togglingHalfKit === p.id}
@@ -6103,13 +6111,15 @@ export function ProductsTab({ gb }: { gb: OrganiserGB }) {
   );
 }
 
-function ProductForm({ product, gbId, currency, existingVendors, allowedVendors, onSaved, onCancel }: {
+function ProductForm({ product, gbId, currency, pricing, existingVendors, allowedVendors, onSaved, onCancel }: {
   product: OrgProduct | null; gbId: string; currency: string;
+  pricing?: ProductPricing;
   existingVendors: string[];
   allowedVendors?: string[] | null;
   onSaved: () => void; onCancel: () => void;
 }) {
   const isVendorRestricted = allowedVendors !== null && allowedVendors !== undefined;
+  const proposalPricing = !!product && !!pricing?.enabled && pricing.products.some(p => p.id === product.id);
   const defaultVendor = product?.vendor ?? (isVendorRestricted && allowedVendors!.length === 1 ? allowedVendors![0] : "");
   const [form, setForm] = useState({ name: product?.name ?? "", price: product?.price?.toString() ?? "", category: product?.category ?? "", mgSize: product?.mgSize ?? "", stock: product?.stock?.toString() ?? "", vendor: defaultVendor });
   const [saving, setSaving] = useState(false);
@@ -6125,7 +6135,7 @@ function ProductForm({ product, gbId, currency, existingVendors, allowedVendors,
     if (isNaN(p) || p < 0) { setError("Valid price required"); return; }
     setSaving(true); setError("");
     try {
-      const body = { name: form.name.trim(), price: p, category: form.category.trim() || null, mgSize: form.mgSize.trim() || null, stock: form.stock ? parseInt(form.stock) : null, vendor: form.vendor.trim() || null };
+      const body = { name: form.name.trim(), ...(!proposalPricing ? { price: p } : {}), category: form.category.trim() || null, mgSize: form.mgSize.trim() || null, stock: form.stock ? parseInt(form.stock) : null, vendor: form.vendor.trim() || null };
       if (product?.id) {
         const res = await fetch(`/api/organiser/products/${product.id}`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         if (!res.ok) { const d = await res.json(); setError(d.error || "Failed"); return; }
@@ -6145,7 +6155,8 @@ function ProductForm({ product, gbId, currency, existingVendors, allowedVendors,
         {error && <ErrorBanner msg={error} />}
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2"><Field label="Name *"><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. BPC-157 5mg" className={inputCls} style={inputStyle} /></Field></div>
-          <Field label={`Price (${currency}) *`}><input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" min="0" step="0.01" className={inputCls} style={inputStyle} /></Field>
+          <Field label={`Catalogue price (${currency}) *`}><input type="number" disabled={proposalPricing} value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" min="0" step="0.01" className={inputCls} style={inputStyle} /></Field>
+          {product && <ProductNewPrice pricing={pricing} productId={product.id} />}
           <Field label="Size / mg" hint="e.g. 5mg, 10mg"><input value={form.mgSize} onChange={e => setForm(f => ({ ...f, mgSize: e.target.value }))} placeholder="5mg" className={inputCls} style={inputStyle} /></Field>
           <Field label="Category"><input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="peptide / aas" className={inputCls} style={inputStyle} /></Field>
           <Field label="Stock"><input type="number" value={form.stock} onChange={e => setForm(f => ({ ...f, stock: e.target.value }))} placeholder="—" min="0" className={inputCls} style={inputStyle} /></Field>

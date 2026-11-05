@@ -21,7 +21,8 @@ async function groupFor(database: any, id: string, actor?: RevisionActor) {
 }
 async function ownProducts(database: any, group: any) {
   if (!group.organiserId) return [];
-  return database.select({ id: products.id, name: products.name }).from(links)
+  return database.select({ id: products.id, name: products.name, mgSize: products.mgSize,
+    price: sql<string>`coalesce(${links.priceOverride}, ${products.price})` }).from(links)
     .innerJoin(products, eq(links.productId, products.id))
     .where(and(eq(links.groupBuyId, group.id), eq(products.organiserId, group.organiserId)));
 }

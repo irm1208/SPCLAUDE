@@ -1,5 +1,6 @@
 import { GroupBuyProductLabReports } from "@/components/GroupBuyProductLabReports";
 import { OrganiserOrderRevisions } from "@/components/group-buy-revisions/OrganiserOrderRevisions";
+import { useProductPriceProposals, ProductNewPrice, ProductPriceImport } from "@/components/group-buy-revisions/ProductPriceProposals";
 import {
   Fragment,
   useCallback,
@@ -147,11 +148,16 @@ function parseDraft(draft: ProductDraft): { body?: Record<string, unknown>; erro
   };
 }
 
-export default function GbProductsTab({
+export default function GbProductsTab(props: GbProductsTabProps) {
+  return <GbProductsTabContent key={props.selectedGbId} {...props} />;
+}
+
+function GbProductsTabContent({
   selectedGbId,
   groupBuyName = "Current group buy",
   currency = "GBP",
 }: GbProductsTabProps) {
+  const pricing = useProductPriceProposals(currency);
   const [products, setProducts] = useState<ProductRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -464,7 +470,8 @@ export default function GbProductsTab({
               <label><span>Vendor</span><input value={draft.vendor} list={`product-vendors-${placement}`} onChange={event => setDraft(current => ({ ...current, vendor: event.target.value }))} required /><datalist id={`product-vendors-${placement}`}>{vendors.map(item => <option key={item}>{item}</option>)}</datalist></label>
               <label><span>Category</span><input value={draft.category} list={`product-categories-${placement}`} onChange={event => setDraft(current => ({ ...current, category: event.target.value }))} /><datalist id={`product-categories-${placement}`}>{categories.map(item => <option key={item}>{item}</option>)}</datalist></label>
               <label><span>Size / mg</span><input value={draft.mgSize} onChange={event => setDraft(current => ({ ...current, mgSize: event.target.value }))} placeholder="10 mg" /></label>
-              <label><span>Price</span><input type="number" min="0" step="0.01" value={draft.price} onChange={event => setDraft(current => ({ ...current, price: event.target.value }))} required /></label>
+              <label><span>Price</span><input type="number" min="0" step="0.01" disabled={!adding && pricing.enabled && pricing.products.some(p => p.id === selectedId)} value={draft.price} onChange={event => setDraft(current => ({ ...current, price: event.target.value }))} required /></label>
+              {!adding && selectedProduct && <ProductNewPrice pricing={pricing} productId={selectedProduct.id} />}
               <label><span>Stock allocation (includes ordered kits)</span><input type="number" min="0" step="0.5" value={draft.stock} onChange={event => setDraft(current => ({ ...current, stock: event.target.value }))} placeholder="Unlimited" /></label>
               <label><span>Max per customer</span><input type="number" min="1" step="1" value={draft.maxPerCustomer} onChange={event => setDraft(current => ({ ...current, maxPerCustomer: event.target.value }))} placeholder="No limit" /></label>
               <label><span>Fee per kit ($)</span><input type="number" min="0" step="0.01" value={draft.feePerKit} onChange={event => setDraft(current => ({ ...current, feePerKit: event.target.value }))} placeholder="None" /></label>
@@ -493,7 +500,8 @@ export default function GbProductsTab({
   return (
     <div className="approved-inventory-allocation products-split">
       <GroupBuyProductLabReports key={selectedGbId} gbId={selectedGbId} />
-      <OrganiserOrderRevisions key={`revisions-${selectedGbId}`} groupBuyId={selectedGbId} />
+      <OrganiserOrderRevisions key={`revisions-${selectedGbId}`} groupBuyId={selectedGbId} pricing={pricing} />
+      <ProductPriceImport pricing={pricing} />
       <header className="products-split__header">
         <div>
           <span className="products-split__eyebrow">Catalogue workspace</span>
@@ -574,6 +582,7 @@ export default function GbProductsTab({
                     <span className="products-split__row-metrics"><strong>{currency} {Number(product.price ?? 0).toFixed(2)}</strong><small>{soldSummary(product)}</small><em data-status={productStatus(product)}>{statusLabel(product)}</em></span>
                     <ChevronRight aria-hidden="true" />
                   </button>
+                  {pricing.enabled && pricing.products.some(p => p.id === product.id) && <div className="px-3 pb-2"><ProductNewPrice pricing={pricing} productId={product.id} /></div>}
                 </article>
                 {!adding && product.id === selectedId ? renderInlineInspector() : null}
               </Fragment>

@@ -124,3 +124,19 @@ it("bulk pricing submits all original lines but changes only selected own-stock 
     { id: "own-line", quantity: 2, unitPrice: 40 }, { id: "shared-line", quantity: 1, unitPrice: 20 },
   ] }]);
 });
+
+it("offers product price proposals without making a live product or order edit", async () => {
+  const prices = { own: "40" };
+  const pricing = { prices, currency: "USD", enabled: true, products: [{ id: "own", name: "Own stock", price: "50", mgSize: "10mg" }],
+    setAccess: vi.fn(), clear: vi.fn(), setPrice: vi.fn() };
+  const fetcher = vi.fn(async () => Response.json(view));
+  vi.stubGlobal("fetch", fetcher);
+  await render(OrganiserOrderRevisions, { groupBuyId: "g", pricing });
+  expect(host.textContent).toContain("Review product price changes");
+  await click('[data-testid="review-product-prices"]');
+  expect((host.querySelector('[data-testid="select-order-o"]') as HTMLInputElement).checked).toBe(true);
+  expect((host.querySelector('[data-testid="input-unit-price-own-line"]') as HTMLInputElement).value).toBe("40");
+  expect((host.querySelector('[data-testid="input-quantity-own-line"]') as HTMLInputElement).value).toBe("2");
+  expect(host.textContent).toContain("100.00");
+  expect(fetcher.mock.calls.every((args: any[]) => !args[1]?.method)).toBe(true);
+});

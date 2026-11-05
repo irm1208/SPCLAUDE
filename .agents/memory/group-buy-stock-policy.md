@@ -28,6 +28,12 @@ Member-confirmed order revisions apply to unpaid orders only.
 
 Order changes in this optional workflow are proposals, not immediate edits: members review before/after details and accept or decline; declined or unanswered requests leave the original order unchanged.
 
-**Why:** The user approved this member-confirmation process for unpaid, organiser-owned-stock group buys.
+**Why:** The user approved this member-confirmation process for unpaid, organiser-owned-stock group buys and wants negotiated supplier prices entered manually or by CSV.
+
+Negotiated prices must remain separate from live catalogue prices, including when a member accepts their own order's proposed price.
+
+**Why:** Member consent is per existing unpaid order; repricing the catalogue would also affect unrelated groups or future orders without that review.
+
+**How to apply:** CSV price updates match existing own-stock products, never create duplicates, and feed the same member-confirmation process as manual proposals.
 
 **How to apply:** Preserve that consent boundary in future bulk-edit, notification and payment work.
