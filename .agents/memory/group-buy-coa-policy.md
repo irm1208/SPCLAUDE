@@ -3,9 +3,9 @@ name: Group-buy COA policy
 description: Scope, separate charges, capacity commitments and immutable COA request terms.
 ---
 
-COA requests apply to all group-buy orders, not wholesale, shared wholesale or Testmedaddy. Admin chooses individual orders or opens requests to group-buy order owners with a shared limit. Members supply Client, Sample, Manufacturer and Batch.
+COA requests apply to all group-buy orders, not wholesale, shared wholesale or Testmedaddy. Admin or the owning approved organiser chooses individual orders or opens requests to group-buy order owners with a shared limit. Members supply Client, Sample, Manufacturer and Batch.
 
-**Why:** The user explicitly chose all group-buy orders and wants Admin to organise submissions and collect a separate COA fee.
+**Why:** The user explicitly chose all group-buy orders and approved full COA management for organisers, including their own receiving wallets.
 
 **How to apply:** Keep this separate from testing-pool named reports, whose opt-in is not proof that a COA fee has been received. Do not alter product-order payments, shipping, credits, balances or refunds for a COA.
 
@@ -25,7 +25,13 @@ An existing COA request retains its original fee and payment terms when it is wi
 
 **Why:** Re-reserving must not charge more than the member saw on their existing request. A fee change must not silently rewrite a committed quote.
 
-**How to apply:** Preserve request terms independently of current group configuration. Changing COA payment destinations follows the existing Admin step-up boundary; routine notes and receipt confirmations do not need another security prompt.
+**How to apply:** Preserve request terms independently of current group configuration. Organiser wallet changes must never rewrite existing requests or product-order payment destinations.
+
+Organiser COA management belongs in both organiser dashboards, is restricted to the organiser's own group buys, and must not reveal or overwrite Admin-only notes.
+
+**Why:** The user approved full organiser COA management with these privacy and ownership boundaries.
+
+**How to apply:** Reuse COA capacity, payment and certificate safeguards rather than a parallel request system. Enforce ownership on the server, including exports and request-ID mutations. No wallet connection, private key or seed phrase is needed—only a public receiving address.
 
 A completed COA request does not itself mean a certificate file is available.
 

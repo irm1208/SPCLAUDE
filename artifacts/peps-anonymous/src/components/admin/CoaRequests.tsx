@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, AlertCircle, Download, RefreshCw, Save, Send, FileCheck2 } from "lucide-react";
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { coaApi, defaultCoaConfig, type CoaAdminView, type CoaConfig, type CoaRail, type CoaRequest } from "@/lib/coa-api";
@@ -6,8 +6,15 @@ import { COA_PHASE_TONE, COA_STATUS_LABEL, canConfirm, canRelease, coaAdminQuery
 
 const STATUSES = Object.keys(COA_STATUS_LABEL) as CoaRequest["status"][];
 const railKey = (r: CoaRail) => `${r.currency}|${r.network}|${r.walletAddress}`;
+const OrganiserCoaRoot = createContext<string | null>(null);
+const COA_WALLET_NETWORKS = [
+  ["USDT", "Ethereum"], ["USDC", "Ethereum"], ["USDT", "Arbitrum"], ["USDC", "Arbitrum"],
+  ["USDT", "Polygon"], ["USDC", "Polygon"], ["USDT", "BSC"], ["USDT", "TRON"],
+  ["USDT", "Solana"], ["USDC", "Solana"],
+];
 
 function Settings({ secret, groupBuyId, config, committed, onSaved }: { secret: string; groupBuyId: string; config: CoaConfig | null; committed: number; onSaved: () => void }) {
+  const organiserRoot = useContext(OrganiserCoaRoot);
   const [draft, setDraft] = useState<CoaConfig>(config ?? defaultCoaConfig);
   const [rails, setRails] = useState<CoaRail[] | null>(null);
   const [railError, setRailError] = useState<string | null>(null);
@@ -15,8 +22,9 @@ function Settings({ secret, groupBuyId, config, committed, onSaved }: { secret: 
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => { setDraft(config ?? defaultCoaConfig); }, [config]);
   useEffect(() => {
+    if (organiserRoot) { setRails([]); return; }
     coaApi<{ rails: CoaRail[] }>("/admin/coa/rails", {}, secret).then(d => setRails(d.rails)).catch(e => setRailError(e.message));
-  }, [secret]);
+  }, [secret, organiserRoot]);
 
   const toggleRail = (r: CoaRail) => setDraft(d => {
     const on = d.rails.some(x => railKey(x) === railKey(r));
@@ -25,7 +33,7 @@ function Settings({ secret, groupBuyId, config, committed, onSaved }: { secret: 
   const save = async () => {
     setSaving(true); setMsg(null);
     try {
-      await coaApi(`/admin/group-buys/${groupBuyId}/coa/settings`, { method: "PUT", body: JSON.stringify(draft) }, secret);
+      await coaApi(organiserRoot ? `${organiserRoot}/settings` : `/admin/group-buys/${groupBuyId}/coa/settings`, { method: "PUT", body: JSON.stringify(draft) }, secret);
       setMsg({ ok: true, text: "Settings saved." }); onSaved();
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Save failed." }); }
     setSaving(false);
@@ -56,13 +64,31 @@ function Settings({ secret, groupBuyId, config, committed, onSaved }: { secret: 
         <div className="space-y-1"><Label className="text-xs">Capacity</Label>
           <Input type="number" min={0} step={1} value={draft.cap} onChange={e => setDraft(d => ({ ...d, cap: Math.max(0, Math.floor(Number(e.target.value))) }))} /></div>
       </div>
-      <p className="text-[11px] text-muted-foreground">Fee changes only apply to new invitations and reservations. Existing requests keep their fee.</p>
+      <p className="text-[11px] text-muted-foreground">Fee and wallet changes only apply to new invitations and reservations. Existing requests keep their fee and payment destination.</p>
+      {organiserRoot ? <div className="space-y-2">
+        <Label className="text-xs">Your COA receiving wallets</Label>
+        <p className="text-[11px] text-muted-foreground">Enter a public receiving address—not a seed phrase or private key. COA payments are separate from order payments.</p>
+        {draft.rails.map((rail, index) => (
+          <div key={index} className="flex flex-wrap gap-2">
+            <select aria-label={`COA wallet ${index + 1} currency and network`} className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+              value={`${rail.currency}|${rail.network === "ERC-20" ? "Ethereum" : rail.network}`}
+              onChange={e => { const [currency, network] = e.target.value.split("|"); setDraft(d => ({ ...d, rails: d.rails.map((r, i) => i === index ? { ...r, currency, network } : r) })); }}>
+              {COA_WALLET_NETWORKS.map(([currency, network]) => <option key={`${currency}|${network}`} value={`${currency}|${network}`}>{currency} · {network}</option>)}
+            </select>
+            <Input aria-label={`COA wallet ${index + 1} receiving address`} className="min-w-0 flex-1 text-xs" placeholder="Public receiving wallet address" value={rail.walletAddress}
+              onChange={e => setDraft(d => ({ ...d, rails: d.rails.map((r, i) => i === index ? { ...r, walletAddress: e.target.value } : r) }))} />
+            <Button variant="outline" size="sm" onClick={() => setDraft(d => ({ ...d, rails: d.rails.filter((_, i) => i !== index) }))}>Remove wallet</Button>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" disabled={draft.rails.length >= 20}
+          onClick={() => setDraft(d => ({ ...d, rails: [...d.rails, { currency: "USDT", network: "Ethereum", walletAddress: "" }] }))}>Add receiving wallet</Button>
+      </div> : (
       <div className="space-y-1.5">
         <Label className="text-xs">Stablecoin rails</Label>
         {railError && <p className="text-xs text-red-500">{railError}</p>}
         {!rails && !railError && <div className="h-8 rounded bg-muted animate-pulse" />}
         {rails && rails.length === 0 && <p className="text-xs text-muted-foreground">No stablecoin wallets are configured.</p>}
-        {rails?.map(r => {
+        {rails && [...new Map([...rails, ...draft.rails].map(r => [railKey(r), r])).values()].map(r => {
           const on = draft.rails.some(x => railKey(x) === railKey(r));
           return (
             <label key={railKey(r)} className={cn("flex items-center gap-2 rounded-lg border px-3 py-2 text-xs cursor-pointer", on && "border-[#2D6BCC] bg-[#2D6BCC]/5")}>
@@ -72,6 +98,7 @@ function Settings({ secret, groupBuyId, config, committed, onSaved }: { secret: 
           );
         })}
       </div>
+      )}
       <div className="space-y-1"><Label className="text-xs">Manual payment instructions (optional)</Label>
         <textarea className="w-full min-h-[70px] rounded-md border border-input bg-background px-3 py-2 text-sm" value={draft.manualInstructions}
           onChange={e => setDraft(d => ({ ...d, manualInstructions: e.target.value }))} /></div>
@@ -84,6 +111,7 @@ function Settings({ secret, groupBuyId, config, committed, onSaved }: { secret: 
 }
 
 function Invite({ secret, groupBuyId, orders, version, onDone }: { secret: string; groupBuyId: string; orders: CoaAdminView["orders"]; version: number; onDone: () => void }) {
+  const organiserRoot = useContext(OrganiserCoaRoot);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -92,15 +120,15 @@ function Invite({ secret, groupBuyId, orders, version, onDone }: { secret: strin
   useEffect(() => {
     const ac = new AbortController();
     setAll(null);
-    coaApi<CoaAdminView>(`/admin/coa${coaAdminQuery({ groupBuyId })}`, { signal: ac.signal }, secret)
+    coaApi<CoaAdminView>(organiserRoot ?? `/admin/coa${coaAdminQuery({ groupBuyId })}`, { signal: ac.signal }, secret)
       .then(d => setAll(d.requests)).catch(() => { if (!ac.signal.aborted) setAll([]); });
     return () => ac.abort();
-  }, [groupBuyId, secret, version]);
+  }, [groupBuyId, secret, version, organiserRoot]);
   const avail = all ? inviteCandidates(orders, all) : [];
   const send = async () => {
     setBusy(true); setMsg(null);
     try {
-      await coaApi(`/admin/group-buys/${groupBuyId}/coa/invite`, { method: "POST", body: JSON.stringify({ orderIds: [...sel] }) }, secret);
+      await coaApi(organiserRoot ? `${organiserRoot}/invite` : `/admin/group-buys/${groupBuyId}/coa/invite`, { method: "POST", body: JSON.stringify({ orderIds: [...sel] }) }, secret);
       setMsg({ ok: true, text: `Invited ${sel.size} order${sel.size === 1 ? "" : "s"}.` }); setSel(new Set()); onDone();
     } catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Invite failed." }); }
     setBusy(false);
@@ -128,6 +156,8 @@ function Invite({ secret, groupBuyId, orders, version, onDone }: { secret: strin
 }
 
 function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDone: () => void }) {
+  const organiserRoot = useContext(OrganiserCoaRoot);
+  const requestPath = organiserRoot ? `${organiserRoot}/requests/${encodeURIComponent(r.id)}` : `/admin/coa/${r.id}`;
   const [notes, setNotes] = useState(r.internalNotes ?? "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -152,8 +182,8 @@ function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDo
     const ac = new AbortController(); uploadAbort.current = ac;
     try {
       const body = new FormData(); body.append("certificate", file);
-      const res = await fetch(`/api/admin/coa/${encodeURIComponent(r.id)}/certificate`, {
-        method: "POST", credentials: "include", headers: { "x-admin-secret": secret }, body, signal: ac.signal,
+      const res = await fetch(`/api${requestPath}/certificate`, {
+        method: "POST", credentials: "include", headers: secret ? { "x-admin-secret": secret } : {}, body, signal: ac.signal,
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Certificate upload failed.");
       if (seq === operation.current) onDone();
@@ -166,7 +196,7 @@ function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDo
     setBusy(action); setErr(null);
     const seq = ++operation.current;
     try {
-      await coaApi(`/admin/coa/${r.id}`, { method: "PATCH", body: JSON.stringify({ action, internalNotes: notes, ...(note.trim() ? { note: note.trim() } : {}) }) }, secret);
+      await coaApi(requestPath, { method: "PATCH", body: JSON.stringify({ action, ...(!organiserRoot ? { internalNotes: notes } : {}), ...(note.trim() ? { note: note.trim() } : {}) }) }, secret);
       if (seq === operation.current) { setNote(""); onDone(); }
     } catch (e) { if (seq === operation.current) setErr(e instanceof Error ? e.message : "Action failed."); }
     if (seq === operation.current) setBusy(null);
@@ -199,7 +229,7 @@ function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDo
         <p className="text-muted-foreground">Updated {new Date(r.updatedAt).toLocaleString("en-GB")}</p>
       </div>
       <div className="grid sm:grid-cols-2 gap-2">
-        <textarea className="min-h-[56px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs" placeholder="Internal notes (Admin only)" value={notes} onChange={e => setNotes(e.target.value)} />
+        {!organiserRoot && <textarea className="min-h-[56px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs" placeholder="Internal notes (Admin only)" value={notes} onChange={e => setNotes(e.target.value)} />}
         <textarea className="min-h-[56px] rounded-md border border-input bg-background px-2.5 py-1.5 text-xs" placeholder="Action note, required to confirm payment" value={note} onChange={e => setNote(e.target.value)} />
       </div>
       {r.status === "completed" && <div className="rounded-lg border p-3 space-y-2 text-xs">
@@ -214,7 +244,7 @@ function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDo
       </div>}
       {err && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{err}</p>}
       <div className="flex flex-wrap gap-2">
-        {btn("notes", "Save notes", true)}
+        {btn("notes", "Save notes", !organiserRoot)}
         {btn("confirm", "Confirm payment", canConfirm(r))}
         {btn("processing", "Mark processing", r.status === "paid")}
         {btn("completed", "Mark completed", r.status === "processing")}
@@ -225,7 +255,9 @@ function RequestRow({ r, secret, onDone }: { r: CoaRequest; secret: string; onDo
 }
 
 /** Admin COA requests. With groupBuyId: per-group view with settings and invites. Without: central list. */
-export function CoaRequests({ secret, groupBuyId }: { secret: string; groupBuyId?: string }) {
+export function CoaRequests({ secret = "", groupBuyId, organiser = false }: { secret?: string; groupBuyId?: string; organiser?: boolean }) {
+  const organiserRoot = organiser && groupBuyId ? `/organiser/group-buys/${encodeURIComponent(groupBuyId)}/coa` : null;
+  const listPath = organiserRoot ?? "/admin/coa";
   const [data, setData] = useState<CoaAdminView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -247,25 +279,25 @@ export function CoaRequests({ secret, groupBuyId }: { secret: string; groupBuyId
     const ac = new AbortController(); abortRef.current = ac;
     setLoading(true); setError(null);
     try {
-      const d = await coaApi<CoaAdminView>(`/admin/coa${q}`, { signal: ac.signal }, secret);
+      const d = await coaApi<CoaAdminView>(`${listPath}${q}`, { signal: ac.signal }, secret);
       if (id === seq.current) { setData(d); setVersion(v => v + 1); }
     } catch (e) {
       if (id === seq.current && !ac.signal.aborted) setError(e instanceof Error ? e.message : "Unable to load COA requests.");
     }
     if (id === seq.current) setLoading(false);
-  }, [q, secret]);
+  }, [q, secret, listPath]);
   // Clear previous group data before loading another group
   useEffect(() => {
     ++seq.current;
     abortRef.current?.abort();
     setData(null); setError(null);
-  }, [scope, secret]);
+  }, [scope, secret, listPath]);
   useEffect(() => { const t = setTimeout(() => void load(), 250); return () => { clearTimeout(t); }; }, [load]);
   useEffect(() => () => abortRef.current?.abort(), []);
   useEffect(() => {
     setExporting(null);
     return () => exportAbort.current?.abort();
-  }, [q, secret]);
+  }, [q, secret, listPath]);
 
   const exportFile = async (format: "csv" | "txt") => {
     exportAbort.current?.abort();
@@ -273,7 +305,7 @@ export function CoaRequests({ secret, groupBuyId }: { secret: string; groupBuyId
     setExporting(format); setError(null);
     try {
       const query = format === "txt" ? coaAdminQuery({ groupBuyId: scope, search, batch }) : q;
-      const res = await fetch(`/api/admin/coa/export.${format}${query}`, { signal: ac.signal, credentials: "include", headers: { "x-admin-secret": secret } });
+      const res = await fetch(`/api${listPath}/export.${format}${query}`, { signal: ac.signal, credentials: "include", headers: secret ? { "x-admin-secret": secret } : {} });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Export failed.");
       const blob = await res.blob();
       if (ac.signal.aborted) return;
@@ -286,6 +318,7 @@ export function CoaRequests({ secret, groupBuyId }: { secret: string; groupBuyId
   };
 
   return (
+    <OrganiserCoaRoot.Provider value={organiserRoot}>
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <FileCheck2 className="w-5 h-5 text-[#1B3A7A]" />
@@ -335,6 +368,7 @@ export function CoaRequests({ secret, groupBuyId }: { secret: string; groupBuyId
         {data?.requests.map(r => <RequestRow key={r.id} r={r} secret={secret} onDone={() => void load()} />)}
       </div>
     </div>
+    </OrganiserCoaRoot.Provider>
   );
 }
 

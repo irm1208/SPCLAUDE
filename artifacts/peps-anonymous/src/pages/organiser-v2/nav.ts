@@ -17,7 +17,7 @@ export type WorkspaceTabId =
   | "members"
   | "orders" | "broadcast" | "supplier-batches" | "supplier-receipt"
   | "parcels" | "dispatch" | "qrcodes" | "reshippers" | "legs" | "shipping" | "shipping-split"
-  | "pnl" | "labtests" | "testinggroups" | "tickets" | "todos"
+  | "pnl" | "labtests" | "coa-requests" | "testinggroups" | "tickets" | "todos"
   | "settings" | "products" | "rules" | "summary";
 
 export interface WorkspaceTab {
@@ -87,6 +87,7 @@ export const WORKSPACE_GROUPS: WorkspaceGroup[] = [
     label: "Quality",
     tabs: [
       { id: "labtests", label: "Vendor COAs", icon: FileCheck, description: "Certificates of Analysis from vendors" },
+      { id: "coa-requests", label: "COA Requests", icon: FileText, description: "Member COA requests, wallets and payments" },
       { id: "testinggroups", label: "Lab Testing Pool", icon: Users, description: "Coordinate member contributions for lab testing" },
     ],
   },
@@ -172,6 +173,10 @@ export const WORKSPACE_PAGE_META: Record<WorkspaceTabId, {
   labtests: {
     title: "Vendor COAs",
     description: "Store and review vendor certificates.",
+  },
+  "coa-requests": {
+    title: "COA Requests",
+    description: "Manage member requests, COA fees, receiving wallets and certificates.",
   },
   testinggroups: {
     title: "Lab testing pool",

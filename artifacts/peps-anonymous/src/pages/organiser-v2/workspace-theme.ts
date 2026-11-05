@@ -15,6 +15,7 @@ export const WORKSPACE_PAGE_TREATMENT = {
   todos: "board",
   members: "table",
   orders: "table",
+  "coa-requests": "table",
   "supplier-batches": "logistics",
   "supplier-receipt": "logistics",
   broadcast: "composer",

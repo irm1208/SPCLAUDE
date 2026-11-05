@@ -25,6 +25,7 @@ function change(element: HTMLInputElement | HTMLSelectElement, value: string) {
   element.dispatchEvent(new dom.window.Event(element.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
 }
 const { CoaRequests } = await import("./CoaRequests");
+const { coaApi } = await import("@/lib/coa-api");
 let root: ReturnType<typeof createRoot> | undefined;
 let container: HTMLDivElement;
 afterEach(async () => {
@@ -67,4 +68,27 @@ it("shows the server's no-paid-COAs error instead of downloading a file", async 
   expect(container.textContent).toContain("No paid COA requests match these filters.");
   expect(create).not.toHaveBeenCalled();
   expect(button.disabled).toBe(false);
+});
+it("lets an organiser save their own wallet without accessing any Admin endpoint or notes", async () => {
+  vi.mocked(coaApi).mockResolvedValue({
+    requests: [], groups: [{ id: "g1", name: "Synthetic group" }],
+    config: { mode: "open", fee: 65, currency: "USD", cap: 20, rails: [], manualInstructions: "Manual payment" },
+    orders: [], committed: 0,
+  });
+  vi.mocked(coaApi).mockClear();
+  container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+  await React.act(async () => root!.render(<CoaRequests organiser groupBuyId="g1" />));
+  await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 280)); });
+  const add = [...container.querySelectorAll("button")].find(b => b.textContent === "Add receiving wallet")!;
+  expect(add).toBeTruthy();
+  await React.act(async () => add.click());
+  await React.act(async () => change(container.querySelector('input[aria-label="COA wallet 1 receiving address"]')!, `0x${"b".repeat(40)}`));
+  const save = [...container.querySelectorAll("button")].find(b => b.textContent === "Save settings")!;
+  await React.act(async () => save.click());
+  const call = vi.mocked(coaApi).mock.calls.find(([path, options]) => path.endsWith("/coa/settings") && options?.method === "PUT")!;
+  expect(call[0]).toBe("/organiser/group-buys/g1/coa/settings");
+  expect(JSON.parse(String(call[1]?.body)).rails).toEqual([{ currency: "USDT", network: "Ethereum", walletAddress: `0x${"b".repeat(40)}` }]);
+  expect(vi.mocked(coaApi).mock.calls.every(([path]) => path.startsWith("/organiser/group-buys/g1/coa"))).toBe(true);
+  expect(container.textContent).not.toContain("Internal notes (Admin only)");
+  expect(container.querySelector('input[placeholder="Public receiving wallet address"]')).toBeTruthy();
 });

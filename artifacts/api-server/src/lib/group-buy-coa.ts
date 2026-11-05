@@ -7,7 +7,7 @@ import {
 import { coaCanClaim, coaConfig, coaDetails, coaHash, CoaError, EMPTY_COA_CONFIG, holdsCoaPlace, publicCoaRequest } from "./coa-rules";
 import { fetchFiatToUsd } from "./crypto-pricing";
 import { verifyTransaction } from "./payment-verify";
-import { validateOnwardTx } from "./gb-onward-payment-rules";
+import { validateOnwardTx, parseOnwardPaymentSettings } from "./gb-onward-payment-rules";
 import { onwardTransactionTime } from "./gb-onward-chain-time";
 import { queueCoaNotification } from "./coa-notifications";
 import { coaCertificateStore, validateCoaPdf, removeCoaPdf, type CoaCertificateStore } from "./coa-certificates";
@@ -27,9 +27,20 @@ async function audit(tx: any, action: string, actor: string, id: string, metadat
   await tx.insert(auditLogsTable).values({ type: "change", action: `coa_${action}`,
     message: `COA ${action}`, metadata: { actor, id, ...metadata } });
 }
-async function lockGroup(tx: any, id: string) {
+export type CoaOrganiserAccess = { groupBuyId: string; username: string; adminGbId?: string };
+function checkOrganiserGroup(group: typeof groups.$inferSelect | undefined, access: CoaOrganiserAccess) {
+  if (!group || group.id !== access.groupBuyId ||
+    (access.adminGbId ? access.adminGbId !== group.id : canonical(group.organiserId ?? "") !== canonical(access.username)))
+    throw new CoaError("Group buy not found.", 404);
+}
+export async function assertCoaOrganiserAccess(access: CoaOrganiserAccess, database = db) {
+  const [group] = await database.select().from(groups).where(eq(groups.id, access.groupBuyId));
+  checkOrganiserGroup(group, access);
+}
+async function lockGroup(tx: any, id: string, access?: CoaOrganiserAccess) {
   const [group] = await tx.select().from(groups).where(eq(groups.id, id)).for("update");
   if (!group) throw new CoaError("Group buy not found.", 404);
+  if (access) checkOrganiserGroup(group, access);
   // All capacity mutations acquire this parent lock first, including expiry.
   await tx.update(requests).set({ status: "expired", updatedAt: new Date() }).where(and(
     eq(requests.groupBuyId, id), eq(requests.source, "public"), eq(requests.status, "reserved"),
@@ -119,7 +130,8 @@ export async function downloadCoaCertificate(orderId: string, username: string, 
 
 /** Serialize replacements with all request transitions; preserve the old file on upload/DB failure. */
 export async function attachCoaCertificate(requestId: string, actor: string,
-  file: { buffer: Buffer; originalname: string; mimetype: string }, database = db, store?: CoaCertificateStore) {
+  file: { buffer: Buffer; originalname: string; mimetype: string }, database = db, store?: CoaCertificateStore,
+  access?: CoaOrganiserAccess) {
   await validateCoaPdf(file.buffer, file.originalname, file.mimetype);
   const key = `private/coa-certificates/${randomUUID()}.pdf`;
   let uploaded = false;
@@ -129,7 +141,7 @@ export async function attachCoaCertificate(requestId: string, actor: string,
     await database.transaction(async tx => {
       const [hint] = await tx.select().from(requests).where(eq(requests.id, requestId));
       if (!hint) throw new CoaError("COA request not found.", 404);
-      await lockGroup(tx, hint.groupBuyId);
+      await lockGroup(tx, hint.groupBuyId, access);
       const [r] = await tx.select().from(requests).where(eq(requests.id, requestId)).for("update");
       if (!r || r.status !== "completed") throw new CoaError("Complete the paid COA request before attaching a certificate.", 409);
       const result = await storage.uploadFromBytes(key, file.buffer, { compress: false });
@@ -181,13 +193,26 @@ export async function availableCoaRails(database = db) {
   const { getAdminCryptoOptions } = await import("../routes/payments");
   return (await getAdminCryptoOptions(database)).filter(r => ["USDT", "USDC"].includes(r.currency));
 }
-export async function saveCoaSettings(groupId: string, actor: string, input: unknown, database = db) {
+export async function saveCoaSettings(groupId: string, actor: string, input: unknown, database = db, access?: CoaOrganiserAccess) {
   const cfg = coaConfig(input);
-  const available = await availableCoaRails(database);
-  if (cfg.rails.some(r => !available.some(a => a.currency === r.currency && a.network === r.network && a.walletAddress === r.walletAddress)))
-    throw new CoaError("Select an existing Admin payment destination. Reload the available payment methods.");
+  const available = access ? [] : await availableCoaRails(database);
+  if (access) {
+    for (const rail of cfg.rails) {
+      try {
+        parseOnwardPaymentSettings({ ...rail, enabled: true, network: rail.network === "ERC-20" ? "Ethereum" : rail.network });
+      } catch { throw new CoaError("Enter a valid stablecoin wallet address and supported network."); }
+    }
+    const keys = cfg.rails.map(r => `${r.currency}|${r.network === "ERC-20" ? "Ethereum" : r.network}`);
+    if (new Set(keys).size !== keys.length) throw new CoaError("Choose only one wallet per currency and network.");
+  }
   return database.transaction(async tx => {
-    await lockGroup(tx, groupId);
+    await lockGroup(tx, groupId, access);
+    if (!access) {
+      const existing = await config(tx, groupId);
+      const allowed = [...available, ...existing.rails];
+      if (cfg.rails.some(r => !allowed.some(a => a.currency === r.currency && a.network === r.network && a.walletAddress === r.walletAddress)))
+        throw new CoaError("Select an existing Admin payment destination. Reload the available payment methods.");
+    }
     if (cfg.cap < await commitments(tx, groupId)) throw new CoaError("The limit cannot be lower than the number of committed COA places.", 409);
     const values = { ...cfg, groupBuyId: groupId, fee: String(cfg.fee), updatedAt: new Date() };
     await tx.insert(settings).values(values).onConflictDoUpdate({ target: settings.groupBuyId, set: values });
@@ -195,12 +220,12 @@ export async function saveCoaSettings(groupId: string, actor: string, input: unk
     return cfg;
   });
 }
-export async function inviteCoa(groupId: string, actor: string, input: any, database = db) {
+export async function inviteCoa(groupId: string, actor: string, input: any, database = db, access?: CoaOrganiserAccess) {
   if (!Array.isArray(input?.orderIds) || !input.orderIds.length || input.orderIds.length > 500
     || input.orderIds.some((id: unknown) => typeof id !== "string")) throw new CoaError("Select 1–500 orders to invite.");
   const ids: string[] = [...new Set<string>(input.orderIds)];
   return database.transaction(async tx => {
-    await lockGroup(tx, groupId);
+    await lockGroup(tx, groupId, access);
     const cfg = await config(tx, groupId);
     if (cfg.mode === "disabled") throw new CoaError("Enable COA settings before inviting members.");
     const selected = await tx.select().from(orders).where(and(eq(orders.groupBuyId, groupId), inArray(orders.id, ids))).for("update");
@@ -351,14 +376,15 @@ export async function withdrawCoa(orderId: string, username: string, database = 
     return memberView(tx, order);
   });
 }
-export async function manageCoa(requestId: string, actor: string, input: any, database = db) {
+export async function manageCoa(requestId: string, actor: string, input: any, database = db, access?: CoaOrganiserAccess) {
   return database.transaction(async tx => {
     const [hint] = await tx.select().from(requests).where(eq(requests.id, requestId));
     if (!hint) throw new CoaError("COA request not found.", 404);
-    await lockGroup(tx, hint.groupBuyId);
+    await lockGroup(tx, hint.groupBuyId, access);
     const [r] = await tx.select().from(requests).where(eq(requests.id, requestId)).for("update");
     const update: Partial<RequestRow> = { updatedAt: new Date() };
     if (input?.action === "notes") {
+      if (access) throw new CoaError("Internal notes are Admin only.", 403);
       if (typeof input.internalNotes !== "string" || input.internalNotes.length > 5000) throw new CoaError("Internal notes must be under 5,000 characters.");
       update.internalNotes = input.internalNotes;
     } else if (input?.action === "confirm") {
@@ -370,7 +396,7 @@ export async function manageCoa(requestId: string, actor: string, input: any, da
       if (!holdsCoaPlace(r) && await commitments(tx, r.groupBuyId) >= cfg.cap)
         throw new CoaError("No COA place is available. Increase capacity before accepting this late payment.", 409);
       update.status = "paid"; update.confirmedBy = actor; update.confirmationNote = note;
-      update.verificationMessage = "Payment receipt confirmed by Admin.";
+      update.verificationMessage = access ? "Payment receipt confirmed by organiser." : "Payment receipt confirmed by Admin.";
     } else if (input?.action === "processing") {
       if (r.status !== "paid" && r.status !== "processing") throw new CoaError("Only a paid COA can be marked processing.", 409);
       update.status = "processing";
@@ -388,8 +414,17 @@ export async function manageCoa(requestId: string, actor: string, input: any, da
     return { ok: true };
   });
 }
-export async function adminCoaList(filters: { groupBuyId?: string; search?: string; batch?: string; status?: string }, database = db) {
-  const groupList = await database.select({ id: groups.id, name: groups.name }).from(groups).orderBy(groups.name);
+export async function organiserCoaList(access: CoaOrganiserAccess, filters: { search?: string; batch?: string; status?: string }, database = db) {
+  return adminCoaList({ ...filters, groupBuyId: access.groupBuyId }, database, access);
+}
+export async function adminCoaList(filters: { groupBuyId?: string; search?: string; batch?: string; status?: string }, database = db,
+  access?: CoaOrganiserAccess) {
+  if (access) {
+    await assertCoaOrganiserAccess(access, database);
+    filters = { ...filters, groupBuyId: access.groupBuyId };
+  }
+  const groupList = await database.select({ id: groups.id, name: groups.name }).from(groups)
+    .where(access ? eq(groups.id, access.groupBuyId) : undefined).orderBy(groups.name);
   const selectedGroup = filters.groupBuyId;
   const rows = await database.select({ request: requests, order: { id: orders.id, code: orders.code, telegramUsername: orders.telegramUsername },
     group: { name: groups.name } }).from(requests).innerJoin(orders, eq(requests.orderId, orders.id))
@@ -397,7 +432,7 @@ export async function adminCoaList(filters: { groupBuyId?: string; search?: stri
     .where(selectedGroup ? eq(requests.groupBuyId, selectedGroup) : undefined).orderBy(requests.createdAt);
   const search = (filters.search ?? "").toLowerCase();
   const batch = (filters.batch ?? "").toLowerCase();
-  const filtered = rows.map(row => serialise(row.request, row.order, row.group, true)!)
+  const filtered = rows.map(row => serialise(row.request, row.order, row.group, !access)!)
     .filter((r: any) => (!filters.status || r.status === filters.status)
       && (!batch || r.batch.toLowerCase().includes(batch))
       && (!search || [r.orderCode, r.member, r.client, r.sample, r.manufacturer, r.groupName].some(s => String(s).toLowerCase().includes(search))));

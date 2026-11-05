@@ -34,6 +34,7 @@ import {
   ArrowUp, ArrowDown, Eye, EyeOff, TestTube, List, Columns3, GripVertical,
 } from "lucide-react";
 import ShippingSplitTab from "./ShippingSplitTab";
+import { CoaRequests } from "@/components/admin/CoaRequests";
 import { PageLayout } from "@/components/PageLayout";
 import {
   buildTicketMessageFormData,
@@ -13812,7 +13813,7 @@ export function OrgTicketsTab({ gb }: { gb: OrganiserGB }) {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "fulfilment" | "refunds" | "parcels" | "dispatch" | "labtests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes" | "supplier-batches" | "supplier-receipt";
+type DashTab = "overview" | "edit" | "products" | "shipping" | "shippingsplit" | "orders" | "fulfilment" | "refunds" | "parcels" | "dispatch" | "labtests" | "coa-requests" | "pnl" | "summary" | "broadcast" | "intlshipping" | "adminfeecountry" | "sharedshipping" | "reshippers" | "countrylegs" | "rules" | "tickets" | "qrcodes" | "supplier-batches" | "supplier-receipt";
 
 const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired: boolean; externalPath?: (gbId: string) => string }[] = [
   { id: "overview", label: "My GBs", icon: LayoutDashboard, gbRequired: false },
@@ -13830,6 +13831,7 @@ const GB_TABS: { id: DashTab; label: string; icon: React.ElementType; gbRequired
   { id: "dispatch", label: "Dispatch & Packaging Slips", icon: FileText, gbRequired: true },
   { id: "qrcodes", label: "QR Codes", icon: QrCode, gbRequired: true },
   { id: "labtests", label: "Lab Tests", icon: FlaskConical, gbRequired: true },
+  { id: "coa-requests", label: "COA Requests", icon: FileText, gbRequired: true },
   { id: "pnl", label: "P&L", icon: BarChart3, gbRequired: true },
   { id: "broadcast", label: "Broadcast", icon: SendHorizonal, gbRequired: true },
   { id: "intlshipping", label: "Intl Shipping", icon: Globe, gbRequired: true },
@@ -14143,6 +14145,7 @@ function OrganiserDashboard({ profile, initialGbId }: { profile: OrganiserProfil
         {activeTab === "parcels" && selectedGb && <ParcelsTab gb={selectedGb} />}
         {activeTab === "dispatch" && selectedGb && <DispatchManager cfg={dispatchCfg} />}
         {activeTab === "labtests" && selectedGb && <LabTestsTabOrg gb={selectedGb} />}
+        {activeTab === "coa-requests" && selectedGb && <CoaRequests key={selectedGb.id} organiser groupBuyId={selectedGb.id} />}
         {activeTab === "pnl" && selectedGb && <PnlTab gb={selectedGb} />}
         {activeTab === "broadcast" && selectedGb && <BroadcastTab gb={selectedGb} />}
         {activeTab === "intlshipping" && selectedGb && <IntlShippingTab secret="" useCredentials groupBuyId={selectedGb.id} />}

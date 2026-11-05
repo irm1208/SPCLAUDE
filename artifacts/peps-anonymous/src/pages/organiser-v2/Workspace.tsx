@@ -8,6 +8,7 @@ import type { SampleGB } from "./data";
 import OverviewTabV3 from "./OverviewTabV3";
 import OrdersTab from "./OrdersTab";
 import { SupplierBatchManager } from "@/components/supplier-batches/SupplierBatchManager";
+import { CoaRequests } from "@/components/admin/CoaRequests";
 import { SupplierBatchFulfilment } from "@/components/supplier-batches/SupplierBatchFulfilment";
 import { selectSupplierOrderBatch } from "@/components/supplier-batches/OrderBatchFilter";
 import TodoTab from "./TodoTab";
@@ -228,6 +229,8 @@ export default function Workspace({
     <LivePnlTab gb={apiGroupBuy} />
   ) : active === "labtests" ? (
     <LiveLabTestsTabOrg gb={apiGroupBuy} />
+  ) : active === "coa-requests" ? (
+    <CoaRequests key={gb.id} organiser groupBuyId={gb.id} />
   ) : active === "testinggroups" ? (
     <TestingGroupsTab selectedGbId={gb.id} />
   ) : active === "tickets" ? (

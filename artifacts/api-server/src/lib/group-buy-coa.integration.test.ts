@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as store from "@workspace/db";
 import {
   adminCoaList, coaPaymentInstructions, getMemberCoa, inviteCoa, manageCoa,
-  saveCoaSettings, saveMemberCoa, submitCoaPayment, withdrawCoa,
+  saveCoaSettings, saveMemberCoa, submitCoaPayment, withdrawCoa, organiserCoaList,
 } from "./group-buy-coa";
 import { coaTransactionConflict } from "./coa-payment-claim";
 import { drainCoaNotifications } from "./coa-notifications";
@@ -34,6 +34,52 @@ async function fixture(fn: (ctx: { tx: any; database: typeof store.db; group: st
 }
 
 describe.skipIf(process.env.COA_DB_TESTS !== "1")("group-buy COA persistence (synthetic rollback fixtures)", () => {
+  it("allows only the owning organiser to manage COAs and preserves committed wallet/fee terms", async () => {
+    await fixture(async ({ tx, database, group, ids, users }) => {
+      await tx.update(store.groupBuysTable).set({ organiserId: users[0] }).where(eq(store.groupBuysTable.id, group));
+      const owner = { groupBuyId: group, username: users[0] };
+      const foreign = { groupBuyId: group, username: users[1] };
+      const wallet = { currency: "USDC", network: "Ethereum", walletAddress: `0x${"b".repeat(40)}` };
+      await expect(organiserCoaList(foreign, {}, database)).rejects.toThrow("not found");
+      await expect(saveCoaSettings(group, users[1], { ...cfg, rails: [wallet] }, database, foreign)).rejects.toThrow("not found");
+      await saveCoaSettings(group, users[0], { ...cfg, rails: [wallet] }, database, owner);
+      await inviteCoa(group, users[0], { orderIds: [ids[0]] }, database, owner);
+      await saveMemberCoa(ids[0], users[0], details, database);
+      const requestId = (await getMemberCoa(ids[0], users[0], database)).request!.id;
+      await tx.update(store.groupBuyCoaRequestsTable).set({ internalNotes: "ADMIN_PRIVATE" }).where(eq(store.groupBuyCoaRequestsTable.id, requestId));
+      const list = await organiserCoaList(owner, {}, database);
+      expect(list.groups).toEqual([{ id: group, name: "Synthetic COA group" }]);
+      expect(list.requests[0].internalNotes).toBeUndefined();
+      await expect(manageCoa(requestId, users[1], { action: "confirm", note: "received funds" }, database, foreign)).rejects.toThrow("not found");
+      await expect(manageCoa(requestId, users[0], { action: "notes", internalNotes: "overwrite" }, database, owner)).rejects.toThrow("Admin");
+      await saveCoaSettings(group, users[0], { ...cfg, fee: 30, rails: [{ ...wallet, walletAddress: `0x${"c".repeat(40)}` }] }, database, owner);
+      const committed = await getMemberCoa(ids[0], users[0], database);
+      expect(committed.config!.rails).toEqual([wallet]);
+      expect(committed.config!.fee).toBe(25);
+      const quoted = await coaPaymentInstructions(ids[0], users[0], { currency: wallet.currency, network: wallet.network }, database);
+      expect(quoted.request!.payment!.walletAddress).toBe(wallet.walletAddress);
+      await manageCoa(requestId, users[0], { action: "confirm", note: "Funds received by organiser" }, database, owner);
+      expect((await getMemberCoa(ids[0], users[0], database)).request!.status).toBe("paid");
+      const invalid = { ...cfg, rails: [{ ...wallet, walletAddress: "invalid" }] };
+      await expect(saveCoaSettings(group, users[0], invalid, database, owner)).rejects.toThrow("wallet");
+      await expect(saveCoaSettings(group, users[0], { ...cfg, rails: [{ ...wallet, network: "unknown-chain" }] }, database, owner)).rejects.toThrow("network");
+      const scopedElsewhere = { ...owner, groupBuyId: "another-group" };
+      await expect(inviteCoa(group, users[0], { orderIds: [ids[1]] }, database, scopedElsewhere)).rejects.toThrow("not found");
+      const foreignGroup = `test-coa-${randomUUID()}`;
+      await tx.insert(store.groupBuysTable).values({ id: foreignGroup, name: "Another organiser's group", organiserId: users[1] });
+      await tx.update(store.ordersTable).set({ groupBuyId: foreignGroup }).where(eq(store.ordersTable.id, ids[1]));
+      await tx.insert(store.groupBuyCoaSettingsTable).values({ ...cfg, groupBuyId: foreignGroup, fee: "25" });
+      await saveMemberCoa(ids[1], users[1], details, database);
+      const foreignId = (await getMemberCoa(ids[1], users[1], database)).request!.id;
+      await expect(manageCoa(foreignId, users[0], { action: "confirm", note: "forged request id" }, database, owner)).rejects.toThrow("not found");
+      await expect(inviteCoa(group, users[0], { orderIds: [ids[1]] }, database, owner)).rejects.toThrow("Every invitation");
+      const { attachCoaCertificate } = await import("./group-buy-coa");
+      const storage = { uploadFromBytes: vi.fn() } as unknown as CoaCertificateStore;
+      await expect(attachCoaCertificate(foreignId, users[0], { buffer: Buffer.from("%PDF-1.4\nsynthetic\n%%EOF"),
+        originalname: "test.pdf", mimetype: "application/pdf" }, database, storage, owner)).rejects.toThrow("not found");
+      expect(storage.uploadFromBytes).not.toHaveBeenCalled();
+    });
+  });
   it("keeps PDFs private, replaces only completed requests, and checks the live owner on every download", async () => {
     const { attachCoaCertificate, downloadCoaCertificate } = await import("./group-buy-coa");
     await fixture(async ({ tx, database, ids, users }) => {

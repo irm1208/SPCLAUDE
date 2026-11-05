@@ -10,8 +10,11 @@ import {
   attachCoaCertificate, downloadCoaCertificate,
 } from "../lib/group-buy-coa";
 import { CoaError, csvCell } from "../lib/coa-rules";
+import { paidCoaTxt } from "../lib/coa-export";
+import organiserCoaRouter from "./organiser-coa";
 
 const router = Router();
+router.use(organiserCoaRouter);
 const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: COA_PDF_LIMIT, files: 1, fields: 0 } }).single("certificate");
 router.get("/orders/:orderId/coa/certificate", requireAccount, async (req, res) => {
   res.setHeader("Cache-Control", "private, no-store");
@@ -89,15 +92,7 @@ router.get("/admin/coa/export.txt", async (req, res) => {
     // Payment-confirmed requests remain paid after processing/completion. The
     // TXT action is paid-only regardless of the queue's status dropdown.
     const result = await adminCoaList({ ...filters(req), status: undefined });
-    const paid = result.requests.filter(r => ["paid", "processing", "completed"].includes(r.status));
-    if (!paid.length) throw new CoaError("No paid COA requests match these filters.", 404);
-    const line = (value: unknown) => String(value ?? "").replace(/[\r\n\u2028\u2029]+/g, " ").trim();
-    const text = paid.map((r, i) => [
-      `COA ${i + 1}`, `@${line(r.member).replace(/^@+/, "")}`,
-      `Client: ${line(r.client)}`, `Sample: ${line(r.sample)}`,
-      `Manufacturer: ${line(r.manufacturer)}`, `Batch: ${line(r.batch)}`,
-    ].join("\n")).join("\n\n") + "\n";
-    res.type("text/plain").attachment("coa-paid.txt").send(text);
+    res.type("text/plain").attachment("coa-paid.txt").send(paidCoaTxt(result.requests));
   } catch (error) { fail(res, error); }
 });
 router.get("/admin/coa", async (req, res) => {
