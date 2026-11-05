@@ -45,6 +45,7 @@
     "http-proxy-middleware": "^3.0.5",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
+    "pg": "^8.16.3",
     "sharp": "^0.35.1",
     "zod": "catalog:"
   },

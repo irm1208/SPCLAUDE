@@ -10,7 +10,7 @@ if ! [ -x "$PNPM" ]; then
 fi
 
 echo "[deploy] Installing dependencies..."
-$PNPM install --no-frozen-lockfile
+$PNPM install --frozen-lockfile
 
 echo "[deploy] Compiling API server..."
 NODE_OPTIONS="--max-old-space-size=4096" $PNPM --filter @workspace/api-server run build:compile
