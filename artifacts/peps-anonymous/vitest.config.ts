@@ -22,6 +22,6 @@ function nodeTestFiles(dir: string, out: string[] = []): string[] {
 export default mergeConfig(viteConfig, defineConfig({
   test: {
     include: ["src/**/*.{test,spec}.{ts,tsx}", "*.test.ts"],
-    exclude: ["**/node_modules/**", "**/dist/**", ...nodeTestFiles(join(__dirname, "src"))],
+    exclude: ["**/node_modules/**", "**/dist/**", ...nodeTestFiles(join(__dirname, "src")), ...nodeTestFiles(__dirname).filter(f => !f.includes("/"))],
   },
 }));
