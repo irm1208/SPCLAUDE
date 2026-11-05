@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileCheck2, Loader2, AlertCircle, Copy, Check, RefreshCw } from "lucide-react";
+import { FileCheck2, Loader2, AlertCircle, Copy, Check, RefreshCw, ChevronDown } from "lucide-react";
 import { coaApi, type CoaMemberView, type CoaRail } from "@/lib/coa-api";
 import {
   COA_FIELDS, COA_PHASE_TONE, COA_STATUS_LABEL, canMemberEdit, canMemberPay, canReReserve, coaPhase, fmtCoaFee, hasCoaEvidence, missingCoaFields, type CoaDetails,
@@ -109,8 +109,8 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
   const selectedRail = rails.find(r => `${r.currency}|${r.network}` === railKey);
 
   return (
-    <section id="coa" className="rounded-lg p-4 sm:p-5 space-y-4 scroll-mt-24" style={box}>
-      <header className="flex items-start gap-3">
+    <details id="coa" className="group/coa rounded-lg p-4 sm:p-5 scroll-mt-24" style={box}>
+      <summary className="flex min-h-11 cursor-pointer list-none items-start gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2D6BCC] [&::-webkit-details-marker]:hidden">
         <span className="flex items-center justify-center shrink-0" style={{ width: 30, height: 30, borderRadius: 10, background: "var(--t-blue-10)", color: "var(--t-blue)" }}>
           <FileCheck2 className="w-4 h-4" />
         </span>
@@ -125,7 +125,9 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
             {COA_STATUS_LABEL[req.status]}
           </span>
         )}
-      </header>
+        <ChevronDown aria-hidden="true" className="w-4 h-4 mt-1 shrink-0 transition-transform group-open/coa:rotate-180" />
+      </summary>
+      <div className="space-y-4 pt-4">
 
       {req?.status === "completed" && (
         <div className="rounded-md p-3 space-y-2" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>
@@ -275,7 +277,8 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
           {busy === "withdraw" ? "Withdrawing..." : "Withdraw COA request"}
         </button>
       )}
-    </section>
+      </div>
+    </details>
   );
 }
 

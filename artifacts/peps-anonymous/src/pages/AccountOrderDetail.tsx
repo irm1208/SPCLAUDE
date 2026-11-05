@@ -2412,6 +2412,14 @@ export default function AccountOrderDetail() {
                             </div>
                           </div>
                         )}
+                        {order.groupBuyId && !isAdminPreview && (
+                          <CustomerGroupBuyUpdates
+                            key={order.groupBuyId}
+                            gbId={order.groupBuyId}
+                            enabled={isLoggedIn}
+                            embedded
+                          />
+                        )}
                       </div>
                     );
                   })()}
@@ -2434,13 +2442,6 @@ export default function AccountOrderDetail() {
                       disabled={refundActive}
                     />
                   )}
-                  {order.groupBuyId && !isAdminPreview && (
-                    <CustomerGroupBuyUpdates
-                      key={order.groupBuyId}
-                      gbId={order.groupBuyId}
-                      enabled={isLoggedIn}
-                    />
-                  )}
                   {order.groupBuyId && !["wholesale", "wholesale_shared"].includes(order.orderType ?? "") && !isAdminPreview && isLoggedIn && (
                     <div id="order-changes" className="scroll-mt-24">
                       <MemberOrderRevision key={`${account?.telegramUsername}:${order.id}`} orderId={order.id}
@@ -2453,24 +2454,6 @@ export default function AccountOrderDetail() {
                   )}
                   {order.groupBuyId && !["wholesale", "wholesale_shared"].includes(order.orderType ?? "") && !isAdminPreview && isLoggedIn && (
                     <MemberCoaRequest key={`${account?.telegramUsername}:${order.id}`} orderId={order.id} />
-                  )}
-                  {order.id && (
-                    <CustomerRefundPanel
-                      orderId={order.id}
-                      amountUsd={order.grandTotal}
-                      refundView={{
-                        canRequest: order.canRequest ?? false,
-                        ineligibilityReasonCode: order.ineligibilityReasonCode ?? null,
-                        preferredAsset: order.preferredAsset ?? "USDC",
-                        preferredNetwork: "Ethereum ERC-20",
-                        current: order.current ?? null,
-                      }}
-                      onUpdated={async (view) => {
-                        const refreshed = await fetch(`/api/account/orders/${order.id}`, { credentials: "include" });
-                        if (refreshed.ok) setOrder(await refreshed.json());
-                        else setOrder(prev => prev ? { ...prev, ...view } : prev);
-                      }}
-                    />
                   )}
                   {order.id && order.paymentStatus === "confirmed" && paymentSummary.hasOutstandingAddOn && (
                     <div
@@ -3227,6 +3210,24 @@ export default function AccountOrderDetail() {
                     </div>
                   )}
 
+                  {order.id && (
+                    <CustomerRefundPanel
+                      orderId={order.id}
+                      amountUsd={order.grandTotal}
+                      refundView={{
+                        canRequest: order.canRequest ?? false,
+                        ineligibilityReasonCode: order.ineligibilityReasonCode ?? null,
+                        preferredAsset: order.preferredAsset ?? "USDC",
+                        preferredNetwork: "Ethereum ERC-20",
+                        current: order.current ?? null,
+                      }}
+                      onUpdated={async (view) => {
+                        const refreshed = await fetch(`/api/account/orders/${order.id}`, { credentials: "include" });
+                        if (refreshed.ok) setOrder(await refreshed.json());
+                        else setOrder(prev => prev ? { ...prev, ...view } : prev);
+                      }}
+                    />
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

@@ -11,6 +11,13 @@ vi.mock("@/hooks/use-group-buy-progress", () => ({
 import { CustomerGroupBuyUpdates } from "./CustomerGroupBuyUpdates";
 
 describe("customer group-buy progress disclosure", () => {
+  it("supports one dark-surface disclosure inside the order hero", () => {
+    const html = renderToStaticMarkup(<CustomerGroupBuyUpdates gbId="group" enabled embedded />);
+    expect(html).toContain('data-embedded="true"');
+    expect(html).toContain('id="group-buy-updates"');
+    expect(html).toContain("In transit");
+    expect(html).toContain("#FFFFFF");
+  });
   it("starts minimized but keeps the current stage visible in its summary", () => {
     const html = renderToStaticMarkup(<CustomerGroupBuyUpdates gbId="group" enabled />);
     expect(html).toContain("<details");

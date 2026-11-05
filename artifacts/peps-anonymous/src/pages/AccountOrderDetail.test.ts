@@ -4,6 +4,15 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./AccountOrderDetail.tsx", import.meta.url), "utf8");
 
+test("group progress lives in the blue hero and refund is the final order section", () => {
+  const heroStart = source.indexOf("{/* ===== Header (dashboard hero)");
+  const paymentStart = source.indexOf("{/* Payment confirmed card");
+  const progress = source.indexOf("<CustomerGroupBuyUpdates");
+  assert.ok(progress > heroStart && progress < paymentStart);
+  assert.match(source.slice(progress, paymentStart), /embedded/);
+  assert.ok(source.indexOf("<CustomerRefundPanel") > source.indexOf("{/* Actions */}"));
+});
+
 test("member order details include their own group's published progress and updates", () => {
   assert.match(source, /import \{ CustomerGroupBuyUpdates \} from "@\/components\/group-buy-updates\/CustomerGroupBuyUpdates"/);
   assert.match(source, /order\.groupBuyId && !isAdminPreview && \(\s*<CustomerGroupBuyUpdates\s+key=\{order\.groupBuyId\}\s+gbId=\{order\.groupBuyId\}\s+enabled=\{isLoggedIn\}/);
