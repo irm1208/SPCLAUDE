@@ -10,6 +10,7 @@ export const groupBuyOrderRevisionSettingsTable = pgTable("group_buy_order_revis
 export type OrderRevisionSnapshot = {
   items: Array<{ id: string; productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number }>;
   grandTotal: string; productSubtotal: string; adminFee: string;
+  kind?: "price";
 };
 export const groupBuyOrderRevisionsTable = pgTable("group_buy_order_revisions", {
   id: text("id").primaryKey(),

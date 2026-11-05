@@ -271,7 +271,7 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message.trim(), changes }),
+        body: JSON.stringify({ message: message.trim(), changes, ...(pricing ? { kind: "price" } : {}) }),
         signal: controller.signal,
       });
       if (!response.ok) {

@@ -2445,6 +2445,7 @@ export default function AccountOrderDetail() {
                   {order.groupBuyId && !["wholesale", "wholesale_shared"].includes(order.orderType ?? "") && !isAdminPreview && isLoggedIn && (
                     <div id="order-changes" className="scroll-mt-24">
                       <MemberOrderRevision key={`${account?.telegramUsername}:${order.id}`} orderId={order.id}
+                        onCancelled={() => setLocation("/account?s=orders")}
                         onChanged={() => {
                           setRevisionRefresh(value => value + 1);
                           void queryClient.invalidateQueries({ queryKey: ["account", "orders"] });

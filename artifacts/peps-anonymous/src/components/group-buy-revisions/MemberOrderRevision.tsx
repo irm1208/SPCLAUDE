@@ -5,7 +5,8 @@ import { AlertCircle, ArrowRight, Check, Clock3, LoaderCircle, RefreshCw, Shield
 type RevisionItem = { id: string; productId: string; productName: string; quantity: number; unitPrice: number; lineTotal: number };
 type RevisionRequest = {
   id: string; orderId: string; orderCode: string; member: string;
-  status: "pending" | "accepted" | "declined" | "stale" | "withdrawn";
+  priceProposal?: boolean;
+  status: "pending" | "accepted" | "declined" | "cancelled" | "stale" | "withdrawn";
   message: string; createdAt: string;
   before: { items: RevisionItem[]; grandTotal: number };
   proposal: { items: RevisionItem[]; grandTotal: number };
@@ -14,7 +15,7 @@ type RevisionRequest = {
   currency: string;
 };
 type MemberView = { enabled: boolean; requests: RevisionRequest[] };
-type Decision = "accepted" | "declined";
+type Decision = "accepted" | "declined" | "cancelled";
 
 const cardStyle = { background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)" } as const;
 const insetStyle = { background: "var(--t-bg)", border: "1px solid var(--t-border)" } as const;
@@ -38,6 +39,7 @@ function StatusPill({ status }: { status: RevisionRequest["status"] }) {
     pending: { fg: "#8A5A00", bg: "rgba(233,160,32,.14)" },
     accepted: { fg: "#15803d", bg: "rgba(34,197,94,.12)" },
     declined: { fg: "#b42318", bg: "rgba(239,68,68,.10)" },
+    cancelled: { fg: "#b42318", bg: "rgba(239,68,68,.10)" },
     stale: { fg: "var(--t-subtle)", bg: "var(--t-bg)" },
     withdrawn: { fg: "var(--t-subtle)", bg: "var(--t-bg)" },
   };
@@ -104,7 +106,7 @@ function DecisionButton({ children, onClick, disabled, quiet, testId }: {
   </button>;
 }
 
-export function MemberOrderRevision({ orderId, onChanged }: { orderId: string; onChanged?: () => void }) {
+export function MemberOrderRevision({ orderId, onChanged, onCancelled }: { orderId: string; onChanged?: () => void; onCancelled?: () => void }) {
   const [view, setView] = useState<MemberView | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -113,6 +115,8 @@ export function MemberOrderRevision({ orderId, onChanged }: { orderId: string; o
   const seq = useRef(0);
   const callbackRef = useRef(onChanged);
   callbackRef.current = onChanged;
+  const cancelledRef = useRef(onCancelled);
+  cancelledRef.current = onCancelled;
   const activeController = useRef<AbortController | null>(null);
   const actionController = useRef<AbortController | null>(null);
   const endpoint = useMemo(() => `/api/orders/${encodeURIComponent(orderId)}/order-revisions`, [orderId]);
@@ -180,6 +184,9 @@ export function MemberOrderRevision({ orderId, onChanged }: { orderId: string; o
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [view, pending]);
 
   const decide = async (request: RevisionRequest, decision: Decision) => {
+    if (decision === "cancelled" && !window.confirm(
+      `Decline the new price and cancel order ${request.orderCode}? This removes the entire unpaid order, not just the affected product.`
+    )) return;
     const controller = new AbortController();
     actionController.current?.abort();
     actionController.current = controller;
@@ -198,7 +205,8 @@ export function MemberOrderRevision({ orderId, onChanged }: { orderId: string; o
         throw new Error(body?.error || `Could not ${decision} this change request.`);
       }
       if (controller.signal.aborted) return;
-      if (decision === "accepted") callbackRef.current?.();
+      if (decision === "accepted" || decision === "cancelled") callbackRef.current?.();
+      if (decision === "cancelled") { cancelledRef.current?.(); return; }
       await refresh();
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -260,23 +268,26 @@ export function MemberOrderRevision({ orderId, onChanged }: { orderId: string; o
         <span className="text-[10px]" style={mutedStyle}>{dateLabel(pending.createdAt)}</span>
       </div>
       <div className="rounded-lg px-3 py-2 text-xs leading-relaxed" style={{ background: "rgba(233,160,32,.10)", border: "1px solid rgba(233,160,32,.20)", color: "var(--t-muted)" }}>
-        Nothing changes unless you accept. This is not a payment request. Declining keeps your original order.
+        {pending.priceProposal
+          ? "Accept to use the new price. Declining and cancelling removes your entire unpaid order, even if the group buy is closed. This is not a payment request."
+          : "Nothing changes unless you accept. This is not a payment request. Declining keeps your original order."}
       </div>
       <RevisionDetails request={pending} />
 
       {!pending.eligible && <p className="rounded-md px-3 py-2 text-xs leading-relaxed" style={{ ...insetStyle, ...mutedStyle }}>
-        {pending.ineligibleReason || "This request can no longer be accepted."} You can still decline it.
+        {pending.ineligibleReason || "This request can no longer be accepted."} {pending.priceProposal ? "You can dismiss this proposal, but this order cannot be cancelled here." : "You can still decline it."}
       </p>}
       {!view.enabled && <p className="text-[11px]" style={mutedStyle}>The organiser has turned off new requests. This pending request can still be declined.</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3" style={{ borderColor: "var(--t-blue-15)" }}>
         <p className="max-w-md text-[10px] leading-relaxed" style={mutedStyle}>If accepted, the revision is applied to this order. Review every item and total before confirming.</p>
         <div className="flex flex-wrap gap-2">
-          <DecisionButton quiet disabled={busyId === pending.id} onClick={() => void decide(pending, "declined")} testId={`button-decline-${pending.id}`}>
-            {busyId === pending.id ? <LoaderCircle size={14} className="animate-spin" /> : <X size={14} />} Decline
+          <DecisionButton quiet disabled={!!busyId} onClick={() => void decide(pending, pending.priceProposal && pending.eligible ? "cancelled" : "declined")} testId={`button-decline-${pending.id}`}>
+            {busyId === pending.id ? <LoaderCircle size={14} className="animate-spin" /> : <X size={14} />}
+            {pending.priceProposal ? pending.eligible ? "Decline price and cancel order" : "Dismiss proposal" : "Decline"}
           </DecisionButton>
           <DecisionButton disabled={!view.enabled || !pending.eligible || !!busyId} onClick={() => void decide(pending, "accepted")} testId={`button-accept-${pending.id}`}>
-            {busyId === pending.id ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />} Accept changes
+            {busyId === pending.id ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />} {pending.priceProposal ? "Accept new price" : "Accept changes"}
           </DecisionButton>
         </div>
       </div>

@@ -25,7 +25,7 @@ const view = { enabled: true, eligible: true, products: [{ id: "own", name: "Own
     { id: "paid", code: "124", telegramUsername: "paid-member", currency: "USD", grandTotal: 120, eligible: false, ineligibleReason: "Already paid", items: [] },
   ] };
 beforeEach(() => { host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 async function render(component: any, props: any) {
   await act(async () => root.render(h(component, props)));
   await act(async () => { await new Promise(r => setTimeout(r, 15)); });
@@ -89,6 +89,34 @@ it("shows before/after amounts with thousands and sends an explicit accept decis
   expect(status).toBe("accepted");
   expect(changed).toHaveBeenCalledOnce();
   expect(fetcher.mock.calls.some(([url]) => url === "/api/orders/o/order-revisions/r/decision")).toBe(true);
+});
+it("offers explicit confirmation before declining a new price and cancelling an unpaid order", async () => {
+  const changed = vi.fn(), cancelled = vi.fn();
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+  const fetcher = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+    ? Response.json({ status: "cancelled", cancelled: true })
+    : Response.json({ enabled: true, requests: [{ ...request, priceProposal: true }] }));
+  vi.stubGlobal("fetch", fetcher);
+  await render(MemberOrderRevision, { orderId: "o", onChanged: changed, onCancelled: cancelled });
+  expect(host.textContent).toContain("Current order");
+  expect(host.textContent).toContain("Proposed order");
+  expect(host.textContent).toContain("Accept new price");
+  expect(host.textContent).toContain("Decline price and cancel order");
+  await click('[data-testid="button-decline-r"]');
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  await click('[data-testid="button-decline-r"]');
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(String(fetcher.mock.calls.find(([, init]) => init?.method === "POST")?.[1]?.body)).decision).toBe("cancelled");
+  expect(changed).toHaveBeenCalledOnce();
+  expect(cancelled).toHaveBeenCalledOnce();
+});
+it("does not offer cancellation for a paid or otherwise ineligible price proposal", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ enabled: true,
+    requests: [{ ...request, priceProposal: true, eligible: false, ineligibleReason: "Order already paid" }] })));
+  await render(MemberOrderRevision, { orderId: "o" });
+  expect(host.textContent).toContain("Dismiss proposal");
+  expect(host.textContent).not.toContain("Decline price and cancel order");
+  expect((host.querySelector('[data-testid="button-accept-r"]') as HTMLButtonElement).disabled).toBe(true);
 });
 it("prevents acceptance after payment or disabling while retaining decline", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ enabled: false,

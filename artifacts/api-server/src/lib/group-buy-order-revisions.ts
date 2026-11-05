@@ -59,6 +59,7 @@ async function protectionReason(database: any, order: any) {
 function publicRevision(row: any, order: any, group: any) {
   return { id: row.id, orderId: row.orderId, orderCode: order.code, member: order.telegramUsername,
     currency: group.currency, status: row.status, message: row.message, createdAt: row.createdAt,
+    priceProposal: row.proposal.kind === "price",
     decidedAt: row.decidedAt, before: { ...row.before, grandTotal: Number(row.before.grandTotal) },
     proposal: { ...row.proposal, grandTotal: Number(row.proposal.grandTotal) } };
 }
@@ -106,6 +107,8 @@ export async function setRevisionEnabled(id: string, actor: RevisionActor, value
   });
 }
 export async function createOrderRevisions(id: string, actor: RevisionActor, input: any, database: Database = db) {
+  if (input?.kind !== undefined && input.kind !== "price")
+    throw new RevisionError("Unknown change request type.");
   if (typeof input?.message !== "string" || !input.message.trim() || input.message.trim().length > 2000)
     throw new RevisionError("Add a message explaining the changes, up to 2000 characters.");
   if (!Array.isArray(input.changes) || !input.changes.length || input.changes.length > 500)
@@ -134,12 +137,15 @@ export async function createOrderRevisions(id: string, actor: RevisionActor, inp
         const old = before.items.find(l => l.id === item.id)!;
         return old.quantity !== item.quantity || old.unitPrice !== item.unitPrice;
       })) throw new RevisionError(`Order ${order.code} has no changes.`);
+      if (input.kind === "price" && proposal.items.some(item =>
+        item.quantity !== before.items.find(old => old.id === item.id)?.quantity))
+        throw new RevisionError(`Order ${order.code}: a price proposal cannot change quantities.`);
       await tx.update(revisions).set({ status: "withdrawn", decidedAt: new Date() })
         .where(and(eq(revisions.orderId, order.id), eq(revisions.status, "pending")));
       const revisionId = randomUUID();
       await tx.insert(revisions).values({ id: revisionId, groupBuyId: id, orderId: order.id,
         createdBy: actor.username, message: input.message.trim(), snapshotHash: revisionSnapshot(order, current, group),
-        before, proposal });
+        before, proposal: input.kind === "price" ? { ...proposal, kind: "price" as const } : proposal });
       created.push({ id: revisionId, orderId: order.id, username: order.telegramUsername, code: order.code });
     }
     return { created: created.length, notifications: created };
@@ -180,7 +186,8 @@ export async function memberPendingRevisions(username: string, database: Databas
 }
 export async function decideOrderRevision(orderId: string, revisionId: string, username: string,
   decision: unknown, database: Database = db) {
-  if (decision !== "accepted" && decision !== "declined") throw new RevisionError("Choose accept or decline.");
+  if (decision !== "accepted" && decision !== "declined" && decision !== "cancelled")
+    throw new RevisionError("Choose accept, decline, or cancel the price proposal.");
   const hint = await orderFor(database, orderId, username);
   return locked(database, hint.groupBuyId, async tx => {
     const order = await orderFor(tx, orderId, username, true);
@@ -191,6 +198,25 @@ export async function decideOrderRevision(orderId: string, revisionId: string, u
     if (!row) throw new RevisionError("Change request not found.", 404);
     if (row.status === decision) return { status: decision };
     if (row.status !== "pending") throw new RevisionError("This request has already been answered or replaced.", 409);
+    if (decision === "cancelled") {
+      if (row.proposal.kind !== "price") throw new RevisionError("Only a price proposal can cancel an order.", 409);
+      const reason = await protectionReason(tx, order);
+      if (reason) throw new RevisionError(reason, 409);
+      if (Number(order.creditsApplied ?? 0) > 0)
+        throw new RevisionError("This order used credits. Contact support to cancel it and return the credits safely.", 409);
+      await assertNoActiveRefund(tx, order.id);
+      const current = await tx.select().from(lines).where(eq(lines.orderId, order.id)).for("update");
+      if (revisionSnapshot(order, current, group) !== row.snapshotHash)
+        throw new RevisionError("Your order changed after the price proposal. Contact the organiser before cancelling.", 409);
+      // This exception intentionally allows an unpaid, unbatched price-rejection
+      // cancellation even after the group buy closes. Other deletions retain their gate.
+      const [cancelled] = await tx.update(orders).set({ deletedAt: new Date(), deletedBy: "customer" })
+        .where(refundMutableOrderWhere(and(eq(orders.id, order.id), isNull(orders.deletedAt),
+          eq(orders.paymentStatus, "unpaid")))).returning({ id: orders.id });
+      if (!cancelled) throw new RevisionError("Order payment or refund changed. The order was not cancelled.", 409);
+      await tx.update(revisions).set({ status: "cancelled", decidedAt: new Date() }).where(eq(revisions.id, row.id));
+      return { status: "cancelled", cancelled: true };
+    }
     if (decision === "declined") {
       await tx.update(revisions).set({ status: "declined", decidedAt: new Date() }).where(eq(revisions.id, row.id));
       return { status: "declined" };

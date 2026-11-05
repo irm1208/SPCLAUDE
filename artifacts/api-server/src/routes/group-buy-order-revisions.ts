@@ -64,7 +64,7 @@ router.post("/orders/:id/order-revisions/:revisionId/decision", requireAccount, 
     const result = await decideOrderRevision(String(req.params.id), String(req.params.revisionId),
       req.account!.telegramUsername, req.body?.decision);
     void writeLog("change", "info", "gb_order_revision_decision", "Member answered an order change request",
-      { orderId: req.params.id, revisionId: req.params.revisionId, member: req.account!.telegramUsername, status: result.status }).catch(() => {});
+      { orderId: req.params.id, revisionId: req.params.revisionId, member: req.account!.telegramUsername, status: result.status, cancelled: result.cancelled === true }).catch(() => {});
     res.status(result.status === "stale" ? 409 : 200).json(result);
   } catch (e) { fail(res, e); }
 });

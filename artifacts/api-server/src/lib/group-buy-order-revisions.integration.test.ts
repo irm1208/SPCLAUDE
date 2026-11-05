@@ -112,6 +112,38 @@ describe.skipIf(process.env.ORDER_REVISION_DB_TESTS !== "1")("own-stock revision
     expect((await f.order()).grandTotal).toBe("128.00");
     await expect(service.decideOrderRevision(f.orderId, id, f.member, "accepted", f.tx)).rejects.toThrow("answered");
   }));
+  it("cancels only its own unpaid price proposal, including after the group closes", async () => fixture(async f => {
+    await f.tx.update(store.ordersTable).set({ creditsApplied: 0 }).where(eq(store.ordersTable.id, f.orderId));
+    await service.setRevisionEnabled(f.groupId, f.actor, true, f.tx);
+    const proposal = { message: "Supplier price update", kind: "price", changes: [{
+      orderId: f.orderId, items: [
+        { id: f.ownLine, quantity: 2, unitPrice: 70 },
+        { id: f.otherLine, quantity: 1, unitPrice: 20 },
+      ],
+    }] };
+    const id = (await service.createOrderRevisions(f.groupId, f.actor, proposal, f.tx)).notifications[0].id;
+    expect((await service.memberOrderRevisions(f.orderId, f.member, f.tx)).requests[0].priceProposal).toBe(true);
+    await f.tx.update(store.groupBuysTable).set({ status: "closed" }).where(eq(store.groupBuysTable.id, f.groupId));
+    expect(await service.decideOrderRevision(f.orderId, id, f.member, "cancelled", f.tx)).toEqual({ status: "cancelled", cancelled: true });
+    expect((await f.order()).deletedAt).toBeTruthy();
+    expect((await f.order()).deletedBy).toBe("customer");
+  }));
+  it("rejects price cancellation after payment and leaves the order intact", async () => fixture(async f => {
+    await f.tx.update(store.ordersTable).set({ creditsApplied: 0 }).where(eq(store.ordersTable.id, f.orderId));
+    await service.setRevisionEnabled(f.groupId, f.actor, true, f.tx);
+    const id = (await service.createOrderRevisions(f.groupId, f.actor, { kind: "price", message: "New price",
+      changes: [{ orderId: f.orderId, items: [
+        { id: f.ownLine, quantity: 2, unitPrice: 70 }, { id: f.otherLine, quantity: 1, unitPrice: 20 },
+      ] }] }, f.tx)).notifications[0].id;
+    await f.tx.update(store.ordersTable).set({ paymentStatus: "confirmed" }).where(eq(store.ordersTable.id, f.orderId));
+    await expect(service.decideOrderRevision(f.orderId, id, f.member, "cancelled", f.tx)).rejects.toThrow(/unpaid/i);
+    expect((await f.order()).deletedAt).toBeNull();
+  }));
+  it("does not cancel an unrelated order-change request", async () => fixture(async f => {
+    const id = (await f.create()).notifications[0].id;
+    await expect(service.decideOrderRevision(f.orderId, id, f.member, "cancelled", f.tx)).rejects.toThrow(/price proposal/i);
+    expect((await f.order()).deletedAt).toBeNull();
+  }));
   it("rechecks paid and in-progress payments at acceptance", async () => fixture(async f => {
     const id = (await f.create()).notifications[0].id;
     for (const patch of [{ paymentStatus: "confirmed" }, { paymentStatus: "pending_confirmation" },

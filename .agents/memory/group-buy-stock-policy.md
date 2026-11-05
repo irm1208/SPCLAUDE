@@ -42,4 +42,10 @@ Keep organiser product pricing and CSV controls, but hide the large order-change
 
 **How to apply:** Show the order review only from “Review product price changes”; keep request history available without displaying the full editor by default.
 
+Rejecting a new price proposal should cancel the member’s own unpaid order, including after the group buy closes. This is an explicit exception to the normal closed-group cancellation rule, not a change to older non-price requests.
+
+**Why:** The user specifically chose “allow closed-group cancellation” for a member declining an organiser-negotiated new price. A decline that leaves the old order in place is not the desired choice.
+
+**How to apply:** Clearly explain and confirm the whole-order cancellation. Retain paid, partially paid, supplier-batch, refund and credit-value safeguards; never cancel unrelated revision requests.
+
 **How to apply:** Preserve that consent boundary in future bulk-edit, notification and payment work.
