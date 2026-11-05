@@ -10,6 +10,16 @@ Audit of 5 November 2026 (branch audit-fixes): 135 advisories across 40 packages
 5. Publish at a quiet time with nothing else merging that day and the previous deployment ready to switch back.
 6. Known pipeline issues to fix before Tier 1: `artifacts/api-server/src/routes/testmedaddy/*` imports `pg` which `artifacts/api-server/package.json` does not declare; `pdf-lib` is declared in peps-anonymous and must be installed before the site builds; the lockfile "overrides" must match package.json.
 
+## Baseline check on Replit (5 November 2026) and what was fixed
+Replit ran the diagnostic on the current code: Node 20.20.0, pnpm 10.15.1, lockfileVersion 9.0; `pnpm install --frozen-lockfile` PASSED without regenerating the lockfile; both builds PASSED. It found these pipeline gaps, now fixed on branch audit-fixes (commit "Pipeline baseline"):
+- Publishing (`scripts/deploy.sh`) used `pnpm install --no-frozen-lockfile`, so a publish could re-resolve dependencies. It now uses `--frozen-lockfile`.
+- No `packageManager` pin; now `pnpm@10.15.1` in the root package.json (the version Replit runs), so every environment installs identically.
+- `pg` was not declared by api-server although routes/testmedaddy import it; now declared. `vitest` was not declared by peps-anonymous although 58 test files import it; now declared. Lockfile updated minimally and proven to install frozen.
+- `lib/*/tsconfig.tsbuildinfo` were tracked, so a clean checkout believed the libraries were built when `dist/` was absent and `pnpm typecheck` reported 2,150 cascading errors. They are untracked and ignored; `tsc --build` now rebuilds the declarations from clean.
+- Vitest picked up node:test files (same `*.test.ts` naming) and reported 160 phantom "No test suite found" failures in the frontend and 3 in the API. Both packages now exclude node:test files from Vitest; the frontend run reports 102 real files.
+Still open and for the owner to decide: `artifacts/crypto-payment-kit` declares Node >= 22 while Replit runs Node 20 (a warning today; either move Replit to Node 22 or remove the example packages from the workspace); the pre-existing type errors (API about 130, frontend about 200, none blocking the build); the API health check could not be run on Replit without database access and should be done on a copy of the database or by watching the first deploy.
+Note on "same-major": `pnpm update -r` honours the declared ranges, so a range such as `*` or `>=x` could still cross a major. Tier 1 therefore ends with a check that no package changed its major version; the Tier 1 prompt includes it.
+
 ## Tier 1 packages (same major)
 dompurify (via jspdf), proxy-addr / body-parser / qs (via express), vite, multer, sharp, http-proxy-middleware, express-rate-limit, ip-address, @xmldom/xmldom (via mammoth), brace-expansion (via minimatch), follow-redirects, @tiptap/core and prosemirror-view, nanoid and postcss and source-map-js (via vite), tmp (via exceljs), fflate, axios (scripts), plus all build/test tooling (browserslist, svgo, js-yaml, markdown-it, fast-uri, vitest, @babel/core and friends).
 

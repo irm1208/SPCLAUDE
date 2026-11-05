@@ -145,7 +145,7 @@ Until step 4 is done the widget is hidden site-wide and users see only the deep-
 ## Dependency upgrades (read before touching package.json or pnpm-lock.yaml)
 - Follow `docs/dependency-upgrade-plan.md`. Same-major updates only (`pnpm update -r`), one branch, commit the lockfile, full build + typecheck + tests + API start before any publish. Never `--latest`, never regenerate the lockfile during a build or publish.
 - Major steps (pdfjs-dist 6, zod 4, drizzle-kit/esbuild, example-project packages) are one package per branch and need the owner's approval first.
-- Known gaps to fix first: `routes/testmedaddy` imports `pg` which api-server does not declare; `pdf-lib` must be installed before the frontend builds; the lockfile `overrides` must match package.json so `pnpm install --frozen-lockfile` passes.
+- Baseline fixed on 5 Nov 2026: `packageManager` pinned to pnpm@10.15.1; `scripts/deploy.sh` installs with `--frozen-lockfile`; `pg` and `vitest` declared where imported; `lib/*/tsconfig.tsbuildinfo` untracked (run `pnpm run typecheck:libs` before package typechecks); Vitest excludes node:test files. Open: crypto-payment-kit wants Node >= 22 while Replit runs Node 20 (owner decision).
 
 ## Gotchas
 
