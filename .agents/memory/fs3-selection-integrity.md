@@ -38,11 +38,11 @@ A missing modern product supplier ID does not mean the supplier is unknown: olde
 **How to apply:** Keep ownership resolution consistent across exports, summary and selected-order margins, P&L and batch sheets; test inherited supplier identities, not only modern catalogue offers.
 ## Supplier downloads versus vendor submission
 
-FS3 order TXT downloads must not be blocked by missing customer contact details, unpaid member orders, outstanding balances, unrecorded organiser platform payments, or shipped/completed status. Include available contact details and clearly label missing fields, rather than inventing them. Keep actual vendor-portal submission validation separate.
+FS3 order TXT downloads must not be blocked by missing customer contact details, unpaid member orders, outstanding balances, unrecorded organiser platform payments, shipped/completed status, or an outdated vendor-portal submission snapshot. Include available contact details and clearly label missing fields, rather than inventing them. Keep actual vendor-portal submission validation separate.
 
 **Why:** The user repeatedly needs the downloaded orders to send to the supplier, explicitly rejected a missing-email blocker, and said “I want to be able to download any order whether paid or unpaid.”
 
-**How to apply:** Do not reuse strict submission contact requirements for an Admin export. Preserve supplier cost, shipping calculation and vendor-isolation safeguards.
+**How to apply:** Do not reuse strict submission requirements for an Admin export. If a committed vendor snapshot is outdated, export current details read-only; never automatically recall, overwrite or resubmit the vendor shipment to unblock a download. Preserve supplier cost, shipping calculation and vendor-isolation safeguards.
 
 ## Preserve the supplier TXT layout
 

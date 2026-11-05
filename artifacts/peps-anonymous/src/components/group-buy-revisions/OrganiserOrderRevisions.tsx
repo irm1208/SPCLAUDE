@@ -73,6 +73,9 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
   const [message, setMessage] = useState("");
   const [editing, setEditing] = useState(false);
   const [reviewedPrices, setReviewedPrices] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sentNotice, setSentNotice] = useState("");
   const seq = useRef(0);
   const activeController = useRef<AbortController | null>(null);
   const actionController = useRef<AbortController | null>(null);
@@ -120,6 +123,9 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
     setLoading(true);
     setEditing(false);
     setReviewedPrices(null);
+    setReviewOpen(false);
+    setHistoryOpen(false);
+    setSentNotice("");
     setBusy(null);
     const controller = new AbortController();
     activeController.current = controller;
@@ -197,7 +203,7 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
       const draft = draftLine(order.id, item);
       return draft.quantity !== item.quantity || draft.unitPrice !== item.unitPrice;
     }));
-    if (hasUnsentEdits && !window.confirm("Replace unsent order-line edits with these product prices? Original quantities will be preserved.")) return;
+    if (hasUnsentEdits && reviewedPrices === null && !window.confirm("Replace unsent order-line edits with these product prices? Original quantities will be preserved.")) return;
     const affectedIds = new Set(affected.map(order => order.id));
     setDrafts(Object.fromEntries(view.orders.flatMap(order => order.items.map(item => [
       `${order.id}:${item.id}`,
@@ -206,6 +212,8 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
     ]))));
     setSelectedOrders([...affectedIds]);
     setReviewedPrices(priceDraftKey);
+    setReviewOpen(true);
+    setSentNotice("");
     setEditing(true);
     setActionError(null);
   };
@@ -276,6 +284,8 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
       setSelectedOrders([]);
       setEditing(false);
       setReviewedPrices(null);
+      setReviewOpen(false);
+      if (pricing) setSentNotice(`Sent ${changes.length} price confirmation request${changes.length === 1 ? "" : "s"}.`);
       if (reviewedPrices !== null) pricing?.clear();
       await refresh();
     } catch (error) {
@@ -359,20 +369,21 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
   if (!view || !view.eligible) return null;
 
   return (
-    <section className="space-y-4 rounded-xl p-4 sm:p-5" style={cardStyle} aria-labelledby="organiser-order-revisions-title">
+    <section className={pricing ? "space-y-3 rounded-xl p-3" : "space-y-4 rounded-xl p-4 sm:p-5"} style={cardStyle} aria-labelledby="organiser-order-revisions-title">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg" style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}>
+          {!pricing && <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg" style={{ background: "var(--t-blue-08)", color: "var(--t-blue)" }}>
             <SlidersHorizontal size={17} />
-          </span>
+          </span>}
           <div>
-            <h2 id="organiser-order-revisions-title" className="text-base font-extrabold tracking-tight">Order change requests</h2>
-            <p className="mt-0.5 text-xs leading-relaxed" style={mutedStyle}>Propose a correction. Members confirm before anything changes.</p>
+            <h2 id="organiser-order-revisions-title" className="text-base font-extrabold tracking-tight">{pricing ? "Price proposals" : "Order change requests"}</h2>
+            {!pricing && <p className="mt-0.5 text-xs leading-relaxed" style={mutedStyle}>Propose a correction. Members confirm before anything changes.</p>}
           </div>
         </div>
         <button
           type="button"
           role="switch"
+          aria-label={pricing ? "Enable member-confirmed price proposals" : "Enable order change requests"}
           aria-checked={view.enabled}
           disabled={busy === "toggle"}
           onClick={() => void toggleEnabled(!view.enabled)}
@@ -384,6 +395,7 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
           {view.enabled ? "On" : "Off"}
         </button>
       </header>
+      {sentNotice && <p role="status" className="text-xs" style={mutedStyle}>{sentNotice}</p>}
 
       {!view.enabled && <p className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ ...insetStyle, ...mutedStyle }}>
         Turn this on to request member confirmation for corrections to your products. No live order changes happen here.
@@ -397,9 +409,9 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
       </div>}
 
       {view.enabled && <>
-        <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: "rgba(233,160,32,.10)", border: "1px solid rgba(233,160,32,.22)", color: "var(--t-muted)" }}>
+        {(!pricing || reviewOpen) && <div className="rounded-lg px-3 py-2.5 text-xs leading-relaxed" style={{ background: "rgba(233,160,32,.10)", border: "1px solid rgba(233,160,32,.22)", color: "var(--t-muted)" }}>
           Paid orders, supplier-batched orders and orders with an active payment attempt cannot be changed. The member’s original order stays in place until they accept.
-        </div>
+        </div>}
 
         {pricing && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3" style={{ borderColor: "var(--t-border)" }}>
           <div className="text-xs">
@@ -413,12 +425,18 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
             className="rounded-lg px-3 py-2 text-xs font-bold text-white disabled:opacity-40" style={{ background: "var(--t-blue-deep)" }} data-testid="review-product-prices">Review product price changes</button>
         </div>}
 
+        {(!pricing || reviewOpen) && <div data-testid={pricing ? "price-confirmation-review" : undefined} className="space-y-4">
         <div className="space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
-              <p className="text-xs font-extrabold">1. Choose orders and adjust your product lines</p>
-              <p className="mt-0.5 text-[11px]" style={mutedStyle}>Quantity can only go down; set it to zero to mark unavailable.</p>
+              <p className="text-xs font-extrabold">{pricing ? "Review affected unpaid orders" : "1. Choose orders and adjust your product lines"}</p>
+              <p className="mt-0.5 text-[11px]" style={mutedStyle}>{pricing ? "Check the new prices and totals. Original quantities are preserved." : "Quantity can only go down; set it to zero to mark unavailable."}</p>
             </div>
+            {pricing && <button type="button" disabled={!!busy} data-testid="close-price-review"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold disabled:opacity-50" style={mutedStyle}
+              onClick={() => { setReviewOpen(false); setReviewedPrices(null); setDrafts(null); setSelectedOrders([]); setEditing(false); setActionError(null); }}>
+              <X size={13} /> Close review
+            </button>}
             <button type="button" onClick={() => void refresh()} disabled={!!busy || loading} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-semibold disabled:opacity-50" style={mutedStyle}>
               <RefreshCw size={13} /> Refresh
             </button>
@@ -426,7 +444,10 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
 
           {eligibleOrders.length === 0 ? <div className="rounded-lg px-3 py-4 text-sm" style={{ ...insetStyle, ...mutedStyle }}>No eligible orders to revise yet.</div> :
             <div className="space-y-2">
-              {view.orders.map(order => {
+              {view.orders.filter(order => !pricing || order.items.some(item => {
+                const draft = draftLine(order.id, item);
+                return draft.quantity !== item.quantity || draft.unitPrice !== item.unitPrice;
+              })).map(order => {
                 const ownLines = order.items.filter(item => view.products.some(product => product.id === item.productId));
                 const chosen = selectedOrders.includes(order.id);
                 const hasDraftChange = ownLines.some(item => {
@@ -470,14 +491,14 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
                         </div>
                         <label className="block text-[9px] font-bold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>
                           Qty
-                          <input type="number" min={0} max={item.quantity} step={0.5} value={own ? draft.quantity : item.quantity} disabled={!own || !chosen || !!busy}
+                          <input type="number" min={0} max={item.quantity} step={0.5} readOnly={!!pricing} value={own ? draft.quantity : item.quantity} disabled={!own || !chosen || !!busy}
                             onChange={event => updateLine(order, item, "quantity", Number(event.target.value))}
                             className="mt-1 h-8 w-full rounded-md px-2 text-xs font-medium tabular-nums outline-none focus:ring-2 focus:ring-[#2D6BCC]/30 disabled:opacity-60" style={fieldStyle}
                             aria-label={`Quantity for ${item.productName} in order ${order.code}`} data-testid={`input-quantity-${item.id}`} />
                         </label>
                         <label className="block text-[9px] font-bold uppercase tracking-wide" style={{ color: "var(--t-subtle)" }}>
                           Unit price
-                          <input type="number" min={0} step="0.01" value={own ? draft.unitPrice : item.unitPrice} disabled={!own || !chosen || !!busy}
+                          <input type="number" min={0} step="0.01" readOnly={!!pricing} value={own ? draft.unitPrice : item.unitPrice} disabled={!own || !chosen || !!busy}
                             onChange={event => updateLine(order, item, "unitPrice", Number(event.target.value))}
                             className="mt-1 h-8 w-full rounded-md px-2 text-xs font-medium tabular-nums outline-none focus:ring-2 focus:ring-[#2D6BCC]/30 disabled:opacity-60" style={fieldStyle}
                             aria-label={`Unit price for ${item.productName} in order ${order.code}`} data-testid={`input-unit-price-${item.id}`} />
@@ -491,7 +512,7 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
             </div>}
         </div>
 
-        {eligibleOrders.length > 0 && <div className="space-y-3 rounded-lg p-3" style={{ ...insetStyle }}>
+        {!pricing && eligibleOrders.length > 0 && <div className="space-y-3 rounded-lg p-3" style={{ ...insetStyle }}>
           <div>
             <p className="text-xs font-extrabold">2. Apply one change across orders</p>
             <p className="mt-0.5 text-[11px]" style={mutedStyle}>Only applies to the selected orders and your product lines.</p>
@@ -535,7 +556,7 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
 
         <form onSubmit={submitProposal} className="space-y-3 border-t pt-4" style={{ borderColor: "var(--t-border)" }}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-extrabold">3. Add a note for the member</p>
+            <p className="text-xs font-extrabold">{pricing ? "Add a note for the member" : "3. Add a note for the member"}</p>
             <span className="text-[11px] font-semibold" style={mutedStyle}>{changes.length} order{changes.length === 1 ? "" : "s"} with changes · {new Set(changes.map(change => view.orders.find(order => order.id === change.orderId)?.telegramUsername.toLowerCase().replace(/^@/, ""))).size} recipients</span>
           </div>
           <p className="text-[11px]" style={mutedStyle}>The member will see the before and proposed order totals, plus your note.</p>
@@ -551,9 +572,14 @@ export function OrganiserOrderRevisions({ groupBuyId, pricing }: { groupBuyId: s
             </button>
           </div>
         </form>
+        </div>}
       </>}
 
-      {view.requests.length > 0 && <div className="space-y-2 border-t pt-4" style={{ borderColor: "var(--t-border)" }}>
+      {pricing && view.requests.length > 0 && <button type="button" aria-expanded={historyOpen} onClick={() => setHistoryOpen(current => !current)}
+        className="inline-flex items-center gap-2 text-xs font-semibold" style={{ color: "var(--t-blue)" }} data-testid="toggle-price-request-history">
+        <Clock3 size={14} /> Request history ({view.requests.length}) <ChevronDown size={13} />
+      </button>}
+      {view.requests.length > 0 && (!pricing || historyOpen) && <div className="space-y-2 border-t pt-4" style={{ borderColor: "var(--t-border)" }}>
         <div className="flex items-center gap-2">
           <Clock3 size={14} style={{ color: "var(--t-blue)" }} />
           <p className="text-xs font-extrabold">Recent requests</p>

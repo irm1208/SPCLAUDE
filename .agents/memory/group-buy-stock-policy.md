@@ -36,4 +36,10 @@ Negotiated prices must remain separate from live catalogue prices, including whe
 
 **How to apply:** CSV price updates match existing own-stock products, never create duplicates, and feed the same member-confirmation process as manual proposals.
 
+Keep organiser product pricing and CSV controls, but hide the large order-change panel until the organiser explicitly opens the price confirmation review.
+
+**Why:** The user chose “Keep pricing, hide this panel.”
+
+**How to apply:** Show the order review only from “Review product price changes”; keep request history available without displaying the full editor by default.
+
 **How to apply:** Preserve that consent boundary in future bulk-edit, notification and payment work.

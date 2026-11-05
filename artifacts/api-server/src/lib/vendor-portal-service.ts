@@ -197,11 +197,16 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
     const [existing] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.sourceKey, sourceKey)).for("update");
     if (existing) {
       if (existing.vendorId !== vendorId) throw new VendorPortalError("This shipment is already submitted to another vendor.", 409);
-      if (existing.sourceFingerprint !== source.fingerprint) throw new VendorPortalError("This submission is stale. Recall it in Admin before resubmitting.", 409);
-      prepared.push({ ...existing, alreadySubmitted: true,
-        ...(purpose === "export" ? supplierTextDetails(String(source.orders[0]?.telegramUsername ?? ""), existing.snapshot, vendor) : {}),
-      });
-      continue;
+      const stale = existing.sourceFingerprint !== source.fingerprint;
+      if (stale && purpose === "submission") throw new VendorPortalError("This submission is stale. Recall it in Admin before resubmitting.", 409);
+      if (!stale) {
+        prepared.push({ ...existing, alreadySubmitted: true,
+          ...(purpose === "export" ? supplierTextDetails(String(source.orders[0]?.telegramUsername ?? ""), existing.snapshot, vendor) : {}),
+        });
+        continue;
+      }
+      // A read-only download uses current order details without recalling or
+      // overwriting the committed vendor snapshot. Real resubmission stays blocked.
     }
     if (purpose === "submission" && source.orders.some(o => ["Shipped", "Completed"].includes(o.status))) throw new VendorPortalError("An already shipped or completed order cannot be submitted as a new supplier shipment.", 409);
     const distinctCosts = supplierCatalogueCosts(source.items, source.products, costs, costMatches);
@@ -220,7 +225,7 @@ export async function prepareVendorShipments(tx: Executor, vendorId: string, ord
       id: sourceKey, sourceKey, reference: source.reference, vendorId,
       sharedOrderId: source.share?.id ?? null, orderIds: source.orderIds,
       sourceFingerprint: source.fingerprint, snapshot, status: "Submitted", submittedAt: null,
-      trackingNumber: null, carrier: null, alreadySubmitted: false,
+      trackingNumber: null, carrier: null, alreadySubmitted: !!existing,
       ...(purpose === "export" ? supplierTextDetails(String(source.orders[0]?.telegramUsername ?? ""), snapshot, vendor) : {}),
     });
   }

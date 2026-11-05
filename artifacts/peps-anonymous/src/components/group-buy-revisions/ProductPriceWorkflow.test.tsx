@@ -51,6 +51,8 @@ async function input(selector: string, value: string) {
 }
 it.each([true, false])("stages manual product prices and sends only unpaid orders in dashboard V2=%s", async v2 => {
   await render(v2);
+  expect(host.textContent).not.toContain("Order change requests");
+  expect(host.querySelector('[data-testid="input-revision-message"]')).toBeNull();
   expect(host.querySelector('[data-testid="product-new-price-own"]')).not.toBeNull();
   await input('[data-testid="product-new-price-own"]', "40");
   expect(sent).toBeUndefined();
@@ -59,6 +61,21 @@ it.each([true, false])("stages manual product prices and sends only unpaid order
   await input('[data-testid="input-revision-message"]', "Supplier negotiated a lower price");
   await act(async () => host.querySelector('[data-testid="button-send-revision"]')!.closest("form")!.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true })));
   expect(sent.changes).toEqual([{ orderId: "order", items: [{ id: "line", quantity: 2, unitPrice: 40 }] }]);
+  expect(host.querySelector('[data-testid="input-revision-message"]')).toBeNull();
+});
+it.each([true, false])("opens review on demand and closes it without losing staged prices in dashboard V2=%s", async v2 => {
+  await render(v2);
+  expect(host.querySelector('[data-testid="price-update-csv"]')).not.toBeNull();
+  await input('[data-testid="product-new-price-own"]', "40");
+  expect(host.querySelector('[data-testid="input-revision-message"]')).toBeNull();
+  await click('[data-testid="review-product-prices"]');
+  expect(host.querySelector('[data-testid="input-revision-message"]')).not.toBeNull();
+  await click('[data-testid="close-price-review"]');
+  expect(host.querySelector('[data-testid="input-revision-message"]')).toBeNull();
+  expect((host.querySelector('[data-testid="product-new-price-own"]') as HTMLInputElement).value).toBe("40");
+  await click('[data-testid="review-product-prices"]');
+  expect(host.querySelector('[data-testid="input-revision-message"]')).not.toBeNull();
+  expect(sent).toBeUndefined();
 });
 it.each([true, false])("previews CSV without writes and clears drafts on group switch in dashboard V2=%s", async v2 => {
   await render(v2);
