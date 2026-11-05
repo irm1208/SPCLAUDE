@@ -233,7 +233,8 @@ export function CoaRequests({ secret, groupBuyId }: { secret: string; groupBuyId
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [batch, setBatch] = useState("");
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"csv" | "txt" | null>(null);
+  const exportAbort = useRef<AbortController | null>(null);
   const q = coaAdminQuery({ groupBuyId: groupBuyId ?? gb, search, status, batch });
 
   const scope = groupBuyId ?? gb;
@@ -261,27 +262,41 @@ export function CoaRequests({ secret, groupBuyId }: { secret: string; groupBuyId
   }, [scope, secret]);
   useEffect(() => { const t = setTimeout(() => void load(), 250); return () => { clearTimeout(t); }; }, [load]);
   useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => {
+    setExporting(null);
+    return () => exportAbort.current?.abort();
+  }, [q, secret]);
 
-  const exportCsv = async () => {
-    setExporting(true);
+  const exportFile = async (format: "csv" | "txt") => {
+    exportAbort.current?.abort();
+    const ac = new AbortController(); exportAbort.current = ac;
+    setExporting(format); setError(null);
     try {
-      const res = await fetch(`/api/admin/coa/export.csv${q}`, { credentials: "include", headers: { "x-admin-secret": secret } });
+      const query = format === "txt" ? coaAdminQuery({ groupBuyId: scope, search, batch }) : q;
+      const res = await fetch(`/api/admin/coa/export.${format}${query}`, { signal: ac.signal, credentials: "include", headers: { "x-admin-secret": secret } });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? "Export failed.");
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a"); a.href = url; a.download = "coa-requests.csv"; a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) { setError(e instanceof Error ? e.message : "Export failed."); }
-    setExporting(false);
+      const blob = await res.blob();
+      if (ac.signal.aborted) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = format === "txt" ? "coa-paid.txt" : "coa-requests.csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { if (!ac.signal.aborted) setError(e instanceof Error ? e.message : "Export failed."); }
+    finally { if (exportAbort.current === ac) setExporting(null); }
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <FileCheck2 className="w-5 h-5 text-[#1B3A7A]" />
         <div className="flex-1"><h2 className="font-bold text-base">COA requests</h2>
           <p className="text-xs text-muted-foreground">Lab certificate requests. Fees are separate from order totals.</p></div>
         <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5"><RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />Refresh</Button>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting} className="gap-1.5">{exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}CSV</Button>
+        <Button variant="outline" size="sm" onClick={() => void exportFile("csv")} disabled={!!exporting} className="gap-1.5">{exporting === "csv" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}CSV</Button>
+        <Button variant="outline" size="sm" onClick={() => void exportFile("txt")} disabled={!!exporting} className="gap-1.5"
+          title="Paid, processing and completed COAs. Uses group, search and batch filters, regardless of the status dropdown.">
+          {exporting === "txt" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}Export paid COAs as TXT
+        </Button>
       </div>
 
       {groupBuyId && data && (

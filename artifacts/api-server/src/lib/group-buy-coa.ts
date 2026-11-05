@@ -39,6 +39,9 @@ async function lockGroup(tx: any, id: string) {
 }
 async function config(tx: any, id: string) {
   const [row] = await tx.select().from(settings).where(eq(settings.groupBuyId, id));
+  return configFromRow(row);
+}
+function configFromRow(row: typeof settings.$inferSelect | undefined | null) {
   return row ? { mode: row.mode, fee: Number(row.fee), currency: row.currency, cap: row.cap,
     rails: row.rails, manualInstructions: row.manualInstructions } : { ...EMPTY_COA_CONFIG };
 }
@@ -69,10 +72,16 @@ function serialise(r: RequestRow | undefined, order: any, group: any, admin = fa
   return admin ? { ...row, certificate: publicRow.certificate } : publicRow;
 }
 async function memberView(tx: any, order: any) {
-  const cfg = await config(tx, order.groupBuyId);
-  const request = await orderRequest(tx, order.id);
-  const [group] = await tx.select({ name: groups.name }).from(groups).where(eq(groups.id, order.groupBuyId));
-  const available = Math.max(0, cfg.cap - await commitments(tx, order.groupBuyId));
+  // Read settings + group together, and reuse the capacity rows for the current
+  // request. Avoid re-reading the same request/config on every mutation response.
+  const [info] = await tx.select({ group: { name: groups.name }, settings })
+    .from(groups).leftJoin(settings, eq(settings.groupBuyId, groups.id))
+    .where(eq(groups.id, order.groupBuyId));
+  if (!info) throw new CoaError("Group buy not found.", 404);
+  const cfg = configFromRow(info.settings);
+  const all: RequestRow[] = await tx.select().from(requests).where(eq(requests.groupBuyId, order.groupBuyId));
+  const request = all.find(r => r.orderId === order.id);
+  const available = Math.max(0, cfg.cap - all.filter(r => holdsCoaPlace(r)).length);
   const hasPlace = !!request && holdsCoaPlace(request);
   const eligible = !!activeOrder(order) && coaCanClaim(cfg.mode, available, hasPlace);
   const reason = !activeOrder(order) ? "This order is no longer eligible for a new COA request."
@@ -81,10 +90,18 @@ async function memberView(tx: any, order: any) {
   // Committed price and instructions survive later setting changes/closure.
   const shownConfig = request
     ? { ...cfg, fee: Number(request.fee), currency: request.currency, rails: request.rails, manualInstructions: request.manualInstructions } : cfg;
-  return { eligible, reason, available, config: shownConfig, request: serialise(request, order, group) };
+  return { eligible, reason, available, config: shownConfig, request: serialise(request, order, info.group) };
 }
 export async function getMemberCoa(orderId: string, username: string, database = db) {
-  return database.transaction(async tx => memberView(tx, await owned(tx, orderId, username)));
+  // Status polling must not lock the whole group or the product order, or expire
+  // reservations. holdsCoaPlace/effectiveStatus already handle expiry for reads.
+  // Every mutation still uses owned()/lockGroup() to serialize capacity/payment.
+  const [order] = await database.select().from(orders).where(eq(orders.id, orderId));
+  if (!order || !order.groupBuyId || canonical(order.telegramUsername) !== canonical(username))
+    throw new CoaError("Order not found.", 404);
+  if (["wholesale", "wholesale_shared"].includes(order.orderType ?? ""))
+    throw new CoaError("COAs are available on group-buy orders only.", 404);
+  return memberView(database, order);
 }
 /** No signed/public URLs: ownership is resolved from the live order on every download. */
 export async function downloadCoaCertificate(orderId: string, username: string, database = db,

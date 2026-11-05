@@ -205,6 +205,19 @@ describe.skipIf(process.env.COA_DB_TESTS !== "1")("COA final-place concurrency",
       await store.db.insert(store.ordersTable).values(ids.map((id, i) => ({ id, code: `test-coa-race-${i}`, groupBuyId: group,
         telegramUsername: users[i], deliveryMethod: "Synthetic", productSubtotal: "1", grandTotal: "1" })));
       await store.db.insert(store.groupBuyCoaSettingsTable).values({ ...cfg, fee: "25", groupBuyId: group, cap: 1 });
+      // A status read must not queue behind an unrelated group-row writer.
+      // Capacity mutations below must still serialize for the final place.
+      await store.db.transaction(async tx => {
+        await tx.select().from(store.groupBuysTable).where(eq(store.groupBuysTable.id, group)).for("update");
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const view = await Promise.race([
+            getMemberCoa(ids[0], users[0]),
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("COA status waited for a write lock")), 3000); }),
+          ]);
+          expect(view.available).toBe(1);
+        } finally { clearTimeout(timer); }
+      });
       const result = await Promise.allSettled(ids.map((id, i) => saveMemberCoa(id, users[i], details)));
       expect(result.filter(r => r.status === "fulfilled")).toHaveLength(1);
       expect((await adminCoaList({ groupBuyId: group })).committed).toBe(1);

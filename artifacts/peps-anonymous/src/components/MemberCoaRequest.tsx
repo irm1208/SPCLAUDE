@@ -66,8 +66,12 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
     } catch (e) {
       if (id !== seq.current) return;
       setError(e instanceof Error ? e.message : "Request failed.");
-      // Refresh status but keep typed inputs intact
-      try { const v = await coaApi<CoaMemberView>(`/orders/${orderId}/coa`); if (id === seq.current) setView(v); } catch { /* keep current */ }
+      // Show the failure immediately; a slow refresh must not keep the action
+      // spinner running. Ignore it if the member starts another action/navigates.
+      setBusy(null);
+      void coaApi<CoaMemberView>(`/orders/${orderId}/coa`)
+        .then(v => { if (id === seq.current) setView(v); })
+        .catch(() => { /* Preserve the visible error and typed inputs. */ });
     }
     if (id === seq.current) setBusy(null);
   };
@@ -128,6 +132,14 @@ export function MemberCoaRequest({ orderId }: { orderId: string }) {
         <ChevronDown aria-hidden="true" className="w-4 h-4 mt-1 shrink-0 transition-transform group-open/coa:rotate-180" />
       </summary>
       <div className="space-y-4 pt-4">
+      {busy && (
+        <p role="status" aria-live="polite" className="text-xs font-semibold" style={{ color: "var(--t-blue)" }}>
+          {busy === "details" ? (req ? "Saving COA details…" : "Reserving your COA place…")
+            : busy === "instr" ? "Preparing your payment instructions…"
+            : busy === "pay" || busy === "verify" ? "Saving and checking your payment. Blockchain confirmation may take a little longer…"
+            : "Updating your COA request…"}
+        </p>
+      )}
 
       {req?.status === "completed" && (
         <div className="rounded-md p-3 space-y-2" style={{ background: "var(--t-bg)", border: "1px solid var(--t-border)" }}>

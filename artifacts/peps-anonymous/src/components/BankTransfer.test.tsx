@@ -78,6 +78,11 @@ test("bank settings, copy details and payment claim work without ever confirming
     assert.doesNotMatch(container.textContent!, /Payment Confirmed/);
     await act(async () => root.render(React.createElement(PaymentPanel, { ...props, key: "euro-order", currency: "EUR" })));
     assert.match(container.textContent!, /Amount to pay: EUR 125\.50/);
+    posts.length = 0;
+    await act(async () => root.render(React.createElement(PaymentPanel,
+      { ...props, key: "paid-order", paymentStatus: "confirmed" })));
+    assert.equal(posts.filter(p => p.url.endsWith("/lock-usdt-rate")).length, 0,
+      "Already-paid orders must not start another rate-lock request while members reserve a COA");
   } finally {
     await act(async () => root.unmount());
     globalThis.fetch = originalFetch;

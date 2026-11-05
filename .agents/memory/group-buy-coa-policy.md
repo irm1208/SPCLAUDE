@@ -11,6 +11,12 @@ COA requests apply to all group-buy orders, not wholesale, shared wholesale or T
 
 An invitation reserves capacity; submitting its details does not reserve a second place. Submitted payment evidence must survive expiry and cannot silently free a place. A late payment for an already expired place requires Admin review and available capacity before confirmation.
 
+Read-only COA availability is advisory, not a reservation. It should not take capacity/write locks; the reservation/payment mutation must revalidate under the existing locks.
+
+**Why:** A temporarily stale place count is preferable to making members wait behind unrelated writes just to see their COA status. Only the committed mutation grants a place.
+
+**How to apply:** Preserve exact capacity enforcement on writes and never optimistically display a reserved or paid result before the server commits it.
+
 **Why:** Public signup and Admin invitations must not oversubscribe the same limited places or lose a member's payment evidence.
 
 **How to apply:** Serialize capacity-changing operations per group buy. Never release or erase paid/evidence-bearing requests as a cleanup action.

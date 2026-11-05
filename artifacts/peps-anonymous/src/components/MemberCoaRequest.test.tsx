@@ -66,9 +66,12 @@ test("closed requests show an explanation and no reserve action", async () => {
 });
 test("all four details are required and failed submission preserves what the member typed", async () => {
   let payload: any;
+  let reads = 0;
+  let finishRefresh!: (response: Response) => void;
+  const refresh = new Promise<Response>(resolve => { finishRefresh = resolve; });
   globalThis.fetch = async (_url, opts) => {
     if (opts?.method === "POST") { payload = JSON.parse(String(opts.body)); return json({ error: "Synthetic temporary failure" }, 503); }
-    return json(blank);
+    return ++reads === 1 ? json(blank) : refresh;
   };
   await render();
   const button = Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes("Reserve COA"))!;
@@ -80,6 +83,8 @@ test("all four details are required and failed submission preserves what the mem
   assert.deepEqual(payload, { client: "My client", sample: "My sample", manufacturer: "My manufacturer", batch: "My batch" });
   assert.match(container.textContent!, /Synthetic temporary failure/);
   assert.equal(container.querySelector("input")!.value, "My client");
+  assert.equal(button.disabled, false, "A pending status refresh must not prolong the failed-action spinner");
+  await act(async () => { finishRefresh(json(blank)); });
 });
 test("a saved manual payment reference stays under review and never claims to be paid", async () => {
   const submitted = request({ status: "review", reference: "synthetic-bank-ref", verificationMessage: "Awaiting Admin receipt confirmation" });

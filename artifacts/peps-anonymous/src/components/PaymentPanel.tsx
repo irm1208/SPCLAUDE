@@ -504,7 +504,9 @@ export default function PaymentPanel({
   // must never display or send a guessed amount for volatile coins.
   const [rateReady, setRateReady] = useState(false);
   const loadRate = useCallback(() => {
-    if (!apiBase) return;
+    // A paid receipt needs no new exchange-rate lock. In particular, opening
+    // COA checkout must not start unrelated product-payment writes in parallel.
+    if (!apiBase || initStatus === "confirmed") return;
     setRateLoading(true);
     setRateUnavailable(false);
     setRateReady(false);
@@ -540,7 +542,7 @@ export default function PaymentPanel({
       })
       .catch(() => { setRateUnavailable(true); })
       .finally(() => setRateLoading(false));
-  }, [apiBase, pickedOption]);
+  }, [apiBase, pickedOption, initStatus]);
   useEffect(() => { loadRate(); }, [loadRate]);
   const usdTotal = lockedUsdTotal ?? grandTotal;
   // Credits are always in USD — deduct from the USD payment side after conversion

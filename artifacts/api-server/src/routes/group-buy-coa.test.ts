@@ -115,7 +115,7 @@ describe("COA route boundaries and export", () => {
     expect((await fetch(base + "/admin/coa/r1/certificate", { method: "POST", headers: { "x-test-admin": "yes" } })).status).toBe(400);
   });
   it("never allows a member session to read the Admin queue or CSV", async () => {
-    for (const path of ["/admin/coa", "/admin/coa/export.csv"])
+    for (const path of ["/admin/coa", "/admin/coa/export.csv", "/admin/coa/export.txt"])
       expect((await fetch(base + path, { headers: { "x-test-member": "owner" } })).status).toBe(401);
   });
   it("exports the exact filters and neutralises spreadsheet formulas", async () => {
@@ -127,5 +127,31 @@ describe("COA route boundaries and export", () => {
     expect(csv).toContain(`"'@formula"`);
     expect(csv).toContain("Admin only");
     expect(calls.admin).toHaveBeenLastCalledWith({ groupBuyId: "g1", batch: "lot", search: "owner", status: "paid" });
+  });
+  it("exports paid COAs as numbered TXT blocks without financial or internal details", async () => {
+    const fields = { client: "OmniQure", sample: "HGH 36IU", manufacturer: "OmniQure", batch: "HG20",
+      internalNotes: "PRIVATE", txHash: "PRIVATE_TX" };
+    calls.admin.mockResolvedValueOnce({ requests: [
+      { ...fields, member: "@first", status: "paid" },
+      { ...fields, member: "unpaid", status: "reserved" },
+      { ...fields, member: "second", status: "processing", client: "OQ1", manufacturer: "OQ1", batch: "HG19" },
+      { ...fields, member: "review", status: "review" },
+      { ...fields, member: "third", status: "completed", sample: "HGH\n36IU" },
+    ] } as any);
+    const response = await fetch(base + "/admin/coa/export.txt?groupBuyId=g1&batch=HG&search=HGH&status=reserved", { headers: { "x-test-admin": "yes" } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(response.headers.get("content-disposition")).toContain("coa-paid.txt");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const text = await response.text();
+    expect(text).toBe("COA 1\n@first\nClient: OmniQure\nSample: HGH 36IU\nManufacturer: OmniQure\nBatch: HG20\n\nCOA 2\n@second\nClient: OQ1\nSample: HGH 36IU\nManufacturer: OQ1\nBatch: HG19\n\nCOA 3\n@third\nClient: OmniQure\nSample: HGH 36IU\nManufacturer: OmniQure\nBatch: HG20\n");
+    expect(text).not.toMatch(/PRIVATE|unpaid|review/);
+    expect(calls.admin).toHaveBeenLastCalledWith({ groupBuyId: "g1", batch: "HG", search: "HGH", status: undefined });
+  });
+  it("does not download an empty TXT when no paid requests match", async () => {
+    calls.admin.mockResolvedValueOnce({ requests: [{ member: "unpaid", status: "reserved" }] } as any);
+    const response = await fetch(base + "/admin/coa/export.txt", { headers: { "x-test-admin": "yes" } });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "No paid COA requests match these filters." });
   });
 });

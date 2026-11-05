@@ -82,6 +82,24 @@ router.get("/admin/coa/export.csv", async (req, res) => {
     res.type("text/csv").attachment("group-buy-coa-requests.csv").send("\uFEFF" + csv);
   } catch (error) { fail(res, error); }
 });
+router.get("/admin/coa/export.txt", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.setHeader("Cache-Control", "private, no-store");
+  try {
+    // Payment-confirmed requests remain paid after processing/completion. The
+    // TXT action is paid-only regardless of the queue's status dropdown.
+    const result = await adminCoaList({ ...filters(req), status: undefined });
+    const paid = result.requests.filter(r => ["paid", "processing", "completed"].includes(r.status));
+    if (!paid.length) throw new CoaError("No paid COA requests match these filters.", 404);
+    const line = (value: unknown) => String(value ?? "").replace(/[\r\n\u2028\u2029]+/g, " ").trim();
+    const text = paid.map((r, i) => [
+      `COA ${i + 1}`, `@${line(r.member).replace(/^@+/, "")}`,
+      `Client: ${line(r.client)}`, `Sample: ${line(r.sample)}`,
+      `Manufacturer: ${line(r.manufacturer)}`, `Batch: ${line(r.batch)}`,
+    ].join("\n")).join("\n\n") + "\n";
+    res.type("text/plain").attachment("coa-paid.txt").send(text);
+  } catch (error) { fail(res, error); }
+});
 router.get("/admin/coa", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try { res.json(await adminCoaList(filters(req))); } catch (error) { fail(res, error); }
