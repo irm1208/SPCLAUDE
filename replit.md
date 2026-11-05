@@ -142,6 +142,11 @@ The Telegram Login Widget requires the **production domain** to be whitelisted w
 
 Until step 4 is done the widget is hidden site-wide and users see only the deep-link fallback button, which always works.
 
+## Dependency upgrades (read before touching package.json or pnpm-lock.yaml)
+- Follow `docs/dependency-upgrade-plan.md`. Same-major updates only (`pnpm update -r`), one branch, commit the lockfile, full build + typecheck + tests + API start before any publish. Never `--latest`, never regenerate the lockfile during a build or publish.
+- Major steps (pdfjs-dist 6, zod 4, drizzle-kit/esbuild, example-project packages) are one package per branch and need the owner's approval first.
+- Known gaps to fix first: `routes/testmedaddy` imports `pg` which api-server does not declare; `pdf-lib` must be installed before the frontend builds; the lockfile `overrides` must match package.json so `pnpm install --frozen-lockfile` passes.
+
 ## Gotchas
 
 - **DB Schema Setup**: `bash start.sh` does not push the database schema. For a fresh development database, intentionally run `pnpm --filter @workspace/db run push-force`, then restart the application so seed data can be created.
