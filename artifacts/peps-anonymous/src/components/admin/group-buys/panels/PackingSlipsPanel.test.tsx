@@ -100,12 +100,14 @@ it("prints only selected-batch allocations with its reference, preserves unassig
     await React.act(async () => { button(el, "Select all filtered").click(); });
     await React.act(async () => { button(el, "Print Packing Slips (1)").click(); });
     const modal = button(el, "Print / Save PDF").closest(".fixed")!;
+    expect(modal.querySelector(".slip-batches")?.textContent).toBe("Batch: GB-UAJBM / 001");
     expect(modal.textContent).toContain("GB-UAJBM / 001");
     expect(modal.textContent).toContain("HGH 36IU");
     expect(modal.textContent).not.toContain("HGH full order");
     expect(modal.textContent).toContain("Total Kits — 2");
     expect(modal.textContent).not.toContain("Total Kits — 12");
     await React.act(async () => { button(modal, "4×6 Labels").click(); });
+    expect(modal.querySelector(".slip-batches")?.textContent).toBe("Batch: GB-UAJBM / 001");
     expect(modal.textContent).toContain("GB-UAJBM / 001");
     expect(modal.textContent).toContain("HGH 36IU");
     expect(modal.textContent).not.toContain("HGH full order");
@@ -115,6 +117,20 @@ it("prints only selected-batch allocations with its reference, preserves unassig
     await React.act(async () => { button(el, "Select all filtered").click(); });
     await React.act(async () => { button(el, "Print Packing Slips (1)").click(); });
     expect(button(el, "Print / Save PDF").closest(".fixed")!.textContent).toContain("Total Kits — 10");
+    await React.act(async () => { button(el, "Close packing slips").click(); });
+    await select(el, "Batch", "");
+    await React.act(async () => { button(el, "Select all filtered").click(); });
+    await React.act(async () => { button(el, "Print Packing Slips (2)").click(); });
+    const allModal = button(el, "Print / Save PDF").closest(".fixed")!;
+    for (const format of ["A4 Landscape", "4×6 Labels"]) {
+      await React.act(async () => { button(allModal, format).click(); });
+      const slips = allModal.querySelectorAll(".slip");
+      expect(slips).toHaveLength(2);
+      expect(slips[0].querySelector(".slip-batches")?.textContent).toBe("Batches: GB-UAJBM / 001 · GB-UAJBM / 002");
+      expect(slips[1].querySelector(".slip-batches")).toBeNull();
+      expect(slips[0].textContent).toContain("HGH full order");
+      expect(slips[0].textContent).toContain("Total Kits — 12");
+    }
     expect(request).toHaveBeenCalledTimes(2);
   } finally { await React.act(async () => root.unmount()); }
 });

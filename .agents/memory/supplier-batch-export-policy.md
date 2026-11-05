@@ -47,7 +47,10 @@ the base quantity in its current batch, rather than relocating the complete
 customer order.
 
 **Why:** The user explicitly selected “Only the extra quantities” when asked
-whether additions should move as whole orders or quantity increases.
+whether additions should move as whole orders or quantity increases, and
+repeated that they mean kits added after the batch was processed. Do not answer
+that question using increases since the customer's first order: the relevant
+baseline is the batch's own original allocation.
 
 **How to apply:** Highlight recorded batch additions and preview exact per-product
 amounts staying/moving. Treat a partial move as a fulfilment allocation of the

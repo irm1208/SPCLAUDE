@@ -5,6 +5,12 @@ description: User-approved stages, audience, and separation from order/payment p
 
 The member-facing group-buy progress section should be minimized by default.
 
+On member order details, group-buy progress belongs inside the blue order summary, not in a second standalone progress box. The COA section starts collapsed, and the refund section belongs at the bottom.
+
+**Why:** The user requested a less cluttered order page with no duplicate group-buy progress view.
+
+**How to apply:** Keep one expandable group-progress entry on order details, preserve its organiser updates and deep link, and keep individual fulfilment/payment status distinct from whole-group progress.
+
 **Why:** The user explicitly requested a minimized default after compacting the half-kit section.
 
 **How to apply:** Keep the current stage visible in the collapsed summary and allow expansion for the full tracker and updates. Direct progress/update links must still reveal their target.

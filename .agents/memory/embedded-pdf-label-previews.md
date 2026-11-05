@@ -11,6 +11,12 @@ Render uploaded delivery-label PDFs onto a canvas with PDF.js rather than relyin
 
 Safari Lockdown Mode can remove `FileReader` entirely; do not assume ordinary Safari support means it is available.
 
+Bulk Royal Mail label review should show the actual 4×6 print preview, keep the order/member identity visible, and allow confirmation without searching the long upload list again.
+
+**Why:** The user found inline source-page previews too time-consuming and lost track of whose label they were reviewing.
+
+**How to apply:** Preserve a focused preview-and-confirm flow in future label export changes. Keep crop adjustment available separately rather than making it a required step for a usable suggested crop.
+
 **Why:** A member's label upload reached the server successfully but the subsequent local preview failed with “Can't find variable: FileReader”, misleadingly presenting a saved upload as a failure.
 
 **How to apply:** Read upload bytes with `Blob.arrayBuffer()` (or `Response(blob).arrayBuffer()` where needed). Prepare local preview data before saving, and test with `FileReader` absent. Do not ask members to disable Lockdown Mode.

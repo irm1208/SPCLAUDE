@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { RoyalMailLabelsExport } from "./royal-mail-labels/RoyalMailLabelsExport";
 import { Loader2, QrCode, Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, X, Truck, Package, CheckCircle2, RotateCcw, Download, ExternalLink } from "lucide-react";
 // @ts-ignore — Vite resolves the bundled PDF.js worker URL at build time.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -24,6 +25,7 @@ interface LazyQrData {
 interface PageData {
   gbName: string;
   orders: QrOrder[];
+  batches: { id: string; reference: string; orderIds: string[] }[];
 }
 
 const NAVY = "#1B3A7A";
@@ -521,6 +523,11 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "not-posted" | "posted" | "waiting">("all");
+  const [batchId, setBatchId] = useState("");
+  const [exportScope, setExportScope] = useState<string | null>(null);
+  const scope = JSON.stringify([gbId, mode, adminSecret, batchId, filter, search]);
+  useEffect(() => { setExportScope(null); }, [scope, loading]);
+  const requestRef = useRef<AbortController | null>(null);
 
   const fetchHeaders: Record<string, string> = mode === "admin" && adminSecret
     ? { "x-admin-secret": adminSecret }
@@ -530,41 +537,65 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
     ? { credentials: "include" }
     : { headers: fetchHeaders };
 
-  const load = useCallback(async (isRetry = false) => {
+  const load = useCallback(async () => {
     if (!gbId) return;
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
+    setData(null);
     setError(null);
     try {
       const url = mode === "organiser"
         ? `/api/organiser/group-buys/${gbId}/all-orders-qr`
         : `/api/admin/group-buys/${gbId}/all-orders-qr`;
-      const res = await fetch(url, fetchOptions);
+      let res = await fetch(url, { ...fetchOptions, signal: controller.signal });
+      // Preserve the single startup retry, but cancel it on unmount/scope changes.
+      if (res.status === 500 && !(await res.clone().text()).trim()) {
+        await new Promise<void>(resolve => {
+          const done = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", done); resolve(); };
+          const timer = setTimeout(done, 3000);
+          controller.signal.addEventListener("abort", done, { once: true });
+          if (controller.signal.aborted) done();
+        });
+        if (controller.signal.aborted) return;
+        res = await fetch(url, { ...fetchOptions, signal: controller.signal });
+      }
+      if (controller.signal.aborted) return;
       if (!res.ok) {
         const rawText = await res.text().catch(() => "");
         console.error(`[GbQrCodesPanel] ${url} → ${res.status}`, rawText.slice(0, 500));
-        // If we get a bare 500 with no body (server startup window), auto-retry once after 3s
-        if (!isRetry && res.status === 500 && !rawText.trim()) {
-          setLoading(true);
-          setTimeout(() => { load(true); }, 3000);
-          return;
-        }
+        if (controller.signal.aborted) return;
         let j: { error?: string } = {};
         try { j = JSON.parse(rawText); } catch { /* not json */ }
         setError(j.error ?? `Server error ${res.status}: ${rawText.slice(0, 200) || "no body"}`);
         return;
       }
-      setData(await res.json());
+      const next: PageData = await res.json();
+      if (controller.signal.aborted) return;
+      if (!Array.isArray(next.orders) || !Array.isArray(next.batches)
+        || next.batches.some(batch => typeof batch.id !== "string" || typeof batch.reference !== "string" || !Array.isArray(batch.orderIds))) {
+        throw new Error("Invalid QR orders response");
+      }
+      setData(next);
     } catch {
-      setError("Network error — please try again.");
+      if (!controller.signal.aborted) setError("Could not load QR orders and batches — please try again.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gbId, mode, adminSecret]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    setBatchId("");
+    setSearch("");
+    setFilter("all");
+    load();
+    return () => { requestRef.current?.abort(); };
+  }, [load]);
 
   const handleTogglePosted = useCallback(async (orderId: string, posted: boolean) => {
+    const scopeRequest = requestRef.current;
     const url = mode === "organiser"
       ? `/api/organiser/group-buys/${gbId}/orders/${orderId}/qr-posted`
       : `/api/admin/orders/${orderId}/qr-posted`;
@@ -575,6 +606,7 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
       body: JSON.stringify({ posted }),
     });
     if (!res.ok) throw new Error("Failed to update");
+    if (scopeRequest?.signal.aborted || scopeRequest !== requestRef.current) return;
     setData(prev => {
       if (!prev) return prev;
       return { ...prev, orders: prev.orders.map(o => o.id === orderId ? { ...o, qrPosted: posted } : o) };
@@ -582,7 +614,9 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gbId, mode, adminSecret]);
 
-  const allOrders = data?.orders ?? [];
+  const selectedBatch = data?.batches.find(batch => batch.id === batchId);
+  const batchOrderIds = new Set(selectedBatch?.orderIds ?? []);
+  const allOrders = (data?.orders ?? []).filter(order => (!batchId || batchOrderIds.has(order.id)) && matchesSearch(order));
   const withQr = allOrders.filter(o => hasAnyQr(o));
   const waitingOrders = allOrders.filter(o => !hasAnyQr(o));
   const notPostedOrders = withQr.filter(o => !o.qrPosted);
@@ -597,9 +631,12 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
       o.code.toLowerCase().includes(search.toLowerCase())
     );
   }
-  const filteredNotPosted = notPostedOrders.filter(matchesSearch);
-  const filteredPosted = postedOrders.filter(matchesSearch);
-  const filteredWaiting = waitingOrders.filter(matchesSearch);
+  const filteredNotPosted = notPostedOrders;
+  const filteredPosted = postedOrders;
+  const filteredWaiting = waitingOrders;
+  const visibleOrders = filter === "not-posted" ? notPostedOrders : filter === "posted" ? postedOrders : filter === "waiting" ? waitingOrders : allOrders;
+  const royalMailOrders = visibleOrders.filter(order => order.hasRoyalMailQr);
+  const scopeDescription = `${selectedBatch?.reference ?? "All batches"} · ${{ all: "All statuses", "not-posted": "Not Posted", posted: "Posted", waiting: "Waiting" }[filter]}${search ? ` · Search: ${search}` : ""}`;
 
   return (
     <div className="space-y-4">
@@ -645,6 +682,20 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
         )}
       </div>
 
+      <label className="grid gap-1 text-xs font-semibold">
+        Batch
+        <select aria-label="Batch" value={batchId} onChange={event => setBatchId(event.target.value)}
+          disabled={loading || !!error}
+          className="w-full max-w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm">
+          <option value="">All batches</option>
+          {batchId && data && !selectedBatch && <option value={batchId} disabled>Selected batch is no longer available</option>}
+          {(data?.batches ?? []).map(batch => <option key={batch.id} value={batch.id}>{batch.reference}</option>)}
+        </select>
+      </label>
+      {batchId && data && !selectedBatch && <p role="alert" className="text-sm text-amber-700">
+        The selected batch is no longer available. Choose another batch or all batches.
+      </p>}
+
       {/* Filter tabs */}
       {data && (
         <div className="flex gap-1.5 flex-wrap">
@@ -659,6 +710,8 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
               <button
                 key={key}
                 type="button"
+                aria-label={`${label} ${count}`}
+                aria-pressed={active}
                 onClick={() => setFilter(key)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
                 style={active
@@ -683,6 +736,20 @@ export function GbQrCodesPanel({ gbId, mode, adminSecret }: GbQrCodesPanelProps)
       )}
 
       {/* Error */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-input bg-background p-3">
+        <p className="text-xs text-muted-foreground">{royalMailOrders.length} orders with Royal Mail uploads in the current filters. PDF label counts are checked during review.</p>
+        <button type="button" disabled={loading || !!error || !royalMailOrders.length}
+          onClick={() => setExportScope(scope)}
+          className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+          <Download className="h-4 w-4" /> Download all Royal Mail labels
+        </button>
+        {!loading && !royalMailOrders.length && <p className="w-full text-xs text-muted-foreground">No Royal Mail PDFs are available in this view. Change the batch, search or status filter.</p>}
+      </div>
+      {exportScope === scope && !loading && !error && data && <RoyalMailLabelsExport
+        gbId={gbId} gbName={data.gbName} batchName={selectedBatch?.reference ?? "all-batches"}
+        orders={royalMailOrders} scopeDescription={scopeDescription} mode={mode} adminSecret={adminSecret}
+        onClose={() => setExportScope(null)} />}
+
       {error && (
         <div className="rounded-xl p-4" style={{ background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.15)" }}>
           <p className="text-sm font-medium" style={{ color: "#DC2626" }}>{error}</p>

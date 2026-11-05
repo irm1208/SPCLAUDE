@@ -1,3 +1,4 @@
+import { qrOrderBatches } from "../lib/qr-order-batches";
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import adminProductStockRouter from "./admin-product-stock";
 import { resolveEditedProductId } from "../lib/admin-order-product-links";
@@ -2400,13 +2401,14 @@ router.get("/admin/group-buys/:id/all-orders-qr", async (req, res): Promise<void
       telegramUsername: o.telegramUsername,
       deliveryMethod: o.deliveryMethod,
       hasInpostQr: o.inpostQrCode !== null,
-      hasRoyalMailQr: o.royalMailQrCode !== null,
+      hasRoyalMailQr: o.royalMailQrCode !== null || !!(o.qrCodes as Record<string, string> | null)?.["royal-mail"],
       hasQrCodes: o.qrCodes !== null && Object.keys(o.qrCodes as Record<string, string>).length > 0,
       qrPosted: o.qrPosted,
       status: o.status,
     }));
 
-    res.json({ gbName: gb.name, orders });
+    const batches = await qrOrderBatches(db, id, orders.filter(o => o.status !== "Cancelled").map(o => o.id));
+    res.json({ gbName: gb.name, orders, batches });
   } catch (err) {
     console.error(`[admin/all-orders-qr] GB=${id} error:`, err);
     const msg = err instanceof Error ? err.message : String(err);

@@ -126,6 +126,7 @@ interface DispatchParcel {
 }
 
 export interface DispatchOrder {
+  supplierBatchReferences?: string[];
   id: string;
   code?: string | null;
   telegramUsername: string;
@@ -1677,6 +1678,14 @@ export function PrintModal({ orders, gbName, onClose }: { orders: DispatchOrder[
 }
 
 // ─── LabelSlip — 4×6 single-label layout ──────────────────────────────────────
+function SlipBatchReferences({ references }: { references?: string[] }) {
+  const unique = [...new Set(references?.map(reference => reference.trim()).filter(Boolean) ?? [])];
+  if (!unique.length) return null;
+  return <div className="slip-batches" style={{ fontSize: "10px", fontWeight: 700, color: "#111", overflowWrap: "anywhere", marginTop: "4px" }}>
+    {unique.length === 1 ? "Batch: " : "Batches: "}{unique.join(" · ")}
+  </div>;
+}
+
 function LabelSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string }) {
   const kits = o.lineItems.reduce((s, li) => s + li.quantity, 0);
   const addressParts = [o.shippingAddress, o.shippingCity, o.shippingPostcode, o.shippingCountry].filter(Boolean);
@@ -1700,6 +1709,7 @@ function LabelSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string
             <AccountHandle username={o.telegramUsername} />
           </div>
         )}
+        <SlipBatchReferences references={o.supplierBatchReferences} />
       </div>
 
       {/* Items */}
@@ -1779,6 +1789,7 @@ function PackingSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: stri
             <AccountHandle username={o.telegramUsername} />
           </div>
         )}
+        <SlipBatchReferences references={o.supplierBatchReferences} />
       </div>
 
       {/* Items */}

@@ -16,6 +16,21 @@ let container: HTMLDivElement;
 const originalFetch = globalThis.fetch;
 const config = { mode: "open" as const, fee: 25, currency: "USD" as const, cap: 5, rails: [], manualInstructions: "Synthetic bank instructions" };
 const blank: CoaMemberView = { eligible: true, reason: null, available: 5, config, request: null };
+
+test("COA starts collapsed and can be opened without losing entered details", async () => {
+  globalThis.fetch = async () => json(blank);
+  await render();
+  const disclosure = container.querySelector<HTMLDetailsElement>("details#coa");
+  assert.ok(disclosure);
+  assert.equal(disclosure.open, false);
+  assert.match(disclosure.querySelector("summary")!.textContent!, /Certificate of analysis/);
+  disclosure.open = true;
+  const input = container.querySelector<HTMLInputElement>("input")!;
+  await act(async () => { fireEvent.change(input, { target: { value: "My client" } }); });
+  disclosure.open = false;
+  disclosure.open = true;
+  assert.equal(input.value, "My client");
+});
 const request = (change: Partial<CoaRequest> = {}): CoaRequest => ({
   id: "r1", orderId: "o1", groupBuyId: "g1", orderCode: "test-1", member: "synthetic", groupName: "Synthetic group",
   source: "invited", status: "reserved", client: "Synthetic Client", sample: "Test sample", manufacturer: "Test supplier", batch: "Test batch",

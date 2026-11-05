@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { useCustomerGroupBuyUpdates } from "@/hooks/use-group-buy-progress";
@@ -7,7 +7,7 @@ import { GroupBuyProgressTracker } from "./GroupBuyProgressTracker";
 import { GroupBuyMoqProgress } from "./GroupBuyMoqProgress";
 
 /** Member-only: whole-group progress + organiser notes. Not individual parcel tracking. */
-export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabled: boolean }) {
+export function CustomerGroupBuyUpdates({ gbId, enabled, embedded = false }: { gbId: string; enabled: boolean; embedded?: boolean }) {
   const q = useCustomerGroupBuyUpdates(enabled ? gbId : null);
   const scrolled = useRef(false);
   const disclosure = useRef<HTMLDetailsElement>(null);
@@ -32,11 +32,11 @@ export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabl
   }
   const d = q.data;
   return (
-    <div className="space-y-3">
-    <GroupBuyMoqProgress moq={d?.moq} />
-    <details ref={disclosure} id={GBU_ANCHOR} data-testid="gb-customer-updates" aria-labelledby="gb-progress-heading" className="group scroll-mt-24 rounded-2xl px-4 sm:px-5 py-2" style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
+    <div data-embedded={embedded ? "true" : undefined} className={embedded ? "relative mt-5 space-y-3 border-t border-white/20 pt-3" : "space-y-3"} style={embedded ? { "--t-text": "#FFFFFF", "--t-muted": "rgba(255,255,255,.75)", "--t-surface": "#203e78", "--t-border": "rgba(255,255,255,.2)", "--t-surface2": "rgba(255,255,255,.08)" } as CSSProperties : undefined}>
+    <GroupBuyMoqProgress moq={d?.moq} dark={embedded} />
+    <details ref={disclosure} id={GBU_ANCHOR} data-testid="gb-customer-updates" aria-labelledby="gb-progress-heading" className={`group scroll-mt-24 ${embedded ? "" : "rounded-2xl px-4 sm:px-5 py-2"}`} style={embedded ? undefined : { background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
       <summary data-testid="toggle-gb-progress" className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg [&::-webkit-details-marker]:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2D6BCC]">
-        <h2 id="gb-progress-heading" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#8A9AAA" }}>Group buy progress</h2>
+        <h2 id="gb-progress-heading" className="text-[10px] font-bold uppercase tracking-widest" style={{ color: embedded ? "rgba(255,255,255,.75)" : "#8A9AAA" }}>Group buy progress</h2>
         {d?.stage && <span className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>{GB_STAGE_LABEL[d.stage]}</span>}
         <span className="ml-auto text-[11px] group-open:hidden" style={{ color: "var(--t-muted)" }}>View</span>
         <span className="ml-auto hidden text-[11px] group-open:inline" style={{ color: "var(--t-muted)" }}>Hide</span>
@@ -46,10 +46,10 @@ export function CustomerGroupBuyUpdates({ gbId, enabled }: { gbId: string; enabl
         <p className="text-[12px]" style={{ color: "var(--t-muted)" }}>
           Set by the organiser for the whole group. Your own payment and order status are shown separately.
         </p>
-      <GroupBuyProgressTracker stage={d?.stage} stageUpdatedAt={d?.stageUpdatedAt} />
+      <GroupBuyProgressTracker stage={d?.stage} stageUpdatedAt={d?.stageUpdatedAt} tone={embedded ? "dark" : "light"} />
       {d && d.updates.length > 0 && (
         <div className="space-y-2 max-h-[440px] overflow-y-auto pr-1">
-          <h3 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#8A9AAA" }}>Organiser updates</h3>
+          <h3 className="text-[10px] font-bold uppercase tracking-widest" style={{ color: embedded ? "rgba(255,255,255,.75)" : "#8A9AAA" }}>Organiser updates</h3>
           {d.updates.map(u => (
             <article key={u.id} data-testid={`card-gb-update-${u.id}`} className="rounded-xl p-3.5 space-y-2" style={{ background: "var(--t-surface2, rgba(27,58,122,0.04))", borderLeft: `3px solid ${u.kind === "status" ? "#E9A020" : "#2D6BCC"}` }}>
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
