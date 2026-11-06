@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, desc, inArray, isNull, sql } from "drizzle-orm";
+import { and, or, eq, desc, inArray, isNull, sql } from "drizzle-orm";
 import { db, groupBuysTable as groups, productsTable as products, groupBuyProductsTable as links,
   ordersTable as orders, orderLineItemsTable as lines, groupBuyOrderRevisionSettingsTable as settings,
   groupBuyOrderRevisionsTable as revisions, gbHalfKitClaimsTable as claims,
@@ -24,7 +24,12 @@ async function ownProducts(database: any, group: any) {
   return database.select({ id: products.id, name: products.name, mgSize: products.mgSize,
     price: sql<string>`coalesce(${links.priceOverride}, ${products.price})` }).from(links)
     .innerJoin(products, eq(links.productId, products.id))
-    .where(and(eq(links.groupBuyId, group.id), eq(products.organiserId, group.organiserId)));
+    // Group-specific uploads remain eligible after an organiser transfer or
+    // legacy import without an owner. Do not include unrelated catalogue stock.
+    .where(and(eq(links.groupBuyId, group.id), or(
+      eq(products.organiserId, group.organiserId),
+      eq(products.sourceGroupBuyId, group.id),
+    )));
 }
 async function enabled(database: any, id: string) {
   const [row] = await database.select().from(settings).where(eq(settings.groupBuyId, id));

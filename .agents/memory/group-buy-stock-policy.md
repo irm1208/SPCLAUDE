@@ -36,6 +36,12 @@ Negotiated prices must remain separate from live catalogue prices, including whe
 
 **How to apply:** CSV price updates match existing own-stock products, never create duplicates, and feed the same member-confirmation process as manual proposals.
 
+Price proposals treat products uploaded specifically for the authorised group buy as its own stock even when their recorded uploader is missing or differs from its current organiser.
+
+**Why:** Legacy imports and organiser changes can leave mixed product ownership within one uploaded catalogue, causing a price CSV to silently omit most of the group's products.
+
+**How to apply:** Require group membership plus either current organiser ownership or matching source group. Keep unrelated shared-catalogue products excluded; do not rewrite uploader identities or relax unpaid-order protections.
+
 Keep organiser product pricing and CSV controls, but hide the large order-change panel until the organiser explicitly opens the price confirmation review.
 
 **Why:** The user chose “Keep pricing, hide this panel.”

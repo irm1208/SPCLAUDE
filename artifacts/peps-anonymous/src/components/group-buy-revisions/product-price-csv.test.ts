@@ -7,6 +7,15 @@ const products = [
   { id: "p3", name: "Same", mgSize: "10mg", price: "30" },
 ];
 describe("product price proposal CSV", () => {
+  it("exports every product in a large group, including the last row", () => {
+    const allProducts = Array.from({ length: 1148 }, (_, i) => ({
+      id: `product-${i}`, name: `Uploaded product ${i}`, mgSize: "10mg", price: "50",
+    }));
+    const csv = productPriceTemplate(allProducts);
+    expect(csv.split("\r\n")).toHaveLength(1149);
+    expect(csv.split("\r\n").at(-1)).toContain('"product-1147"');
+    expect(parseProductPriceCsv(csv, allProducts)).toEqual({ rows: [], errors: [] });
+  });
   it("roundtrips quoted templates without proposing blank prices", () => {
     const csv = productPriceTemplate(products);
     expect(csv).toContain('"Own, ""special"""');
