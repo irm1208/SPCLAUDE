@@ -14,13 +14,13 @@
   "dependencies": {
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.7.1",
-    "pg": "^8.20.0",
+    "pg": "^8.23.1",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/pg": "^8.18.0",
-    "drizzle-kit": "^0.31.9",
-    "dotenv": "^17.4.2"
+    "@types/pg": "^8.23.1",
+    "dotenv": "^17.4.2",
+    "drizzle-kit": "^0.31.11"
   }
 }

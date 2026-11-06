@@ -10,9 +10,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "@react-spring/web": "^10.0.3",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.5.0",
+    "@react-spring/web": "^10.1.2",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.2",
     "@replit/vite-plugin-cartographer": "catalog:",
     "@replit/vite-plugin-dev-banner": "catalog:",
     "@replit/vite-plugin-runtime-error-modal": "catalog:",
@@ -23,8 +23,8 @@
     "@vitejs/plugin-react": "catalog:",
     "clsx": "catalog:",
     "framer-motion": "catalog:",
-    "gsap": "^3.14.2",
-    "lottie-react": "^2.4.1",
+    "gsap": "^3.15.1",
+    "lottie-react": "^2.4.2",
     "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
