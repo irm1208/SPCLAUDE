@@ -29,7 +29,8 @@
       "dompurify": ">=3.4.0",
       "follow-redirects": ">=1.16.0",
       "postcss": ">=8.5.10",
-      "ws": ">=8.20.1"
+      "ws": ">=8.20.1",
+      "vite": "^7.3.7"
     },
     "onlyBuiltDependencies": [
       "@pnpm/exe",
