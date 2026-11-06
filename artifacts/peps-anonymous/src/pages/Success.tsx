@@ -545,10 +545,13 @@ export default function Success() {
             transition={{ delay: 0.32 }}
             className="w-full mb-5"
           >
+            {/* Match My Orders: the server locks the gross USD amount,
+                and PaymentPanel deducts the separately supplied credits once. */}
             <PaymentPanel
               orderId={orderId}
               orderPin="0000"
-              grandTotal={receipt.amountDue ?? receipt.grandTotal}
+              grandTotal={receipt.grandTotal}
+              creditsUsd={receipt.creditsApplied ?? 0}
               currency={receipt.currency}
               paymentStatus="unpaid"
               paymentTxHash={null}

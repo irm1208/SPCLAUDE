@@ -11,6 +11,12 @@ After creating or editing an order, the payment screen (`Success.tsx` via `Payme
 
 **How to apply:** when a success/receipt handler receives the server's response object, prefer its fields (`data.grandTotal`, `data.vendorShipping`, etc.) over locally computed equivalents, falling back to local values only when the server didn't return that field. Exception: purely-local *display* flags that the server response can't represent (e.g. `vendorShippingIsTbd` — server always coerces shipping to a number, never `null`, so TBD-ness must stay a local/config-driven flag, not inferred from the server's numeric field).
 
+Payment entry points must agree on gross-versus-net semantics: the primary crypto rate lock is a **gross USD** amount, with applied store credits supplied separately for one deduction after conversion.
+
+**Why:** supplying only a net receipt total appeared correct before the rate loaded, but the gross server lock replaced it and silently omitted the credit deduction. My Orders and checkout then requested different payments for the same order.
+
+**How to apply:** preserve both the server's gross total and applied USD credits through the payment-panel boundary; do not pre-net the total or subtract credits before GBP-to-USD conversion. Check the displayed amount after the rate lock loads, not only the initial receipt estimate.
+
 Saved delivery details must not be requested again merely because payment has finished. Prefer the authenticated order's address, including explicit missing values, over a cached receipt; only use cached address details when the receipt explicitly matches the current order.
 
 **Why:** The user reported wholesale customers entering their address at checkout and then seeing a second, empty “Vendor Shipping” form. A payment confirmation does not indicate that an address is missing, and a global receipt cache can belong to a different order.
