@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   paymentOrderDetail, paymentOrderRow, paymentLedgerSummary, publicVendorReceipt, paymentReviewToken,
+  paymentRemovalPermission,
 } from "./vendor-payment-ledger";
 
 const snapshot = {
@@ -15,6 +16,13 @@ const row = (patch: Record<string, unknown> = {}) => ({
 const identities = new Map([["o1", { id: "o1", code: "12656", telegramUsername: "member" }]]);
 
 describe("supplier payment ledger", () => {
+  it("allows recalling unstarted supplier submissions, including stale ones, without guessing about payments or vendor work", () => {
+    expect(paymentRemovalPermission(row(), false, false)).toEqual({ canRemove: true, removalReason: null });
+    expect(paymentRemovalPermission(row({ status: "Processing" }), false, false).canRemove).toBe(false);
+    expect(paymentRemovalPermission(row({ status: "Shipped" }), false, false).canRemove).toBe(false);
+    expect(paymentRemovalPermission(row(), true, false).removalReason).toMatch(/void/i);
+    expect(paymentRemovalPermission(row(), false, true).removalReason).toMatch(/photo/i);
+  });
   it("projects only submitted supplier costs and allowed Admin order references", () => {
     const detail = paymentOrderDetail(row(), identities);
     expect(detail).toMatchObject({

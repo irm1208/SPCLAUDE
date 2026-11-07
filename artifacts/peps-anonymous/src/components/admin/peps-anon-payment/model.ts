@@ -2,6 +2,15 @@ export type PaymentState = "owed" | "paid" | "needs_review" | "not_owed";
 export type SourceOrder = { id: string; code: string | null; username: string | null };
 export type LineItem = { productName: string; quantity: number | null; unitCost: string | null; lineTotal: string | null };
 export type Wallet = { id: string; currency: string; network: string; address: string; label?: string };
+export type OrderProfit = {
+  currency: "USD";
+  basis: "product_gross";
+  salesUsd: string | null;
+  supplierProductsUsd: string | null;
+  amountUsd: string | null;
+  reason: string | null;
+  definition: string;
+};
 export type LedgerOrder = {
   id: string;
   reference: string;
@@ -22,6 +31,9 @@ export type LedgerOrder = {
   reviewReason?: string | null;
   paidAmountUsd?: string | null;
   reviewToken?: string;
+  canRemove?: boolean;
+  removalReason?: string | null;
+  profit?: OrderProfit;
 };
 export type ReceiptDetail = {
   sourceType: "order" | "shared";
@@ -82,6 +94,18 @@ export function money(value: bigint | null) {
   return `$${whole}.${String(value % 100n).padStart(2, "0")}`;
 }
 export const moneyOf = (v: string | number | null | undefined) => money(cents(v));
+export function signedCents(value: string | number | null | undefined): bigint | null {
+  if (value === null || value === undefined) return null;
+  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(String(value).trim());
+  if (!match) return null;
+  const amount = BigInt(match[2]) * 100n + BigInt((match[3] || "").padEnd(2, "0"));
+  return match[1] ? -amount : amount;
+}
+export function signedMoneyOf(value: string | number | null | undefined) {
+  const amount = signedCents(value);
+  if (amount === null) return "Unavailable";
+  return amount < 0n ? `-$${money(-amount).slice(1)}` : money(amount);
+}
 
 export function isEligible(o: LedgerOrder) {
   if (typeof o.eligible === "boolean") return o.eligible;

@@ -23,6 +23,25 @@ Bind payment review to the reviewed supplier-cost snapshot so resubmission canno
 silently change what an Admin records. Require a reviewed snapshot for every new
 allocation; older Admin pages must refresh rather than bypass this financial guard.
 
+Removing an order from Peps Anon Payment means recalling its supplier submission
+from the vendor portal and payment list, not cancelling or deleting the customer order.
+
+**Why:** The user explicitly chose “Remove from vendor and payment” while keeping
+the customer order intact.
+
+**How to apply:** Reuse supplier-recall safeguards and its audit trail, retain
+historical receipts, and never bypass paid, started-fulfilment or photo protections.
+
+Admin product-profit estimates must use only sales attributable to that supplier,
+not the whole total of every linked or mixed-supplier customer order. Product-only
+profit must be labelled as an estimate before shipping, discounts, credits and fees.
+
+**Why:** Shared and mixed-supplier orders can appear in several supplier submissions;
+using their full totals repeatedly inflates profit. Product margin is not net profit.
+
+**How to apply:** Keep profit Admin-only, use submitted supplier product costs,
+show unavailable rather than inventing missing sales, and preserve negative margins.
+
 Existing vendor accounts, sessions, Telegram events and message history must be
 preserved when adding or publishing vendor features.
 
@@ -33,6 +52,15 @@ proposed removing existing vendor tables.
 the applied development and production schemas. Restore missing development
 definitions and verify the publish diff has no destructive statements; never
 approve deletion or overwrite production data.
+
+Telegram connection completion must prove that this attempt's one-time code was
+used, rather than infer success from recent chat creation or chat counts.
+
+**Why:** Reconnecting an existing chat preserves its original creation date;
+unrelated chat changes can also produce false connection results.
+
+**How to apply:** Scope connection status to the current vendor and account,
+stop expired or cancelled attempts, and retain Telegram's required Start/add-bot consent.
 
 Orders become visible to the vendor only when Admin submits them, not automatically when payment is confirmed.
 

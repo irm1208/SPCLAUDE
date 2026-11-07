@@ -138,6 +138,18 @@ export async function vendorChats(tx: Executor, vendorId: string) {
 export async function allChats(tx: Executor) {
   return tx.select().from(vendorTelegramChatsTable).orderBy(desc(vendorTelegramChatsTable.createdAt));
 }
+export async function vendorLinkStatus(tx: Executor, vendorId: string, username: string, token: string) {
+  const [row] = await tx.select({
+    usedAt: vendorTelegramLinkTokensTable.usedAt, expiresAt: vendorTelegramLinkTokensTable.expiresAt,
+  }).from(vendorTelegramLinkTokensTable).where(and(
+    eq(vendorTelegramLinkTokensTable.token, token),
+    eq(vendorTelegramLinkTokensTable.vendorId, vendorId),
+    eq(vendorTelegramLinkTokensTable.username, username),
+  )).limit(1);
+  if (!row) throw new VendorPortalError("This connection has expired or was not found. Please connect again.", 410);
+  return { connected: !!row.usedAt, expired: !row.usedAt && new Date(row.expiresAt).getTime() <= Date.now() };
+}
+
 export async function createLinkToken(tx: Executor, vendorId: string, username: string) {
   const token = randomBytes(12).toString("hex");
   await tx.delete(vendorTelegramLinkTokensTable).where(and(eq(vendorTelegramLinkTokensTable.username, username), isNull(vendorTelegramLinkTokensTable.usedAt)));

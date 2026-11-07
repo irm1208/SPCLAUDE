@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   rows: [] as any[], allocations: [] as any[], payments: [] as any[], written: [] as any[],
-  identities: [{ id: "o1", code: "12656", telegramUsername: "member" }],
+  identities: [{ id: "o1", code: "12656", telegramUsername: "member" }], images: [] as any[],
 }));
 vi.mock("@workspace/db", async () => ({
   ...(await import("../../../../../lib/db/src/schema/index")), db: {},
@@ -9,10 +9,12 @@ vi.mock("@workspace/db", async () => ({
 vi.mock("../vendor-portal-service", () => ({
   auditVendor: vi.fn(async () => {}),
   loadVendorSource: vi.fn(async () => ({ fingerprint: "original", vendorIds: ["v1"], orders: state.identities })),
-  isVendorSubmissionStale: vi.fn(async (_: any, row: any) => !!row.changed),
+  inspectVendorSubmission: vi.fn(async (_: any, row: any) => ({
+    stale: !!row.changed, source: { fingerprint: "original", vendorIds: ["v1"], items: [{ vendorId: "v1", lineTotal: "30.30" }] },
+  })),
 }));
 import {
-  ordersTable, vendorSubmissionsTable, vendorPaymentsTable, vendorPaymentAllocationsTable, vendorWalletsTable,
+  ordersTable, vendorSubmissionsTable, vendorPaymentsTable, vendorPaymentAllocationsTable, vendorWalletsTable, vendorImagesTable,
 } from "@workspace/db";
 import { vendorPaymentDashboard, recordVendorPayment } from "../vendor-payments";
 import { paymentReviewToken } from "../vendor-payment-ledger";
@@ -29,7 +31,7 @@ const tx: any = {
     const rows = () => table === vendorSubmissionsTable ? state.rows
       : table === vendorPaymentAllocationsTable ? state.allocations
         : table === vendorPaymentsTable ? state.payments
-          : table === vendorWalletsTable ? [wallet] : table === ordersTable ? state.identities : [];
+          : table === vendorWalletsTable ? [wallet] : table === ordersTable ? state.identities : table === vendorImagesTable ? state.images : [];
     const query: any = { then: (ok: any, err: any) => Promise.resolve(rows()).then(ok, err) };
     for (const method of ["where", "orderBy", "for"]) query[method] = () => query;
     return query;
@@ -43,7 +45,7 @@ const database: any = { transaction: (fn: any) => fn(tx) };
 beforeEach(() => {
   state.rows = [{ id: "s1", sourceKey: "order:o1", orderIds: ["o1"], vendorId: "v1", reference: "12656",
     status: "Submitted", sourceFingerprint: "original", submittedAt: new Date("2026-11-01"), snapshot: snapshot() }];
-  state.allocations = []; state.payments = []; state.written = [];
+  state.allocations = []; state.payments = []; state.written = []; state.images = [];
 });
 describe("Admin supplier ledger integration without a database", () => {
   it("rejects unreviewed legacy requests before any receipt or allocation write", async () => {
@@ -56,8 +58,18 @@ describe("Admin supplier ledger integration without a database", () => {
     state.payments = [{ id: "p1", voidedAt: null }];
     const result = await vendorPaymentDashboard(tx, "v1");
     expect(result.orders[0]).toMatchObject({ sourceOrders: [{ id: "o1", code: "12656", username: "member" }], eligible: true, shippingCost: "5.00" });
+    expect(result.orders[0]).toMatchObject({ canRemove: true, profit: { salesUsd: "30.30", amountUsd: "10.10" } });
     expect(result.orders[1]).toMatchObject({ eligible: false, paymentState: "needs_review" });
+    expect(result.orders[1].canRemove).toBe(false);
+    expect(result.orders[2].profit.amountUsd).toBeNull();
     expect(result.summary).toMatchObject({ owed: { amount: "25.20", count: 1 }, paid: { amount: "25.20", count: 1 }, needsReview: { amount: "25.20", count: 1 } });
+  });
+  it("reports photo-protected and payment-protected submissions as non-removable", async () => {
+    state.images = [{ submissionId: "s1" }];
+    expect((await vendorPaymentDashboard(tx, "v1")).orders[0]).toMatchObject({ canRemove: false, removalReason: expect.stringMatching(/photo/i) });
+    state.images = []; state.allocations = [{ submissionId: "s1", paymentId: "p1", amountUsd: "25.20" }];
+    state.payments = [{ id: "p1", voidedAt: null }];
+    expect((await vendorPaymentDashboard(tx, "v1")).orders[0]).toMatchObject({ canRemove: false, removalReason: expect.stringMatching(/void/i) });
   });
   it("stores server-projected cost details, not caller-supplied receipt data", async () => {
     const result = await recordVendorPayment({ ...body(), detail: { totalCost: "0" } }, "admin", database);

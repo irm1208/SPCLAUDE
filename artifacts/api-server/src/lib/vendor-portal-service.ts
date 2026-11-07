@@ -135,6 +135,7 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
   const allItems = await tx.select({
     productId: orderLineItemsTable.productId, productName: orderLineItemsTable.productName,
     quantity: orderLineItemsTable.quantity, vendorId: orderLineItemsTable.vendorId, orderId: orderLineItemsTable.orderId,
+    lineTotal: orderLineItemsTable.lineTotal,
   }).from(orderLineItemsTable).where(inArray(orderLineItemsTable.orderId, orderIds));
   const vendors = await getVendors();
   const products: any[] = await tx.select().from(productsTable).where(inArray(productsTable.id, allItems.map((i: any) => i.productId)));
@@ -158,14 +159,17 @@ export async function loadVendorSource(tx: Executor, sourceKey: string, lock = f
   };
 }
 
-export async function isVendorSubmissionStale(tx: Executor, row: any): Promise<boolean> {
+export async function inspectVendorSubmission(tx: Executor, row: any) {
   try {
     const source = await loadVendorSource(tx, row.sourceKey);
-    return source.fingerprint !== row.sourceFingerprint || source.vendorIds.some(id => id !== row.vendorId);
+    return { source, stale: source.fingerprint !== row.sourceFingerprint || source.vendorIds.some(id => id !== row.vendorId) };
   } catch (error) {
-    if (error instanceof VendorPortalError || (error as any)?.name === "RefundMutationBlockedError") return true;
+    if (error instanceof VendorPortalError || (error as any)?.name === "RefundMutationBlockedError") return { source: null, stale: true };
     throw error;
   }
+}
+export async function isVendorSubmissionStale(tx: Executor, row: any): Promise<boolean> {
+  return (await inspectVendorSubmission(tx, row)).stale;
 }
 
 export async function prepareVendorShipments(tx: Executor, vendorId: string, orderCodes: string[], purpose: "submission" | "export" = "submission") {

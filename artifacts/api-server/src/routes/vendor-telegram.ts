@@ -9,7 +9,7 @@ import { VendorPortalError } from "../lib/vendor-portal-model";
 import {
   getVendorBotToken, vendorWebhookSecret, vendorBotStatus, getVendorBotUsername,
   vendorChats, allChats, publicChat, createLinkToken, completeLink, unlinkChat, updateChatPrefs, chatVendor, normalizePrefs,
-  sendToChat, sendToChatFull, notifyVendor, formatEvent, openOrdersSummary, esc, expireLinkTokens,
+  sendToChat, sendToChatFull, notifyVendor, formatEvent, openOrdersSummary, esc, expireLinkTokens, vendorLinkStatus,
 } from "../lib/vendor-telegram";
 import { threadForTelegramReply, postMessage } from "../lib/vendor-threads";
 import { createAlert } from "../lib/create-alert";
@@ -41,6 +41,12 @@ router.post("/vendor/telegram/link", requireVendorAccount, vendorSameOrigin, han
   await expireLinkTokens(db).catch(() => undefined);
   const link = await db.transaction(tx => createLinkToken(tx, me.vendorId, me.username));
   noStore(res).json({ ...link, groupCommand: `/start ${link.token}` });
+}));
+router.post("/vendor/telegram/link-status", requireVendorAccount, vendorSameOrigin, handled(async (req, res) => {
+  const token = req.body?.token;
+  if (typeof token !== "string" || !/^[a-f0-9]{24}$/.test(token)) throw new VendorPortalError("Invalid Telegram connection.", 400);
+  const me = await access(req);
+  noStore(res).json(await vendorLinkStatus(db, me.vendorId, me.username, token));
 }));
 router.put("/vendor/telegram/chats/:id/prefs", requireVendorAccount, vendorSameOrigin, handled(async (req, res) => {
   const me = await access(req);
@@ -121,7 +127,7 @@ router.post("/vendor-telegram/webhook", async (req, res) => {
     if (command === "/start") {
       const code = text.split(/\s+/)[1] ?? "";
       if (!code) {
-        await sendToChat(chatId, "👋 This bot sends vendor portal alerts to the chat it is linked to.\n\nIn the vendor portal open <b>Settings → Telegram notifications</b> and press <b>Connect Telegram</b>, then send the code it gives you here as <code>/start CODE</code>.");
+        await sendToChat(chatId, "👋 This bot sends vendor portal alerts to the chat it is linked to.\n\nIn the vendor portal open <b>Settings → Telegram notifications</b> and choose <b>Connect my Telegram</b> or <b>Connect a team group</b>. The button opens Telegram with the connection code included. Press Start or approve adding the bot; there is no code to copy.");
         return;
       }
       try {
@@ -139,10 +145,10 @@ router.post("/vendor-telegram/webhook", async (req, res) => {
       return;
     }
     if (command === "/orders") {
-      await sendToChat(chatId, link ? await openOrdersSummary(db, link.vendorId) : "This chat is not linked to a vendor yet. Use the code from the vendor portal: /start CODE");
+      await sendToChat(chatId, link ? await openOrdersSummary(db, link.vendorId) : "This chat is not linked to a vendor yet. Open Settings → Telegram notifications in the vendor portal and use a Connect button. The code is included automatically.");
       return;
     }
-    if (command === "/help") await sendToChat(chatId, "Commands:\n/orders — open shipments\n/stop — disconnect this chat\n/start CODE — link this chat to your vendor account");
+    if (command === "/help") await sendToChat(chatId, "Commands:\n/orders — open shipments\n/stop — disconnect this chat\n\nTo connect, open Settings → Telegram notifications in the vendor portal and use a Connect button. Telegram receives the connection code automatically.");
   } catch (error) {
     console.error("[vendor-telegram webhook]", error instanceof Error ? error.message : error);
   }

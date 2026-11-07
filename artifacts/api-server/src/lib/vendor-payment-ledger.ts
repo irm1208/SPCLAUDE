@@ -78,6 +78,13 @@ export function paymentOrderRow(row: any, stale: boolean, allocation: Allocation
 }
 export type SupplierPaymentOrder = ReturnType<typeof paymentOrderRow>;
 
+export function paymentRemovalPermission(row: any, hasAllocation: boolean, hasImages: boolean) {
+  if (hasAllocation) return { canRemove: false, removalReason: "Void the supplier payment receipt before removing this submission." };
+  if (row.status !== "Submitted") return { canRemove: false, removalReason: "Vendor fulfilment has started. Coordinate with the vendor before changing this shipment." };
+  if (hasImages) return { canRemove: false, removalReason: "Vendor photos have been uploaded. Coordinate with the vendor before changing this shipment." };
+  return { canRemove: true, removalReason: null };
+}
+
 export function paymentLedgerSummary(orders: SupplierPaymentOrder[]) {
   const values = {
     owed: { cents: 0n, count: 0 }, paid: { cents: 0n, count: 0 },

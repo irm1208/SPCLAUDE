@@ -230,6 +230,9 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect(ledger.status).toBe(200);
     const reviewed = ledger.data.orders.find((order: any) => order.id === row.id);
     expect(reviewed.reviewToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(reviewed.canRemove).toBe(true);
+    expect(reviewed.profit).toMatchObject({ basis: "product_gross", supplierProductsUsd: row.snapshot.productCost });
+    expect(typeof reviewed.profit.amountUsd).toBe("string");
     const input = { vendorId: "vendor-a", walletId, walletSnapshot: { currency: "USDT", network: "ERC-20", address }, submissionIds: [row.id],
       orderSnapshots: [{ submissionId: row.id, reviewToken: reviewed.reviewToken }],
       txid: "0x" + randomUUID().replaceAll("-", "").padEnd(64, "a"), cryptoAmount: "90" };
@@ -249,6 +252,11 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     expect(vendorReceipt).toBeDefined();
     expect(vendorReceipt.orders).toEqual([{ submissionId: row.id, reference: f.code, amountUsd: "90.00" }]);
     expect(vendorReceipt.recordedBy).toBeUndefined();
+    expect(vendorReceipt.profit).toBeUndefined();
+    const paidLedger = await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true);
+    expect(paidLedger.data.orders.find((order: any) => order.id === row.id)).toMatchObject({
+      canRemove: false, removalReason: expect.stringMatching(/void/i),
+    });
     expect((await request("/vendor/payments", f.b)).data.payments.some((p: any) => p.id === recorded.data.payment.id)).toBe(false);
     const after = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
     for (const field of ["status", "paymentStatus", "balancePaymentStatus", "grandTotal", "amountDue"]) expect(after[field]).toEqual(before[field]);
@@ -538,6 +546,11 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
       expect((await request("/vendor/telegram/link", undefined, {})).status).toBe(401);
       const link = await request("/vendor/telegram/link", f.a, {});
       expect(link.status).toBe(200); expect(link.data.url).toBe(`https://t.me/PepsVendorBot?start=${link.data.token}`);
+      expect((await request("/vendor/telegram/link-status", undefined, { token: link.data.token })).status).toBe(401);
+      expect((await request("/vendor/telegram/link-status", f.a, { token: "invalid" })).status).toBe(400);
+      expect((await request("/vendor/telegram/link-status", f.b, { token: link.data.token })).status).toBe(410);
+      const pending = await request("/vendor/telegram/link-status", f.a, { token: link.data.token, vendorId: "vendor-b", username: f.b });
+      expect(pending.status).toBe(200); expect(pending.data).toEqual({ connected: false, expired: false });
       // Wrong secret is refused; a bad code is answered politely; the right code links the chat.
       expect((await webhook({ message: { chat: { id: 555 }, text: `/start ${link.data.token}` } }, "nope")).status).toBe(401);
       let before = sent.length;
@@ -545,10 +558,11 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
       await replied(before);
       expect(sent.at(-1)?.payload.text).toContain("expired");
       before = sent.length;
-      expect((await webhook({ message: { chat: { id: 555, type: "group", title: "Fixture packing team" }, text: `/start ${link.data.token}` } })).status).toBe(200);
+      expect((await webhook({ message: { chat: { id: 555, type: "group", title: "Fixture packing team" }, text: `/start@PepsVendorBot ${link.data.token}` } })).status).toBe(200);
       await replied(before);
       expect(sent.at(-1)?.payload).toMatchObject({ chat_id: "555" }); expect(sent.at(-1)?.payload.text).toContain("Linked to <b>vendor-a</b>");
       const mine = await request("/vendor/telegram", f.a);
+      expect((await request("/vendor/telegram/link-status", f.a, { token: link.data.token })).data).toEqual({ connected: true, expired: false });
       expect(mine.data.chats).toHaveLength(1); expect(mine.data.chats[0]).toMatchObject({ chatId: "555", title: "Fixture packing team", linkedBy: f.a });
       expect((await request("/vendor/telegram", f.b)).data.chats).toHaveLength(0);
       // A code cannot be reused.
@@ -896,10 +910,21 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
   }));
   it("recalls an unstarted shipment but protects started fulfilment and completed member orders", () => fixture(async f => {
     const { row } = await submit(f);
+    const before = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
+    const ledger = await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true);
+    expect(ledger.data.orders.find((order: any) => order.id === row.id).canRemove).toBe(true);
+    expect((await request(`/admin/vendor-portal/orders/${row.id}`, f.a, undefined, false, "DELETE")).status).toBe(403);
     expect((await request(`/admin/vendor-portal/orders/${row.id}`, undefined, undefined, true, "DELETE")).status).toBe(200);
     expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
+    const removedLedger = await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true);
+    expect(removedLedger.data.orders.some((order: any) => order.id === row.id)).toBe(false);
+    expect(removedLedger.data.summary.owed.amount).toBe("0.00");
+    const after = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
+    expect(after).toEqual(before);
     const { row: second } = await submit(f);
     await request(`/vendor/orders/${second.id}`, f.a, { action: "processing" }, false, "PATCH");
+    const startedLedger = await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true);
+    expect(startedLedger.data.orders.find((order: any) => order.id === second.id).canRemove).toBe(false);
     expect((await request(`/admin/vendor-portal/orders/${second.id}`, undefined, undefined, true, "DELETE")).status).toBe(409);
     await f.tx.update(store.ordersTable).set({ status: "Completed" }).where(eq(store.ordersTable.id, f.orderId));
     expect((await request(`/vendor/orders/${second.id}`, f.a, { action: "tracking", carrier: "Fixture", trackingNumber: "TRACK123" }, false, "PATCH")).status).toBe(409);

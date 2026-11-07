@@ -152,7 +152,7 @@
 - [Single-vial pricing](vial-shop-currency-policy.md) — keep seller-currency prices throughout checkout; show locked crypto settlement separately; never add unlike currencies.
 - [GB bank transfers](group-buy-bank-transfer-policy.md) — UK and international organiser details; member “sent” notifications require manual receipt confirmation.
 - [GB manual payments](group-buy-manual-payment-policy.md) — single/selected paid confirmations require a staff-only note and actor/time; independent balances stay unchanged.
-- [Wholesale vendor portal](wholesale-vendor-portal-policy.md) — vendor-only costs, Admin submission gate, separate login; supplier receipts keep immutable costs and private Admin identities.
+- [Wholesale vendor portal](wholesale-vendor-portal-policy.md) — vendor-only costs, immutable receipts, safe removal, Admin profit and Telegram connection proof.
 - [HGH free direct shipping](hgh-direct-shipping-quotes.md) — HGH 36IU direct-to-home is free, not a pending quote; other groups retain their pricing.
 - [Group-buy COA requests](group-buy-coa-policy.md) — group-buy-only, independent fees, shared invitation/signup capacity, preserved evidence and committed request terms.
 - [QR posting status](qr-posting-policy.md) — Admin/organiser Order Posted means shipped; preserve terminal states and never reverse fulfilment by unposting.

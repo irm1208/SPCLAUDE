@@ -1,6 +1,7 @@
 import { vendorTranslate as vt, useVendorLanguage, getVendorLanguage } from "@/lib/vendor-language";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarOff, Check, CheckCircle2, Copy, Loader2, MessageSquareWarning, Save, Send, Settings as SettingsIcon, Trash2, Truck } from "lucide-react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { vendorTelegramLinks, type VendorTelegramDestination } from "@/lib/vendor-telegram-link";
+import { AlertTriangle, CalendarOff, CheckCircle2, Loader2, MessageSquareWarning, Save, Send, Settings as SettingsIcon, Trash2, Truck } from "lucide-react";
 import { vendorFetch } from "@/lib/vendor-auth-client";
 import { Badge, Banner, Btn, Card, Field, field, fieldCls, muted, subtle } from "@/components/vendor-ui";
 import { SecurityCard } from "@/components/VendorSecurity";
@@ -250,36 +251,100 @@ const PREFS: Array<[key: string, label: string]> = [["newOrders", "New shipments
 export function TelegramCard() {
   useVendorLanguage();
   const [state, setState] = useState<{ configured: boolean; botUsername: string | null; chats: VendorTelegramChat[] } | null>(null);
-  const [link, setLink] = useState<{ token: string; url: string | null; groupCommand: string; expiresAt: string } | null>(null);
+  const [link, setLink] = useState<{ token: string; url: string; mode: VendorTelegramDestination; expiresAt: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const mounted = useRef(true);
+  const generation = useRef(0);
+  const launchAbort = useRef<AbortController | null>(null);
   const refresh = useCallback(async () => {
     try {
       const r = await vendorFetch("/api/vendor/telegram");
       if (!r.ok) throw new Error(await errorOf(r, vt("Could not load Telegram settings")));
-      setState(await r.json()); setError(null);
-    } catch (e) { setError(e instanceof Error ? e.message : vt("Could not load Telegram settings")); }
+      const data = await r.json();
+      if (mounted.current) { setState(data); setError(null); }
+    } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : vt("Could not load Telegram settings")); }
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
-  // While a code is outstanding, poll so the card flips to "connected" as soon as the chat links.
+  useEffect(() => {
+    mounted.current = true;
+    void refresh();
+    return () => { mounted.current = false; generation.current++; launchAbort.current?.abort(); };
+  }, [refresh]);
+  // Check consumption of this exact one-time code, including reconnection of an existing chat.
   useEffect(() => {
     if (!link) return;
-    const before = state?.chats.length ?? 0;
-    const t = setInterval(async () => { await refresh(); }, 4000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link]);
-  useEffect(() => { if (link && state && state.chats.some(c => new Date(c.createdAt).getTime() > Date.now() - 20 * 60_000 && new Date(c.createdAt).getTime() > new Date(link.expiresAt).getTime() - 15 * 60_000)) setLink(null); }, [state, link]);
+    let active = true;
+    const run = generation.current;
+    let timer: ReturnType<typeof setTimeout>;
+    let controller: AbortController | null = null;
+    const expire = () => { setLink(null); setError(vt("Telegram connection expired. Please connect again.")); };
+    const check = async () => {
+      if (new Date(link.expiresAt).getTime() <= Date.now()) { expire(); return; }
+      controller = new AbortController();
+      try {
+        const r = await vendorFetch("/api/vendor/telegram/link-status", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: link.token }), signal: controller.signal,
+        });
+        if (!active || generation.current !== run) return;
+        if (!r.ok) {
+          if ([401, 403, 410].includes(r.status)) setLink(null);
+          throw new Error(await errorOf(r, vt("Could not check Telegram connection")));
+        }
+        const result = await r.json();
+        if (!active || generation.current !== run) return;
+        if (result.connected === true) {
+          setConnected(true); setLink(null); await refresh(); return;
+        }
+        if (result.expired === true) { expire(); return; }
+      } catch (e) {
+        if (active && generation.current === run) setError(e instanceof Error ? e.message : vt("Could not check Telegram connection"));
+      }
+      if (active) timer = setTimeout(check, 2000);
+    };
+    timer = setTimeout(check, 2000);
+    return () => { active = false; clearTimeout(timer); controller?.abort(); };
+  }, [link, refresh]);
 
-  const connect = async () => {
-    setBusy("link"); setError(null);
+  const connect = async (mode: VendorTelegramDestination) => {
+    if (busy) return;
+    const run = ++generation.current;
+    setBusy("link"); setError(null); setConnected(false);
+    const webApp = (window as Window & { Telegram?: { WebApp?: { initData?: string; openTelegramLink?: (url: string) => void } } }).Telegram?.WebApp;
+    // The SDK also exists in ordinary browsers, where its async window.open can be blocked.
+    const native = webApp?.initData ? webApp : undefined;
+    let popup: Window | null = null;
+    // Reserve the window during the click, before awaiting the API, to avoid popup blocking.
+    if (typeof native?.openTelegramLink !== "function") {
+      try {
+        popup = window.open("about:blank", "_blank");
+        if (popup) {
+          popup.opener = null;
+          popup.document.title = vt("Connecting to Telegram");
+          popup.document.body.textContent = vt("Preparing your Telegram connection…");
+        }
+      } catch { /* The continuation link below works when automatic opening is blocked. */ }
+    }
+    launchAbort.current = new AbortController();
     try {
-      const r = await vendorFetch("/api/vendor/telegram/link", { method: "POST" });
+      const r = await vendorFetch("/api/vendor/telegram/link", { method: "POST", signal: launchAbort.current.signal });
       if (!r.ok) throw new Error(await errorOf(r, vt("Could not create a link code")));
-      setLink(await r.json());
-    } catch (e) { setError(e instanceof Error ? e.message : vt("Could not create a link code")); }
-    finally { setBusy(null); }
+      const data = await r.json();
+      if (!mounted.current || generation.current !== run) { popup?.close(); return; }
+      const url = vendorTelegramLinks(data.botUsername || state?.botUsername, data.token)[mode];
+      if (!Number.isFinite(Date.parse(data.expiresAt)) || Date.parse(data.expiresAt) <= Date.now()) {
+        throw new Error(vt("Telegram connection expired. Please connect again."));
+      }
+      setLink({ token: data.token, url, mode, expiresAt: data.expiresAt });
+      try {
+        if (typeof native?.openTelegramLink === "function") native.openTelegramLink(url);
+        else if (popup && !popup.closed) popup.location.replace(url);
+      } catch { popup?.close(); /* Keep the direct continuation link available. */ }
+    } catch (e) {
+      popup?.close();
+      if (mounted.current && generation.current === run) setError(e instanceof Error ? e.message : vt("Could not create a link code"));
+    } finally { if (mounted.current && generation.current === run) setBusy(null); }
   };
   const setPref = async (chat: VendorTelegramChat, key: string, value: boolean) => {
     setBusy(chat.id);
@@ -300,12 +365,11 @@ export function TelegramCard() {
     } catch (e) { setError(e instanceof Error ? e.message : vt("Could not disconnect")); }
     finally { setBusy(null); }
   };
-  const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* manual copy */ } };
-
   return (
     <Card title={<><Send className="w-4 h-4" style={subtle} />{vt("Telegram notifications")}</>}
       actions={state?.chats.length ? <Badge tone="success" progress="complete">{state.chats.length} {vt("chat")}{getVendorLanguage() === "zh" || state.chats.length === 1 ? "" : "s"} {vt("connected")}</Badge> : state && !state.configured ? <Badge tone="neutral">{vt("Not available yet")}</Badge> : undefined} testId="card-telegram">
       {error && <div className="mb-3"><Banner tone="critical" role="alert" onDismiss={() => setError(null)}>{vt(error)}</Banner></div>}
+      {connected && <p role="status" className="text-[13px] mb-3" style={muted}>{vt("Telegram connected. Notifications will arrive automatically.")}</p>}
       <p className="text-[13px] mb-3" style={muted}>{vt("Get a Telegram message the moment a shipment is assigned to you, when Peps Anonymous puts an order on hold, when something waits too long for tracking, and when a problem report is answered. Connect your own chat or a group for your packing team.")}</p>
       {state && !state.configured && <p className="text-[13px]" style={subtle}>{vt("Peps Anonymous has not switched on the vendor bot yet.")}</p>}
       {state?.chats.map(chat => (
@@ -322,19 +386,18 @@ export function TelegramCard() {
               </label>))}
           </div>
         </div>))}
-      {state?.configured && !link && <Btn variant={state.chats.length ? "secondary" : "primary"} onClick={connect} disabled={busy === "link"} data-testid="button-connect-telegram">{busy === "link" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{state.chats.length ? vt("Connect another chat") : vt("Connect Telegram")}</Btn>}
+      {state?.configured && !link && <div className="flex flex-wrap gap-2">
+        <Btn variant={state.chats.length ? "secondary" : "primary"} onClick={() => connect("personal")} disabled={!!busy} data-testid="button-connect-telegram">{busy === "link" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{vt("Connect my Telegram")}</Btn>
+        <Btn onClick={() => connect("group")} disabled={!!busy} data-testid="button-connect-telegram-group">{vt("Connect a team group")}</Btn>
+      </div>}
       {link && (
         <div className="rounded-lg p-3 space-y-2" style={{ border: "1px dashed var(--t-border)" }} data-testid="panel-telegram-link">
           <p className="text-[13px] font-semibold" style={{ color: "var(--t-text)" }}>{vt("Finish in Telegram")} <span className="font-normal" style={subtle}>{vt("· code expires in 15 minutes")}</span></p>
-          <ol className="text-[13px] space-y-1 list-decimal pl-5" style={muted}>
-            <li><strong>{vt("Personal chat:")}</strong> {link.url ? <a href={link.url} target="_blank" rel="noreferrer" className="font-semibold underline" style={{ color: "var(--t-blue)" }} data-testid="link-telegram-open">{vt("open the bot")}</a> : vt("open the bot")} {vt("and press Start.")}</li>
-            <li><strong>{vt("Team group:")}</strong> {vt("add")} {state?.botUsername ? `@${state.botUsername}` : vt("the bot")} {vt("to the group, then send this message in it:")}</li>
-          </ol>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 rounded-lg px-3 py-2 text-[13px] font-mono" style={{ background: "var(--t-surface2)", color: "var(--t-text)" }} data-testid="text-telegram-command">{link.groupCommand}</code>
-            <Btn onClick={() => copy(link.groupCommand)} data-testid="button-copy-command">{copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}{copied ? vt("Copied") : vt("Copy")}</Btn>
-          </div>
-          <p className="text-xs flex items-center gap-1.5" style={subtle}><Loader2 className="w-3.5 h-3.5 animate-spin" />{vt("Waiting for the chat to connect… this page updates automatically.")} <button type="button" className="underline" onClick={() => setLink(null)}>{vt("Cancel")}</button></p>
+          <p className="text-[13px]" style={muted}>{link.mode === "personal"
+            ? vt("In Telegram, press Start. The connection code is already included.")
+            : vt("Choose your Telegram group and add the bot. No code to copy or type.")}</p>
+          <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-[13px] font-semibold underline" style={{ color: "var(--t-blue)" }} data-testid="link-telegram-open">{vt("Telegram did not open? Continue in Telegram")}</a>
+          <p className="text-xs flex items-center gap-1.5" style={subtle}><Loader2 className="w-3.5 h-3.5 animate-spin" />{vt("Waiting for the chat to connect… this page updates automatically.")} <button type="button" className="underline" data-testid="button-cancel-telegram" onClick={() => { generation.current++; setLink(null); }}>{vt("Cancel")}</button></p>
         </div>)}
     </Card>
   );

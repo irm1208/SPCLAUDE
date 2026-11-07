@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Landmark, RefreshCw } from "lucide-react";
 import { adminAuth } from "../../lib/admin-auth";
-import { hasReviewToken, isLedger, parsePaidAt, selectedTotal, summarize, type LedgerData } from "./peps-anon-payment/model";
+import { hasReviewToken, isLedger, parsePaidAt, selectedTotal, summarize, type LedgerData, type LedgerOrder } from "./peps-anon-payment/model";
 import { LedgerSummary } from "./peps-anon-payment/LedgerSummary";
 import { LedgerOrders } from "./peps-anon-payment/LedgerOrders";
 import { ReceiptHistory } from "./peps-anon-payment/ReceiptHistory";
@@ -29,6 +29,7 @@ export default function VendorPaymentsAdmin() {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [voidId, setVoidId] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<LedgerOrder | null>(null);
   const [reason, setReason] = useState("");
   const [ledgerKey, setLedgerKey] = useState(0);
   const lock = useRef(false);
@@ -40,6 +41,7 @@ export default function VendorPaymentsAdmin() {
     const run = ++generation.current;
     setLoading(true);
     setDraft(null);
+    setRemoveTarget(null);
     setSelected(new Set());
     setLoadError(null);
     try {
@@ -64,7 +66,7 @@ export default function VendorPaymentsAdmin() {
     return () => { generation.current++; };
   }, [vendorId, load]);
 
-  const dirty = !!(draft || voidId || selected.size || form.amount || form.txid || form.paidAt || form.note || busy);
+  const dirty = !!(draft || voidId || removeTarget || selected.size || form.amount || form.txid || form.paidAt || form.note || busy);
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
   useEffect(() => {
@@ -90,13 +92,14 @@ export default function VendorPaymentsAdmin() {
     setDraft(null);
     setSelected(new Set());
     setVoidId("");
+    setRemoveTarget(null);
     setReason("");
     setMessage(null);
     setLoadError(null);
   }
 
   function review() {
-    if (!ready || !wallet || !paid.ok || !chosen.every(hasReviewToken)) return;
+    if (!ready || removeTarget || voidId || lock.current || !wallet || !paid.ok || !chosen.every(hasReviewToken)) return;
     setDraft({
       vendorId,
       walletId: wallet.id,
@@ -112,7 +115,7 @@ export default function VendorPaymentsAdmin() {
   }
 
   async function mutate(isVoid: boolean) {
-    if (lock.current || (isVoid ? !voidId || !reason.trim() : !draft)) return;
+    if (lock.current || removeTarget || (isVoid ? !voidId || !reason.trim() : !draft)) return;
     const forVendor = vendorId;
     lock.current = true;
     setBusy(true);
@@ -132,6 +135,29 @@ export default function VendorPaymentsAdmin() {
       await load(forVendor);
     } catch (error) {
       if (vendorRef.current === forVendor) setMessage({ ok: false, text: error instanceof Error ? error.message : "Could not save payment" });
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function removeSubmission() {
+    if (lock.current || busy || draft || voidId || !removeTarget || removeTarget.canRemove !== true) return;
+    const forVendor = vendorId;
+    const submissionId = removeTarget.id;
+    lock.current = true;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await request(`/api/admin/vendor-portal/orders/${encodeURIComponent(submissionId)}`, { method: "DELETE" });
+      if (vendorRef.current !== forVendor) return;
+      setRemoveTarget(null);
+      await load(forVendor);
+      if (vendorRef.current === forVendor) {
+        setMessage({ ok: true, text: `Supplier submission ${removeTarget.reference} removed from the vendor portal and payment list. Customer order and historical receipts remain.` });
+      }
+    } catch (error) {
+      if (vendorRef.current === forVendor) setMessage({ ok: false, text: error instanceof Error ? error.message : "Could not remove supplier submission" });
     } finally {
       lock.current = false;
       setBusy(false);
@@ -187,12 +213,14 @@ export default function VendorPaymentsAdmin() {
             </li>)}</ul>}
       </section>
 
-      <LedgerOrders key={ledgerKey} orders={ledger.orders} selected={selected} onSelected={setSelected} locked={busy || !!draft} />
+      <LedgerOrders key={ledgerKey} orders={ledger.orders} selected={selected} onSelected={setSelected} locked={busy || !!draft || !!voidId || !!removeTarget}
+        onRemove={(order) => { if (order.canRemove === true && !busy && !draft && !voidId && !lock.current) { setRemoveTarget(order); setMessage(null); } }}
+        removeTarget={removeTarget} onRemoveCancel={() => setRemoveTarget(null)} onRemoveConfirm={() => void removeSubmission()} removeBusy={busy} />
 
       <RecordPaymentPanel wallets={ledger.wallets} form={form} onForm={(p) => setForm((f) => ({ ...f, ...p }))} chosen={chosen} total={total}
-        draft={draft} busy={busy} ready={ready} dateError={!paid.ok} tokenProblem={tokenProblem} onReview={review} onConfirm={() => void mutate(false)} onEdit={() => setDraft(null)} />
+        draft={draft} busy={busy || !!removeTarget || !!voidId} ready={ready && !removeTarget && !voidId} dateError={!paid.ok} tokenProblem={tokenProblem} onReview={review} onConfirm={() => void mutate(false)} onEdit={() => setDraft(null)} />
 
-      <ReceiptHistory key={`h-${ledgerKey}`} payments={ledger.payments} locked={busy || !!draft} onVoid={(id) => { setVoidId(id); setReason(""); }} />
+      <ReceiptHistory key={`h-${ledgerKey}`} payments={ledger.payments} locked={busy || !!draft || !!removeTarget} onVoid={(id) => { setVoidId(id); setReason(""); }} />
 
       {voidTarget && <div className="rounded-xl border p-3 space-y-2 text-sm" style={{ borderColor: "#ef4444" }}>
         <p>Only corrects this record; does not reverse transfer. Its order allocations are released under existing rules.</p>

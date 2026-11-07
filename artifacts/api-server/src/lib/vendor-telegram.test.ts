@@ -1,11 +1,31 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { formatEvent, normalizePrefs, prefEnabled, portalOrderUrl, orderSummaryLine, vendorWebhookSecret, esc } from "./vendor-telegram";
+import { formatEvent, normalizePrefs, prefEnabled, portalOrderUrl, orderSummaryLine, vendorWebhookSecret, esc, vendorLinkStatus } from "./vendor-telegram";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const row = { id: "sub-1", reference: "8000123", snapshot: { currency: "USD", totalCost: "127.50", shipping: { country: "United Kingdom", name: "Hidden Person" }, items: [{ productName: "HGH <10iu>", quantity: 2 }, { productName: "BPC-157", quantity: 3 }] } };
 const originalPublicUrl = process.env.PUBLIC_URL;
 afterEach(() => { if (originalPublicUrl === undefined) delete process.env.PUBLIC_URL; else process.env.PUBLIC_URL = originalPublicUrl; });
 
 describe("vendor telegram formatting", () => {
+  it("checks the exact vendor, user and code without linking or changing any chat", async () => {
+    let params: unknown[] = [];
+    const tx: any = { select: () => ({ from: () => ({ where: (query: any) => {
+      params = new PgDialect().sqlToQuery(query).params;
+      return { limit: async () => [{ usedAt: null, expiresAt: new Date(Date.now() + 60_000) }] };
+    } }) }) };
+    expect(await vendorLinkStatus(tx, "vendor-a", "alice", "a".repeat(24))).toEqual({ connected: false, expired: false });
+    expect(params).toEqual(expect.arrayContaining(["vendor-a", "alice", "a".repeat(24)]));
+  });
+  it("detects consumed codes, including reconnecting an existing chat", async () => {
+    const tx: any = { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ usedAt: new Date(), expiresAt: new Date(Date.now() - 1000) }] }) }) }) };
+    expect(await vendorLinkStatus(tx, "vendor-a", "alice", "a".repeat(24))).toEqual({ connected: true, expired: false });
+  });
+  it("reports expired codes and rejects codes missing from the authenticated scope", async () => {
+    const tx: any = { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ usedAt: null, expiresAt: new Date(Date.now() - 1000) }] }) }) }) };
+    expect(await vendorLinkStatus(tx, "vendor-a", "alice", "a".repeat(24))).toEqual({ connected: false, expired: true });
+    tx.select = () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) });
+    await expect(vendorLinkStatus(tx, "vendor-b", "bob", "a".repeat(24))).rejects.toThrow(/expired|not found/i);
+  });
   it("summarises an order without exposing the recipient's name and escapes HTML", () => {
     const line = orderSummaryLine(row);
     expect(line).toBe("#8000123 · 5 units · United Kingdom · USD 127.50");

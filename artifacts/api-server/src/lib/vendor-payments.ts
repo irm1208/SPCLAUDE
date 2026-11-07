@@ -6,13 +6,14 @@ import {
   vendorPaymentsTable,
   vendorPaymentAllocationsTable,
   vendorSubmissionsTable,
+  vendorImagesTable,
   ordersTable,
 } from "@workspace/db";
 import { VendorPortalError } from "./vendor-portal-model";
 import {
   auditVendor,
   loadVendorSource,
-  isVendorSubmissionStale,
+  inspectVendorSubmission,
 } from "./vendor-portal-service";
 import { centsToUsdString, usdToCents } from "./refund-money";
 import {
@@ -20,7 +21,8 @@ import {
   normalizeVendorTxid,
   vendorPaymentChain,
 } from "./vendor-wallet-input";
-import { paymentLedgerSummary, paymentOrderDetail, paymentOrderRow, paymentReviewToken } from "./vendor-payment-ledger";
+import { paymentLedgerSummary, paymentOrderDetail, paymentOrderRow, paymentReviewToken, paymentRemovalPermission } from "./vendor-payment-ledger";
+import { vendorProductProfit } from "./vendor-payment-profit";
 export function paymentOrderTotal(
   rows: Array<{ snapshot: { totalCost: string } }>,
 ) {
@@ -153,12 +155,20 @@ export async function vendorPaymentDashboard(tx: any, vendorId: string) {
     id: ordersTable.id, code: ordersTable.code, telegramUsername: ordersTable.telegramUsername,
   }).from(ordersTable).where(inArray(ordersTable.id, orderIds)) : [];
   const identityById = new Map(identities.map(order => [order.id, order]));
+  const images: { submissionId: string }[] = rows.length ? await tx.select({ submissionId: vendorImagesTable.submissionId })
+    .from(vendorImagesTable).where(inArray(vendorImagesTable.submissionId, rows.map((row: any) => row.id))) : [];
+  const withImages = new Set(images.map(image => image.submissionId));
   const orders = [];
   for (const row of rows) {
     const allocation = allocationBySubmission.get(row.id);
     const active = allocation && activePayments.has(allocation.paymentId) ? allocation : null;
     const orphan = !!allocation && !active;
-    const order = paymentOrderRow(row, await isVendorSubmissionStale(tx, row) || orphan, active, identityById);
+    const inspection = await inspectVendorSubmission(tx, row);
+    const order = {
+      ...paymentOrderRow(row, inspection.stale || orphan, active, identityById),
+      ...paymentRemovalPermission(row, !!allocation, withImages.has(row.id)),
+      profit: vendorProductProfit(row, inspection.source, inspection.stale),
+    };
     if (orphan) order.reviewReason = "Payment allocation needs review: its receipt is missing or voided.";
     orders.push(order);
   }

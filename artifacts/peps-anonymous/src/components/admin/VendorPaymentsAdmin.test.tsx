@@ -76,6 +76,9 @@ const data = {
     {
       id: "o1",
       reviewToken: tok("o1"),
+      canRemove: true,
+      removalReason: null,
+      profit: { currency: "USD", basis: "product_gross", salesUsd: "18.20", supplierProductsUsd: "7.00", amountUsd: "11.20", reason: null, definition: "Customer product line sales for this supplier minus submitted supplier product cost, before shipping, fees, credits, discounts, tax, or overheads." },
       reference: "REF1",
       totalCost: "10.10",
       status: "Submitted",
@@ -85,6 +88,9 @@ const data = {
     {
       id: "o2",
       reviewToken: tok("o2"),
+      canRemove: false,
+      removalReason: "This submission has started and is locked.",
+      profit: { currency: "USD", basis: "product_gross", salesUsd: "15.00", supplierProductsUsd: "20.00", amountUsd: "-5.00", reason: null, definition: "Customer product line sales for this supplier minus submitted supplier product cost, before shipping, fees, credits, discounts, tax, or overheads." },
       reference: "REF2",
       totalCost: "20.20",
       status: "Shipped",
@@ -99,6 +105,9 @@ const data = {
       status: "Submitted",
       stale: false,
       paymentId: "p1",
+      canRemove: false,
+      removalReason: "Void the payment receipt before removing this supplier submission.",
+      profit: { currency: "USD", basis: "product_gross", salesUsd: null, supplierProductsUsd: null, amountUsd: null, reason: "Customer product prices are ambiguous.", definition: "Customer product line sales for this supplier minus submitted supplier product cost, before shipping, fees, credits, discounts, tax, or overheads." },
     },
     {
       id: "stale",
@@ -107,6 +116,9 @@ const data = {
       totalCost: "2",
       status: "Submitted",
       stale: true,
+      canRemove: true,
+      removalReason: null,
+      profit: { currency: "USD", basis: "product_gross", salesUsd: "8.00", supplierProductsUsd: "4.00", amountUsd: "4.00", reason: null, definition: "Customer product line sales for this supplier minus submitted supplier product cost, before shipping, fees, credits, discounts, tax, or overheads." },
       paymentId: null,
     },
   ],
@@ -296,6 +308,9 @@ function detailedData(vendorId = "v1", n = 2) {
       reviewReason: null,
       paidAmountUsd: null,
       reviewToken: tok(`${vendorId}-o${i}`),
+      canRemove: true,
+      removalReason: null,
+      profit: { currency: "USD", basis: "product_gross", salesUsd: "18.00", supplierProductsUsd: "10.00", amountUsd: "8.00", reason: null, definition: "Customer product line sales for this supplier minus submitted supplier product cost, before shipping, fees, credits, discounts, tax, or overheads." },
     })),
     payments: [
       {
@@ -434,6 +449,93 @@ test("copy without clipboard API shows select-and-copy fallback", async () => {
   } finally {
     Object.defineProperty(nav, "clipboard", { configurable: true, value: prev });
   }
+});
+
+test("shows exact signed product profit beside orders with its definition and sales/cost basis", async () => {
+  await mount();
+  const ledgerRow = el("payment-order-o1").closest("li")!.textContent!;
+  assert.ok(ledgerRow.includes("$11.20"));
+  assert.ok(ledgerRow.includes("$18.20"));
+  assert.ok(ledgerRow.includes("$7.00"));
+  assert.ok(ledgerRow.includes("Estimated product profit"));
+  await click("payment-expand-o1");
+  const profitDetail = el("payment-profit-detail-o1").textContent!;
+  assert.ok(profitDetail.includes("before shipping"));
+  assert.ok(profitDetail.includes("Customer product sales: $18.20"));
+  assert.ok(profitDetail.includes("Supplier product cost: $7.00"));
+  const negativeRow = el("payment-order-o2").closest("li")!.textContent!;
+  assert.ok(negativeRow.includes("-$5.00"));
+  assert.ok(negativeRow.includes("$15.00"));
+  assert.ok(negativeRow.includes("$20.00"));
+  const unavailable = el("payment-order-paid").closest("li")!.textContent!;
+  assert.ok(unavailable.includes("Unavailable"));
+  assert.ok(unavailable.includes("Customer product prices are ambiguous."));
+});
+
+test("removal requires confirmation, uses the supplier submission endpoint, and preserves customer order", async () => {
+  await mount();
+  await click("payment-order-o1");
+  await change("payment-wallet", "w1");
+  await change("payment-amount", "10");
+  await change("payment-txid", "prepared-tx");
+  await click("payment-remove-o1");
+  assert.ok(el("payment-remove-confirmation").textContent!.includes("REF1"));
+  assert.ok(el("payment-remove-confirmation").textContent!.includes("keeps the customer order"));
+  assert.ok(el("payment-remove-confirmation").textContent!.includes("does not cancel"));
+  assert.equal((el("payment-review") as HTMLButtonElement).disabled, true);
+  await click("payment-review");
+  assert.equal(document.querySelector('[data-testid="payment-draft"]'), null);
+  assert.equal(requests.filter((r) => r.method === "POST").length, 0);
+  assert.equal(requests.filter((r) => r.method === "DELETE").length, 0);
+  await click("payment-remove-cancel");
+  await click("payment-remove-o1");
+  let refreshCount = 0;
+  let deleted = false;
+  adminAuth.request = async (path, init = {}) => {
+    requests.push({ path, method: init.method, body: null });
+    if (init.method === "DELETE") { deleted = true; return new Response(null, { status: 204 }); }
+    refreshCount++;
+    return new Response(JSON.stringify({ ...data, orders: deleted ? data.orders.filter((order: any) => order.id !== "o1") : data.orders }));
+  };
+  await click("payment-remove-confirm");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await act(async () => {});
+  assert.ok(requests.some((r) => r.path === "/api/admin/vendor-portal/orders/o1" && r.method === "DELETE"));
+  assert.ok(text().includes("Supplier submission REF1 removed"));
+  assert.ok(refreshCount > 0);
+  assert.equal(document.querySelector('[data-testid="payment-order-o1"]'), null);
+  assert.equal(document.querySelector('[data-testid="payment-selected-count"]'), null);
+});
+
+test("failed removal preserves the row and reports error without success", async () => {
+  await mount();
+  await click("payment-remove-o1");
+  adminAuth.request = async (path, init = {}) => {
+    requests.push({ path, method: init.method, body: null });
+    if (init.method === "DELETE") return new Response(JSON.stringify({ error: "Submission changed" }), { status: 409 });
+    return new Response(JSON.stringify(data));
+  };
+  await click("payment-remove-confirm");
+  assert.ok(text().includes("Submission changed"));
+  assert.ok(!text().includes("Supplier submission removed"));
+  assert.ok(el("payment-order-o1"));
+});
+
+test("paid and started submissions cannot be removed", async () => {
+  await mount();
+  assert.equal((el("payment-remove-paid") as HTMLButtonElement).disabled, true);
+  assert.ok(el("payment-remove-paid").textContent!.includes("Void the payment receipt"));
+  assert.equal((el("payment-remove-o2") as HTMLButtonElement).disabled, true);
+  assert.ok(el("payment-remove-o2").textContent!.includes("started"));
+});
+
+test("switching vendors clears removal confirmation and stale removal cannot act", async () => {
+  await mountWith(async (p) => new Response(JSON.stringify(detailedData(vendorOf(p)))));
+  await change("payment-vendor", "v1");
+  await click("payment-remove-v1-o0");
+  await change("payment-vendor", "v2");
+  assert.equal(document.querySelector('[data-testid="payment-remove-confirmation"]'), null);
+  assert.ok(!text().includes("V1-REF0"));
 });
 
 for (const [label, bad] of [["missing", undefined], ["malformed", "NOT-A-SHA"]] as const) {
