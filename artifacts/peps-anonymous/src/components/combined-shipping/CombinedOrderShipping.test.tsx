@@ -203,3 +203,25 @@ test("changing group-buy scope never retains the prior group's data, including l
   assert.match(container.textContent ?? "", /parent-b/);
   assert.doesNotMatch(container.textContent ?? "", /parent-a/);
 });
+
+test("supplier_receipts groups show receipt source and post empty parcelIds", async () => {
+  const bodies: any[] = [];
+  const group = { ...fixture(), stockSource: "supplier_receipts", parcels: [], canDispatch: true, canPrint: true, dispatched: false, trackingNumber: null, reason: null };
+  (group.printOrder as any).supplierBatchReferences = ["B-101"];
+  const dfetch: CombinedOrderShippingProps["dfetch"] = async (_p, o) => {
+    if (o?.method === "POST") { bodies.push(JSON.parse(String(o.body))); return response({ trackingNumber: "T1" }); }
+    return response({ groups: [group] });
+  };
+  container = document.createElement("div"); document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => { root!.render(<Component groupBuyId={groupBuyId} prefix={prefix} dfetch={dfetch} onPrint={() => {}} />); });
+  for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+  assert.match(container.textContent ?? "", /Checked supplier receipts for this batch/);
+  assert.equal(container.querySelector("[data-testid^=checkbox-source-parcel]"), null);
+  const input = container.querySelector(`[data-testid=input-tracking-${group.parentId}]`) as HTMLInputElement;
+  const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => { setter.call(input, "T1"); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); });
+  await act(async () => { (container.querySelector(`[data-testid=button-dispatch-linked-${group.parentId}]`) as HTMLButtonElement).click(); });
+  for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+  assert.deepEqual(bodies[0]?.parcelIds, []);
+});

@@ -23,6 +23,9 @@ import { sendTelegramMessage, notifyUserFromTemplate } from "../lib/telegram";
 import { GoogleGenAI } from "../lib/google-genai";
 import { randomUUID } from "crypto";
 import { registerLinkedOrderDispatch, withLinkedDispatchBoundary, CombinedShippingError } from "./linked-order-dispatch";
+import { loadShipmentContext } from "../lib/linked-shipment-data";
+import { linkedShipmentBlocker } from "../lib/linked-shipment-context";
+import { receiptDispatches } from "../lib/receipt-dispatch-ledger";
 
 
 // ─── factory config ──────────────────────────────────────────────────────────
@@ -263,6 +266,7 @@ router.post(`${cfg.prefix}/:gbId/compute`, async (req, res) => {
     const pendingOrders = scopedOrders.filter(o =>
       !["Shipped", "Completed"].includes(o.status)
     );
+    const shipmentContext = await loadShipmentContext(db, String(gbId), scopedOrders);
 
     // Fetch all line items in one query
     const orderIds = pendingOrders.map(o => o.id);
@@ -292,6 +296,16 @@ router.post(`${cfg.prefix}/:gbId/compute`, async (req, res) => {
 
     for (const order of pendingOrders) {
       const lineItems = lineItemsByOrder.get(order.id) ?? [];
+      const context = shipmentContext.find(c => c.id === order.id);
+      if (context?.relatedOrderIds.length || order.additionOfOrderId) {
+        unfulfillable.push({
+          ...formatOrder(order, lineItems),
+          supplierBatchReferences: context?.batches.map(b => `${b.reference} · ${b.kits} kits`) ?? [],
+          reason: linkedShipmentBlocker(shipmentContext, [order.id])
+            ?? "Checked batch receipts available. Use batch-aware Mark Shipped; generic parcel stock has no supplier-batch identity.",
+        });
+        continue;
+      }
 
       if (lineItems.length === 0) {
         unfulfillable.push({
@@ -424,7 +438,7 @@ router.post(`${cfg.prefix}/:gbId/confirm`, async (req, res) => {
       if (updated.length !== scopedOrderIds.length) {
         throw new RefundMutationBlockedError(scopedOrderIds.find(id => !updated.some(row => row.id === id)) ?? scopedOrderIds[0]!);
       }
-    });
+    }, "legacy-stock");
 
     res.json({ ok: true, confirmed: scopedOrderIds.length });
   } catch (e) {
@@ -469,8 +483,10 @@ router.post(`${cfg.prefix}/:gbId/undispatch`, async (req, res) => {
 
       const lineItems = await tx.select().from(orderLineItemsTable)
         .where(inArray(orderLineItemsTable.orderId, scopedOrderIds));
+      const receiptSources = await receiptDispatches(tx, scopedOrderIds);
       const restoreMap = new Map<string, number>();
       lineItems.forEach(li => {
+        if (receiptSources.has(li.orderId)) return;
         const key = li.productName.trim().toLowerCase();
         restoreMap.set(key, (restoreMap.get(key) ?? 0) + Number(li.quantity));
       });
@@ -686,7 +702,7 @@ router.post(`${cfg.prefix}/:gbId/mark-orders-shipped`, async (req, res) => {
       await tx.update(ordersTable)
         .set({ status: "Shipped", updatedAt: new Date(), dispatchConfirmedAt: new Date() })
         .where(refundMutableOrderWhere(inArray(ordersTable.id, toMark)));
-    });
+    }, "dispatch", req.body.expectedAllocations);
 
     res.json({ ok: true, marked: toMark.length });
   } catch (e) {

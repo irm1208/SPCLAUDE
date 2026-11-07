@@ -41,6 +41,7 @@ import reshipperVisibilityRouter from "./reshipper-visibility";
 import { reshipperPostageReceipts } from "../lib/reshipper-postage-receipts";
 import { onwardChargeLedgerKey } from "../lib/gb-onward-payment-rules";
 import { claimReshipperOrders, loadClaimPostage, reshipperClaimWhere, reshipperOwnedWhere } from "../lib/reshipper-order-claims";
+import { CombinedShippingError, withLinkedDispatchBoundary } from "./linked-order-dispatch";
 
 const router: IRouter = Router();
 router.use(reshipperVisibilityRouter);
@@ -800,15 +801,25 @@ router.patch("/reshipper/gb/:gbId/orders/:orderId", requireReshipper, async (req
     return;
   }
 
-  const [updated] = await db
+  const save = async (store: typeof db) => store
     .update(ordersTable)
     .set(updates)
     .where(refundMutableOrderWhere(and(
       eq(ordersTable.id, orderId),
       reshipperOwnedWhere(gbId, assignment.reshipperUsername),
+      eq(ordersTable.status, existing.status),
       trackingWrite ? unchangedTrackingWriteFields(existing) : undefined,
     )))
     .returning();
+  let updated;
+  try {
+    [updated] = updates.status === "Shipped"
+      ? await withLinkedDispatchBoundary(db, gbId, [orderId], tx => save(tx as unknown as typeof db))
+      : await save(db);
+  } catch (error) {
+    if (error instanceof CombinedShippingError) { res.status(error.status).json({ error: error.message }); return; }
+    throw error;
+  }
   if (!updated) {
     await assertNoActiveRefund(db, orderId);
     res.status(409).json({ error: "Order ownership or tracking changed; reload and try again" });

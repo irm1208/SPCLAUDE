@@ -29,19 +29,34 @@ its existing result even if vendor submission happened later; do not cancel hist
 additions or change their payment eligibility when enforcing the new cutoff.
 
 ## Combined shipping, separate money
-Group the original order and its active add-ons for one packing slip and one final
-parcel, without merging order balances, payment evidence or supplier commitments.
-All included orders must be paid and ready, with matching member, group buy, destination
-and reshipper. Apply the same final tracking number to each included order.
+Only group an unshipped original and its same-supplier-batch add-ons for one parcel,
+without merging balances, payment evidence or supplier commitments. All included
+orders must be authorised, paid, fully allocated and received, with compatible member,
+group buy, destination and reshipper. Later-batch additions remain separate shipments;
+they must not block a ready original. Already-shipped originals stay shipped.
 
-**Why:** The user approved attaching linked orders for shipping together rather than
-shipping each add-on separately, while retaining separate payment records.
+**Why:** A reshipper missed a separate addition while packing the original. The user
+explicitly requires additions outside the original batch to be treated separately,
+with visible links in both directions, not an obligation to wait for every add-on.
 
-**How to apply:** Treat the whole linked family as the dispatch unit, protect stock
-allocation against retries/concurrent additions, and undo a combined dispatch together.
-If part of the family already shipped independently, do not claim it can be combined
-retroactively; remaining add-ons need a separate parcel. Never infer shared shipping
-merely from the same customer on unrelated orders.
+**How to apply:** Determine parcel membership from exact allocation identities and
+quantities, never names, timestamps or the mere existence of a parent link. Unallocated,
+partial or multi-batch families need review rather than inferred grouping. Preserve
+exact dispatched membership for retries and undo, and never retrospectively combine
+a shipped original. Show zero additional postage explicitly without claiming coverage
+or creating a new charge.
+
+## Supplier receipts versus generic parcel inventory
+Linked batch shipments must use usable receipts tied to the exact order, product,
+supplier batch and reshipper. Never substitute a product-name stock match.
+
+**Why:** Legacy parcel inventory has no supplier-batch identity. Deducting or restoring
+it for an exact supplier-receipt dispatch would consume or create unrelated stock.
+
+**How to apply:** Keep receipt-backed dispatch and undo inventory provenance consistent,
+under the same allocation locks as supplier fulfilment. Revalidate receipt ownership,
+payment, refund state and reviewed allocation at confirmation. Ordinary unrelated
+orders retain their existing stock flow.
 
 ## The unbatched invariant
 The server must lock and revalidate the paid parent, append/combine canonical catalog

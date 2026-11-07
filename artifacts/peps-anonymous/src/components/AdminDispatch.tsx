@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import CombinedOrderShipping from "./combined-shipping/CombinedOrderShipping";
+import { ReceiptShipmentActions } from "./combined-shipping/ReceiptShipmentActions";
+import { ShipmentContextPanel, ShipmentOrderBadges, SlipShipmentNotes, enrichForSlip, filterByShipmentBatch, linkedBlockReason, useShipmentContext } from "./combined-shipping/ShipmentContext";
 
 function apiUrl(path: string) { return `/api${path}`; }
 
@@ -142,6 +144,8 @@ export interface DispatchOrder {
   lineItems: { productName: string; quantity: number }[];
   reason?: string;
   includedOrderCodes?: string[];
+  /** Linked orders that are NOT in this parcel (printed as a notice, never as items). */
+  shipmentNotes?: string[];
 }
 
 interface ScopeOptions {
@@ -196,7 +200,7 @@ export function AdminDispatch({ secret }: { secret: string }) {
 export function DispatchManager({ cfg }: { cfg: DispatchCfg }) {
   return (
     <DispatchCfgContext.Provider value={cfg}>
-      <DispatchManagerInner />
+      <DispatchManagerInner key={`${cfg.role}:${cfg.base}:${cfg.lockedScope?.scopeId ?? ""}:${cfg.gbId ?? ""}`} />
     </DispatchCfgContext.Provider>
   );
 }
@@ -465,6 +469,7 @@ function PackingSlipsTab({
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [showPrint, setShowPrint] = useState(false);
   const [showPendingPrint, setShowPendingPrint] = useState(false);
+  const [receiptPrint, setReceiptPrint] = useState<DispatchOrder | null>(null);
   const [gbName, setGbName] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -489,6 +494,7 @@ function PackingSlipsTab({
 
   useEffect(() => {
     setShowPendingPrint(false);
+    setReceiptPrint(null);
     setOvPendingSelected(new Set());
   }, [selectedGb, scopeType, scopeId]);
 
@@ -638,15 +644,22 @@ function PackingSlipsTab({
     }
   };
 
+  const shipmentCtx = useShipmentContext(selectedGb ? `${cfg.base}/${selectedGb}/shipment-context` : null, cfg.dfetch);
+  const [shipFilter, setShipFilter] = useState("all");
+  useEffect(() => { setShipFilter("all"); }, [selectedGb]);
+  const ovOrders = useMemo(() => filterByShipmentBatch(overviewOrders, shipmentCtx.byId, shipFilter), [overviewOrders, shipmentCtx.byId, shipFilter]);
+  const visibleFulfillable = useMemo(() => filterByShipmentBatch(computeResult?.fulfillable ?? [], shipmentCtx.byId, shipFilter), [computeResult, shipmentCtx.byId, shipFilter]);
+  const visibleUnfulfillable = useMemo(() => filterByShipmentBatch(computeResult?.unfulfillable ?? [], shipmentCtx.byId, shipFilter), [computeResult, shipmentCtx.byId, shipFilter]);
+
   // Derived overview categories — updated reactively as compute runs
-  const ovDispatched = useMemo(() => overviewOrders.filter(o => ["Shipped", "Completed"].includes(o.status)), [overviewOrders]);
+  const ovDispatched = useMemo(() => ovOrders.filter(o => ["Shipped", "Completed"].includes(o.status)), [ovOrders]);
   const readyIds = useMemo(() => new Set(computeResult?.fulfillable.map(o => o.id) ?? []), [computeResult]);
   const cannotIds = useMemo(() => new Set(computeResult?.unfulfillable.map(o => o.id) ?? []), [computeResult]);
-  const ovReady = useMemo(() => overviewOrders.filter(o => readyIds.has(o.id)), [overviewOrders, readyIds]);
-  const ovCannot = useMemo(() => overviewOrders.filter(o => cannotIds.has(o.id)), [overviewOrders, cannotIds]);
-  const ovPending = useMemo(() => overviewOrders.filter(o =>
+  const ovReady = useMemo(() => ovOrders.filter(o => readyIds.has(o.id)), [ovOrders, readyIds]);
+  const ovCannot = useMemo(() => ovOrders.filter(o => cannotIds.has(o.id)), [ovOrders, cannotIds]);
+  const ovPending = useMemo(() => ovOrders.filter(o =>
     !["Shipped", "Completed", "Cancelled"].includes(o.status) && !readyIds.has(o.id) && !cannotIds.has(o.id)
-  ), [overviewOrders, readyIds, cannotIds]);
+  ), [ovOrders, readyIds, cannotIds]);
   const pendingPrintOrders = useMemo(
     () => ovPending.filter(o => ovPendingSelected.has(o.id)),
     [ovPending, ovPendingSelected],
@@ -713,6 +726,7 @@ function PackingSlipsTab({
   };
 
   const handleConfirm = async () => {
+    if (selectedBlocked.length > 0) return; // fail closed on stale/linked review
     if (selectedOrderIds.size === 0) return;
     setConfirming(true);
     setConfirmMsg(null);
@@ -751,10 +765,31 @@ function PackingSlipsTab({
     }
   };
 
+  const withNotes = useCallback((list: DispatchOrder[]) => list.map(o => enrichForSlip(o, shipmentCtx.byId)), [shipmentCtx.byId]);
+  const blockedFor = (list: DispatchOrder[]) => list
+    .map(o => ({ o, reason: linkedBlockReason(o.id, shipmentCtx.byId, shipmentCtx.error) }))
+    .filter((x): x is { o: DispatchOrder; reason: string } => !!x.reason);
+  const handleShipmentBatchChange = (v: string) => {
+    setShipFilter(v);
+    setComputeResult(null);
+    setSelectedOrderIds(new Set());
+    setOvPendingSelected(new Set());
+    setOvCannotSelected(new Set());
+    setShowPrint(false);
+    setShowPendingPrint(false);
+    setReceiptPrint(null);
+  };
+  const jumpToDispatchOrder = (id: string) => {
+    handleShipmentBatchChange("all");
+    setOvExpanded({ dispatched: true, ready: true, cannot: true, pending: true });
+    window.setTimeout(() => document.querySelector(`[data-order-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  };
+
   const selectedOrders = useMemo(
-    () => (computeResult?.fulfillable ?? []).filter(o => selectedOrderIds.has(o.id)),
-    [computeResult, selectedOrderIds],
+    () => withNotes(visibleFulfillable.filter(o => selectedOrderIds.has(o.id))),
+    [visibleFulfillable, selectedOrderIds, withNotes],
   );
+  const selectedBlocked = blockedFor(selectedOrders);
 
   const inpostSelectedOrders = useMemo(
     () => selectedOrders.filter(o => o.deliveryMethod?.toLowerCase().includes("inpost")),
@@ -1025,6 +1060,21 @@ function PackingSlipsTab({
         </Section>
       )}
 
+      {selectedGb && scopeType && (
+        <ShipmentContextPanel path={`${cfg.base}/${selectedGb}/shipment-context`} fetcher={cfg.dfetch} context={shipmentCtx} filter={shipFilter}
+          onJump={jumpToDispatchOrder} onBatchChange={handleShipmentBatchChange}
+          title="Before you pack: linked orders & batches" />
+      )}
+      {selectedGb && scopeType && <ReceiptShipmentActions key={`${selectedGb}:${scopeType}:${scopeId}:${shipFilter}`}
+        orders={shipmentCtx.orders} visibleOrders={ovOrders} error={shipmentCtx.error}
+        fetcher={cfg.dfetch} path={`${cfg.base}/${selectedGb}`} onPrint={setReceiptPrint}
+        onUpdated={id => {
+          setOverviewOrders(prev => prev.map(o => o.id === id ? { ...o, status: "Shipped" } : o));
+          setComputeResult(null); setSelectedOrderIds(new Set());
+          void shipmentCtx.refresh();
+        }} />}
+      {receiptPrint && <PrintModal orders={[receiptPrint]} gbName={gbName} onClose={() => setReceiptPrint(null)} />}
+
       {/* ── Order Overview (reshipper, country leg, or all-orders scope) ── */}
       {((scopeType === "reshipper" && scopeId) || (scopeType === "country" && scopeId) || scopeType === "all") && (
         <Section title={`All Orders${scopeType === "reshipper" ? ` — ${scopeId}` : scopeType === "country" && scopeOptions ? ` — ${scopeOptions.countryLegs.find(l => l.id === scopeId)?.countryName ?? scopeId}` : ""}${overviewOrders.length > 0 ? ` (${overviewOrders.length} total)` : ""}`}>
@@ -1055,8 +1105,8 @@ function PackingSlipsTab({
                     {ovDispatched.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-4 py-2">None yet.</p>
                     ) : ovDispatched.map(o => (
-                      <div key={o.id} className="flex items-center gap-2 px-4 py-2 text-xs">
-                        <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
+                      <div key={o.id} data-order-id={o.id} className="flex items-center gap-2 px-4 py-2 text-xs">
+                        <span className="font-mono text-slate-700 shrink-0">#{o.code}</span><ShipmentOrderBadges orderId={o.id} byId={shipmentCtx.byId} />
                         {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                         {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                         <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">{o.status}</span>
@@ -1087,8 +1137,8 @@ function PackingSlipsTab({
                     {ovReady.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-4 py-2">{computeResult ? "No orders can be fulfilled from the selected parcels." : "Run Calculate to see ready orders."}</p>
                     ) : ovReady.map(o => (
-                      <div key={o.id} className="flex items-center gap-2 px-4 py-2 text-xs">
-                        <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
+                      <div key={o.id} data-order-id={o.id} className="flex items-center gap-2 px-4 py-2 text-xs">
+                        <span className="font-mono text-slate-700 shrink-0">#{o.code}</span><ShipmentOrderBadges orderId={o.id} byId={shipmentCtx.byId} />
                         {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                         {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                         <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">{o.status}</span>
@@ -1159,6 +1209,7 @@ function PackingSlipsTab({
                             return (
                               <div
                                 key={o.id}
+                                data-order-id={o.id}
                                 onClick={() => setOvCannotSelected(prev => {
                                   const next = new Set(prev);
                                   next.has(o.id) ? next.delete(o.id) : next.add(o.id);
@@ -1169,7 +1220,7 @@ function PackingSlipsTab({
                                 <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${sel ? "bg-amber-500 border-amber-500" : "border-amber-300"}`}>
                                   {sel && <Check className="w-2 h-2 text-white" />}
                                 </div>
-                                <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
+                                <span className="font-mono text-slate-700 shrink-0">#{o.code}</span><ShipmentOrderBadges orderId={o.id} byId={shipmentCtx.byId} />
                                 {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                                 {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                                 <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">{o.status}</span>
@@ -1231,7 +1282,7 @@ function PackingSlipsTab({
                             <button
                               type="button"
                               onClick={() => setShowPendingPrint(true)}
-                              disabled={pendingPrintOrders.length === 0}
+                              disabled={pendingPrintOrders.length === 0 || blockedFor(pendingPrintOrders).length > 0}
                               className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                             >
                               <Printer className="h-3.5 w-3.5" />
@@ -1250,13 +1301,14 @@ function PackingSlipsTab({
                             return (
                               <div
                                 key={o.id}
+                                data-order-id={o.id}
                                 onClick={() => setOvPendingSelected(prev => { const next = new Set(prev); next.has(o.id) ? next.delete(o.id) : next.add(o.id); return next; })}
                                 className={`cursor-pointer flex items-center gap-2 px-4 py-2 text-xs transition-colors ${sel ? "bg-slate-50" : "hover:bg-slate-50/40"}`}
                               >
                                 <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${sel ? "bg-slate-500 border-slate-500" : "border-slate-300"}`}>
                                   {sel && <Check className="w-2 h-2 text-white" />}
                                 </div>
-                                <span className="font-mono text-slate-700 shrink-0">#{o.code}</span>
+                                <span className="font-mono text-slate-700 shrink-0">#{o.code}</span><ShipmentOrderBadges orderId={o.id} byId={shipmentCtx.byId} />
                                 {o.telegramUsername && <span className="text-slate-500 shrink-0">@<AccountHandle username={o.telegramUsername.replace(/^@/, "")} /></span>}
                                 {o.shippingName && <span className="text-slate-400 truncate min-w-0">{o.shippingName}</span>}
                                 <span className="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">{o.status}</span>
@@ -1306,7 +1358,7 @@ function PackingSlipsTab({
                 <p className="text-xs text-muted-foreground pl-4">No orders can be fulfilled from the selected parcels.</p>
               ) : (
                 <div className="space-y-1.5">
-                  {computeResult.fulfillable.map(o => {
+                  {visibleFulfillable.map(o => {
                     const checked = selectedOrderIds.has(o.id);
                     return (
                       <div
@@ -1321,7 +1373,7 @@ function PackingSlipsTab({
                         }`}>
                           {checked && <Check className="w-2.5 h-2.5 text-white" />}
                         </div>
-                        <OrderSummary o={o} />
+                        <div className="min-w-0 flex-1"><ShipmentOrderBadges orderId={o.id} byId={shipmentCtx.byId} /><OrderSummary o={o} /></div>
                       </div>
                     );
                   })}
@@ -1339,7 +1391,7 @@ function PackingSlipsTab({
                   </h4>
                 </div>
                 <div className="space-y-1.5">
-                  {computeResult.unfulfillable.map(o => (
+                  {visibleUnfulfillable.map(o => (
                     <div key={o.id} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
                       <OrderSummary o={o} />
                       {o.reason && (
@@ -1357,9 +1409,15 @@ function PackingSlipsTab({
             {/* Action buttons */}
             {selectedOrderIds.size > 0 && (
               <div className="flex flex-wrap items-center gap-3 pt-2">
+                {selectedBlocked.length > 0 && (
+                  <p role="alert" className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="alert-linked-blocked">
+                    {selectedBlocked.map(x => `${x.o.code ?? x.o.id.slice(0, 8)}: ${x.reason}`).join(" · ")}
+                  </p>
+                )}
                 <button
                   onClick={() => setShowPrint(true)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-primary text-primary text-sm font-semibold hover:bg-primary/5 transition-colors"
+                  disabled={selectedBlocked.length > 0}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-primary disabled:opacity-50 text-primary text-sm font-semibold hover:bg-primary/5 transition-colors"
                 >
                   <Printer className="w-4 h-4" />
                   Print Packing Slips ({selectedOrderIds.size})
@@ -1367,7 +1425,7 @@ function PackingSlipsTab({
 
                 <button
                   onClick={handleConfirm}
-                  disabled={confirming}
+                  disabled={confirming || selectedBlocked.length > 0}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-green-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-green-700 transition-colors"
                 >
                   {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
@@ -1404,7 +1462,7 @@ function PackingSlipsTab({
 
       {/* ── Print Modal ── */}
       {cfg.role === "admin" && showPendingPrint && pendingPrintOrders.length > 0 && (
-        <PrintModal orders={pendingPrintOrders} gbName={gbName} onClose={() => setShowPendingPrint(false)} />
+        <PrintModal orders={withNotes(pendingPrintOrders)} gbName={gbName} onClose={() => setShowPendingPrint(false)} />
       )}
       {showPrint && selectedOrders.length > 0 && (
         <PrintModal orders={selectedOrders} gbName={gbName} onClose={() => setShowPrint(false)} />
@@ -1710,6 +1768,7 @@ function LabelSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: string
           </div>
         )}
         <SlipBatchReferences references={o.supplierBatchReferences} />
+        <SlipShipmentNotes notes={o.shipmentNotes} />
       </div>
 
       {/* Items */}
@@ -1790,6 +1849,7 @@ function PackingSlip({ order: o, gbName }: { order: DispatchOrder; gbName?: stri
           </div>
         )}
         <SlipBatchReferences references={o.supplierBatchReferences} />
+        <SlipShipmentNotes notes={o.shipmentNotes} />
       </div>
 
       {/* Items */}

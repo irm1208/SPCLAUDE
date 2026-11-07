@@ -16,6 +16,8 @@ export interface CombinedPrintOrder {
   routingType?: string | null;
   lineItems: { productName: string; quantity: number }[];
   includedOrderCodes?: string[];
+  supplierBatchReferences?: string[];
+  shipmentNotes?: string[];
 }
 
 export interface CombinedOrderShippingProps {
@@ -30,6 +32,7 @@ interface LinkedOrder {
   code?: string | null;
   status: string;
   paymentStatus: string;
+  allocationToken?: string;
 }
 
 interface SourceParcel {
@@ -48,6 +51,10 @@ interface LinkedGroup {
   trackingNumber: string | null;
   dispatched: boolean;
   parcels: SourceParcel[];
+  /** "supplier_receipts": stock comes from checked receipts for this batch; no generic parcel selection. */
+  stockSource?: string;
+  /** Linked orders in another batch or already shipped; never part of this parcel. */
+  separateOrders?: { id: string; code?: string | null; status: string; reason?: string | null; supplierBatchReferences?: string[] }[];
 }
 
 interface ViewState {
@@ -139,7 +146,9 @@ function LinkedOrderCard({
           signal: controller.signal,
           body: JSON.stringify({
             trackingNumber: trackingNumber.trim(),
-            parcelIds: selectedParcels,
+            parcelIds: group.stockSource === "supplier_receipts" ? [] : selectedParcels,
+            expectedAllocations: group.orders.every(o => o.allocationToken)
+              ? Object.fromEntries(group.orders.map(o => [o.id, o.allocationToken])) : undefined,
           }),
         },
       );
@@ -233,6 +242,25 @@ function LinkedOrderCard({
               )}
             </ul>
           </div>
+          {group.printOrder.supplierBatchReferences?.length ? (
+            <p className="text-xs text-[#526274]" data-testid={`text-linked-batches-${group.parentId}`}>
+              Batch: <span className="font-semibold">{group.printOrder.supplierBatchReferences.join(" · ")}</span>
+            </p>
+          ) : null}
+          {group.separateOrders && group.separateOrders.length > 0 && (
+            <div className="rounded-lg border border-dashed border-[#C8D4E0] px-3 py-2" data-testid={`separate-orders-${group.parentId}`}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#8A9AAA]">Not in this parcel</p>
+              <ul className="mt-1 space-y-0.5 text-xs text-[#526274]">
+                {group.separateOrders.map((order) => (
+                  <li key={order.id}>
+                    <span className="font-mono">{order.code || order.id.slice(0, 8)}</span> — Separate shipment
+                    {order.supplierBatchReferences?.length ? ` (batch ${order.supplierBatchReferences.join(", ")})` : ""}
+                    {order.reason ? `: ${order.reason}` : /^(shipped|completed)$/i.test(order.status) ? ": already shipped" : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {isDispatched && group.trackingNumber && (
             <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-widest text-green-800">Shared tracking number</p>
@@ -265,7 +293,13 @@ function LinkedOrderCard({
             </button>
           </div>
 
-          {group.parcels.length > 0 && (
+          {group.stockSource === "supplier_receipts" && (
+            <p className="mt-3 rounded-md bg-[#EEF3FB] px-2 py-1.5 text-xs text-[#1B3A7A]" data-testid={`text-stock-source-${group.parentId}`}>
+              Source: Checked supplier receipts for this batch
+              {group.printOrder.supplierBatchReferences?.length ? ` (${group.printOrder.supplierBatchReferences.join(", ")})` : ""}
+            </p>
+          )}
+          {group.stockSource !== "supplier_receipts" && group.parcels.length > 0 && (
             <fieldset className="mt-3 space-y-2">
               <legend className="mb-2 text-xs font-medium text-[#526274]">Include source parcels</legend>
               {group.parcels.map((parcel) => (
@@ -436,7 +470,7 @@ export default function CombinedOrderShipping({
         <div>
           <h2 className="text-lg font-bold text-[#0F1F38]">Linked orders</h2>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[#6B7280]">
-            Linked add-on orders ship together as one parcel. Payments remain separate and are never merged.
+            Linked orders in the same supplier batch can be packed as one parcel. Additions in another batch, unallocated, or already shipped are separate shipments. Payments remain separate and are never merged.
           </p>
         </div>
         <button

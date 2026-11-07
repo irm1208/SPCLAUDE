@@ -31,6 +31,7 @@ import { normalizeShippingCountry, type CustomPostageOption } from "@/lib/countr
 import { ReshipperPostageTable, groupEuPostageRows } from "@/components/ReshipperPostageTable";
 import { reshipperShippingCountries, visibleReshipperShippingOptions } from "@/lib/reshipper-shipping-options";
 import { PostageKitBandInputs } from "@/components/onward-delivery/EuCustomPostageTools";
+import { ShipmentContextPanel, ShipmentOrderBadges, ShipmentOrderReview, filterByShipmentBatch, useShipmentContext } from "@/components/combined-shipping/ShipmentContext";
 
 // ─── Admin impersonation ──────────────────────────────────────────────────────
 // Module-level vars set once when the page initializes in admin preview mode
@@ -995,9 +996,14 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
   const [reshQrSaving, setReshQrSaving] = useState<Record<string, boolean>>({});
   const [reshQrMsg, setReshQrMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [activeFacet, setActiveFacet] = useState<Facet>("order");
+  const shipmentFetcher = useCallback((path: string, opts?: RequestInit) => reshipFetch(path, opts), []);
+  const shipmentPath = gbId ? `/api/reshipper/dispatch/${gbId}/shipment-context` : null;
+  const shipmentCtx = useShipmentContext(shipmentPath, shipmentFetcher);
+  const [shipFilter, setShipFilter] = useState("all");
+  useEffect(() => { setShipFilter("all"); }, [gbId]);
 
   const filtered = useMemo(() => {
-    let list = orders;
+    let list = filterByShipmentBatch(orders, shipmentCtx.byId, shipFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(o => o.telegramUsername.toLowerCase().includes(q) || o.code.toLowerCase().includes(q));
@@ -1020,7 +1026,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
       const to = new Date(filterPayDateTo + "T23:59:59").getTime();
       list = list.filter(o => o.paymentConfirmedAt != null && new Date(o.paymentConfirmedAt).getTime() <= to);
     }
-    return [...list].sort((a, b) => {
+    return [...list].sort((a, b) => { // shipment batch filter applied above
       if (sortBy === "order_asc") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       if (sortBy === "pay_desc") {
         const at = a.paymentConfirmedAt ? new Date(a.paymentConfirmedAt).getTime() : 0;
@@ -1034,7 +1040,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
       }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [orders, search, filterStatus, filterPayment, filterDateFrom, filterDateTo, filterPayDateFrom, filterPayDateTo, sortBy]);
+  }, [orders, search, filterStatus, filterPayment, filterDateFrom, filterDateTo, filterPayDateFrom, filterPayDateTo, sortBy, shipmentCtx.byId, shipFilter]);
 
   const loadDetail = useCallback(async (orderId: string) => {
     if (orderDetails[orderId]) return;
@@ -1166,8 +1172,18 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
     setSavingTracking(null);
   };
 
+  const jumpToOrder = (id: string) => {
+    // Related order may be hidden by current filters: clear them so it is visible.
+    setShipFilter("all"); setSearch(""); setFilterStatus("all"); setFilterPayment("all");
+    setFilterDateFrom(""); setFilterDateTo(""); setFilterPayDateFrom(""); setFilterPayDateTo("");
+    setExpandedId(id);
+    window.setTimeout(() => document.querySelector(`[data-order-row="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  };
+
   return (
     <div className="space-y-4">
+      <ShipmentContextPanel path={shipmentPath} fetcher={shipmentFetcher} context={shipmentCtx} filter={shipFilter}
+        onJump={jumpToOrder} onBatchChange={(v) => { setShipFilter(v); setExpandedId(null); setEditingId(null); setTrackingEditId(null); }} />
       {/* Filters */}
       {(() => {
         const activeFilterCount =
@@ -1317,7 +1333,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
             const allowed = ALLOWED_STATUS_TRANSITIONS[order.status] ?? [];
 
             return (
-              <div key={order.id} className="rounded-2xl overflow-hidden"
+              <div key={order.id} data-order-row={order.id} className="rounded-2xl overflow-hidden"
                 style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)" }}>
                 {/* Row summary */}
                 <div className="px-4 py-3 flex items-center gap-3 cursor-pointer"
@@ -1326,6 +1342,7 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs font-bold" style={{ color: "var(--t-muted)" }}>{order.code}</span>
                       <span className="text-xs font-semibold" style={{ color: "var(--t-text)" }}>@{order.telegramUsername.replace(/^@/, "")}</span>
+                      <ShipmentOrderBadges orderId={order.id} byId={shipmentCtx.byId} />
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ color: sc.color, background: sc.bg }}>
                         {order.status}
                       </span>
@@ -1359,6 +1376,9 @@ function OrdersTab({ gbId, orders, gbName, onOrderUpdate, currency }: {
                   {isOpen && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                      <div className="px-3 pt-3">
+                        <ShipmentOrderReview orderId={order.id} byId={shipmentCtx.byId} onJump={jumpToOrder} />
+                      </div>
                       <div className="border-t flex flex-col md:flex-row md:h-[480px]" style={{ borderColor: "var(--t-border)" }}>
 
                         {/* RAIL: order identity + facet nav */}
