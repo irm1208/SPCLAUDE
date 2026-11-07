@@ -1,3 +1,7 @@
+// Load with the label tools, not on the first preview/download. An old open
+// page must not request a now-removed lazy converter chunk after a publish.
+import { PDFDocument, degrees } from "pdf-lib";
+
 export type Crop = { x: number; y: number; width: number; height: number };
 export type ViewBox = [number, number, number, number];
 export type LabelRegion = { pageIndex: number; crop: Crop; viewBox: ViewBox; rotation: number };
@@ -11,7 +15,7 @@ export function royalMailUploads(data: { royalMailQrCode?: string | null; qrCode
   return [...new Set([data.royalMailQrCode, data.qrCodes?.["royal-mail"]].filter((src): src is string => !!src))];
 }
 export function royalMailSources(data: Parameters<typeof royalMailUploads>[0]) {
-  return royalMailUploads(data).filter(src => /^data:application\/(?:pdf|octet-stream)/i.test(src) || /^data:[^,]+;base64,JVBE/i.test(src) || /\.pdf(?:[?#]|$)/i.test(src));
+  return royalMailUploads(data).filter(src => /^data:(?:application\/(?:pdf|octet-stream)|image\/(?:png|jpe?g))/i.test(src) || /^data:[^,]+;base64,JVBE/i.test(src) || /\.(?:pdf|jpe?g|png)(?:[?#]|$)/i.test(src));
 }
 export function checkCancelled(signal: AbortSignal) {
   if (signal.aborted) throw new DOMException("Label export cancelled", "AbortError");
@@ -59,14 +63,14 @@ export async function sourcePdfBytes(source: string, signal: AbortSignal): Promi
   let bytes: Uint8Array;
   if (source.startsWith("data:")) {
     const comma = source.indexOf(",");
-    if (comma < 0) throw new Error("Invalid uploaded PDF.");
+    if (comma < 0) throw new Error("Invalid uploaded label.");
     const payload = source.slice(comma + 1);
-    if (payload.length > MAX_FILE_BYTES * 1.4) throw new Error("PDF exceeds the 20 MB per-file limit.");
+    if (payload.length > MAX_FILE_BYTES * 1.4) throw new Error("Label exceeds the 20 MB per-file limit.");
     const raw = /;base64/i.test(source.slice(0, comma)) ? atob(payload.replace(/\s/g, "")) : decodeURIComponent(payload);
     bytes = Uint8Array.from(raw, char => char.charCodeAt(0));
   } else {
     const url = new URL(source, window.location.href);
-    if (url.origin !== window.location.origin || !["http:", "https:", "blob:"].includes(url.protocol)) throw new Error("Only uploaded same-site PDFs are supported.");
+    if (url.origin !== window.location.origin || !["http:", "https:", "blob:"].includes(url.protocol)) throw new Error("Only uploaded same-site labels are supported.");
     const response = await fetch(url.href, { credentials: "include", signal });
     if (!response.ok) throw new Error(`PDF download failed (${response.status}).`);
     if (Number(response.headers.get("content-length")) > MAX_FILE_BYTES) throw new Error("PDF exceeds the 20 MB per-file limit.");
@@ -89,8 +93,52 @@ export async function sourcePdfBytes(source: string, signal: AbortSignal): Promi
   }
   checkCancelled(signal);
   if (bytes.length > MAX_FILE_BYTES) throw new Error("PDF exceeds the 20 MB per-file limit.");
-  if (!new TextDecoder("latin1").decode(bytes.subarray(0, 1024)).includes("%PDF-")) throw new Error("Royal Mail upload is not a PDF. Use its original download instead.");
-  return bytes;
+  if (new TextDecoder("latin1").decode(bytes.subarray(0, 1024)).includes("%PDF-")) return bytes;
+  // Inspect file signatures, not extension/MIME, which legacy uploads may lack.
+  const png = [137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value);
+  const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+  if (!png && !jpeg) throw new Error("Royal Mail upload must be a PDF, JPEG or PNG. Use its original download instead.");
+  const size = imageDimensions(bytes, png);
+  if (size.width > 20000 || size.height > 20000 || size.width * size.height > 40_000_000) {
+    throw new Error("Label image exceeds 40 megapixels or 20,000 pixels per side. Resize the original first.");
+  }
+  const pdf = await PDFDocument.create();
+  const image = png ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes);
+  checkCancelled(signal);
+  // 300dpi gives standard 1200×1800 thermal images an exact 4×6 page.
+  const width = image.width * 72 / 300, height = image.height * 72 / 300;
+  pdf.addPage([width, height]).drawImage(image, { x: 0, y: 0, width, height });
+  const result = await pdf.save();
+  checkCancelled(signal);
+  return result;
+}
+
+/** Read dimensions before decoding compressed image data to bound memory. */
+function imageDimensions(bytes: Uint8Array, png: boolean) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (png && bytes.length >= 24) {
+    const width = view.getUint32(16), height = view.getUint32(20);
+    if (width && height) return { width, height };
+  }
+  if (!png) {
+    let offset = 2;
+    while (offset + 4 <= bytes.length) {
+      if (bytes[offset++] !== 255) break;
+      while (bytes[offset] === 255) offset++;
+      const marker = bytes[offset++];
+      if (marker === 217 || marker === 218) break;
+      if (marker === 1 || marker >= 208 && marker <= 215) continue;
+      if (offset + 2 > bytes.length) break;
+      const length = view.getUint16(offset);
+      if (length < 2 || offset + length > bytes.length) break;
+      if ([192, 193, 194, 195, 197, 198, 199, 201, 202, 203, 205, 206, 207].includes(marker) && length >= 8) {
+        const height = view.getUint16(offset + 3), width = view.getUint16(offset + 5);
+        if (width && height) return { width, height };
+      }
+      offset += length;
+    }
+  }
+  throw new Error("Could not read label image dimensions. Check the original file.");
 }
 
 export function labelFilename(group: string, batch: string) {
@@ -100,7 +148,6 @@ export function labelFilename(group: string, batch: string) {
 
 export async function composeLabelPdf(files: LabelDocument[], signal: AbortSignal, onProgress?: (count: number) => void) {
   checkCancelled(signal);
-  const { PDFDocument, degrees } = await import("pdf-lib");
   const total = files.reduce((sum, file) => sum + file.labels.length, 0);
   if (!total || total > MAX_LABELS) throw new Error(`Choose between 1 and ${MAX_LABELS} labels per download.`);
   const output = await PDFDocument.create();

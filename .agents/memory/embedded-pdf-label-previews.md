@@ -17,6 +17,12 @@ Bulk Royal Mail label review should show the actual 4×6 print preview, keep the
 
 **How to apply:** Preserve a focused preview-and-confirm flow in future label export changes. Keep crop adjustment available separately rather than making it a required step for a usable suggested crop.
 
+Keep the PDF converter available when label tools load, rather than deferring its module download to the first print preview.
+
+**Why:** An open Admin page requested an obsolete hashed converter chunk after publishing; the chunk returned 404 and prevented label review/download.
+
+**How to apply:** Avoid new late-loaded dependencies within an already-open label review. Keep bounded, session-only previews keyed by source and crop geometry; prefetch the next label without discarding confirmations. Never persist label images in a shared cache.
+
 **Why:** A member's label upload reached the server successfully but the subsequent local preview failed with “Can't find variable: FileReader”, misleadingly presenting a saved upload as a failure.
 
 **How to apply:** Read upload bytes with `Blob.arrayBuffer()` (or `Response(blob).arrayBuffer()` where needed). Prepare local preview data before saving, and test with `FileReader` absent. Do not ask members to disable Lockdown Mode.

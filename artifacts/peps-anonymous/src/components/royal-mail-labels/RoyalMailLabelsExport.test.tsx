@@ -14,6 +14,7 @@ for (const key of ["window", "document", "navigator", "HTMLElement", "HTMLInputE
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, getComputedStyle: dom.window.getComputedStyle });
 const { createRoot } = await import("react-dom/client");
 const { RoyalMailLabelsExport } = await import("./RoyalMailLabelsExport");
+const { createLabelPreviewCache } = await import("@/lib/royal-mail-preview-cache");
 const source = `data:application/pdf;base64,${btoa("%PDF-1.7\nsynthetic fixture")}`;
 const page = { pageIndex: 0, viewBox: [0, 0, 288, 432], rotation: 0, crop: { x: 0, y: 0, width: 1, height: 1 }, confirmed: true, reason: "Already label-sized" };
 const props = { gbId: "group", gbName: "HGH Test", batchName: "GB-TEST / 001", scopeDescription: "GB-TEST / 001 · Not Posted", mode: "admin" as const, adminSecret: "fixture-secret",
@@ -29,6 +30,7 @@ beforeEach(() => {
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:synthetic");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   vi.spyOn(dom.window.HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  vi.spyOn(dom.window.HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as any);
 });
 afterEach(() => { vi.restoreAllMocks(); document.body.innerHTML = ""; });
 function mount() {
@@ -65,7 +67,7 @@ it("requires explicit failed-file exclusion before downloading the remaining lab
   try {
     await React.act(async () => root.render(<RoyalMailLabelsExport {...props} orders={[...props.orders, { id: "bad", code: "10002", telegramUsername: "bad-file" }]} />));
     expect(button("Download combined 4×6 PDF (1)").disabled).toBe(true);
-    expect(document.body.textContent).toContain("not a PDF");
+    expect(document.body.textContent).toMatch(/not a PDF|PDF, JPEG or PNG/);
     const bad = [...document.querySelectorAll("section")].find(section => section.textContent?.includes("bad-file"))!;
     await React.act(async () => (bad.querySelector("input[type=checkbox]") as HTMLInputElement).click());
     expect(button("Download combined 4×6 PDF (1)").disabled).toBe(false);
@@ -155,15 +157,48 @@ it("does not confirm by browsing previews and disables confirmation when renderi
   const root = mount();
   try {
     await React.act(async () => root.render(<RoyalMailLabelsExport {...props} />));
-    await React.act(async () => button("Show preview").click());
     mocks.render.mockRejectedValueOnce(new Error("Could not render this label"));
+    await React.act(async () => button("Show preview").click());
+    expect(document.body.textContent).toContain("Could not render this label");
+    expect(button("Confirm & next").disabled).toBe(true);
     await React.act(async () => button("Next label").click());
     expect(document.body.textContent).toContain("2 awaiting confirmation");
     expect(document.querySelector('[aria-label="Current label"]')?.textContent).toContain("Page 2");
-    expect(document.body.textContent).toContain("Could not render this label");
-    expect(button("Confirm & next").disabled).toBe(true);
     await React.act(async () => button("Back to list").click());
     expect(document.body.textContent).toContain("2 need attention");
     expect(button("Download combined 4×6 PDF (2)").disabled).toBe(true);
   } finally { await React.act(async () => root.unmount()); }
+});
+
+it("reuses previews on Next/Previous without refetching uploads or losing confirmation state", async () => {
+  mocks.inspect.mockResolvedValue([{ ...page, confirmed: false }, { ...page, pageIndex: 1, confirmed: false }]);
+  const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ royalMailQrCode: source }));
+  const root = mount();
+  try {
+    await React.act(async () => root.render(<RoyalMailLabelsExport {...props} />));
+    await React.act(async () => button("Show preview").click());
+    await React.act(async () => button("Next label").click());
+    await React.act(async () => button("Previous label").click());
+    await React.act(async () => button("Next label").click());
+    expect(mocks.compose).toHaveBeenCalledTimes(2);
+    expect(mocks.render).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain("2 awaiting confirmation");
+  } finally { await React.act(async () => root.unmount()); }
+});
+
+it("invalidates cached previews for crop changes and retries a failed preview without reloading labels", async () => {
+  const controller = new AbortController();
+  const cache = createLabelPreviewCache(controller.signal);
+  const bytes = new TextEncoder().encode("%PDF-1.7\ncache fixture");
+  const first = await cache.get(bytes, page);
+  expect(await cache.get(bytes, { ...page, confirmed: false })).toBe(first);
+  const changed = { ...page, crop: { x: .1, y: .1, width: .8, height: .8 } };
+  mocks.render.mockRejectedValueOnce(new Error("Temporary render failure"));
+  await expect(cache.get(bytes, changed)).rejects.toThrow("Temporary render failure");
+  const retried = await cache.get(bytes, changed);
+  expect(retried).not.toBe(first);
+  expect(mocks.compose).toHaveBeenCalledTimes(3);
+  controller.abort();
+  expect(() => cache.get(bytes, page)).toThrow(/cancelled/);
 });

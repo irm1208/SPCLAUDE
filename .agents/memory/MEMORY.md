@@ -155,3 +155,4 @@
 - [Wholesale vendor portal](wholesale-vendor-portal-policy.md) — vendor-only cost prices, Admin submission gate, member fulfilment updates; separate vendor login with existing credentials.
 - [HGH free direct shipping](hgh-direct-shipping-quotes.md) — HGH 36IU direct-to-home is free, not a pending quote; other groups retain their pricing.
 - [Group-buy COA requests](group-buy-coa-policy.md) — group-buy-only, independent fees, shared invitation/signup capacity, preserved evidence and committed request terms.
+- [QR posting status](qr-posting-policy.md) — Admin/organiser Order Posted means shipped; preserve terminal states and never reverse fulfilment by unposting.

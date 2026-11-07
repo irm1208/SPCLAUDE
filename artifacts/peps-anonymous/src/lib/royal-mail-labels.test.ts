@@ -2,11 +2,36 @@ import { expect, it } from "vitest";
 import { PDFDocument, degrees, rgb } from "pdf-lib";
 import { cropToPdfBox, composeLabelPdf, royalMailSources, detectLabelCrop, labelFilename, sourcePdfBytes } from "./royal-mail-labels";
 
-it("finds Royal Mail PDFs only, deduplicates legacy/keyed duplicates within an order and leaves other carriers alone", () => {
+it("finds Royal Mail PDFs and image labels, deduplicates fields and leaves other carriers alone", () => {
   const pdf = "data:application/pdf;base64,JVBERi0x";
   expect(royalMailSources({ royalMailQrCode: pdf, qrCodes: { "royal-mail": pdf, inpost: pdf } })).toEqual([pdf]);
   expect(royalMailSources({ qrCodes: { "royal-mail": pdf } })).toEqual([pdf]);
-  expect(royalMailSources({ royalMailQrCode: "data:image/png;base64,aaaa", qrCodes: { inpost: pdf } })).toEqual([]);
+  expect(royalMailSources({ royalMailQrCode: "data:image/png;base64,aaaa", qrCodes: { inpost: pdf } })).toEqual(["data:image/png;base64,aaaa"]);
+});
+
+it("converts PNG and JPEG uploads into PDFs without changing their aspect ratio", async () => {
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
+  // Synthetic single-pixel JPEG, no personal label data.
+  const jpeg = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAH/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdAB//2Q==";
+  for (const [mime, image] of [["image/png", png], ["image/jpeg", jpeg]]) {
+    const bytes = await sourcePdfBytes(`data:${mime};base64,${image}`, new AbortController().signal);
+    const pdf = await PDFDocument.load(bytes);
+    expect(pdf.getPageCount()).toBe(1);
+    expect(pdf.getPage(0).getWidth()).toBe(pdf.getPage(0).getHeight());
+    const result = await composeLabelPdf([{ id: mime, bytes, labels: [{
+      pageIndex: 0, crop: { x: 0, y: 0, width: 1, height: 1 }, viewBox: [0, 0, ...Object.values(pdf.getPage(0).getSize())] as [number, number, number, number], rotation: 0,
+    }] }], new AbortController().signal);
+    expect((await PDFDocument.load(result)).getPage(0).getSize()).toEqual({ width: 288, height: 432 });
+  }
+});
+
+it("rejects oversized image dimensions before decoding image data", async () => {
+  const bytes = new Uint8Array(24);
+  bytes.set([137, 80, 78, 71, 13, 10, 26, 10]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, 30000); view.setUint32(20, 30000);
+  await expect(sourcePdfBytes(`data:image/png;base64,${btoa(String.fromCharCode(...bytes))}`, new AbortController().signal))
+    .rejects.toThrow(/40 megapixels/);
 });
 
 it("maps crop coordinates correctly with rotations and nonzero page origins", () => {

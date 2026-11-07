@@ -1,4 +1,5 @@
 import { qrOrderBatches } from "../lib/qr-order-batches";
+import { qrPostedOrderUpdate } from "../lib/qr-posted-order";
 import { deleteTicketImagesForAccounts } from "../lib/ticket-attachment-cleanup";
 import adminProductStockRouter from "./admin-product-stock";
 import { resolveEditedProductId } from "../lib/admin-order-product-links";
@@ -2442,7 +2443,7 @@ router.get("/admin/group-buys/:gbId/orders/:orderId/qr-data", async (req, res): 
 });
 
 // ─── PATCH /api/admin/orders/:id/qr-posted ────────────────────
-// Toggles the qrPosted flag on an order.
+// Marking posted also advances active orders to Shipped; unposting is flag-only.
 router.patch("/admin/orders/:id/qr-posted", async (req, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   const orderId = String(req.params["id"]);
@@ -2451,16 +2452,16 @@ router.patch("/admin/orders/:id/qr-posted", async (req, res): Promise<void> => {
 
   const [updated] = await db
     .update(ordersTable)
-    .set({ qrPosted: posted })
+    .set(qrPostedOrderUpdate(posted))
     .where(refundMutableOrderWhere(eq(ordersTable.id, orderId)))
-    .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted });
+    .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted, status: ordersTable.status });
 
   if (!updated) {
     await assertNoActiveRefund(db, orderId);
     res.status(404).json({ error: "Order not found" });
     return;
   }
-  res.json({ id: updated.id, qrPosted: updated.qrPosted });
+  res.json({ id: updated.id, qrPosted: updated.qrPosted, status: updated.status });
 });
 
 // ─── PATCH /api/admin/group-buys/:id/qr-viewers ──────────────

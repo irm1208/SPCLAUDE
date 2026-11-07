@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LabelReviewPanel } from "./LabelReviewPanel";
 import { inspectRoyalMailPdf, type InspectedPage } from "@/lib/royal-mail-pdf-preview";
+import { createLabelPreviewCache, type LabelPreviewCache } from "@/lib/royal-mail-preview-cache";
 import { checkCancelled, composeLabelPdf, labelFilename, MAX_LABELS, MAX_TOTAL_BYTES, royalMailUploads, sourcePdfBytes, type Crop } from "@/lib/royal-mail-labels";
 
 type Order = { id: string; code: string; telegramUsername: string };
@@ -23,11 +24,13 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
   const controller = useRef<AbortController | null>(null);
   const urls = useRef(new Set<string>());
   const sequence = useRef(0);
+  const previewCache = useRef<LabelPreviewCache | null>(null);
 
   useEffect(() => {
     const current = new AbortController();
     controller.current = current;
     const signal = current.signal;
+    previewCache.current = createLabelPreviewCache(signal);
     setFiles([]); setPhase("loading"); setError(""); setNotice(""); setPreview(null);
     async function prepare() {
       const prepared: PreparedFile[] = [];
@@ -46,9 +49,9 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
           });
           checkCancelled(signal);
           if ([401, 403, 429].includes(response.status)) throw new StopLoading(`Loading stopped (${response.status}). Check your access or try again later; no partial download has been created.`);
-          if (!response.ok) throw new Error(`Could not load this order's PDF (${response.status}).`);
+          if (!response.ok) throw new Error(`Could not load this order's label (${response.status}).`);
           sources = royalMailUploads(await response.json());
-          if (!sources.length) throw new Error("No Royal Mail PDF is currently available for this order.");
+          if (!sources.length) throw new Error("No Royal Mail label is currently available for this order.");
         } catch (err) {
           checkCancelled(signal);
           if (err instanceof StopLoading || err instanceof TypeError) throw err;
@@ -63,7 +66,7 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
             const bytes = await sourcePdfBytes(sources[sourceIndex], signal);
             if (seen.some(previous => previous.length === bytes.length && previous.every((value, i) => value === bytes[i]))) continue;
             seen.push(bytes);
-            if (totalBytes + bytes.length > MAX_TOTAL_BYTES) throw new Error("Combined source PDFs exceed 100 MB. Use a smaller batch or narrower filters.");
+            if (totalBytes + bytes.length > MAX_TOTAL_BYTES) throw new Error("Combined labels exceed 100 MB. Use a smaller batch or narrower filters.");
             const pages = await inspectRoyalMailPdf(bytes, signal);
             if (regionCount + pages.length > MAX_LABELS) throw new Error(`More than ${MAX_LABELS} pages. Use narrower filters.`);
             totalBytes += bytes.length; regionCount += pages.length;
@@ -72,7 +75,7 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
           } catch (err) {
             checkCancelled(signal);
             prepared.push({ id, title: `${title} · file ${sourceIndex + 1}`, regions: [],
-              error: err instanceof Error ? err.message : "Could not inspect PDF. Open the original upload.", excluded: false });
+              error: err instanceof Error ? err.message : "Could not inspect label. Open the original upload.", excluded: false });
           }
           checkCancelled(signal);
           setFiles([...prepared]);
@@ -152,7 +155,7 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
     <DialogContent className="flex max-h-[92dvh] max-w-3xl flex-col overflow-hidden">
       <DialogHeader className="shrink-0">
         <DialogTitle>Royal Mail 4×6 labels</DialogTitle>
-        <DialogDescription>{scopeDescription} · {orders.length} orders with Royal Mail uploads. Only PDF labels will be included. Originals are unchanged.</DialogDescription>
+        <DialogDescription>{scopeDescription} · {orders.length} orders with Royal Mail uploads. PDF, JPEG and PNG labels are supported. Originals are unchanged.</DialogDescription>
       </DialogHeader>
       {!currentReview && <div className="shrink-0 space-y-3">
         <p className="text-sm">Show preview to check each 4×6 label and confirm straight through. Use “Adjust crop” only if needed. For several labels on one page, use “Add another label region”.</p>
@@ -175,7 +178,7 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
               onChange={event => { setNotice(""); setFiles(previous => previous.map(item => item.id === file.id ? { ...item, excluded: event.target.checked } : item)); }} />Exclude this file</label>
           </div>
           {file.error && <p className="text-sm text-red-600">{file.error} Close this dialog to open/save the original upload, or explicitly exclude this file.</p>}
-          {file.bytes && <button type="button" className="text-xs underline" onClick={() => original(file)}>Open original PDF</button>}
+          {file.bytes && <button type="button" className="text-xs underline" onClick={() => original(file)}>Open label PDF</button>}
           {!file.excluded && file.regions.map(region => <div key={region.id} className="space-y-2 border-t border-border pt-2">
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <span className="font-medium">Page {region.pageIndex + 1}</span>
@@ -197,7 +200,9 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
           </div>)}
         </section>)}
       </div>}
-      {currentReview && <LabelReviewPanel key={currentReview.region.id} title={currentReview.file.title}
+      {currentReview && previewCache.current && <LabelReviewPanel title={currentReview.file.title}
+        previewCache={previewCache.current} regionId={currentReview.region.id}
+        nextPreview={reviewEntries[reviewIndex + 1] ? { bytes: reviewEntries[reviewIndex + 1].file.bytes!, region: reviewEntries[reviewIndex + 1].region } : undefined}
         bytes={currentReview.file.bytes!} region={currentReview.region} position={reviewIndex + 1} total={reviewEntries.length}
         pending={included.filter(region => !region.confirmed).length} morePending={!!nextPending} initialAdjust={currentReview.region.id.includes(":extra-")}
         onChange={crop => changeCrop(currentReview.file.id, currentReview.region.id, crop)}
@@ -205,14 +210,14 @@ export function RoyalMailLabelsExport({ orders, gbId, gbName, batchName, scopeDe
         onPrevious={() => setPreview(reviewEntries[reviewIndex - 1]?.region.id ?? preview)}
         onNext={() => setPreview(reviewEntries[reviewIndex + 1]?.region.id ?? preview)}
         onBack={() => setPreview(null)} />}
-      {phase === "review" && !included.length && <p className="text-sm text-muted-foreground">No PDF labels are selected. Review the exclusions or use the original downloads.</p>}
+      {phase === "review" && !included.length && <p className="text-sm text-muted-foreground">No labels are selected. Review the exclusions or use the original downloads.</p>}
       <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-background py-3">
         <button type="button" className="rounded-lg border border-input px-4 py-2 text-sm" onClick={close}>{phase === "loading" || phase === "exporting" ? "Cancel export" : "Close"}</button>
         <button type="button" disabled={!canDownload} onClick={download} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">
           Download combined 4×6 PDF ({included.length})
         </button>
       </div>
-      {!currentReview && <p className="shrink-0 text-xs text-muted-foreground">Print at actual size / 100%, not “fit to A4”. Downloads never mark orders posted. Up to 500 labels, 20 MB per file and 100 MB of source PDFs per export.</p>}
+      {!currentReview && <p className="shrink-0 text-xs text-muted-foreground">Print at actual size / 100%, not “fit to A4”. Downloads never mark orders posted. Up to 500 labels, 20 MB per file and 100 MB of labels per export.</p>}
     </DialogContent>
   </Dialog>;
 }

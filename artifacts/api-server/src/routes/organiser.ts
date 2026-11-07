@@ -1,4 +1,5 @@
 import { qrOrderBatches } from "../lib/qr-order-batches";
+import { qrPostedOrderUpdate } from "../lib/qr-posted-order";
 import { withAdditionReferences } from "../lib/addition-order-references";
 import { validateGroupProductLabReport } from "../lib/group-product-lab-report";
 import { parseBankTransfer } from "@workspace/api-zod/bank-transfer";
@@ -1634,7 +1635,7 @@ router.get("/organiser/group-buys/:gbId/orders/:orderId/qr-data", requireAccount
 });
 
 // PATCH /api/organiser/group-buys/:id/orders/:orderId/qr-posted
-// Toggles the qrPosted flag on an order.
+// Marking posted also advances active orders to Shipped; unposting is flag-only.
 // Access: GB organiser, admin, or any account username listed in gb.qrViewerUsernames.
 router.patch("/organiser/group-buys/:id/orders/:orderId/qr-posted", requireAccount, async (req, res): Promise<void> => {
   const username = req.account!.telegramUsername;
@@ -1670,9 +1671,9 @@ router.patch("/organiser/group-buys/:id/orders/:orderId/qr-posted", requireAccou
 
   const [updated] = await db
     .update(ordersTable)
-    .set({ qrPosted: posted })
+    .set(qrPostedOrderUpdate(posted))
     .where(refundMutableOrderWhere(and(eq(ordersTable.id, orderId), eq(ordersTable.groupBuyId, gbId))))
-    .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted });
+    .returning({ id: ordersTable.id, qrPosted: ordersTable.qrPosted, status: ordersTable.status });
 
   if (!updated) {
     // A guarded no-row result is a refund conflict, not a missing order.
@@ -1686,7 +1687,7 @@ router.patch("/organiser/group-buys/:id/orders/:orderId/qr-posted", requireAccou
     return;
   }
 
-  res.json({ id: updated.id, qrPosted: updated.qrPosted });
+  res.json({ id: updated.id, qrPosted: updated.qrPosted, status: updated.status });
 });
 
 // ─── GET /api/leg-view/:gbId ──────────────────────────────────────────────────
