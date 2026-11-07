@@ -8,7 +8,7 @@ import { WholesaleShell } from "@/components/WholesaleShell";
 import { useAccount } from "@/hooks/use-account";
 import { SupplierSelection, type SharedSupplier } from "@/components/wholesale-shared/SupplierSelection";
 import { SupplierShippingSplit, type SupplierShippingRules } from "@/components/wholesale-shared/SupplierShippingSplit";
-import { useWholesaleShares, useWholesalePublicGroups, createWholesaleShare, joinWholesaleShare, setWholesaleShareHidden } from "@/hooks/use-wholesale-shares";
+import { useWholesaleShares, useWholesalePublicGroups, createWholesaleShare, setWholesaleShareHidden } from "@/hooks/use-wholesale-shares";
 
 export default function WholesaleShareEntry() {
   const [, setLocation] = useLocation();
@@ -18,7 +18,6 @@ export default function WholesaleShareEntry() {
   const { data: publicGroups } = useWholesalePublicGroups();
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [joiningId, setJoiningId] = useState<string | null>(null);
   const [visibilityBusyId, setVisibilityBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [comingSoon, setComingSoon] = useState(false);
@@ -95,17 +94,9 @@ export default function WholesaleShareEntry() {
     setLocation(`/wholesale/shared/${code}`);
   };
 
-  const joinPublicGroup = async (id: string, isMember: boolean) => {
-    if (isMember) { setLocation(`/wholesale/shared/${id}`); return; }
-    setError(""); setJoiningId(id);
-    try {
-      await joinWholesaleShare(id);
-      setLocation(`/wholesale/shared/${id}`);
-    } catch (e) {
-      setError((e as Error).message);
-      setJoiningId(null);
-    }
-  };
+  // Non-members always go to the invitation review screen (costs + terms) first;
+  // joining happens there, never straight from the card.
+  const openPublicGroup = (id: string) => setLocation(`/wholesale/shared/${id}`);
 
   const hiddenIds = new Set(hiddenShares.map(s => s.id));
   const openGroups = (publicGroups ?? []).filter(g => !(g.isMember && hiddenIds.has(g.id)));
@@ -329,17 +320,17 @@ export default function WholesaleShareEntry() {
                               </span>
                             )}
                             <span>
-                              Fee: {g.organiserFlatFee != null && g.organiserFlatFee > 0 ? `$${g.organiserFlatFee.toFixed(2)}/person` : "none"}
+                              Organiser fee: {g.organiserFlatFee != null && g.organiserFlatFee > 0 ? `USD ${g.organiserFlatFee.toFixed(2)}/person` : "none currently"}
                             </span>
                           </div>
                           <button
-                            onClick={() => joinPublicGroup(g.id, g.isMember)}
-                            disabled={disabled || joiningId === g.id}
+                            onClick={() => openPublicGroup(g.id)}
+                            disabled={disabled}
+                            data-testid={`button-public-group-${g.id}`}
                             className="w-full inline-flex items-center justify-center gap-2 h-9 rounded-lg text-xs font-bold text-white disabled:opacity-50"
                             style={{ background: "var(--t-blue)" }}
                           >
-                            {joiningId === g.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                            {g.isMember ? "Open" : g.isCreator ? "Manage" : disabled ? "Full" : "Join"}
+                            {g.isMember ? "Open" : g.isCreator ? "Manage" : disabled ? "Full" : "Review costs & join"}
                           </button>
                         </div>
                       );

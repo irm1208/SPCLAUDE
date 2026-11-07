@@ -59,6 +59,7 @@ import { ExpandableCard } from "@/components/wholesale-shared/ExpandableCard";
 import { ShareInviteLinkCard } from "@/components/wholesale-shared/ShareInviteLinkCard";
 import { shareStage } from "@/components/wholesale-shared/stage";
 import { WhatYouOwe } from "@/components/wholesale-shared/WhatYouOwe";
+import { FeeDisclosure } from "@/components/wholesale-shared/FeeDisclosure";
 import { FeeLine, PaymentMethodEditor } from "@/components/wholesale-shared/payment-fields";
 import type { LeadCryptoOption } from "@/hooks/use-wholesale-shares";
 import { GroupTracker } from "@/components/wholesale-shared/GroupTracker";
@@ -523,6 +524,7 @@ export default function WholesaleShared() {
               </div>
               {canJoin && (
                 <>
+                  <FeeDisclosure costs={result.costs} title="Costs before you join" testId="fee-disclosure-invitation" onRetry={() => invalidate(id!)} />
                   {actionError && <p className="text-sm" style={{ color: "#ef4444" }}>{actionError}</p>}
                   {termsEnabled && (
                     <label className="flex items-start gap-2.5 cursor-pointer select-none px-1">
@@ -1128,6 +1130,18 @@ export default function WholesaleShared() {
       {busy === "leave" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
       Leave shared order
     </button>
+  ) : null;
+
+  // Server-authoritative fee disclosure for members. Shown while open (directly
+  // before the confirm action) and after lock alongside What You Owe.
+  const sectionCosts = myMember && share.status !== "cancelled" && !organiserDone ? (
+    <FeeDisclosure
+      costs={share.costs}
+      title={share.costs && share.costs.stage !== "locked" && isOpen ? "Your costs before confirming" : "Your costs"}
+      testId="fee-disclosure-member"
+      unsavedChanges={itemsDirty && share.costs?.stage !== "locked"}
+      onRetry={() => invalidate(id!)}
+    />
   ) : null;
 
   const confirmationAction = isOpen && myMember ? (
@@ -2937,6 +2951,8 @@ export default function WholesaleShared() {
 
       {groupTrackerCard}
 
+      {sectionCosts}
+
       {confirmationAction && (
         <div className="pt-1">{confirmationAction}</div>
       )}
@@ -2956,6 +2972,7 @@ export default function WholesaleShared() {
       {sectionShipmentStatus}
       {showOrganiserOpen && id && <ShareInviteLinkCard shareId={id} />}
       {sectionShippingDelivery}
+      {sectionCosts}
       {confirmationAction}
       {sectionGroup}
       {sectionMyItems}

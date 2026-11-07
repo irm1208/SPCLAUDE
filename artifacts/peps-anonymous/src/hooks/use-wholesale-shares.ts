@@ -133,6 +133,7 @@ export interface WholesaleShareSettings {
   maxTotalKits: number | null;
   maxPackages: number | null; // max parcel count; null = not set
   organiserFlatFee: number | null; // flat per-person fee (public orders); null = none
+  feePerKit?: number | null;
   lockDeadline: string | null; // ISO timestamp
   allowedCountries: string[] | null;
   canManage: boolean; // organiser && share open
@@ -177,7 +178,35 @@ export interface WholesaleOrganiserPayment {
   cryptoOptions: Array<{ currency: string; network: string; walletAddress: string }>;
 }
 
+// ── Server-authoritative cost disclosure ──────────────────────────────────────
+// Every amount/rate comes from the server. The frontend never calculates fees.
+export type CostLineStatus = "known" | "estimate" | "not_set" | "calculated_later" | "not_required";
+export type CostLineBasis = "per_person" | "per_kit" | "your_share" | "your_order";
+
+export interface CostLine {
+  amount: number | null;
+  rate?: number | null;
+  currency: string | null;
+  status: CostLineStatus;
+  basis: CostLineBasis;
+  includedInOrder: boolean;
+  note?: string;
+}
+
+export interface SharedOrderCosts {
+  stage: "invitation" | "estimate" | "locked";
+  currency: string;
+  organiser: CostLine;
+  perKit: CostLine;
+  vendorShipping: CostLine;
+  onwardShipping: CostLine;
+  adjustment?: CostLine;
+  orderTotal: number | null;
+}
+
 export interface WholesaleShareDetail {
+  // Server-authoritative fee disclosure (may be absent on older servers).
+  costs?: SharedOrderCosts | null;
   vendorShippingSplit?: Record<string, "buyers" | "all_members">;
   id: string;
   status: WholesaleShareStatus;
@@ -316,7 +345,7 @@ export function useWholesalePublicGroups(enabled = true) {
 
 export type ShareFetchResult =
   | { ok: true; share: WholesaleShareDetail }
-  | { ok: false; status: number; message: string; creatorUsername?: string | null };
+  | { ok: false; status: number; message: string; creatorUsername?: string | null; costs?: SharedOrderCosts | null };
 
 /** Commit authoritative mutation data before releasing the local editor state. */
 export async function applyWholesaleShareResponse(client: QueryClient, id: string, share: WholesaleShareDetail) {
@@ -335,12 +364,13 @@ export function useWholesaleShare(id: string | null) {
         const share = await request<WholesaleShareDetail>(`/api/wholesale-shares/${id}`, { signal });
         return { ok: true as const, share };
       } catch (e) {
-        const err = e as Error & { status?: number; data?: { creatorUsername?: string | null } };
+        const err = e as Error & { status?: number; data?: { creatorUsername?: string | null; costs?: SharedOrderCosts | null } };
         return {
           ok: false as const,
           status: err.status ?? 0,
           message: err.message,
           creatorUsername: err.data?.creatorUsername ?? null,
+          costs: err.data?.costs ?? null,
         };
       }
     },
@@ -512,6 +542,7 @@ export interface WholesaleShareSettingsInput {
   allowedCountries?: string[] | null;
   maxPackages?: number | null; // max parcel count; null/"" to clear
   organiserFlatFee?: number | null; // flat per-person fee (public orders); null/"" to clear
+  feePerKit?: number | null;
 }
 
 export function setWholesaleShareSettings(id: string, payload: WholesaleShareSettingsInput) {

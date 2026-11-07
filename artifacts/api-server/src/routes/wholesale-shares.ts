@@ -71,6 +71,7 @@ import {
   OrganiserWalletValidationError,
 } from "../lib/wholesale-organiser-wallets";
 import { orphanedSharedOrderMembershipWhere } from "../lib/shared-order-active-membership";
+import { buildSharedOrderCosts } from "../lib/shared-order-costs";
 
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -583,6 +584,10 @@ async function buildShareResponse(
     && memberPayloads.every(m => m.paymentStatus === "confirmed");
 
   const me = members.find(m => m.username.toLowerCase() === currentUsername.toLowerCase());
+  const myPayload = memberPayloads.find(m => m.isYou);
+  const costs = buildSharedOrderCosts(share, currentUsername,
+    me ? { username: me.username, organiserFee: me.organiserFee, kits: memberKits(me.items ?? []), adminAdjustmentFee: me.adminAdjustmentFee } : null,
+    me?.orderId ? orderById.get(me.orderId) : null, myPayload?.shippingShare);
 
   // ── Main parcel tracking (vendor → recipient), masked for participants ───────
   // orders.trackingNumber is the source of truth; share.mainTracking* is a cache of
@@ -665,6 +670,7 @@ async function buildShareResponse(
       maxKitsPerPackage: vendor.maxKitsPerPackage,
       regions: vendor.regions,
     } : null,
+    costs,
     vendorShippingBreakdown: isLocked ? share.vendorShippingBreakdown ?? [] : vendorQuote.breakdown,
     packageCount: (isLocked ? share.vendorShippingBreakdown ?? [] : vendorQuote.breakdown).reduce((s,p) =>
       s + Math.ceil(p.kits / Math.max(1, configuredVendors.find(v => v.id === p.vendorId)?.maxKitsPerPackage ?? 25)), 0),
@@ -1010,6 +1016,7 @@ router.post("/wholesale-shares", requireWholesale, async (req, res): Promise<voi
 
 // GET /api/wholesale-shares/:id — full detail (members only)
 router.get("/wholesale-shares/:id", requireWholesale, async (req, res): Promise<void> => {
+  res.set("Cache-Control", "private, no-store");
   const me = req.wholesale!.telegramUsername;
   const share = await loadShare(String(req.params.id));
   if (!share) { res.status(404).json({ error: "Shared order not found" }); return; }
@@ -1017,7 +1024,10 @@ router.get("/wholesale-shares/:id", requireWholesale, async (req, res): Promise<
   if (!member) {
     // Non-members can still see WHO invited them (the order lead) on the join
     // screen — the share id is an invite code, so this isn't a leak.
-    res.status(403).json({ error: "You are not a member of this shared order.", creatorUsername: share.creatorUsername });
+    res.status(403).json({
+      error: "You are not a member of this shared order.", creatorUsername: share.creatorUsername,
+      costs: buildSharedOrderCosts(share, me),
+    });
     return;
   }
   // Lazy deadline lock: if the organiser set a deadline that has passed, attempt an

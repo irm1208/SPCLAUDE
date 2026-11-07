@@ -37,3 +37,16 @@ the vendor/admin order calculation.
   stay "paid" after the organiser edits the amount.
 - Paid is confirmed by the PAYEE: organiser confirms organiser fees; recipient confirms
   reshipper fees (`POST /fees/confirm`, payee-only, blocked once cancelled).
+
+## Upfront disclosure without invented postage
+Where a shared order has no stored personal onward-postage quote, show it as unknown,
+not zero or included. Account-level group-buy reshipper fees are not a shared-order
+postage quote. Keep organiser/per-kit/vendor charges separate from onward postage,
+with explicit currencies; do not manufacture a delivered total.
+
+**Why:** Customers asked to see the actual extra charges before joining and while
+ordering, because hidden organiser/postage costs can remove the benefit of sharing.
+
+**How to apply:** Disclose the current join defaults before membership, then personal
+saved amounts once joined. For a locked or payment-protected reopened order, show the
+persisted monetary snapshot instead of applying today's fee settings retrospectively.
