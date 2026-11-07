@@ -48,6 +48,7 @@ import { AdminMultiVendorSetup } from "@/components/admin/AdminMultiVendorSetup"
 import { AdminWholesaleSetup } from "@/components/admin/AdminWholesaleSetup";
 import { downloadSupplierVendorOrders } from "@/lib/supplier-vendor-export";
 import VendorPortalAdmin from "@/components/admin/VendorPortalAdmin";
+import VendorPaymentsAdmin from "@/components/admin/VendorPaymentsAdmin";
 import { Fs3PastedList } from "@/components/admin/Fs3PastedList";
 import { loadFs3Costs } from "@/lib/fs3-cost-catalogue";
 import { Fs3CostMatches } from "@/components/admin/Fs3CostMatches";
@@ -15858,6 +15859,7 @@ const ALL_TABS_META = [
   { id: "packages", label: "Packages", icon: PackageCheck },
   { id: "fs3", label: "FS3", icon: ShieldCheck },
   { id: "vendor-portal", label: "Vendor portal", icon: Building2 },
+  { id: "peps-anon-payment", label: "Peps Anon Payment", icon: Wallet },
   { id: "pnl", label: "P&L", icon: TrendingUp },
   { id: "notifications", label: "Notifs", icon: Bell },
   { id: "announcements", label: "Announcements", icon: MessageSquarePlus },
@@ -24877,6 +24879,7 @@ const SIDEBAR_SECTIONS = [
     label: "Wholesale",
     items: [
       { id: "vendor-portal", label: "Vendor portal", icon: Building2, keywords: ["supplier login", "vendor access", "submit wholesale orders", "supplier fulfilment"] },
+      { id: "peps-anon-payment", label: "Peps Anon Payment", icon: Wallet, keywords: ["vendor payments", "supplier payments", "supplier cost", "pay vendor", "txid", "receipt", "wallet", "outstanding supplier"] },
       { id: "wholesale",        label: "Wholesale",         icon: Package,      keywords: ["bulk orders", "wholesale pricing", "trade", "reseller", "large orders", "wholesale tier", "moq", "minimum order", "wholesale status"] },
       { id: "wholesale-setup", label: "Wholesale setup", icon: Settings2, keywords: ["vendor details", "supplier setup", "shipping rates", "wholesale products", "supplier cost", "sell price", "regions", "quantity tiers"] },
       { id: "wholesale-shares", label: "Shared Orders",     icon: Users,        keywords: ["shared orders", "shared order", "open shared order", "wholesale share", "combined wholesale", "shared members", "shared delivery", "shared order settings", "lock shared order", "shared parcel"] },
@@ -28318,6 +28321,7 @@ function AdminInner({ initialSecret, theme, onToggleTheme, admin2fa = false, rem
             renderVendorModal={({ vendor, onSave, onClose }) => <VendorModal vendor={vendor} numTiers={vendor?.tiers.length ?? 4} onSave={onSave} onClose={onClose} />}
           />}
           {activeTab === "vendor-portal" && <VendorPortalAdmin secret={secret} />}
+          {activeTab === "peps-anon-payment" && <VendorPaymentsAdmin />}
           {activeTab === "wholesale-shares" && <AdminWholesaleSharesTab secret={secret} />}
           {activeTab === "wholesale-access" && <WholesaleAccessRequestsAdminTab secret={secret} />}
           {activeTab === "wholesale-tracking" && <WholesaleTrackingTab secret={secret} />}

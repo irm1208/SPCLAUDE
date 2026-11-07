@@ -6,6 +6,7 @@ import {
   vendorPaymentsTable,
   vendorPaymentAllocationsTable,
   vendorSubmissionsTable,
+  ordersTable,
 } from "@workspace/db";
 import { VendorPortalError } from "./vendor-portal-model";
 import {
@@ -19,6 +20,7 @@ import {
   normalizeVendorTxid,
   vendorPaymentChain,
 } from "./vendor-wallet-input";
+import { paymentLedgerSummary, paymentOrderDetail, paymentOrderRow, paymentReviewToken } from "./vendor-payment-ledger";
 export function paymentOrderTotal(
   rows: Array<{ snapshot: { totalCost: string } }>,
 ) {
@@ -50,6 +52,13 @@ export function paymentInput(body: any) {
     new Set(body.submissionIds).size !== body.submissionIds.length
   )
     throw new VendorPortalError("Choose a vendor, wallet and distinct orders.");
+  if (!Array.isArray(body.orderSnapshots) || body.orderSnapshots.length !== body.submissionIds.length
+      || body.orderSnapshots.some((row: any) => !row || !body.submissionIds.includes(row.submissionId)
+        || typeof row.reviewToken !== "string" || !/^[a-f0-9]{64}$/.test(row.reviewToken))
+      || new Set(body.orderSnapshots.map((row: any) => row.submissionId)).size !== body.submissionIds.length)
+      throw new VendorPortalError("Review snapshots must match every selected supplier shipment.");
+  const orderSnapshots: { submissionId: string; reviewToken: string }[] =
+    body.orderSnapshots.map((row: any) => ({ submissionId: row.submissionId, reviewToken: row.reviewToken }));
   const snapshot = body.walletSnapshot;
   if (
     !snapshot ||
@@ -82,6 +91,7 @@ export function paymentInput(body: any) {
       address: snapshot.address,
     },
     submissionIds: [...body.submissionIds].sort() as string[],
+    orderSnapshots,
     txid: normalizeVendorTxid(body.txid, snapshot.currency, snapshot.network),
     cryptoAmount: normalizeVendorCryptoAmount(
       body.cryptoAmount,
@@ -135,24 +145,29 @@ export async function vendorPaymentDashboard(tx: any, vendorId: string) {
           ),
         )
     : [];
+  const payments: any[] = await listVendorPayments(tx, vendorId);
+  const activePayments = new Set(payments.filter(p => !p.voidedAt).map(p => p.id));
+  const allocationBySubmission = new Map<string, any>(allocations.map((a: any) => [a.submissionId, a]));
+  const orderIds = [...new Set<string>(rows.flatMap((row: any) => row.orderIds ?? []))];
+  const identities: any[] = orderIds.length ? await tx.select({
+    id: ordersTable.id, code: ordersTable.code, telegramUsername: ordersTable.telegramUsername,
+  }).from(ordersTable).where(inArray(ordersTable.id, orderIds)) : [];
+  const identityById = new Map(identities.map(order => [order.id, order]));
   const orders = [];
-  for (const row of rows)
-    orders.push({
-      id: row.id,
-      reference: row.reference,
-      status: row.status,
-      stale: await isVendorSubmissionStale(tx, row),
-      totalCost: row.snapshot.totalCost,
-      currency: "USD",
-      paymentId:
-        allocations.find((a: any) => a.submissionId === row.id)?.paymentId ??
-        null,
-    });
+  for (const row of rows) {
+    const allocation = allocationBySubmission.get(row.id);
+    const active = allocation && activePayments.has(allocation.paymentId) ? allocation : null;
+    const orphan = !!allocation && !active;
+    const order = paymentOrderRow(row, await isVendorSubmissionStale(tx, row) || orphan, active, identityById);
+    if (orphan) order.reviewReason = "Payment allocation needs review: its receipt is missing or voided.";
+    orders.push(order);
+  }
   return {
     vendorId,
     wallets,
     orders,
-    payments: await listVendorPayments(tx, vendorId),
+    payments,
+    summary: paymentLedgerSummary(orders),
   };
 }
 function samePayment(existing: any, input: ReturnType<typeof paymentInput>) {
@@ -273,12 +288,19 @@ export async function recordVendorPayment(
             409,
           );
         await assertVendorSubmissionUnpaid(tx, row.id);
+        const reviewed = input.orderSnapshots.find(expected => expected.submissionId === row.id);
+        if (!reviewed || reviewed.reviewToken !== paymentReviewToken(row))
+          throw new VendorPortalError("Supplier shipment changed since your review. Refresh and review the payment again.", 409);
+        const payable = paymentOrderRow(row, false);
+        if (!payable.eligible)
+          throw new VendorPortalError(payable.reviewReason ?? "This shipment is not payable.", 409);
       }
       const usdAmount = paymentOrderTotal(rows);
       const orders = rows.map((r: any) => ({
         submissionId: r.id,
         reference: r.reference,
         amountUsd: centsToUsdString(usdToCents(r.snapshot.totalCost)),
+        detail: paymentOrderDetail(r, new Map((sources.get(r.sourceKey)?.orders ?? []).map((o: any) => [o.id, o]))),
       }));
       const [payment] = await tx
         .insert(vendorPaymentsTable)

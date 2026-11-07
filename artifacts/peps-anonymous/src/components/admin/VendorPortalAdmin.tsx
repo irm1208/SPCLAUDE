@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Eye, Loader2, RefreshCw, Send, X } from "lucide-react";
 import VendorAccountsAdmin from "./VendorAccountsAdmin";
-import VendorPaymentsAdmin from "./VendorPaymentsAdmin";
 import VendorPortalIssuesAdmin from "./VendorPortalIssuesAdmin";
 import VendorTelegramAdmin from "./VendorTelegramAdmin";
 import VendorThreadsAdmin from "./VendorThreadsAdmin";
@@ -116,8 +115,6 @@ export default function VendorPortalAdmin({ secret }: { secret: string }) {
       {loadErr && <Note msg={{ ok: false, text: loadErr }} id="text-load-error" />}
 
       <VendorAccountsAdmin />
-
-      <VendorPaymentsAdmin />
 
       <VendorPortalIssuesAdmin secret={secret} />
 

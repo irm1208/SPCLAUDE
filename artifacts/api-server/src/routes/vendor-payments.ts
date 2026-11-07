@@ -5,6 +5,7 @@ import { requireVendorAccount } from "../middleware/vendor-auth";
 import { getVendors } from "./config";
 import { vendorAccess } from "../lib/vendor-portal-service";
 import { VendorPortalError } from "../lib/vendor-portal-model";
+import { paymentLedgerSummary, publicVendorReceipt } from "../lib/vendor-payment-ledger";
 import {
   listVendorPayments,
   recordVendorPayment,
@@ -52,6 +53,7 @@ router.get(
         wallets: [],
         orders: [],
         payments: [],
+        summary: paymentLedgerSummary([]),
       });
       return;
     }
@@ -74,7 +76,7 @@ router.get(
     );
     res
       .set("Cache-Control", "no-store")
-      .json({ payments: await listVendorPayments(db, access.vendorId) });
+      .json({ payments: (await listVendorPayments(db, access.vendorId)).map(publicVendorReceipt) });
   }),
 );
 router.post(

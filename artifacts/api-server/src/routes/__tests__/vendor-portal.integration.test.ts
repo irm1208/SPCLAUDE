@@ -226,13 +226,29 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     const walletId = randomUUID(), address = "0x" + "1".repeat(40);
     await f.tx.insert(store.vendorWalletsTable).values({ id: walletId, vendorId: "vendor-a", currency: "USDT", network: "ERC-20", address });
     const before = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
-    const input = { vendorId: "vendor-a", walletId, walletSnapshot: { currency: "USDT", network: "ERC-20", address }, submissionIds: [row.id], txid: "0x" + randomUUID().replaceAll("-", "").padEnd(64, "a"), cryptoAmount: "90" };
+    const ledger = await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true);
+    expect(ledger.status).toBe(200);
+    const reviewed = ledger.data.orders.find((order: any) => order.id === row.id);
+    expect(reviewed.reviewToken).toMatch(/^[a-f0-9]{64}$/);
+    const input = { vendorId: "vendor-a", walletId, walletSnapshot: { currency: "USDT", network: "ERC-20", address }, submissionIds: [row.id],
+      orderSnapshots: [{ submissionId: row.id, reviewToken: reviewed.reviewToken }],
+      txid: "0x" + randomUUID().replaceAll("-", "").padEnd(64, "a"), cryptoAmount: "90" };
     expect((await request("/admin/vendor-payments", f.a, input)).status).toBe(403);
+    expect((await request("/admin/vendor-payments", undefined, { ...input, orderSnapshots: undefined }, true)).status).toBe(400);
+    expect((await request("/admin/vendor-payments", undefined, {
+      ...input, orderSnapshots: [{ submissionId: row.id, reviewToken: "b".repeat(64) }],
+    }, true)).status).toBe(409);
     const recorded = await request("/admin/vendor-payments", undefined, input, true);
     expect(recorded.status).toBe(201);
     expect(recorded.data.payment.usdAmount).toBe("90.00");
-    expect(recorded.data.payment.orders).toEqual([{ submissionId: row.id, reference: f.code, amountUsd: "90.00" }]);
-    expect((await request("/vendor/payments", f.a)).data.payments.some((p: any) => p.id === recorded.data.payment.id)).toBe(true);
+    expect(recorded.data.payment.orders).toMatchObject([{ submissionId: row.id, reference: f.code, amountUsd: "90.00",
+      detail: { sourceType: "order", sourceId: f.orderId, currency: "USD", totalCost: "90.00", items: row.snapshot.items },
+    }]);
+    const vendorHistory = (await request("/vendor/payments", f.a)).data.payments;
+    const vendorReceipt = vendorHistory.find((p: any) => p.id === recorded.data.payment.id);
+    expect(vendorReceipt).toBeDefined();
+    expect(vendorReceipt.orders).toEqual([{ submissionId: row.id, reference: f.code, amountUsd: "90.00" }]);
+    expect(vendorReceipt.recordedBy).toBeUndefined();
     expect((await request("/vendor/payments", f.b)).data.payments.some((p: any) => p.id === recorded.data.payment.id)).toBe(false);
     const after = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
     for (const field of ["status", "paymentStatus", "balancePaymentStatus", "grandTotal", "amountDue"]) expect(after[field]).toEqual(before[field]);

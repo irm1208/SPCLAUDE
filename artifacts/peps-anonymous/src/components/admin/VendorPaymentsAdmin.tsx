@@ -1,537 +1,210 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Copy, Landmark, RefreshCw } from "lucide-react";
 import { adminAuth } from "../../lib/admin-auth";
+import { hasReviewToken, isLedger, parsePaidAt, selectedTotal, summarize, type LedgerData } from "./peps-anon-payment/model";
+import { LedgerSummary } from "./peps-anon-payment/LedgerSummary";
+import { LedgerOrders } from "./peps-anon-payment/LedgerOrders";
+import { ReceiptHistory } from "./peps-anon-payment/ReceiptHistory";
+import { RecordPaymentPanel, type Draft, type PaymentForm } from "./peps-anon-payment/RecordPaymentPanel";
+import { card, inputCls, inputStyle, Skeleton, subtle } from "../reshipper-payouts/ui";
 
-type Wallet = {
-  id: string;
-  currency: string;
-  network: string;
-  address: string;
-  label?: string;
-};
-type Order = {
-  id: string;
-  reference: string;
-  status: string;
-  stale: boolean;
-  totalCost: string | number;
-  paymentId: string | null;
-};
-type Payment = {
-  id: string;
-  txid: string;
-  cryptoAmount: string;
-  usdAmount: string | number;
-  currency: string;
-  network: string;
-  walletSnapshot: Omit<Wallet, "id">;
-  orders: { submissionId: string; reference: string; amountUsd: string }[];
-  paidAt: string;
-  recordedAt: string;
-  recordedBy: string;
-  voidedAt: string | null;
-  voidReason: string | null;
-  note?: string;
-};
-type Data = {
-  vendors: { id: string; name: string }[];
-  vendorId: string;
-  wallets: Wallet[];
-  orders: Order[];
-  payments: Payment[];
-};
-type Draft = {
-  vendorId: string;
-  walletId: string;
-  walletSnapshot: { currency: string; network: string; address: string };
-  submissionIds: string[];
-  txid: string;
-  cryptoAmount: string;
-  paidAt?: string;
-  note?: string;
-};
-const card = {
-  background: "var(--t-surface)",
-  border: "1px solid var(--t-border)",
-};
-const field = "w-full rounded-xl px-3 py-2 text-sm border";
-const button =
-  "rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed";
-function cents(value: string | number) {
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value));
-  return match
-    ? BigInt(match[1]) * 100n + BigInt((match[2] || "").padEnd(2, "0"))
-    : null;
-}
-function dollars(value: bigint) {
-  return `${value / 100n}.${String(value % 100n).padStart(2, "0")}`;
-}
+const EMPTY_FORM: PaymentForm = { walletId: "", amount: "", txid: "", paidAt: "", note: "" };
+
 async function request(path: string, init?: RequestInit) {
   const response = await adminAuth.request(path, init);
   const body = await response.json().catch(() => null);
-  if (!response.ok)
-    throw new Error(body?.error || `Request failed (${response.status})`);
+  if (!response.ok) throw new Error(body?.error || `Request failed (${response.status})`);
   return body;
 }
+
 export default function VendorPaymentsAdmin() {
-  const [data, setData] = useState<Data | null>(null);
-  const [vendorId, setVendor] = useState("");
-  const [walletId, setWallet] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [amount, setAmount] = useState("");
-  const [txid, setTxid] = useState("");
-  const [paidAt, setPaidAt] = useState("");
-  const [note, setNote] = useState("");
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
+  const [vendors, setVendors] = useState<{ id: string; name: string }[]>([]);
+  const [vendorId, setVendorId] = useState("");
+  const [data, setData] = useState<LedgerData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [form, setForm] = useState<PaymentForm>(EMPTY_FORM);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const lock = useRef(false);
-  const generation = useRef(0);
   const [voidId, setVoidId] = useState("");
   const [reason, setReason] = useState("");
-  async function load(id: string) {
+  const [ledgerKey, setLedgerKey] = useState(0);
+  const lock = useRef(false);
+  const generation = useRef(0);
+  const vendorRef = useRef(vendorId);
+  vendorRef.current = vendorId;
+
+  const load = useCallback(async (id: string) => {
     const run = ++generation.current;
     setLoading(true);
     setDraft(null);
+    setSelected(new Set());
+    setLoadError(null);
     try {
-      const result = await request(
-        `/api/admin/vendor-payments${id ? `?vendorId=${encodeURIComponent(id)}` : ""}`,
-      );
-      if (
-        !result ||
-        !["vendors", "wallets", "orders", "payments"].every((key) =>
-          Array.isArray(result[key]),
-        )
-      ) {
-        throw new Error(
-          "Could not load payment details. Refresh and try again.",
-        );
-      }
-      if (run === generation.current) {
-        setData(result);
-        setSelected([]);
-        setWallet("");
-      }
+      const result = await request(`/api/admin/vendor-payments${id ? `?vendorId=${encodeURIComponent(id)}` : ""}`);
+      if (!isLedger(result)) throw new Error("Could not load payment details. Refresh and try again.");
+      if (run !== generation.current) return;
+      setVendors(result.vendors);
+      setData(result);
+      setForm((f) => (result.wallets.some((w) => w.id === f.walletId) ? f : { ...f, walletId: "" }));
+      setLedgerKey((k) => k + 1);
     } catch (error) {
-      if (run === generation.current) {
-        setData(null);
-        setMessage({
-          ok: false,
-          text:
-            error instanceof Error ? error.message : "Could not load payments",
-        });
-      }
+      if (run !== generation.current) return;
+      setData(null);
+      setLoadError(error instanceof Error ? error.message : "Could not load payments");
     } finally {
       if (run === generation.current) setLoading(false);
     }
-  }
+  }, []);
+
   useEffect(() => {
     void load(vendorId);
-    return () => {
-      generation.current++;
-    };
-  }, [vendorId]);
-  const wallet = data?.wallets.find((w) => w.id === walletId);
-  const chosen =
-    data?.orders.filter(
-      (o) => selected.includes(o.id) && !o.paymentId && !o.stale,
-    ) || [];
-  const validCosts = chosen.every((o) => cents(o.totalCost) !== null);
-  const total = chosen.reduce((sum, o) => sum + (cents(o.totalCost) ?? 0n), 0n);
-  const ready =
-    !loading &&
-    !!wallet &&
-    chosen.length > 0 &&
-    validCosts &&
-    /^\d+(?:\.\d+)?$/.test(amount.trim()) &&
-    /[1-9]/.test(amount) &&
-    !!txid.trim();
+    return () => { generation.current++; };
+  }, [vendorId, load]);
+
+  const dirty = !!(draft || voidId || selected.size || form.amount || form.txid || form.paidAt || form.note || busy);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  useEffect(() => {
+    const onFocus = () => { if (vendorRef.current && !dirtyRef.current && !lock.current) void load(vendorRef.current); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
+
+  const ledger = vendorId && data && data.vendorId === vendorId ? data : null;
+  const summary = useMemo(() => (ledger ? summarize(ledger.orders, ledger.summary) : null), [ledger]);
+  const { orders: chosen, total } = useMemo(() => selectedTotal(ledger?.orders ?? [], selected), [ledger, selected]);
+  const wallet = ledger?.wallets.find((w) => w.id === form.walletId);
+  const paid = parsePaidAt(form.paidAt);
+  const tokenProblem = chosen.filter((o) => !hasReviewToken(o)).length;
+  const ready = !loading && !busy && !!wallet && chosen.length > 0 && chosen.length === selected.size && tokenProblem === 0 && paid.ok &&
+    /^\d+(?:\.\d+)?$/.test(form.amount.trim()) && /[1-9]/.test(form.amount) && !!form.txid.trim();
+
+  function changeVendor(id: string) {
+    generation.current++;
+    setVendorId(id);
+    setData(null);
+    setForm(EMPTY_FORM);
+    setDraft(null);
+    setSelected(new Set());
+    setVoidId("");
+    setReason("");
+    setMessage(null);
+    setLoadError(null);
+  }
+
   function review() {
-    if (!ready || !wallet) return;
+    if (!ready || !wallet || !paid.ok || !chosen.every(hasReviewToken)) return;
     setDraft({
       vendorId,
       walletId: wallet.id,
-      walletSnapshot: {
-        currency: wallet.currency,
-        network: wallet.network,
-        address: wallet.address,
-      },
+      walletSnapshot: { currency: wallet.currency, network: wallet.network, address: wallet.address },
       submissionIds: chosen.map((o) => o.id),
-      txid: txid.trim(),
-      cryptoAmount: amount.trim(),
-      ...(paidAt ? { paidAt: new Date(paidAt).toISOString() } : {}),
-      ...(note.trim() ? { note: note.trim() } : {}),
+      orderSnapshots: chosen.map((o) => ({ submissionId: o.id, reviewToken: o.reviewToken as string })),
+      txid: form.txid.trim(),
+      cryptoAmount: form.amount.trim(),
+      ...(paid.iso ? { paidAt: paid.iso } : {}),
+      ...(form.note.trim() ? { note: form.note.trim() } : {}),
     });
     setMessage(null);
   }
-  async function mutate(isVoid = false) {
+
+  async function mutate(isVoid: boolean) {
     if (lock.current || (isVoid ? !voidId || !reason.trim() : !draft)) return;
+    const forVendor = vendorId;
     lock.current = true;
     setBusy(true);
     setMessage(null);
     try {
-      await request(
-        isVoid
-          ? `/api/admin/vendor-payments/${encodeURIComponent(voidId)}/void`
-          : "/api/admin/vendor-payments",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(isVoid ? { reason: reason.trim() } : draft),
-        },
-      );
+      await request(isVoid ? `/api/admin/vendor-payments/${encodeURIComponent(voidId)}/void` : "/api/admin/vendor-payments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(isVoid ? { reason: reason.trim() } : draft),
+      });
+      if (vendorRef.current !== forVendor) return;
       setDraft(null);
-      setAmount("");
-      setTxid("");
-      setPaidAt("");
-      setNote("");
+      setForm(EMPTY_FORM);
       setVoidId("");
       setReason("");
-      setMessage({
-        ok: true,
-        text: isVoid ? "Payment record voided." : "Payment recorded.",
-      });
-      await load(vendorId);
+      setMessage({ ok: true, text: isVoid ? "Payment record voided." : "Payment recorded." });
+      await load(forVendor);
     } catch (error) {
-      setMessage({
-        ok: false,
-        text: error instanceof Error ? error.message : "Could not save payment",
-      });
+      if (vendorRef.current === forVendor) setMessage({ ok: false, text: error instanceof Error ? error.message : "Could not save payment" });
     } finally {
       lock.current = false;
       setBusy(false);
     }
   }
-  return (
-    <section
-      className="rounded-2xl p-4 space-y-4"
-      style={card}
-      data-testid="vendor-payments-admin"
-    >
-      <div className="flex justify-between gap-3">
-        <h3 className="font-bold">Vendor payments</h3>
-        <button
-          type="button"
-          className={button}
-          disabled={busy || loading}
-          onClick={() => void load(vendorId)}
-        >
-          Refresh payments & wallets
-        </button>
+
+  const voidTarget = ledger?.payments.find((p) => p.id === voidId);
+
+  return <section className="rounded-2xl border p-4 sm:p-5 space-y-5" style={card} data-testid="vendor-payments-admin">
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={subtle}>Supplier accounts</p>
+        <h2 className="flex items-center gap-2 text-xl font-bold" style={{ color: "var(--t-text)" }}><Landmark className="w-5 h-5" style={{ color: "var(--t-blue)" }} />Peps Anon Payment</h2>
+        <p className="text-xs mt-1 max-w-xl" style={subtle}>Exact supplier-order costs and receipts for transfers sent outside this website. Recording a receipt never sends funds, verifies a blockchain, or changes customer payment or fulfilment status.</p>
       </div>
-      <p className="text-sm" style={{ color: "var(--t-muted)" }}>
-        Record a payment already sent externally. This records your receipt; it
-        does not send funds or verify a blockchain transaction.
-      </p>
-      {message && (
-        <p
-          role={message.ok ? "status" : "alert"}
-          className={message.ok ? "text-green-700" : "text-red-600"}
-        >
-          {message.text}
-        </p>
-      )}
-      <label className="block text-sm">
-        Vendor
-        <select
-          className={field}
-          data-testid="payment-vendor"
-          value={vendorId}
-          disabled={busy}
-          onChange={(e) => {
-            setVendor(e.target.value);
-            setAmount("");
-            setTxid("");
-            setPaidAt("");
-            setNote("");
-            setVoidId("");
-            setReason("");
-            setData((previous) =>
-              previous
-                ? { ...previous, wallets: [], orders: [], payments: [] }
-                : null,
-            );
-            setDraft(null);
-            setSelected([]);
-            setWallet("");
-            setMessage(null);
-          }}
-        >
-          <option value="">Select vendor</option>
-          {data?.vendors.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {loading && <p role="status">Loading payments…</p>}
-      {vendorId && data && !loading && (
-        <>
-          {!data.wallets.length && (
-            <p>
-              The vendor needs to add a payment wallet in their Settings before
-              a payment can be recorded.
-            </p>
-          )}
-          <fieldset disabled={busy || !!draft} className="space-y-3">
-            <label className="block text-sm">
-              Saved wallet
-              <select
-                className={field}
-                data-testid="payment-wallet"
-                value={walletId}
-                onChange={(e) => setWallet(e.target.value)}
-              >
-                <option value="">Select wallet</option>
-                {data.wallets.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.label ? `${w.label} · ` : ""}
-                    {w.currency} / {w.network} · {w.address}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {wallet && (
-              <div className="text-sm break-all">
-                <p>
-                  {wallet.currency} / {wallet.network}
-                </p>
-                <code>{wallet.address}</code>{" "}
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={() => {
-                    void navigator.clipboard
-                      .writeText(wallet.address)
-                      .then(() =>
-                        setMessage({
-                          ok: true,
-                          text: "Wallet address copied.",
-                        }),
-                      )
-                      .catch(() =>
-                        setMessage({
-                          ok: false,
-                          text: "Could not copy address. Select and copy the address above.",
-                        }),
-                      );
-                  }}
-                >
-                  Copy address
-                </button>
-              </div>
-            )}
-            <h4 className="font-bold text-sm">Orders · vendor cost in USD</h4>
-            {data.orders.length === 0 && (
-              <p className="text-sm">No vendor orders.</p>
-            )}
-            {data.orders.map((o) => (
-              <label
-                key={o.id}
-                className="flex flex-wrap gap-2 text-sm rounded-xl p-2"
-                style={card}
-              >
-                <input
-                  type="checkbox"
-                  data-testid={`payment-order-${o.id}`}
-                  checked={selected.includes(o.id)}
-                  disabled={
-                    !!o.paymentId || o.stale || cents(o.totalCost) === null
-                  }
-                  onChange={(e) =>
-                    setSelected((ids) =>
-                      e.target.checked
-                        ? [...ids, o.id]
-                        : ids.filter((id) => id !== o.id),
-                    )
-                  }
-                />
-                <strong>{o.reference}</strong>
-                <span>
-                  $
-                  {cents(o.totalCost) === null
-                    ? "Unavailable"
-                    : dollars(cents(o.totalCost)!)}
-                </span>
-                <span>Fulfillment: {o.status}</span>
-                <span>Payment: {o.paymentId ? "Paid" : "Unpaid"}</span>
-                {o.stale && (
-                  <span className="text-amber-700">Stale — unavailable</span>
-                )}
-              </label>
-            ))}
-            <p className="font-bold">
-              Selected order cost: ${dollars(total)} USD
-            </p>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <label className="text-sm">
-                Actual crypto amount sent
-                <input
-                  data-testid="payment-amount"
-                  className={field}
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
-              </label>
-              <label className="text-sm">
-                Transaction ID (TXID)
-                <input
-                  data-testid="payment-txid"
-                  className={field}
-                  value={txid}
-                  onChange={(e) => setTxid(e.target.value)}
-                />
-              </label>
-              <label className="text-sm">
-                Payment date (optional, local time)
-                <input
-                  className={field}
-                  type="datetime-local"
-                  value={paidAt}
-                  onChange={(e) => setPaidAt(e.target.value)}
-                />
-              </label>
-              <label className="text-sm">
-                Note (optional)
-                <input
-                  className={field}
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
-            </div>
-            <button
-              type="button"
-              data-testid="payment-review"
-              disabled={!ready}
-              className={`${button} text-white`}
-              style={{ background: "#1B3A7A" }}
-              onClick={review}
-            >
-              Review payment record
-            </button>
-          </fieldset>
-          {draft && (
-            <div className="rounded-xl p-4 space-y-2" style={card}>
-              <h4 className="font-bold">Record a payment already sent</h4>
-              <p>
-                Only these orders: {chosen.map((o) => o.reference).join(", ")} ·
-                ${dollars(total)} USD vendor cost
-              </p>
-              <p>
-                {draft.cryptoAmount} {draft.walletSnapshot.currency} /{" "}
-                {draft.walletSnapshot.network}
-              </p>
-              <p className="break-all">
-                Address: {draft.walletSnapshot.address}
-              </p>
-              <p className="break-all">TXID: {draft.txid}</p>
-              {draft.paidAt && (
-                <p>Paid: {new Date(draft.paidAt).toLocaleString()}</p>
-              )}
-              {draft.note && <p>{draft.note}</p>}
-              <button
-                type="button"
-                data-testid="payment-confirm"
-                disabled={busy}
-                className={`${button} text-white`}
-                style={{ background: "#1B3A7A" }}
-                onClick={() => void mutate()}
-              >
-                Confirm record
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                className={button}
-                onClick={() => setDraft(null)}
-              >
-                Edit
-              </button>
-            </div>
-          )}
-          <h4 className="font-bold">Payment history</h4>
-          {!data.payments.length && (
-            <p className="text-sm">No payment records.</p>
-          )}
-          {data.payments.map((p) => (
-            <article
-              key={p.id}
-              className="rounded-xl p-3 space-y-1 text-sm"
-              style={card}
-            >
-              <strong>
-                {p.cryptoAmount} {p.currency} / {p.network}
-              </strong>
-              <p>
-                Order cost: ${p.usdAmount} USD ·{" "}
-                {p.orders.map((o) => o.reference).join(", ")}
-              </p>
-              <p className="break-all">TXID: {p.txid}</p>
-              <p className="break-all">Address: {p.walletSnapshot.address}</p>
-              <p>
-                Paid: {new Date(p.paidAt).toLocaleString()} · Recorded:{" "}
-                {new Date(p.recordedAt).toLocaleString()} by {p.recordedBy}
-              </p>
-              {p.note && <p>{p.note}</p>}
-              {p.voidedAt ? (
-                <p className="text-red-600">Voided: {p.voidReason}</p>
-              ) : (
-                <button
-                  type="button"
-                  disabled={busy || !!draft}
-                  className={`${button} text-red-700`}
-                  onClick={() => {
-                    setVoidId(p.id);
-                    setReason("");
-                  }}
-                >
-                  Void record
-                </button>
-              )}
-            </article>
-          ))}
-          {voidId && (
-            <div className="rounded-xl p-3 space-y-2" style={card}>
-              <p>Only corrects this record; does not reverse transfer.</p>
-              <p className="break-all">
-                TXID: {data.payments.find((p) => p.id === voidId)?.txid}
-              </p>
-              <label className="block text-sm">
-                Required reason
-                <input
-                  data-testid="payment-void-reason"
-                  className={field}
-                  value={reason}
-                  disabled={busy}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                data-testid="payment-void-confirm"
-                disabled={busy || !reason.trim()}
-                className={`${button} text-red-700`}
-                onClick={() => void mutate(true)}
-              >
-                Confirm void record
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                className={button}
-                onClick={() => setVoidId("")}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </>
-      )}
-    </section>
-  );
+      <button type="button" className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50" style={{ borderColor: "var(--t-border)" }}
+        disabled={busy || loading} onClick={() => void load(vendorId)} data-testid="payment-refresh"><RefreshCw className="w-3.5 h-3.5" />Refresh payments & wallets</button>
+    </header>
+
+    <label className="block text-xs max-w-sm" style={subtle}>Vendor
+      <select className={inputCls} style={inputStyle} data-testid="payment-vendor" value={vendorId} disabled={busy} onChange={(e) => changeVendor(e.target.value)}>
+        <option value="">Select vendor</option>
+        {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+      </select>
+    </label>
+
+    {message && <p role={message.ok ? "status" : "alert"} className="rounded-xl p-2.5 text-sm" style={{ background: message.ok ? "rgba(22,163,74,0.1)" : "rgba(239,68,68,0.08)", color: message.ok ? "#15803D" : "#B91C1C" }}>{message.text}</p>}
+    {loadError && <div role="alert" className="rounded-xl border p-3 text-sm flex flex-wrap items-center justify-between gap-2" style={{ borderColor: "#ef4444", background: "color-mix(in srgb, #ef4444 7%, var(--t-surface))" }} data-testid="payment-load-error">
+      <span>{loadError}</span>
+      <button type="button" className="font-semibold underline" onClick={() => void load(vendorId)} data-testid="payment-retry">Retry</button>
+    </div>}
+    {!vendorId && !loadError && <p className="rounded-xl border border-dashed p-6 text-center text-sm" style={{ borderColor: "var(--t-border)", color: "var(--t-subtle)" }}>Choose a vendor to see their supplier-cost ledger.</p>}
+    {vendorId && loading && !ledger && <Skeleton />}
+
+    {ledger && summary && <>
+      <LedgerSummary summary={summary} selectedCount={chosen.length} selectedTotal={total} />
+
+      <section aria-label="Saved receiving wallets" className="space-y-2">
+        <p className="text-[10px] font-bold uppercase tracking-widest" style={subtle}>Vendor receiving wallets</p>
+        {!ledger.wallets.length
+          ? <p className="text-sm rounded-xl border-l-4 p-3" style={{ borderColor: "#E9A020" }}>The vendor needs to add a payment wallet in their Settings before a payment can be recorded.</p>
+          : <ul className="grid gap-2 md:grid-cols-2">{ledger.wallets.map((w) => <li key={w.id} className="rounded-xl border p-3 text-xs" style={{ borderColor: w.id === form.walletId ? "var(--t-blue-40)" : "var(--t-border)" }}>
+              <p className="font-semibold">{w.label ? `${w.label} · ` : ""}{w.currency} / {w.network}</p>
+              <code className="block break-all mt-1 select-all">{w.address}</code>
+              <button type="button" className="mt-1 inline-flex items-center gap-1 underline" data-testid={`payment-copy-${w.id}`}
+                onClick={() => {
+                  const fail = () => setMessage({ ok: false, text: "Could not copy address. Select and copy it above." });
+                  const clip = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+                  if (!clip?.writeText) return fail();
+                  clip.writeText(w.address).then(() => setMessage({ ok: true, text: "Wallet address copied." }), fail);
+                }}>
+                <Copy className="w-3 h-3" />Copy address</button>
+            </li>)}</ul>}
+      </section>
+
+      <LedgerOrders key={ledgerKey} orders={ledger.orders} selected={selected} onSelected={setSelected} locked={busy || !!draft} />
+
+      <RecordPaymentPanel wallets={ledger.wallets} form={form} onForm={(p) => setForm((f) => ({ ...f, ...p }))} chosen={chosen} total={total}
+        draft={draft} busy={busy} ready={ready} dateError={!paid.ok} tokenProblem={tokenProblem} onReview={review} onConfirm={() => void mutate(false)} onEdit={() => setDraft(null)} />
+
+      <ReceiptHistory key={`h-${ledgerKey}`} payments={ledger.payments} locked={busy || !!draft} onVoid={(id) => { setVoidId(id); setReason(""); }} />
+
+      {voidTarget && <div className="rounded-xl border p-3 space-y-2 text-sm" style={{ borderColor: "#ef4444" }}>
+        <p>Only corrects this record; does not reverse transfer. Its order allocations are released under existing rules.</p>
+        <p className="break-all text-xs">TXID: <span className="font-mono">{voidTarget.txid}</span></p>
+        <label className="block text-xs" style={subtle}>Required reason (audited)
+          <input data-testid="payment-void-reason" className={inputCls} style={inputStyle} value={reason} disabled={busy} onChange={(e) => setReason(e.target.value)} />
+        </label>
+        <div className="flex gap-2">
+          <button type="button" data-testid="payment-void-confirm" disabled={busy || !reason.trim()} className="rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ background: "#ef4444" }} onClick={() => void mutate(true)}>Confirm void record</button>
+          <button type="button" disabled={busy} className="rounded-xl border px-4 py-2 text-sm" style={{ borderColor: "var(--t-border)" }} onClick={() => setVoidId("")}>Cancel</button>
+        </div>
+      </div>}
+    </>}
+  </section>;
 }

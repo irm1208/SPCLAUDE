@@ -18,6 +18,19 @@ export type VendorPaymentOrder = {
   submissionId: string;
   reference: string;
   amountUsd: string;
+  detail?: VendorPaymentOrderDetail;
+};
+/** Receipt-owned supplier-cost snapshot, never reconstructed from a later shipment. */
+export type VendorPaymentOrderDetail = {
+  sourceType: "order" | "shared";
+  sourceId: string;
+  submittedAt: string | null;
+  sourceOrders: { id: string; code: string | null; username: string | null }[];
+  items: { productName: string; quantity: number | null; unitCost: string | null; lineTotal: string | null }[];
+  productCost: string | null;
+  shippingCost: string | null;
+  totalCost: string | null;
+  currency: "USD";
 };
 export const vendorWalletsTable = pgTable(
   "vendor_wallets",

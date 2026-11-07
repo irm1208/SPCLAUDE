@@ -41,6 +41,7 @@ describe("payment confirmation", () => {
       address: "0x1111111111111111111111111111111111111111",
     },
     submissionIds: ["z", "a"],
+    orderSnapshots: ["z", "a"].map(submissionId => ({ submissionId, reviewToken: "a".repeat(64) })),
     txid: `0x${"a".repeat(64)}`,
     cryptoAmount: "0.300000",
   };
@@ -52,6 +53,13 @@ describe("payment confirmation", () => {
   it("rejects malformed dates and excessive notes", () => {
     expect(() => paymentInput({ ...base, paidAt: "yesterday" })).toThrow();
     expect(() => paymentInput({ ...base, note: "x".repeat(2001) })).toThrow();
+  });
+  it("requires review tokens to cover exactly the selected shipments", () => {
+    expect(() => paymentInput({ ...base, orderSnapshots: undefined })).toThrow(/review/i);
+    expect(() => paymentInput({ ...base, orderSnapshots: [] })).toThrow();
+    expect(() => paymentInput({ ...base, orderSnapshots: [{ submissionId: "z", reviewToken: "bad" }, { submissionId: "a", reviewToken: "a".repeat(64) }] })).toThrow(/review/i);
+    expect(() => paymentInput({ ...base, orderSnapshots: [{ submissionId: "z", reviewToken: "a".repeat(64) }, { submissionId: "z", reviewToken: "a".repeat(64) }] })).toThrow();
+    expect(() => paymentInput({ ...base, orderSnapshots: [{ submissionId: "z", reviewToken: "a".repeat(64) }, { submissionId: "different", reviewToken: "a".repeat(64) }] })).toThrow();
   });
   it("rejects negative, exponent and excessive precision asset amounts", () => {
     for (const cryptoAmount of ["-1", "1e3", "0.0000001"])

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 vi.mock("../vendor-portal-service", () => ({
   auditVendor: vi.fn(async () => {}),
   loadVendorSource: vi.fn(async () => ({
@@ -21,6 +21,7 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
         voidVendorPayment,
         assertVendorSubmissionUnpaid,
       } = await import("../vendor-payments");
+      const { paymentReviewToken } = await import("../vendor-payment-ledger");
       const rollback = new Error("rollback fixture");
       await store.db
         .transaction(async (tx: any) => {
@@ -30,7 +31,7 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
             two = randomUUID(),
             foreign = randomUUID();
           const snapshot = {
-            items: [],
+            items: [{ productName: "Fixture", quantity: 1, unitCost: "0.10", lineTotal: "0.10" }],
             shipping: {
               name: "Fixture",
               address: "Fixture",
@@ -63,12 +64,18 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
                 orderIds: [],
                 snapshot: {
                   ...snapshot,
+                  productCost: index === 1 ? "0.20" : "0.10",
                   totalCost: index === 1 ? "0.20" : "0.10",
+                  items: [{ productName: "Fixture", quantity: 1, unitCost: index === 1 ? "0.20" : "0.10", lineTotal: index === 1 ? "0.20" : "0.10" }],
                 },
                 sourceFingerprint: "fixture",
                 submittedBy: "fixture",
               })),
             );
+          const submitted = await tx.select().from(store.vendorSubmissionsTable)
+            .where(inArray(store.vendorSubmissionsTable.id, [one, two, foreign]));
+          const tokensFor = (ids: string[]) => submitted.filter((row: any) => ids.includes(row.id))
+            .map((row: any) => ({ submissionId: row.id, reviewToken: paymentReviewToken(row) }));
           const body = {
             vendorId: "fixture-vendor",
             walletId,
@@ -78,13 +85,14 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
               address: "0x1111111111111111111111111111111111111111",
             },
             submissionIds: [one, two],
+            orderSnapshots: tokensFor([one, two]),
             txid: `0x${randomUUID().replaceAll("-", "").padEnd(64, "a")}`,
             cryptoAmount: "0.3",
           };
           const database = { transaction: (run: any) => run(tx) };
           await expect(
             recordVendorPayment(
-              { ...body, submissionIds: [foreign] },
+              { ...body, submissionIds: [foreign], orderSnapshots: tokensFor([foreign]) },
               "fixture",
               database,
             ),
@@ -120,6 +128,8 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
           ).rejects.toThrow("active refund");
           const payment = await recordVendorPayment(body, "fixture", database);
           expect(payment.usdAmount).toBe("0.30");
+          expect(payment.orders.map((order: any) => order.detail.totalCost).sort()).toEqual(["0.10", "0.20"]);
+          expect(payment.orders[0].detail.items[0].productName).toBe("Fixture");
           expect(payment.activeTxKey).toBe(`Ethereum:${body.txid}`);
           // The database independently rejects the alias, even if a writer bypasses the service.
           await expect(
@@ -142,6 +152,7 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
                 ...body,
                 vendorId: "foreign",
                 submissionIds: [foreign],
+                orderSnapshots: tokensFor([foreign]),
                 walletSnapshot: {
                   ...body.walletSnapshot,
                   currency: "ETH",
@@ -191,6 +202,7 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")(
             database,
           );
           expect(voided.orders).toHaveLength(2);
+          expect(voided.orders).toEqual(payment.orders);
           expect(voided.voidedBy).toBe("fixture");
           expect(voided.activeTxKey).toBeNull();
           await assertVendorSubmissionUnpaid(tx, one);

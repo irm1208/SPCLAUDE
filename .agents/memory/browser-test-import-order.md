@@ -26,6 +26,16 @@ Vitest’s built-in jsdom environment resolves its dependency from the root runn
 
 **How to apply:** Reuse the manual DOM setup when the root runner cannot resolve jsdom. Supply location/history and global event listeners before importing Wouter, not just window/document.
 
+Playwright API fixtures must check the URL pathname begins with `/api/`, even
+when registered with the `**/api/**` route glob.
+
+**Why:** Vite can serve generated client modules from source paths containing an
+internal `/api/` directory. A broad fixture can replace JavaScript with JSON,
+leaving an empty page without a React exception.
+
+**How to apply:** Continue non-root-API requests unchanged; only fulfil actual
+application API paths with synthetic responses.
+
 Treat `React is not defined` in node/tsx JSX tests as a possible harness mismatch before changing production components.
 
 **Why:** The test runner can emit classic JSX for the project's preserve setting while Vite uses the automatic runtime; a functioning browser UI can therefore fail only in tests.

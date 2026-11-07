@@ -9,6 +9,20 @@ Vendors must see only their own wholesale orders and supplier cost prices, never
 
 **How to apply:** Enforce ownership and field privacy server-side, not only through dashboard presentation.
 
+Supplier payment receipts must retain the submitted supplier-cost breakdown as it
+was when recorded. Never reconstruct missing historical receipt detail from a
+current shipment, and never include Admin-only member identities in vendor history.
+
+**Why:** A voided payment can be followed by a corrected or resubmitted shipment
+using the same submission identity. Reusing its latest detail would rewrite the
+meaning of an old receipt and can disclose other shared-order members to a vendor.
+
+**How to apply:** Freeze new receipt details independently of shipment updates,
+label older missing detail honestly, and explicitly project vendor-visible fields.
+Bind payment review to the reviewed supplier-cost snapshot so resubmission cannot
+silently change what an Admin records. Require a reviewed snapshot for every new
+allocation; older Admin pages must refresh rather than bypass this financial guard.
+
 Existing vendor accounts, sessions, Telegram events and message history must be
 preserved when adding or publishing vendor features.
 
