@@ -220,6 +220,40 @@ export async function saveCoaSettings(groupId: string, actor: string, input: unk
     return cfg;
   });
 }
+/** Staff-supplied details use the existing one-request-per-order and invited-place rules. */
+export async function addManualCoa(groupId: string, actor: string, input: any, database = db, access?: CoaOrganiserAccess) {
+  const details = coaDetails(input);
+  if (typeof input?.orderId !== "string" || !input.orderId.trim() || input.orderId.length > 200)
+    throw new CoaError("Choose an existing group-buy order.");
+  return database.transaction(async tx => {
+    const group = await lockGroup(tx, groupId, access);
+    const [order] = await tx.select().from(orders).where(and(eq(orders.id, input.orderId), eq(orders.groupBuyId, groupId))).for("update");
+    if (!activeOrder(order)) throw new CoaError("Choose an active order in this group buy.", 404);
+    const cfg = await config(tx, groupId);
+    if (cfg.mode === "disabled") throw new CoaError("Enable COA settings before adding a request.");
+    const previous = await orderRequest(tx, order.id);
+    if (previous && (paidStates.includes(previous.status) || previous.txHash || previous.reference))
+      throw new CoaError("This order already has a COA request with payment activity. Use its existing request.", 409);
+    if (previous && holdsCoaPlace(previous) && previous.status !== "invited") {
+      // A retried POST is harmless; a manual add must never overwrite member details.
+      if (Object.entries(details).every(([key, value]) => previous[key as keyof typeof details] === value))
+        return { request: serialise(previous, order, group, !access) };
+      throw new CoaError("This order already has a COA request. Use its existing request.", 409);
+    }
+    if ((!previous || !holdsCoaPlace(previous)) && await commitments(tx, groupId) >= cfg.cap)
+      throw new CoaError("All COA places are taken. Increase the place limit before adding another request.", 409);
+    const fee = previous?.fee ?? String(cfg.fee);
+    const values = { ...details, source: "invited", status: Number(fee) === 0 ? "paid" : "reserved", fee,
+      currency: previous?.currency ?? cfg.currency, rails: previous?.rails ?? cfg.rails,
+      manualInstructions: previous?.manualInstructions ?? cfg.manualInstructions,
+      expiresAt: null, payment: previous?.payment ?? null, updatedAt: new Date() };
+    const id = previous?.id ?? randomUUID();
+    if (previous) await tx.update(requests).set(values).where(eq(requests.id, id));
+    else await tx.insert(requests).values({ ...values, id, orderId: order.id, groupBuyId: groupId, createdBy: actor });
+    await audit(tx, "manual_add", actor, id, { orderId: order.id });
+    return { request: serialise(await orderRequest(tx, order.id), order, group, !access) };
+  });
+}
 export async function inviteCoa(groupId: string, actor: string, input: any, database = db, access?: CoaOrganiserAccess) {
   if (!Array.isArray(input?.orderIds) || !input.orderIds.length || input.orderIds.length > 500
     || input.orderIds.some((id: unknown) => typeof id !== "string")) throw new CoaError("Select 1–500 orders to invite.");

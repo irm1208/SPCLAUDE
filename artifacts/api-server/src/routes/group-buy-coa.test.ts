@@ -10,6 +10,7 @@ const calls = vi.hoisted(() => ({
   download: vi.fn().mockResolvedValue(Buffer.from("%PDF-1.4\n%%EOF")),
   attach: vi.fn().mockResolvedValue({ attached: true }),
   settings: vi.fn().mockResolvedValue({ saved: true }),
+  manual: vi.fn().mockResolvedValue({ request: { id: "manual-request" } }),
   stepUp: vi.fn((_req: any, res: any) => {
     res.status(403).json({ error: "step_up_required" }); return false;
   }),
@@ -35,7 +36,7 @@ vi.mock("../middleware/require-admin", () => ({
 vi.mock("../lib/group-buy-coa", () => ({
   getMemberCoa: calls.member, saveMemberCoa: calls.save,
   adminCoaList: calls.admin, availableCoaRails: async () => [],
-  saveCoaSettings: calls.settings, inviteCoa: vi.fn(), coaPaymentInstructions: vi.fn(),
+  saveCoaSettings: calls.settings, addManualCoa: calls.manual, inviteCoa: vi.fn(), coaPaymentInstructions: vi.fn(),
   submitCoaPayment: vi.fn(), withdrawCoa: vi.fn(), manageCoa: vi.fn(),
   downloadCoaCertificate: calls.download, attachCoaCertificate: calls.attach,
 }));
@@ -51,6 +52,14 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); });
 
 describe("COA route boundaries and export", () => {
+  it("requires Admin authentication for manual COA creation and derives its actor from the session", async () => {
+    const path = `${base}/admin/group-buys/gb1/coa/manual`;
+    const body = { orderId: "o1", client: "Client", sample: "HGH", manufacturer: "Maker", batch: "B1", actor: "forged" };
+    expect((await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).status).toBe(401);
+    const result = await fetch(path, { method: "POST", headers: { "x-test-admin": "yes", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    expect(result.status).toBe(200);
+    expect(calls.manual).toHaveBeenLastCalledWith("gb1", "synthetic-admin", body);
+  });
   it("lets an authenticated Admin save COA payment settings without another authenticator code", async () => {
     calls.settings.mockClear(); calls.stepUp.mockClear();
     const settings = { mode: "open", fee: "65", currency: "USD", capacity: 20,

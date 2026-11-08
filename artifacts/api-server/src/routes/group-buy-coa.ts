@@ -5,7 +5,7 @@ import { COA_PDF_LIMIT } from "../lib/coa-certificates";
 import { requireAccount } from "../middleware/account-auth";
 import { requireAdmin, getAdminUsername } from "../middleware/require-admin";
 import {
-  getMemberCoa, saveMemberCoa, availableCoaRails, saveCoaSettings, inviteCoa, coaPaymentInstructions,
+  getMemberCoa, saveMemberCoa, availableCoaRails, saveCoaSettings, inviteCoa, coaPaymentInstructions, addManualCoa,
   submitCoaPayment, withdrawCoa, manageCoa, adminCoaList,
   attachCoaCertificate, downloadCoaCertificate,
 } from "../lib/group-buy-coa";
@@ -109,6 +109,11 @@ router.put("/admin/group-buys/:id/coa/settings", async (req, res) => {
 router.post("/admin/group-buys/:id/coa/invite", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try { res.json(await inviteCoa(String(req.params.id), getAdminUsername(res), req.body)); }
+  catch (error) { fail(res, error); }
+});
+router.post("/admin/group-buys/:id/coa/manual", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try { res.json(await addManualCoa(String(req.params.id), getAdminUsername(res), req.body)); }
   catch (error) { fail(res, error); }
 });
 router.patch("/admin/coa/:id", async (req, res) => {

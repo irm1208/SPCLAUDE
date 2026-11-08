@@ -92,3 +92,43 @@ it("lets an organiser save their own wallet without accessing any Admin endpoint
   expect(container.textContent).not.toContain("Internal notes (Admin only)");
   expect(container.querySelector('input[placeholder="Public receiving wallet address"]')).toBeTruthy();
 });
+for (const organiser of [false, true]) it(`adds a manual COA through the ${organiser ? "organiser" : "Admin"} queue and preserves the form after a failed save`, async () => {
+  const fixture = {
+    requests: [], groups: [{ id: "g1", name: "Synthetic group" }],
+    config: { mode: "open", fee: 65, currency: "USD", cap: 20, rails: [], manualInstructions: "Manual payment" },
+    orders: [{ id: "o1", code: "12345", member: "member" }], committed: 0,
+  };
+  let attempts = 0;
+  vi.mocked(coaApi).mockClear();
+  vi.mocked(coaApi).mockImplementation(async (path, options) => {
+    if (path.endsWith("/manual")) {
+      if (++attempts === 1) throw new Error("All COA places are taken.");
+      return { request: { id: "r1" } } as any;
+    }
+    return fixture as any;
+  });
+  container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+  await React.act(async () => root!.render(<CoaRequests secret={organiser ? "" : "synthetic-admin"} organiser={organiser} groupBuyId="g1" />));
+  await React.act(async () => { await new Promise(resolve => setTimeout(resolve, 280)); });
+  const button = (text: string) => [...container.querySelectorAll("button")].find(b => b.textContent === text)!;
+  await React.act(async () => button("Add COA manually").click());
+  expect(button("Save manual COA").disabled).toBe(true);
+  await React.act(async () => {
+    change(container.querySelector('[aria-label="Manual COA order"]')!, "o1");
+    for (const [key, value] of Object.entries({ client: "OmniQure", sample: "HGH 36IU", manufacturer: "OmniQure", batch: "HG20" })) {
+      change(container.querySelector(`[aria-label="Manual COA ${key}"]`)!, value);
+    }
+  });
+  expect(button("Save manual COA").disabled).toBe(false);
+  await React.act(async () => container.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  expect(container.textContent).toContain("All COA places are taken.");
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Manual COA client"]')!.value).toBe("OmniQure");
+  await React.act(async () => container.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  const calls = vi.mocked(coaApi).mock.calls.filter(([path]) => path.endsWith("/manual"));
+  expect(calls).toHaveLength(2);
+  expect(calls[1][0]).toBe(organiser ? "/organiser/group-buys/g1/coa/manual" : "/admin/group-buys/g1/coa/manual");
+  expect(JSON.parse(String(calls[1][1]?.body))).toEqual({ orderId: "o1", client: "OmniQure", sample: "HGH 36IU", manufacturer: "OmniQure", batch: "HG20" });
+  expect(container.textContent).toContain("COA request added.");
+  expect(container.querySelector("form")).toBeNull();
+  if (organiser) expect(vi.mocked(coaApi).mock.calls.every(([path]) => path.startsWith("/organiser/"))).toBe(true);
+});

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as store from "@workspace/db";
 import {
   adminCoaList, coaPaymentInstructions, getMemberCoa, inviteCoa, manageCoa,
-  saveCoaSettings, saveMemberCoa, submitCoaPayment, withdrawCoa, organiserCoaList,
+  saveCoaSettings, saveMemberCoa, submitCoaPayment, withdrawCoa, organiserCoaList, addManualCoa,
 } from "./group-buy-coa";
 import { coaTransactionConflict } from "./coa-payment-claim";
 import { drainCoaNotifications } from "./coa-notifications";
@@ -34,6 +34,36 @@ async function fixture(fn: (ctx: { tx: any; database: typeof store.db; group: st
 }
 
 describe.skipIf(process.env.COA_DB_TESTS !== "1")("group-buy COA persistence (synthetic rollback fixtures)", () => {
+  it("adds manual unpaid requests to existing orders, reuses invited capacity and never changes product-order money", () => fixture(async ({ tx, database, group, ids, users }) => {
+    const before = await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, ids[0]));
+    await inviteCoa(group, "admin", { orderIds: [ids[0]] }, database);
+    await tx.update(store.groupBuyCoaSettingsTable).set({ fee: "37" }).where(eq(store.groupBuyCoaSettingsTable.groupBuyId, group));
+    await addManualCoa(group, "admin", { orderId: ids[0], ...details, status: "paid", fee: 0, member: "forged" }, database);
+    let view = await getMemberCoa(ids[0], users[0], database);
+    expect(view.request).toMatchObject({ ...details, member: users[0], status: "reserved", fee: 25, source: "invited" });
+    expect(view.available).toBe(1);
+    await addManualCoa(group, "admin", { orderId: ids[0], ...details }, database);
+    expect((await adminCoaList({ groupBuyId: group }, database)).requests).toHaveLength(1);
+    await expect(addManualCoa(group, "admin", { orderId: ids[0], ...details, batch: "changed" }, database)).rejects.toThrow(/already/i);
+    await addManualCoa(group, "admin", { orderId: ids[1], ...details }, database);
+    await expect(addManualCoa(group, "admin", { orderId: ids[2], ...details }, database)).rejects.toThrow(/limit|taken/i);
+    await manageCoa(view.request!.id, "admin", { action: "confirm", note: "Receipt checked separately" }, database);
+    await expect(addManualCoa(group, "admin", { orderId: ids[0], ...details }, database)).rejects.toThrow(/already|payment/i);
+    expect(await tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, ids[0]))).toEqual(before);
+  }));
+  it("scopes manual entry to the owning organiser and refuses missing, ineligible or foreign orders", () => fixture(async ({ tx, database, group, ids, users }) => {
+    await tx.update(store.groupBuysTable).set({ organiserId: users[0] }).where(eq(store.groupBuysTable.id, group));
+    const owner = { groupBuyId: group, username: users[0] };
+    await expect(addManualCoa(group, users[1], { orderId: ids[0], ...details }, database, { ...owner, username: users[1] })).rejects.toThrow(/not found/i);
+    await expect(addManualCoa(group, users[0], { orderId: randomUUID(), ...details }, database, owner)).rejects.toThrow(/active order/i);
+    await expect(addManualCoa(group, users[0], { orderId: ids[0], ...details, client: "" }, database, owner)).rejects.toThrow(/client/i);
+    await tx.update(store.ordersTable).set({ status: "Cancelled" }).where(eq(store.ordersTable.id, ids[1]));
+    await expect(addManualCoa(group, users[0], { orderId: ids[1], ...details }, database, owner)).rejects.toThrow(/active order/i);
+    await tx.update(store.ordersTable).set({ groupBuyId: null }).where(eq(store.ordersTable.id, ids[2]));
+    await expect(addManualCoa(group, users[0], { orderId: ids[2], ...details }, database, owner)).rejects.toThrow(/active order/i);
+    await addManualCoa(group, users[0], { orderId: ids[0], ...details }, database, owner);
+    expect((await organiserCoaList(owner, {}, database)).requests[0]).toMatchObject({ ...details, status: "reserved" });
+  }));
   it("allows only the owning organiser to manage COAs and preserves committed wallet/fee terms", async () => {
     await fixture(async ({ tx, database, group, ids, users }) => {
       await tx.update(store.groupBuysTable).set({ organiserId: users[0] }).where(eq(store.groupBuysTable.id, group));

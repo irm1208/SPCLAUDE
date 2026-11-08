@@ -9,6 +9,7 @@ const calls = vi.hoisted(() => ({
   list: vi.fn(async (..._args: any[]) => ({ requests: [{ status: "paid", member: "member", client: "Client", sample: "Sample", manufacturer: "Maker", batch: "Lot" }] })),
   settings: vi.fn(async (..._args: any[]) => ({ ok: true })),
   invite: vi.fn(async (..._args: any[]) => ({ ok: true })),
+  manual: vi.fn(async (..._args: any[]) => ({ request: { id: "r1" } })),
   manage: vi.fn(async (..._args: any[]) => ({ ok: true })),
   attach: vi.fn().mockResolvedValue({ attached: true }),
 }));
@@ -23,7 +24,7 @@ vi.mock("../middleware/require-organiser", () => ({
 }));
 vi.mock("../lib/group-buy-coa", () => ({
   assertCoaOrganiserAccess: calls.guard, organiserCoaList: calls.list, saveCoaSettings: calls.settings,
-  inviteCoa: calls.invite, manageCoa: calls.manage, attachCoaCertificate: calls.attach,
+  inviteCoa: calls.invite, addManualCoa: calls.manual, manageCoa: calls.manage, attachCoaCertificate: calls.attach,
 }));
 import router from "./organiser-coa";
 // Use the real domain error so the route's error boundary is exercised too.
@@ -42,7 +43,7 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); });
 const headers = { "x-test-organiser": "owner", "Content-Type": "application/json" };
 it("protects every organiser COA read, export and mutation with organiser authentication", async () => {
-  for (const [path, method] of [["", "GET"], ["/export.txt", "GET"], ["/export.csv", "GET"], ["/settings", "PUT"], ["/invite", "POST"], ["/requests/r1", "PATCH"], ["/requests/r1/certificate", "POST"]]) {
+  for (const [path, method] of [["", "GET"], ["/export.txt", "GET"], ["/export.csv", "GET"], ["/settings", "PUT"], ["/invite", "POST"], ["/manual", "POST"], ["/requests/r1", "PATCH"], ["/requests/r1/certificate", "POST"]]) {
     expect((await fetch(`${base}/own/coa${path}`, { method })).status).toBe(401);
   }
   expect((await fetch(`${base}/own/coa`, { headers: { "x-test-organiser": "suspended" } })).status).toBe(403);
@@ -59,6 +60,12 @@ it("ignores a forged query-string group and scopes settings, invites and actions
   }
   expect(calls.manage.mock.lastCall?.[4]).toEqual({ groupBuyId: "own", username: "owner" });
   expect(calls.settings.mock.lastCall?.[4]).toEqual({ groupBuyId: "own", username: "owner" });
+});
+it("allows manual entry only within the authenticated organiser's group", async () => {
+  const body = { orderId: "o1", client: "Client", sample: "HGH", manufacturer: "Maker", batch: "B1", groupBuyId: "foreign", actor: "forged" };
+  expect((await fetch(`${base}/foreign/coa/manual`, { method: "POST", headers, body: JSON.stringify(body) })).status).toBe(404);
+  expect((await fetch(`${base}/own/coa/manual`, { method: "POST", headers, body: JSON.stringify(body) })).status).toBe(200);
+  expect(calls.manual).toHaveBeenLastCalledWith("own", "owner", body, {}, { groupBuyId: "own", username: "owner" });
 });
 it("exports the same paid-only TXT format from the scoped organiser queue", async () => {
   const response = await fetch(`${base}/own/coa/export.txt?status=reserved&batch=Lot`, { headers });

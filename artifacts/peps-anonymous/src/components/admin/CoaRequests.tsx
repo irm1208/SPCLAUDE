@@ -3,6 +3,7 @@ import { Loader2, AlertCircle, Download, RefreshCw, Save, Send, FileCheck2 } fro
 import { Button, Card, Input, Label, cn } from "@/components/ui";
 import { coaApi, defaultCoaConfig, type CoaAdminView, type CoaConfig, type CoaRail, type CoaRequest } from "@/lib/coa-api";
 import { COA_PHASE_TONE, COA_STATUS_LABEL, canConfirm, canRelease, coaAdminQuery, coaPhase, confirmNoteOk, fmtCoaFee, inviteCandidates } from "@/lib/coa-ui";
+import { ManualCoaRequest } from "./ManualCoaRequest";
 
 const STATUSES = Object.keys(COA_STATUS_LABEL) as CoaRequest["status"][];
 const railKey = (r: CoaRail) => `${r.currency}|${r.network}|${r.walletAddress}`;
@@ -339,6 +340,9 @@ export function CoaRequests({ secret = "", groupBuyId, organiser = false }: { se
         </>
       )}
 
+      {scope && data?.config && data.config.mode !== "disabled" && <ManualCoaRequest
+        key={`${listPath}-${scope}-${secret}`} groupBuyId={scope} organiserRoot={organiserRoot} secret={secret} orders={data.orders}
+        onSaved={() => { setSearch(""); setBatch(""); setStatus(""); void load(); }} />}
       <div className="flex flex-wrap gap-2">
         {!groupBuyId && (
           <select className="h-9 rounded-md border border-input bg-background px-2 text-xs" value={gb} onChange={e => setGb(e.target.value)}>

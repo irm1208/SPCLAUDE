@@ -7,7 +7,7 @@ import { CoaError, csvCell } from "../lib/coa-rules";
 import { paidCoaTxt } from "../lib/coa-export";
 import {
   assertCoaOrganiserAccess, organiserCoaList, saveCoaSettings, inviteCoa, manageCoa,
-  attachCoaCertificate, type CoaOrganiserAccess,
+  attachCoaCertificate, addManualCoa, type CoaOrganiserAccess,
 } from "../lib/group-buy-coa";
 
 const router = Router();
@@ -42,6 +42,11 @@ router.put(`${root}/settings`, async (req, res) => {
 router.post(`${root}/invite`, async (req, res) => {
   try { res.json(await inviteCoa(access(res).groupBuyId, access(res).username, req.body, db, access(res))); }
   catch (error) { fail(res, error); }
+});
+router.post(`${root}/manual`, async (req, res) => {
+  try {
+    res.json(await addManualCoa(access(res).groupBuyId, access(res).username, req.body, db, access(res)));
+  } catch (error) { fail(res, error); }
 });
 router.get(`${root}/export.txt`, async (req, res) => {
   try {

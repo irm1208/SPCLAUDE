@@ -5,6 +5,12 @@ description: Scope, separate charges, capacity commitments and immutable COA req
 
 COA requests apply to all group-buy orders, not wholesale, shared wholesale or Testmedaddy. Admin or the owning approved organiser chooses individual orders or opens requests to group-buy order owners with a shared limit. Members supply Client, Sample, Manufacturer and Batch.
 
+Staff can also enter the COA details manually, but only against an existing group-buy order—not an orderless username.
+
+**Why:** The user requested manual COA entry and explicitly chose existing group-buy orders only.
+
+**How to apply:** Use the same durable request and shared capacity, preserve committed terms, and keep fee receipt confirmation separate from manual data entry.
+
 **Why:** The user explicitly chose all group-buy orders and approved full COA management for organisers, including their own receiving wallets.
 
 **How to apply:** Keep this separate from testing-pool named reports, whose opt-in is not proof that a COA fee has been received. Do not alter product-order payments, shipping, credits, balances or refunds for a COA.
