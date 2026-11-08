@@ -32,6 +32,7 @@ export type LedgerOrder = {
   paidAmountUsd?: string | null;
   reviewToken?: string;
   canRemove?: boolean;
+  requiresRemovalOverride?: boolean;
   removalReason?: string | null;
   profit?: OrderProfit;
 };

@@ -528,6 +528,28 @@ test("paid and started submissions cannot be removed", async () => {
   assert.equal((el("payment-remove-o2") as HTMLButtonElement).disabled, true);
   assert.ok(el("payment-remove-o2").textContent!.includes("started"));
 });
+test("Admin override requires a reason and sends it only after explicit confirmation", async () => {
+  let deleted = false;
+  const overrideOrder = { ...data.orders[0], status: "Shipped", canRemove: true, requiresRemovalOverride: true };
+  await mountWith(async (path, init = {}) => {
+    if (init.method === "DELETE") {
+      requests.push({ path, method: init.method, body: JSON.parse(String(init.body)) });
+      deleted = true;
+      return new Response(JSON.stringify({ ok: true }));
+    }
+    return new Response(JSON.stringify({ ...data, orders: deleted ? [] : [overrideOrder] }));
+  });
+  await change("payment-vendor", "v1");
+  await click("payment-remove-o1");
+  assert.match(el("payment-remove-confirmation").textContent!, /does not stop a parcel already shipped/);
+  assert.equal((el("payment-remove-confirm") as HTMLButtonElement).disabled, true);
+  await change("payment-remove-reason", "  Duplicate shipment handled outside portal  ");
+  assert.equal((el("payment-remove-confirm") as HTMLButtonElement).disabled, false);
+  assert.equal(deleted, false);
+  await click("payment-remove-confirm");
+  assert.deepEqual(requests.find(r => r.method === "DELETE")?.body, { override: true, reason: "Duplicate shipment handled outside portal" });
+  assert.equal(document.querySelector('[data-testid="payment-order-o1"]'), null);
+});
 
 test("switching vendors clears removal confirmation and stale removal cannot act", async () => {
   await mountWith(async (p) => new Response(JSON.stringify(detailedData(vendorOf(p)))));

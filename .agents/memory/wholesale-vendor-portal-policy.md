@@ -29,8 +29,13 @@ from the vendor portal and payment list, not cancelling or deleting the customer
 **Why:** The user explicitly chose “Remove from vendor and payment” while keeping
 the customer order intact.
 
-**How to apply:** Reuse supplier-recall safeguards and its audit trail, retain
-historical receipts, and never bypass paid, started-fulfilment or photo protections.
+**How to apply:** Reuse supplier recall and its audit trail, retain historical
+receipts, and never bypass active payment allocations. Admin may explicitly
+override started fulfilment or vendor photos with a required reason and warning;
+preserve customer status/tracking and retain the original supplier evidence in audit history.
+
+**Why the override:** The user approved Admin removal of a shipped supplier
+submission from the vendor portal and payment list without changing the customer order.
 
 Admin product-profit estimates must use only sales attributable to that supplier,
 not the whole total of every linked or mixed-supplier customer order. Product-only

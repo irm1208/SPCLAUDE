@@ -258,6 +258,14 @@ router.get("/admin/vendor-portal/orders/:id", handled(async (req, res) => {
 }));
 router.delete("/admin/vendor-portal/orders/:id", handled(async (req, res) => {
   if (!requireAdmin(req, res)) return;
+  const override = req.body?.override === true;
+  if (req.body?.override !== undefined && typeof req.body.override !== "boolean") {
+    throw new VendorPortalError("Override must be true or false.");
+  }
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (override && (!reason || reason.length > 2000)) {
+    throw new VendorPortalError("An Admin removal reason is required (maximum 2,000 characters).");
+  }
   await db.transaction(async tx => {
     const [candidate] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, String(req.params.id)));
     if (!candidate) throw new VendorPortalError("Submission not found.", 404);
@@ -265,10 +273,13 @@ router.delete("/admin/vendor-portal/orders/:id", handled(async (req, res) => {
     const [row] = await tx.select().from(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, candidate.id)).for("update");
     if (!row) throw new VendorPortalError("Submission not found.", 404);
     await assertVendorSubmissionUnpaid(tx, row.id);
-    if (row.status !== "Submitted") throw new VendorPortalError("Vendor has started this shipment. It cannot be recalled here; coordinate fulfilment before editing.", 409);
-    const images = await tx.select({ id: vendorImagesTable.id }).from(vendorImagesTable).where(eq(vendorImagesTable.submissionId, row.id));
-    if (images.length) throw new VendorPortalError("Vendor has uploaded photos. Coordinate with them before changing this shipment.", 409);
-    await auditVendor(tx, getAdminUsername(res), "submission_recalled", row.id, { sourceKey: row.sourceKey, vendorId: row.vendorId });
+    if (row.status !== "Submitted" && !override) throw new VendorPortalError("Vendor has started this shipment. Admin override with a reason is required to remove it.", 409);
+    const images = await tx.select().from(vendorImagesTable).where(eq(vendorImagesTable.submissionId, row.id));
+    if (images.length && !override) throw new VendorPortalError("Vendor has uploaded photos. Admin override with a reason is required to remove it.", 409);
+    await auditVendor(tx, getAdminUsername(res), "submission_recalled", row.id, {
+      sourceKey: row.sourceKey, vendorId: row.vendorId,
+      ...(override ? { override: true, reason, previousStatus: row.status, trackingNumber: row.trackingNumber, submission: row, images } : {}),
+    });
     await tx.delete(vendorSubmissionsTable).where(eq(vendorSubmissionsTable.id, row.id));
   });
   res.json({ ok: true });

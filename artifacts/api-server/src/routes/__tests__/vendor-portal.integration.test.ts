@@ -261,8 +261,11 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     const after = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
     for (const field of ["status", "paymentStatus", "balancePaymentStatus", "grandTotal", "amountDue"]) expect(after[field]).toEqual(before[field]);
     expect((await request(`/admin/vendor-portal/orders/${row.id}`, undefined, undefined, true, "DELETE")).status).toBe(409);
+    expect((await request(`/admin/vendor-portal/orders/${row.id}`, undefined, { override: true, reason: "Must not override an active receipt" }, true, "DELETE")).status).toBe(409);
     expect((await request(`/admin/vendor-payments/${recorded.data.payment.id}/void`, undefined, { reason: "Fixture correction" }, true)).status).toBe(200);
     expect((await request(`/admin/vendor-portal/orders/${row.id}`, undefined, undefined, true, "DELETE")).status).toBe(200);
+    const keptReceipt = (await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true)).data.payments.find((p: any) => p.id === recorded.data.payment.id);
+    expect(keptReceipt.orders).toEqual(recorded.data.payment.orders);
   }), 60000);
   it("saves a portal display name without changing vendor ownership or revoking a name-only session", () => fixture(async f => {
     const tokenHash = `display-name-${randomUUID()}`;
@@ -924,10 +927,36 @@ describe.skipIf(process.env.VENDOR_PORTAL_DB_TESTS !== "1")("vendor portal / rea
     const { row: second } = await submit(f);
     await request(`/vendor/orders/${second.id}`, f.a, { action: "processing" }, false, "PATCH");
     const startedLedger = await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true);
-    expect(startedLedger.data.orders.find((order: any) => order.id === second.id).canRemove).toBe(false);
+    expect(startedLedger.data.orders.find((order: any) => order.id === second.id)).toMatchObject({ canRemove: true, requiresRemovalOverride: true });
     expect((await request(`/admin/vendor-portal/orders/${second.id}`, undefined, undefined, true, "DELETE")).status).toBe(409);
     await f.tx.update(store.ordersTable).set({ status: "Completed" }).where(eq(store.ordersTable.id, f.orderId));
     expect((await request(`/vendor/orders/${second.id}`, f.a, { action: "tracking", carrier: "Fixture", trackingNumber: "TRACK123" }, false, "PATCH")).status).toBe(409);
+  }));
+  it("requires explicit Admin override and a reason to remove a shipped submission without changing the customer order", () => fixture(async f => {
+    const { row } = await submit(f);
+    await f.tx.update(store.vendorSubmissionsTable).set({ status: "Shipped", trackingNumber: "SHIPPED123" }).where(eq(store.vendorSubmissionsTable.id, row.id));
+    await f.tx.insert(store.vendorImagesTable).values({ id: randomUUID(), submissionId: row.id, objectPath: "vendor-dispatch/retained-photo.webp", filename: "photo.webp", uploadedBy: f.a });
+    await f.tx.update(store.ordersTable).set({ status: "Shipped", trackingNumber: "SHIPPED123" }).where(eq(store.ordersTable.id, f.orderId));
+    const before = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
+    const path = `/admin/vendor-portal/orders/${row.id}`;
+    const input = { override: true, reason: "Duplicate supplier shipment; already handled outside this portal." };
+    expect((await request(path, f.a, input, false, "DELETE")).status).toBe(403);
+    expect((await request(path, undefined, { reason: input.reason }, true, "DELETE")).status).toBe(409);
+    expect((await request(path, undefined, { override: true, reason: " " }, true, "DELETE")).status).toBe(400);
+    expect((await request(path, undefined, { override: "true", reason: input.reason }, true, "DELETE")).status).toBe(400);
+    expect((await request(path, undefined, { override: true, reason: "x".repeat(2001) }, true, "DELETE")).status).toBe(400);
+    expect((await request(path, undefined, input, true, "DELETE")).status).toBe(200);
+    expect((await request("/vendor/orders", f.a)).data.orders).toEqual([]);
+    const ledger = await request("/admin/vendor-payments?vendorId=vendor-a", undefined, undefined, true);
+    expect(ledger.data.orders.some((o: any) => o.id === row.id)).toBe(false);
+    const after = (await f.tx.select().from(store.ordersTable).where(eq(store.ordersTable.id, f.orderId)))[0];
+    expect(after).toEqual(before);
+    const audits = await f.tx.select().from(store.vendorAuditTable).where(eq(store.vendorAuditTable.submissionId, row.id));
+    expect(audits.find((a: any) => a.action === "submission_recalled")).toMatchObject({
+      actor: "test-admin", details: { override: true, reason: input.reason, previousStatus: "Shipped", trackingNumber: "SHIPPED123",
+        images: [expect.objectContaining({ objectPath: "vendor-dispatch/retained-photo.webp" })],
+      },
+    });
   }));
   it("combines a shared order once and keeps onward addresses and combined photos private", () => fixture(async f => {
     const shareId = `TEST${randomUUID().slice(0, 6).toUpperCase()}`;

@@ -80,8 +80,8 @@ export type SupplierPaymentOrder = ReturnType<typeof paymentOrderRow>;
 
 export function paymentRemovalPermission(row: any, hasAllocation: boolean, hasImages: boolean) {
   if (hasAllocation) return { canRemove: false, removalReason: "Void the supplier payment receipt before removing this submission." };
-  if (row.status !== "Submitted") return { canRemove: false, removalReason: "Vendor fulfilment has started. Coordinate with the vendor before changing this shipment." };
-  if (hasImages) return { canRemove: false, removalReason: "Vendor photos have been uploaded. Coordinate with the vendor before changing this shipment." };
+  if (row.status !== "Submitted") return { canRemove: true, requiresRemovalOverride: true, removalReason: "Vendor fulfilment has started. Admin override and a reason are required. Coordinate with the vendor before removing this shipment." };
+  if (hasImages) return { canRemove: true, requiresRemovalOverride: true, removalReason: "Vendor photos have been uploaded. Admin override and a reason are required. Coordinate with the vendor before removing this shipment." };
   return { canRemove: true, removalReason: null };
 }
 

@@ -18,9 +18,10 @@ export function Pager({ page, pages, onPage, prefix }: { page: number; pages: nu
   </div>;
 }
 
-export function LedgerOrders({ orders, selected, onSelected, locked, onRemove, removeTarget, onRemoveCancel, onRemoveConfirm, removeBusy }: {
+export function LedgerOrders({ orders, selected, onSelected, locked, onRemove, removeTarget, onRemoveCancel, onRemoveConfirm, removeBusy, removeReason, onRemoveReason }: {
   orders: LedgerOrder[]; selected: Set<string>; onSelected: (next: Set<string>) => void; locked: boolean;
   onRemove: (order: LedgerOrder) => void; removeTarget: LedgerOrder | null; onRemoveCancel: () => void; onRemoveConfirm: () => void; removeBusy: boolean;
+  removeReason: string; onRemoveReason: (reason: string) => void;
 }) {
   const [f, setF] = useState<Filters>(EMPTY);
   const [page, setPage] = useState(1);
@@ -113,7 +114,7 @@ export function LedgerOrders({ orders, selected, onSelected, locked, onRemove, r
                 {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
               </button>
               {o.canRemove === true
-                ? <button type="button" disabled={locked} onClick={() => onRemove(o)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold disabled:opacity-50" style={{ borderColor: "#D7A3A0", color: "#A12924" }} data-testid={`payment-remove-${o.id}`}><Trash2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Remove</span></button>
+                ? <button type="button" disabled={locked} onClick={() => onRemove(o)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold disabled:opacity-50" style={{ borderColor: "#D7A3A0", color: "#A12924" }} data-testid={`payment-remove-${o.id}`}><Trash2 className="h-3.5 w-3.5" /><span>{o.requiresRemovalOverride ? "Remove (Admin override)" : "Remove"}</span></button>
                 : <button type="button" disabled title={o.removalReason ?? undefined} className="min-w-0 max-w-full cursor-not-allowed text-left text-xs leading-relaxed opacity-100 break-words" style={{ color: "#8A5A00" }} data-testid={`payment-remove-${o.id}`}>{o.removalReason || (o.canRemove === false ? "Removal unavailable" : "Refresh to check removal permission")}</button>}
             </div>
             {isOpen && <div className="border-t p-3 space-y-3" style={{ borderColor: "var(--t-border)" }}>
@@ -131,8 +132,18 @@ export function LedgerOrders({ orders, selected, onSelected, locked, onRemove, r
     {removeTarget && <section className="rounded-xl border p-4 space-y-3" style={{ borderColor: "#D7A3A0", background: "color-mix(in srgb, #B42318 4%, var(--t-surface))" }} data-testid="payment-remove-confirmation" aria-label="Confirm supplier submission removal">
       <p className="text-sm font-bold">Remove supplier submission · <span className="font-mono">{removeTarget.reference}</span></p>
       <p className="text-xs leading-relaxed">This removes the supplier submission from the vendor portal and payment list. It keeps the customer order and historical receipts. It does not cancel the customer order or reverse any transfer.</p>
+      {removeTarget.requiresRemovalOverride && <>
+        <p className="text-xs leading-relaxed font-semibold" style={{ color: "#8A5A00" }}>
+          Admin override: vendor fulfilment has started or photos have been uploaded. Coordinate with the vendor first; removal does not stop a parcel already shipped. Customer fulfilment and tracking stay unchanged. The original submission and photo references are retained in the Admin audit history.
+        </p>
+        <label className="block text-xs font-semibold">Reason for Admin removal
+          <textarea value={removeReason} onChange={event => onRemoveReason(event.target.value)} maxLength={2000} rows={3} disabled={removeBusy}
+            className="mt-2 block w-full rounded-lg border p-3 text-sm" style={{ borderColor: "var(--t-border)", background: "var(--t-surface)", color: "var(--t-text)" }}
+            placeholder="Explain why this supplier submission should be removed." data-testid="payment-remove-reason" />
+        </label>
+      </>}
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={removeBusy} onClick={onRemoveConfirm} className="rounded-lg px-3 py-2 text-xs font-bold text-white disabled:opacity-50" style={{ background: "#A12924" }} data-testid="payment-remove-confirm">{removeBusy ? "Removing…" : "Confirm removal"}</button>
+        <button type="button" disabled={removeBusy || (removeTarget.requiresRemovalOverride === true && !removeReason.trim())} onClick={onRemoveConfirm} className="rounded-lg px-3 py-2 text-xs font-bold text-white disabled:opacity-50" style={{ background: "#A12924" }} data-testid="payment-remove-confirm">{removeBusy ? "Removing…" : "Confirm removal"}</button>
         <button type="button" disabled={removeBusy} onClick={onRemoveCancel} className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50" style={{ borderColor: "var(--t-border)" }} data-testid="payment-remove-cancel">Cancel</button>
       </div>
     </section>}

@@ -30,6 +30,7 @@ export default function VendorPaymentsAdmin() {
   const [busy, setBusy] = useState(false);
   const [voidId, setVoidId] = useState("");
   const [removeTarget, setRemoveTarget] = useState<LedgerOrder | null>(null);
+  const [removeReason, setRemoveReason] = useState("");
   const [reason, setReason] = useState("");
   const [ledgerKey, setLedgerKey] = useState(0);
   const lock = useRef(false);
@@ -143,13 +144,17 @@ export default function VendorPaymentsAdmin() {
 
   async function removeSubmission() {
     if (lock.current || busy || draft || voidId || !removeTarget || removeTarget.canRemove !== true) return;
+    if (removeTarget.requiresRemovalOverride && !removeReason.trim()) return;
     const forVendor = vendorId;
     const submissionId = removeTarget.id;
     lock.current = true;
     setBusy(true);
     setMessage(null);
     try {
-      await request(`/api/admin/vendor-portal/orders/${encodeURIComponent(submissionId)}`, { method: "DELETE" });
+      await request(`/api/admin/vendor-portal/orders/${encodeURIComponent(submissionId)}`, {
+        method: "DELETE",
+        ...(removeTarget.requiresRemovalOverride ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ override: true, reason: removeReason.trim() }) } : {}),
+      });
       if (vendorRef.current !== forVendor) return;
       setRemoveTarget(null);
       await load(forVendor);
@@ -214,8 +219,9 @@ export default function VendorPaymentsAdmin() {
       </section>
 
       <LedgerOrders key={ledgerKey} orders={ledger.orders} selected={selected} onSelected={setSelected} locked={busy || !!draft || !!voidId || !!removeTarget}
-        onRemove={(order) => { if (order.canRemove === true && !busy && !draft && !voidId && !lock.current) { setRemoveTarget(order); setMessage(null); } }}
-        removeTarget={removeTarget} onRemoveCancel={() => setRemoveTarget(null)} onRemoveConfirm={() => void removeSubmission()} removeBusy={busy} />
+        onRemove={(order) => { if (order.canRemove === true && !busy && !draft && !voidId && !lock.current) { setRemoveTarget(order); setRemoveReason(""); setMessage(null); } }}
+        removeTarget={removeTarget} onRemoveCancel={() => setRemoveTarget(null)} onRemoveConfirm={() => void removeSubmission()} removeBusy={busy}
+        removeReason={removeReason} onRemoveReason={setRemoveReason} />
 
       <RecordPaymentPanel wallets={ledger.wallets} form={form} onForm={(p) => setForm((f) => ({ ...f, ...p }))} chosen={chosen} total={total}
         draft={draft} busy={busy || !!removeTarget || !!voidId} ready={ready && !removeTarget && !voidId} dateError={!paid.ok} tokenProblem={tokenProblem} onReview={review} onConfirm={() => void mutate(false)} onEdit={() => setDraft(null)} />

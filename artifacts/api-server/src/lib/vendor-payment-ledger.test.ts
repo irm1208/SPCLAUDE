@@ -18,10 +18,11 @@ const identities = new Map([["o1", { id: "o1", code: "12656", telegramUsername: 
 describe("supplier payment ledger", () => {
   it("allows recalling unstarted supplier submissions, including stale ones, without guessing about payments or vendor work", () => {
     expect(paymentRemovalPermission(row(), false, false)).toEqual({ canRemove: true, removalReason: null });
-    expect(paymentRemovalPermission(row({ status: "Processing" }), false, false).canRemove).toBe(false);
-    expect(paymentRemovalPermission(row({ status: "Shipped" }), false, false).canRemove).toBe(false);
+    expect(paymentRemovalPermission(row({ status: "Processing" }), false, false)).toMatchObject({ canRemove: true, requiresRemovalOverride: true });
+    expect(paymentRemovalPermission(row({ status: "Shipped" }), false, false)).toMatchObject({ canRemove: true, requiresRemovalOverride: true });
     expect(paymentRemovalPermission(row(), true, false).removalReason).toMatch(/void/i);
     expect(paymentRemovalPermission(row(), false, true).removalReason).toMatch(/photo/i);
+    expect(paymentRemovalPermission(row(), false, true)).toMatchObject({ canRemove: true, requiresRemovalOverride: true });
   });
   it("projects only submitted supplier costs and allowed Admin order references", () => {
     const detail = paymentOrderDetail(row(), identities);
