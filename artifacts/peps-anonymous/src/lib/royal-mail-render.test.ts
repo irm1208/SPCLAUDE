@@ -29,7 +29,8 @@ it("renders every crop/rotation without cutting label corner marks or retaining 
     pageIndex, crop, viewBox: [10, 20, 580, 820], rotation: pageIndex * 90,
   })) }], new AbortController().signal);
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const pdf = await pdfjs.getDocument({ data: output, standardFontDataUrl: join(pdfjsRoot, "standard_fonts/"), isEvalSupported: false }).promise;
+  const task = pdfjs.getDocument({ data: output, standardFontDataUrl: join(pdfjsRoot, "standard_fonts/") });
+  const pdf = await task.promise;
   try {
     for (let index = 1; index <= 4; index++) {
       const page = await pdf.getPage(index), viewport = page.getViewport({ scale: 1 });
@@ -52,5 +53,5 @@ it("renders every crop/rotation without cutting label corner marks or retaining 
       expect(counts.black).toBeGreaterThan(2000);
       page.cleanup();
     }
-  } finally { await pdf.destroy(); }
+  } finally { await task.destroy(); } // pdfjs 6: destroy() lives on the loading task, not the document
 }, 30000);

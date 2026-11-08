@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
-    "csv-parse": "^6.2.1",
+    "csv-parse": "^7.0.3",
     "msedge-tts": "^2.1.1",
     "pg": "^8.23.1"
   },

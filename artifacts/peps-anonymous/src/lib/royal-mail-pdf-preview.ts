@@ -18,7 +18,7 @@ async function withPdf<T>(bytes: Uint8Array, signal: AbortSignal, use: (pdf: PDF
   checkCancelled(signal);
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
   // PDF.js transfers its buffer to the worker. Keep the source bytes intact.
-  const task = pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false });
+  const task = pdfjs.getDocument({ data: bytes.slice() });
   const abort = () => { void task.destroy().catch(() => {}); };
   signal.addEventListener("abort", abort, { once: true });
   try {

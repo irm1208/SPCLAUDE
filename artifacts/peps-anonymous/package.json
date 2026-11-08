@@ -113,7 +113,7 @@
     "jspdf-autotable": "^5.0.9",
     "mammoth": "^1.13.0",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "^6.5.438",
     "react-chartjs-2": "^5.3.1",
     "react-qr-code": "^2.2.0",
     "three": "^0.183.2",
