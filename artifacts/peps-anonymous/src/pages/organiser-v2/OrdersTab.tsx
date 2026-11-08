@@ -1315,7 +1315,16 @@ export default function OrdersTab({ selectedGbId, highlightId, onOpenDispatch, c
                     <option value="delivered">Delivered</option>
                     <option value="cancelled">Cancelled</option>
                   </select>
-                  {editingOrder?.status !== "paid" && <p className="mt-1 text-xs" style={{ color: "var(--t-muted)" }}>To confirm payment with a note, use “Mark as paid” in the order details.</p>}
+                  {selectedGbId && editingOrder.paymentStatus !== "confirmed" && editingOrder.status !== "cancelled" && (
+                    <div className="mt-2">
+                      <MarkOrdersPaid key={`${editingOrder.id}-edit`} groupBuyId={selectedGbId} orderIds={[editingOrder.id]} allowed={canMarkPaid}
+                        onSaved={async () => {
+                          // Close the stale edit draft so saving it cannot undo the paid confirmation.
+                          closeEditModal();
+                          await orderRepository.load();
+                        }} />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <div className="text-[12px] font-bold uppercase tracking-wide mb-2" style={{ color: "var(--t-subtle)" }}>Tracking Number</div>

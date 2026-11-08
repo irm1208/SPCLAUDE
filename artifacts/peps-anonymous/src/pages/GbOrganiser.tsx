@@ -6756,7 +6756,6 @@ function downloadOrgImportTemplate(gbName: string) {
 
 const ORDERS_PER_PAGE = 25;
 const ORDER_STATUS_OPTIONS = ["Draft", "Submitted", "Processing", "Shipped", "Completed", "Cancelled"];
-const PAYMENT_STATUS_OPTIONS = ["unpaid", "pending_confirmation", "confirmed", "failed", "refunded", "test_ready", "test_confirmed"];
 
 interface OrderEdit {
   status: string;
@@ -9706,14 +9705,13 @@ function OrdersTab({ gb }: { gb: OrganiserGB }) {
                           {gb.organiserCanEditPaymentStatus && (
                             <div>
                               <label className="block text-[10px] font-bold mb-1" style={{ color: "var(--t-muted)" }}>Payment Status</label>
-                              <select
-                                value={edit.paymentStatus}
-                                onChange={e => updateEdit(o.id, "paymentStatus", e.target.value)}
-                                className="w-full h-8 px-2 rounded-lg text-xs"
-                                style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)", outline: "none" }}
-                              >
-                                {PAYMENT_STATUS_OPTIONS.filter(s => s !== "confirmed" || o.paymentStatus === "confirmed").map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-                              </select>
+                              <MarkOrdersPaid key={`${o.id}-edit`} groupBuyId={gb.id} orderIds={[o.id]}
+                                allowed={gb.organiserCanEditPaymentStatus}
+                                paymentStatusField={{ value: edit.paymentStatus, onChange: value => updateEdit(o.id, "paymentStatus", value) }}
+                                onSaved={async () => {
+                                  updateEdit(o.id, "paymentStatus", "confirmed");
+                                  await loadOrders();
+                                }} />
                             </div>
                           )}
                         </div>

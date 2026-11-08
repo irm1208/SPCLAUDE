@@ -1,14 +1,20 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
-export function MarkOrdersPaid({ groupBuyId, orderIds, onSaved, label = "Mark as paid", allowed = true }: {
+export function MarkOrdersPaid({ groupBuyId, orderIds, onSaved, label = "Mark as paid", allowed = true, paymentStatusField }: {
   groupBuyId: string; orderIds: string[]; onSaved: () => void | Promise<void>; label?: string; allowed?: boolean;
+  paymentStatusField?: { value: string; onChange: (value: string) => void };
 }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
+  const disabled = !orderIds.length || !allowed || orderIds.length > 100 || saving;
+  function openConfirmation() {
+    if (disabled) return;
+    setError(""); setResult(""); setNote(""); setOpen(true);
+  }
   async function save() {
     if (!note.trim() || saving) return;
     setSaving(true); setError("");
@@ -29,9 +35,18 @@ export function MarkOrdersPaid({ groupBuyId, orderIds, onSaved, label = "Mark as
     } finally { setSaving(false); }
   }
   return <span className="inline-flex flex-col items-start gap-1" onClick={event => event.stopPropagation()}>
-    <button type="button" disabled={!orderIds.length || !allowed || orderIds.length > 100} onClick={() => { setError(""); setResult(""); setNote(""); setOpen(true); }}
+    {paymentStatusField ? <select aria-label="Payment Status" value={paymentStatusField.value} disabled={disabled}
+      onChange={event => {
+        if (event.target.value === "confirmed" && paymentStatusField.value !== "confirmed") openConfirmation();
+        else paymentStatusField.onChange(event.target.value);
+      }}
+      className="w-full h-8 px-2 rounded-lg text-xs"
+      style={{ background: "var(--t-surface)", border: "1px solid var(--t-border)", color: "var(--t-text)", outline: "none" }}>
+      {["unpaid", "pending_confirmation", "confirmed", "failed", "refunded", "test_ready", "test_confirmed"].map(status =>
+        <option key={status} value={status}>{status === "confirmed" ? "Paid" : status.replaceAll("_", " ")}</option>)}
+    </select> : <button type="button" disabled={disabled} onClick={openConfirmation}
       className="rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-50"
-      style={{ background: "var(--t-blue-10)", border: "1px solid var(--t-border)", color: "var(--t-blue-deep)" }}>{label}</button>
+      style={{ background: "var(--t-blue-10)", border: "1px solid var(--t-border)", color: "var(--t-blue-deep)" }}>{label}</button>}
     {!allowed && <span className="text-xs" style={{ color: "var(--t-muted)" }}>Admin must enable payment-status editing for this group buy.</span>}
     {orderIds.length > 100 && <span className="text-xs" style={{ color: "var(--t-muted)" }}>Select up to 100 orders at a time.</span>}
     {result && <span role="status" className="text-xs" style={{ color: "var(--t-text)" }}>{result}</span>}

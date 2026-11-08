@@ -56,6 +56,42 @@ test("manual payment requires a private note, preserves it on failure, and refre
     await act(async () => root.render(React.createElement(MarkOrdersPaid, { groupBuyId: "G", orderIds: ["O"], allowed: false, onSaved: () => {} })));
     assert.equal(button("Mark as paid").disabled, true);
     assert.match(dom.window.document.body.textContent!, /Admin must enable/);
+    const changes: string[] = [];
+    await act(async () => root.render(React.createElement(MarkOrdersPaid, {
+      groupBuyId: "G", orderIds: ["O"], onSaved: async () => { refreshed++; },
+      paymentStatusField: { value: "failed", onChange: (value: string) => changes.push(value) },
+    })));
+    const select = dom.window.document.querySelector("select")!;
+    assert.ok(select, "Payment status field must offer Paid in the edit form");
+    assert.equal([...select.options].find(option => option.value === "confirmed")?.text, "Paid");
+    await act(async () => {
+      select.value = "confirmed";
+      select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+    assert.equal(button("Confirm paid").disabled, true, "Paid must still require a payment note");
+    assert.deepEqual(changes, [], "Do not bypass the manual payment endpoint through an ordinary edit");
+    assert.equal(select.value, "failed", "Status stays unchanged until confirmation succeeds");
+    await act(async () => button("Cancel").click());
+    assert.equal(select.value, "failed");
+    await act(async () => {
+      select.value = "unpaid";
+      select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+    assert.deepEqual(changes, ["unpaid"]);
+    await act(async () => {
+      select.value = "confirmed";
+      select.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    });
+    await input("Cash received");
+    await act(async () => button("Confirm paid").click());
+    assert.equal(refreshed, 2);
+    assert.deepEqual(requests[2].body, { orderIds: ["O"], note: "Cash received" });
+    assert.deepEqual(changes, ["unpaid"], "Paid is never sent through the normal status setter");
+    await act(async () => root.render(React.createElement(MarkOrdersPaid, {
+      groupBuyId: "G", orderIds: ["O"], allowed: false, onSaved: () => {},
+      paymentStatusField: { value: "failed", onChange: () => {} },
+    })));
+    assert.equal(dom.window.document.querySelector("select")!.disabled, true);
   } finally {
     await act(async () => root.unmount()); globalThis.fetch = originalFetch; dom.window.close();
     for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
