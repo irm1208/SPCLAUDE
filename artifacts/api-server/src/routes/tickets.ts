@@ -308,7 +308,7 @@ router.post("/account/tickets", requireTicketCustomer, parseTicketImages, async 
 
   const parsed = CreateTicketBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid request body" });
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
     return;
   }
   const { category, subject, description, groupBuyId, issueType, orderId } = parsed.data as any;
@@ -591,7 +591,7 @@ router.post("/account/tickets/:id/messages", requireTicketCustomer, parseTicketI
 
   const parsed = PostTicketMessageBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid request body" });
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
     return;
   }
   const { body } = parsed.data;
@@ -742,7 +742,7 @@ router.get("/admin/tickets", async (req, res): Promise<void> => {
 
   const parsedQuery = AdminListTicketsQueryParams.safeParse(req.query);
   if (!parsedQuery.success) {
-    res.status(400).json({ error: parsedQuery.error.errors[0]?.message ?? "Invalid filter parameters" });
+    res.status(400).json({ error: parsedQuery.error.issues[0]?.message ?? "Invalid filter parameters" });
     return;
   }
   const { status, category } = parsedQuery.data;
@@ -800,7 +800,7 @@ router.put("/admin/tickets/:id/status", async (req, res): Promise<void> => {
 
   const parsed = AdminUpdateTicketStatusBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid status" });
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid status" });
     return;
   }
   const { status } = parsed.data;
@@ -827,7 +827,7 @@ router.post("/admin/tickets/:id/messages", requireTicketAdmin, parseTicketImages
 
   const parsed = AdminPostTicketMessageBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid request body" });
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
     return;
   }
   const { body } = parsed.data;

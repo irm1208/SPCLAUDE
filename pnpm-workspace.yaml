@@ -36,7 +36,7 @@ catalog:
   tailwindcss: ^4.3.4
   tsx: ^4.23.15
   vite: ^7.3.7
-  zod: ^3.25.76
+  zod: ^4.6.7
 
 ignoredBuiltDependencies:
   - msedge-tts
