@@ -1,8 +1,5 @@
 packages:
   - artifacts/*
-  - artifacts/crypto-payment-kit/apps/*
-  - artifacts/crypto-payment-kit/packages/*
-  - artifacts/crypto-payment-kit/examples/*
   - lib/*
   - lib/integrations/*
   - lib/protobufjs-stub
