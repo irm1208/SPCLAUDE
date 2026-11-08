@@ -81,23 +81,23 @@ export function LedgerOrders({ orders, selected, onSelected, locked, onRemove, r
             <div className="flex items-start gap-3 p-3 text-xs">
               <input type="checkbox" className="mt-1" aria-label={`Select ${o.reference}`} checked={sel} disabled={locked || (!sel && !isEligible(o))}
                 onChange={() => onSelected(toggleOne(selected, o))} data-testid={`payment-order-${o.id}`} />
-              <div className="min-w-0 flex-1 grid gap-x-4 gap-y-2 sm:grid-cols-[minmax(180px,1.7fr)_minmax(120px,.9fr)_minmax(130px,1fr)_minmax(135px,auto)] sm:items-center">
+              <div className="min-w-0 flex-1 grid gap-4 items-start" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))" }}>
                 <div className="min-w-0">
                   <p className="font-mono font-bold text-sm break-all">{o.reference}</p>
                   <p className="truncate" style={subtle}>{o.sourceType === "shared" ? "Shared · " : ""}{codes.length ? codes.join(", ") : "No order code"} · {fmtDate(o.submittedAt)}</p>
                 </div>
                 <p style={subtle}>Fulfilment: <span style={{ color: "var(--t-text)" }}>{o.status}</span></p>
-                <div>
+                <div className="min-w-0 break-words">
                   <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase whitespace-nowrap" style={{ color: STATE_TONE[st], background: `color-mix(in srgb, ${STATE_TONE[st]} 12%, transparent)` }}>Supplier: {STATE_LABEL[st]}</span>
                   {o.stale && <span className="block mt-1 text-[11px]" style={{ color: "#B4770E" }}>Stale submission · awaiting resubmission</span>}
                   {o.reviewReason && <span className="block mt-1 text-[11px]" style={{ color: "#B4770E" }}>{o.reviewReason}</span>}
                 </div>
-                <div className="flex items-center justify-between gap-3 sm:justify-end">
-                  <div className="text-right">
+                <div className="grid grid-cols-2 items-start gap-3 min-w-0">
+                  <div className="min-w-0 text-right">
                     <p className="text-[10px] uppercase tracking-wide" style={subtle}>Supplier cost</p>
                     <p className="text-sm font-bold tabular-nums" style={{ color: moneyOf(o.totalCost) === "Unavailable" ? "#B4770E" : "var(--t-text)" }}>{moneyOf(o.totalCost)}</p>
                   </div>
-                  <div className="min-w-[112px] border-l pl-3 text-right" style={{ borderColor: "var(--t-border)" }} data-testid={`payment-profit-${o.id}`}>
+                  <div className="min-w-0 border-l pl-3 text-right break-words" style={{ borderColor: "var(--t-border)" }} data-testid={`payment-profit-${o.id}`}>
                     <p className="text-[10px] uppercase tracking-wide" style={subtle}>Estimated product profit</p>
                     <p className="text-sm font-bold tabular-nums" style={{ color: !profit?.amountUsd ? "#B4770E" : (profit.amountUsd.startsWith("-") ? "#B42318" : "#15803D") }}>{signedMoneyOf(profit?.amountUsd)}</p>
                     <p className="text-[10px] tabular-nums" style={subtle}>Sales {moneyOf(profit?.salesUsd)} − product cost {moneyOf(profit?.supplierProductsUsd)}</p>
@@ -105,13 +105,16 @@ export function LedgerOrders({ orders, selected, onSelected, locked, onRemove, r
                   </div>
                 </div>
               </div>
-              <button type="button" aria-expanded={isOpen} aria-label={`Details for ${o.reference}`} className="p-1 rounded-lg"
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t px-3 py-2 text-xs" style={{ borderColor: "var(--t-border)" }}>
+              <button type="button" aria-expanded={isOpen} aria-label={`Details for ${o.reference}`} className="inline-flex items-center gap-1 p-1 rounded-lg"
                 onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n; })} data-testid={`payment-expand-${o.id}`}>
+                Order details
                 {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
               </button>
               {o.canRemove === true
                 ? <button type="button" disabled={locked} onClick={() => onRemove(o)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] font-semibold disabled:opacity-50" style={{ borderColor: "#D7A3A0", color: "#A12924" }} data-testid={`payment-remove-${o.id}`}><Trash2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Remove</span></button>
-                : <button type="button" disabled title={o.removalReason ?? undefined} className="max-w-[120px] shrink-0 cursor-not-allowed text-right text-[10px] leading-tight opacity-100 sm:max-w-[150px]" style={{ color: "#8A5A00" }} data-testid={`payment-remove-${o.id}`}>{o.removalReason || (o.canRemove === false ? "Removal unavailable" : "Refresh to check removal permission")}</button>}
+                : <button type="button" disabled title={o.removalReason ?? undefined} className="min-w-0 max-w-full cursor-not-allowed text-left text-xs leading-relaxed opacity-100 break-words" style={{ color: "#8A5A00" }} data-testid={`payment-remove-${o.id}`}>{o.removalReason || (o.canRemove === false ? "Removal unavailable" : "Refresh to check removal permission")}</button>}
             </div>
             {isOpen && <div className="border-t p-3 space-y-3" style={{ borderColor: "var(--t-border)" }}>
               <OrderBreakdown src={o} testId={`payment-order-detail-${o.id}`} />

@@ -25017,7 +25017,7 @@ const SHELL_TITLES: Record<string, string> = {
 };
 
 /** Tabs that need the full-width canvas (dense tables). Everything else uses Shopify's 998px page width. */
-const WIDE_TABS = new Set(["orders", "groupbuy", "fs3", "pnl", "wholesale", "wholesale-shares", "dispatch", "inventorysync", "testingpools", "reshippers", "organisers", "products", "usernames"]);
+const WIDE_TABS = new Set(["orders", "groupbuy", "peps-anon-payment", "fs3", "pnl", "wholesale", "wholesale-shares", "dispatch", "inventorysync", "testingpools", "reshippers", "organisers", "products", "usernames"]);
 
 const NAV_KEYWORDS: Record<string, string[]> = Object.fromEntries(
   SIDEBAR_SECTIONS.flatMap(s => s.items.map(i => [i.id, i.keywords] as [string, string[]])),
